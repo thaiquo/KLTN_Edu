@@ -1,0 +1,6 @@
+{
+  "name": "EduConnect",
+  "description": "EduConnect is a modern, high-performance learning portal and marketplace connecting students with expert tutors. It includes student dashboards, tutor schedules, direct messaging with document sharing, course searching and filtering, and administrative user controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
