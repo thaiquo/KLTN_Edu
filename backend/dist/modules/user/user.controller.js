@@ -27,6 +27,10 @@ let UserController = class UserController {
         this.assertAdmin(request.user);
         return this.userService.listTutorApplications();
     }
+    listTutorApplicationHistory(request) {
+        this.assertAdmin(request.user);
+        return this.userService.listTutorApplicationHistory();
+    }
     reviewTutorSubject(request, profileId, subjectId, dto) {
         this.assertAdmin(request.user);
         return this.userService.reviewTutorSubject(profileId, subjectId, dto);
@@ -35,16 +39,35 @@ let UserController = class UserController {
         this.assertAdmin(request.user);
         return this.userService.reviewSubjectEvidence(profileId, subjectId, evidenceId, dto);
     }
+    getEvidenceDownloadUrl(request, profileId, subjectId, evidenceId) {
+        this.assertAdmin(request.user);
+        return this.userService.getEvidenceDownloadUrl(profileId, subjectId, evidenceId);
+    }
     getOwnTutorProfile(request) {
         return this.userService.getTutorProfile(request.user.sub);
+    }
+    listOwnTutorApplications(request) {
+        return this.userService.listOwnTutorApplications(request.user.sub);
+    }
+    createOwnTutorApplication(request, dto) {
+        return this.userService.createTutorApplication(request.user.sub, dto);
+    }
+    updateOwnTutorApplication(request, applicationId, dto) {
+        return this.userService.updateTutorApplication(request.user.sub, applicationId, dto);
+    }
+    withdrawOwnTutorApplication(request, applicationId) {
+        return this.userService.withdrawTutorApplication(request.user.sub, applicationId);
+    }
+    getOwnEvidenceDownloadUrl(request, evidenceId) {
+        return this.userService.getOwnEvidenceDownloadUrl(request.user.sub, evidenceId);
     }
     submitOwnTutorProfile(request, dto) {
         return this.userService.submitTutorApplication(request.user.sub, dto);
     }
-    uploadTutorEvidence(file) {
+    uploadTutorEvidence(request, file) {
         if (!file)
-            throw new common_1.ForbiddenException('Evidence file is required');
-        return this.userService.storeEvidenceFile(file);
+            throw new common_1.BadRequestException('Evidence file is required');
+        return this.userService.storeEvidenceFile(request.user.sub, file);
     }
     getAllUsers() { return this.userService.findAllUsers(); }
     getUserById(userId) { return this.userService.findUserById(userId); }
@@ -67,6 +90,14 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], UserController.prototype, "listTutorApplications", null);
+__decorate([
+    (0, common_1.Get)('tutor-applications-history'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], UserController.prototype, "listTutorApplicationHistory", null);
 __decorate([
     (0, common_1.Patch)('tutor-applications/:profileId/subjects/:subjectId'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
@@ -91,6 +122,17 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], UserController.prototype, "reviewSubjectEvidence", null);
 __decorate([
+    (0, common_1.Get)('tutor-applications/:profileId/subjects/:subjectId/evidences/:evidenceId/download-url'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)('profileId')),
+    __param(2, (0, common_1.Param)('subjectId')),
+    __param(3, (0, common_1.Param)('evidenceId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String, String]),
+    __metadata("design:returntype", void 0)
+], UserController.prototype, "getEvidenceDownloadUrl", null);
+__decorate([
     (0, common_1.Get)('me/tutor-profile'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     __param(0, (0, common_1.Req)()),
@@ -98,6 +140,51 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", void 0)
 ], UserController.prototype, "getOwnTutorProfile", null);
+__decorate([
+    (0, common_1.Get)('me/tutor-applications'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", void 0)
+], UserController.prototype, "listOwnTutorApplications", null);
+__decorate([
+    (0, common_1.Post)('me/tutor-applications'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, create_tutor_profile_dto_1.CreateTutorProfileDto]),
+    __metadata("design:returntype", void 0)
+], UserController.prototype, "createOwnTutorApplication", null);
+__decorate([
+    (0, common_1.Patch)('me/tutor-applications/:applicationId'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)('applicationId')),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, create_tutor_profile_dto_1.CreateTutorProfileDto]),
+    __metadata("design:returntype", void 0)
+], UserController.prototype, "updateOwnTutorApplication", null);
+__decorate([
+    (0, common_1.Delete)('me/tutor-applications/:applicationId'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)('applicationId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", void 0)
+], UserController.prototype, "withdrawOwnTutorApplication", null);
+__decorate([
+    (0, common_1.Get)('me/tutor-evidences/:evidenceId/download-url'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Param)('evidenceId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String]),
+    __metadata("design:returntype", void 0)
+], UserController.prototype, "getOwnEvidenceDownloadUrl", null);
 __decorate([
     (0, common_1.Post)('me/tutor-profile'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
@@ -111,9 +198,10 @@ __decorate([
     (0, common_1.Post)('me/tutor-evidence-files'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.UseInterceptors)((0, platform_express_1.FileInterceptor)('file', { limits: { fileSize: 5 * 1024 * 1024 } })),
-    __param(0, (0, common_1.UploadedFile)()),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.UploadedFile)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", void 0)
 ], UserController.prototype, "uploadTutorEvidence", null);
 __decorate([

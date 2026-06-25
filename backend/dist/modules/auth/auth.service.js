@@ -24,6 +24,7 @@ let AuthService = class AuthService {
         const createdUser = await this.userService.createStudent({
             fullName: dto.fullName,
             email: dto.email,
+            phone: dto.phone,
             password: await bcrypt.hash(dto.password, 10)
         });
         return this.createAuthResponse(createdUser);

@@ -23,6 +23,10 @@ __decorate([
     __metadata("design:type", String)
 ], User.prototype, "email", void 0);
 __decorate([
+    (0, mongoose_1.Prop)({ required: true, trim: true, match: /^0\d{9}$/ }),
+    __metadata("design:type", String)
+], User.prototype, "phone", void 0);
+__decorate([
     (0, mongoose_1.Prop)({ required: true, select: false }),
     __metadata("design:type", String)
 ], User.prototype, "password", void 0);

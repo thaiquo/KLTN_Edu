@@ -18,6 +18,7 @@ export default function Register() {
   const router = useRouter();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -36,6 +37,10 @@ export default function Register() {
       setError('Vui lòng nhập email.');
       return;
     }
+    if (!/^0\d{9}$/.test(phone.trim())) {
+      setError('S\u1ed1 \u0111i\u1ec7n tho\u1ea1i ph\u1ea3i g\u1ed3m 10 ch\u1eef s\u1ed1 v\u00e0 b\u1eaft \u0111\u1ea7u b\u1eb1ng s\u1ed1 0.');
+      return;
+    }
     if (password.length < 8) {
       setError('Mật khẩu cần ít nhất 8 ký tự.');
       return;
@@ -51,6 +56,7 @@ export default function Register() {
       await register({
         fullName: fullName.trim(),
         email: email.trim().toLowerCase(),
+        phone: phone.trim(),
         password
       });
       router.replace('/home');
@@ -87,6 +93,15 @@ export default function Register() {
           autoComplete="email"
           value={email}
           onChangeText={(value) => { setEmail(value); setError(''); }}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder={'S\u1ed1 \u0111i\u1ec7n tho\u1ea1i'}
+          keyboardType={'phone-pad'}
+          autoComplete={'tel'}
+          value={phone}
+          onChangeText={(value) => { setPhone(value.replace(/\D/g, '').slice(0, 10)); setError(''); }}
+          maxLength={10}
         />
         <TextInput
           style={styles.input}

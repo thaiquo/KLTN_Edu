@@ -114,6 +114,12 @@ export function EvidenceUploader({ value, onChange, disabled }: Props) {
 }
 
 export function StatusBadge({ status }: { status: string }) {
-  const style = status === "approved" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : status === "rejected" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200";
+  const style = status === "approved"
+    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+    : status === "rejected"
+      ? "bg-red-50 text-red-700 border-red-200"
+      : status === "withdrawn"
+        ? "bg-slate-100 text-slate-600 border-slate-200"
+        : "bg-amber-50 text-amber-700 border-amber-200";
   return <span className={`px-2 py-1 rounded-full border text-[9px] font-black uppercase tracking-wider ${style}`}>{status === "pending" ? "Pending review" : status}</span>;
 }

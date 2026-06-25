@@ -11,7 +11,7 @@ export class Conversation {
   @Prop({ type: Types.ObjectId, ref: 'ClassRoom', required: false, index: true })
   classId?: Types.ObjectId;
 
-  @Prop({ required: true, enum: ['direct', 'class', 'support'], default: 'direct', index: true })
+  @Prop({ type: String, required: true, enum: ['direct', 'class', 'support'], default: 'direct', index: true })
   type!: 'direct' | 'class' | 'support';
 
   @Prop({ default: '', trim: true })

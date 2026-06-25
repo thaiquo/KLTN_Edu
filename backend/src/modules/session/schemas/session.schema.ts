@@ -20,7 +20,7 @@ export class Session {
   @Prop({ required: true, default: '' })
   link!: string;
 
-  @Prop({ required: true, enum: ['scheduled', 'completed'], default: 'scheduled' })
+  @Prop({ type: String, required: true, enum: ['scheduled', 'completed'], default: 'scheduled' })
   status!: 'scheduled' | 'completed';
 }
 

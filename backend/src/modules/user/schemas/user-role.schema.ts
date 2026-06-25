@@ -8,7 +8,7 @@ export class UserRole {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
   userId!: Types.ObjectId;
 
-  @Prop({ required: true, enum: ['student', 'tutor', 'admin'], index: true })
+  @Prop({ type: String, required: true, enum: ['student', 'tutor', 'admin'], index: true })
   role!: 'student' | 'tutor' | 'admin';
 }
 

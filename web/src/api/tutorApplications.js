@@ -1,10 +1,17 @@
 import { apiRequest } from './client';
 
 export const tutorApplicationApi = {
-  getMine: () => apiRequest('/users/me/tutor-profile'),
-  submit: (payload) => apiRequest('/users/me/tutor-profile', {
+  getMine: () => apiRequest('/users/me/tutor-applications'),
+  create: (payload) => apiRequest('/users/me/tutor-applications', {
     method: 'POST',
     body: JSON.stringify(payload)
+  }),
+  update: (applicationId, payload) => apiRequest(`/users/me/tutor-applications/${applicationId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  }),
+  withdraw: (applicationId) => apiRequest(`/users/me/tutor-applications/${applicationId}`, {
+    method: 'DELETE'
   }),
   uploadEvidence: (file) => {
     const body = new FormData();
@@ -12,6 +19,7 @@ export const tutorApplicationApi = {
     return apiRequest('/users/me/tutor-evidence-files', { method: 'POST', body });
   },
   list: () => apiRequest('/users/tutor-applications'),
+  history: () => apiRequest('/users/tutor-applications-history'),
   reviewSubject: (profileId, subjectId, payload) => apiRequest(
     `/users/tutor-applications/${profileId}/subjects/${subjectId}`,
     { method: 'PATCH', body: JSON.stringify(payload) }

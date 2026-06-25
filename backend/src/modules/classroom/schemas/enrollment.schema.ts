@@ -20,7 +20,7 @@ export class Enrollment {
   @Prop({ required: true, default: () => new Date().toISOString() })
   joinDate!: string;
 
-  @Prop({ required: true, enum: ['active', 'pending', 'cancelled', 'completed'], default: 'active', index: true })
+  @Prop({ type: String, required: true, enum: ['active', 'pending', 'cancelled', 'completed'], default: 'active', index: true })
   status!: 'active' | 'pending' | 'cancelled' | 'completed';
 }
 

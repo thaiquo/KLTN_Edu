@@ -1,24 +1,24 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, Info, LoaderCircle, Plus, Send, UserRoundPen } from "lucide-react";
+import { AlertCircle, CheckCircle2, History, Info, LoaderCircle, Plus, Send, Trash2, UserRoundPen } from "lucide-react";
 import { tutorApplicationApi } from "../../api/tutorApplications";
 import {
-  createSubject, newClientId, TutorApplication, TutorAvailability, TutorTeachingSubject
+  createSubject, newClientId, SUBJECTS_BY_GROUP, TutorApplication, TutorAvailability, TutorTeachingSubject
 } from "../tutorApplication";
 import { StatusBadge } from "./EvidenceUploader";
 import { TeachingSubjectCard } from "./TeachingSubjectCard";
 import { WeeklyAvailabilityEditor } from "./WeeklyAvailabilityEditor";
 
-const EMPTY_APPLICATION: TutorApplication = {
+const createEmptyApplication = (): TutorApplication => ({
   bio: "",
   weeklyAvailability: [{ clientId: newClientId(), dayOfWeek: 1, startTime: "18:00", endTime: "20:00" }],
   teachingSubjects: [createSubject()],
   status: "none"
-};
+});
 
 type FormErrors = { general: string[]; availability: string[]; subjects: Record<number, string[]> };
 
 function normalizeApplication(application: TutorApplication): TutorApplication {
-  const validStatus = ["pending", "approved", "rejected"].includes(application.status)
+  const validStatus = ["pending", "approved", "rejected", "withdrawn"].includes(application.status)
     ? application.status
     : "none";
   return {
@@ -81,18 +81,31 @@ function validate(application: TutorApplication): FormErrors {
 }
 
 export function BecomeTutorForm() {
-  const [application, setApplication] = useState<TutorApplication>(EMPTY_APPLICATION);
+  const [application, setApplication] = useState<TutorApplication>(() => createEmptyApplication());
+  const [history, setHistory] = useState<TutorApplication[]>([]);
   const [errors, setErrors] = useState<FormErrors>({ general: [], availability: [], subjects: {} });
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
-  const locked = application.status === "pending" || application.status === "approved";
+  const locked = false;
+
+  const loadApplications = async () => {
+    const result: TutorApplication[] = await tutorApplicationApi.getMine();
+    const applications = Array.isArray(result) ? result.map(normalizeApplication) : [];
+    setHistory(applications);
+    const editable = applications.find((item) => item.status === "pending" || item.status === "rejected");
+    setApplication(editable || createEmptyApplication());
+  };
 
   useEffect(() => {
     let active = true;
     tutorApplicationApi.getMine()
-      .then((result) => {
-        if (active && result) setApplication(normalizeApplication(result));
+      .then((result: TutorApplication[]) => {
+        if (!active) return;
+        const applications = Array.isArray(result) ? result.map(normalizeApplication) : [];
+        setHistory(applications);
+        const editable = applications.find((item) => item.status === "pending" || item.status === "rejected");
+        setApplication(editable || createEmptyApplication());
       })
       .catch((error) => {
         if (active) setMessage(error instanceof Error ? error.message : "Could not load your tutor application.");
@@ -103,9 +116,10 @@ export function BecomeTutorForm() {
 
   const applicationStatusCopy = useMemo(() => ({
     none: "Complete the four sections below. Your subjects and evidence will be reviewed individually.",
-    pending: "Your application is pending academic review. Form fields are locked while administrators verify the submitted evidence.",
+    pending: "Your application is pending review. You can still update or withdraw it; the admin list will sync automatically.",
     approved: "Your tutor application and every teaching subject are approved. Your account now has tutor access.",
-    rejected: "Your application needs changes. Review the administrator notes, update the rejected items and submit again."
+    rejected: "Your application needs changes. Review the administrator notes, update the rejected items and submit again.",
+    withdrawn: "This application was withdrawn and remains available in your application history."
   }[application.status]), [application.status]);
 
   const updateSubject = (index: number, subject: TutorTeachingSubject) =>
@@ -141,11 +155,29 @@ export function BecomeTutorForm() {
           }))
         }))
       };
-      const saved = await tutorApplicationApi.submit(payload);
-      setApplication(normalizeApplication(saved));
-      setMessage("Application submitted successfully. Administrators can now review each subject and evidence.");
+      if (application._id) await tutorApplicationApi.update(application._id, payload);
+      else await tutorApplicationApi.create(payload);
+      await loadApplications();
+      setMessage(application._id
+        ? "Application updated. The admin review queue now shows your latest information."
+        : "Application submitted successfully. Administrators can now review each subject and evidence.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not submit the tutor application.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const withdraw = async () => {
+    if (!application._id || !window.confirm("Withdraw this tutor application? It will disappear from the admin review queue but remain in your history.")) return;
+    setSubmitting(true);
+    setMessage("");
+    try {
+      await tutorApplicationApi.withdraw(application._id);
+      await loadApplications();
+      setMessage("Application withdrawn. You can create a new application at any time.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not withdraw the tutor application.");
     } finally {
       setSubmitting(false);
     }
@@ -188,11 +220,55 @@ export function BecomeTutorForm() {
       </section>
 
       <section className="bg-white rounded-2xl border border-brand-border/30 p-6 shadow-sm">
-        {message && <p className={`mb-4 text-xs font-semibold ${message.includes("successfully") ? "text-emerald-700" : "text-brand-error"}`}>{message}</p>}
-        <button disabled={locked || submitting} type="button" onClick={submit} className="w-full py-4 bg-brand-secondary hover:bg-brand-secondary-hover text-white rounded-xl font-display font-black text-xs tracking-widest shadow-lg shadow-brand-secondary/15 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-          {submitting ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          {application.status === "approved" ? "APPLICATION APPROVED" : application.status === "pending" ? "PENDING ADMIN REVIEW" : "APPLY TO BECOME TUTOR"}
-        </button>
+        {message && <p className={`mb-4 text-xs font-semibold ${message.startsWith("Could") || message.startsWith("Please") ? "text-brand-error" : "text-emerald-700"}`}>{message}</p>}
+        <div className={application._id ? "grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-3" : ""}>
+          <button disabled={submitting} type="button" onClick={submit} className="w-full py-4 px-6 bg-brand-secondary hover:bg-brand-secondary-hover text-white rounded-xl font-display font-black text-xs tracking-widest shadow-lg shadow-brand-secondary/15 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
+            {submitting ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            {application.status === "pending" ? "UPDATE PENDING APPLICATION" : application.status === "rejected" ? "UPDATE & RESUBMIT" : "SUBMIT NEW TUTOR APPLICATION"}
+          </button>
+          {application._id && (
+            <button disabled={submitting} type="button" onClick={withdraw} className="py-4 px-6 rounded-xl border border-red-200 bg-red-50 text-red-700 font-display font-black text-xs tracking-wider flex items-center justify-center gap-2 disabled:opacity-50">
+              <Trash2 className="w-4 h-4" /> WITHDRAW
+            </button>
+          )}
+        </div>
+      </section>
+
+      <section className="bg-white rounded-2xl border border-brand-border/30 p-6 shadow-sm space-y-4">
+        <div className="flex items-center gap-3">
+          <span className="p-2 rounded-xl bg-brand-primary/10 text-brand-primary"><History className="w-5 h-5" /></span>
+          <div>
+            <h3 className="font-display font-black text-sm text-brand-text">Application History</h3>
+            <p className="text-xs text-brand-text-variant/60">Approved applications stay here while you submit more subjects later.</p>
+          </div>
+        </div>
+        {history.length === 0 ? (
+          <p className="p-5 rounded-xl bg-brand-low/40 text-xs text-brand-text-variant">No tutor applications submitted yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {history.map((item) => (
+              <article key={item._id} className="p-4 rounded-xl border border-brand-border/30 bg-brand-low/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge status={item.status} />
+                    <span className="text-[10px] font-bold text-brand-text-variant/50">Revision {item.revision || 1}</span>
+                    {item._id === application._id && <span className="text-[10px] font-black uppercase text-brand-secondary">Editing above</span>}
+                  </div>
+                  <p className="text-xs font-bold text-brand-text mt-2">
+                    {item.teachingSubjects.map((subject) =>
+                      SUBJECTS_BY_GROUP[subject.levelGroupId]?.find((option) => option.id === subject.subjectId)?.name || subject.subjectId
+                    ).join(", ")}
+                  </p>
+                  <p className="text-[10px] text-brand-text-variant/55 mt-1">
+                    Submitted {new Date(item.submittedAt || item.updatedAt || Date.now()).toLocaleString()}
+                  </p>
+                </div>
+                {item.status === "approved" && <span className="text-xs font-bold text-emerald-700">Added to tutor profile</span>}
+                {item.status === "withdrawn" && <span className="text-xs font-bold text-brand-text-variant/60">Removed from admin queue</span>}
+              </article>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );

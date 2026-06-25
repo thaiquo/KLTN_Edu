@@ -13,13 +13,16 @@ export class User {
   @Prop({ required: true, unique: true, lowercase: true, trim: true })
   email!: string;
 
+  @Prop({ required: true, trim: true, match: /^0\d{9}$/ })
+  phone!: string;
+
   @Prop({ required: true, select: false })
   password!: string;
 
-  @Prop({ required: true, enum: ['student', 'tutor', 'admin'], default: 'student' })
+  @Prop({ type: String, required: true, enum: ['student', 'tutor', 'admin'], default: 'student' })
   role!: UserRoleName;
 
-  @Prop({ required: true, enum: ['student', 'tutor', 'admin'], default: 'student' })
+  @Prop({ type: String, required: true, enum: ['student', 'tutor', 'admin'], default: 'student' })
   currentRole!: UserRoleName;
 
   @Prop({ default: false })

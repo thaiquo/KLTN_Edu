@@ -11,6 +11,7 @@ const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
 const profile_schema_1 = require("./schemas/profile.schema");
 const tutor_profile_schema_1 = require("./schemas/tutor-profile.schema");
+const tutor_application_schema_1 = require("./schemas/tutor-application.schema");
 const user_schema_1 = require("./schemas/user.schema");
 const user_role_schema_1 = require("./schemas/user-role.schema");
 const certificate_schema_1 = require("./schemas/certificate.schema");
@@ -27,6 +28,7 @@ exports.UserModule = UserModule = __decorate([
                 { name: user_schema_1.User.name, schema: user_schema_1.UserSchema },
                 { name: profile_schema_1.Profile.name, schema: profile_schema_1.ProfileSchema },
                 { name: tutor_profile_schema_1.TutorProfile.name, schema: tutor_profile_schema_1.TutorProfileSchema },
+                { name: tutor_application_schema_1.TutorApplicationRecord.name, schema: tutor_application_schema_1.TutorApplicationRecordSchema },
                 { name: user_role_schema_1.UserRole.name, schema: user_role_schema_1.UserRoleSchema },
                 { name: certificate_schema_1.Certificate.name, schema: certificate_schema_1.CertificateSchema },
                 { name: schedule_schema_1.Schedule.name, schema: schedule_schema_1.ScheduleSchema }

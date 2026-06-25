@@ -10,22 +10,32 @@ function subjectName(subject: TutorTeachingSubject) {
 
 export function TutorApprovalPanel() {
   const [applications, setApplications] = useState<TutorApplication[]>([]);
+  const [applicationHistory, setApplicationHistory] = useState<TutorApplication[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionKey, setActionKey] = useState("");
   const [error, setError] = useState("");
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     setError("");
     try {
-      setApplications(await tutorApplicationApi.list());
+      const [pending, history] = await Promise.all([
+        tutorApplicationApi.list(),
+        tutorApplicationApi.history()
+      ]);
+      setApplications(pending);
+      setApplicationHistory(history);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load tutor applications.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    const intervalId = window.setInterval(() => load(true), 5000);
+    return () => window.clearInterval(intervalId);
+  }, []);
 
   const reviewEvidence = async (profileId: string, subjectId: string, evidenceId: string, status: "approved" | "rejected") => {
     const key = `evidence-${evidenceId}`;
@@ -81,13 +91,13 @@ export function TutorApprovalPanel() {
           <h2 className="font-display font-black text-xl lg:text-2xl text-brand-text">Tutor Application Review</h2>
           <p className="text-brand-text-variant/60 text-xs mt-1">Review evidence first, then approve each subject and its proposed tuition range.</p>
         </div>
-        <button onClick={load} className="inline-flex items-center gap-2 px-4 py-2.5 border border-brand-border/40 rounded-xl text-xs font-bold text-brand-primary bg-white"><RefreshCw className="w-4 h-4" /> Refresh</button>
+        <button onClick={() => load()} className="inline-flex items-center gap-2 px-4 py-2.5 border border-brand-border/40 rounded-xl text-xs font-bold text-brand-primary bg-white"><RefreshCw className="w-4 h-4" /> Refresh</button>
       </header>
       {error && <p className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs font-semibold text-red-700">{error}</p>}
       {applications.length === 0 ? (
         <div className="bg-white border border-brand-border/30 rounded-3xl py-16 text-center">
           <UserCheck className="w-10 h-10 text-emerald-500 mx-auto mb-3" />
-          <p className="text-sm font-bold text-brand-text">No tutor applications yet.</p>
+          <p className="text-sm font-bold text-brand-text">No pending tutor applications.</p>
         </div>
       ) : applications.map((application) => {
         const user = typeof application.userId === "object" ? application.userId : null;
@@ -150,7 +160,42 @@ export function TutorApprovalPanel() {
             </div>
           </article>
         );
-      })}
+      })} 
+      <section className="bg-white border border-brand-border/30 rounded-3xl p-6 shadow-sm">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="font-display font-black text-base text-brand-text">Application History</h3>
+            <p className="text-xs text-brand-text-variant/60 mt-1">Approved, rejected and user-withdrawn applications.</p>
+          </div>
+          <span className="px-3 py-1.5 rounded-full bg-brand-low text-xs font-black text-brand-primary">{applicationHistory.length}</span>
+        </div>
+        {applicationHistory.length === 0 ? (
+          <p className="p-5 rounded-xl bg-brand-low/30 text-xs text-brand-text-variant">No completed or withdrawn applications yet.</p>
+        ) : (
+          <div className="divide-y divide-brand-border/15">
+            {applicationHistory.map((item) => {
+              const historyUser = typeof item.userId === "object" ? item.userId : null;
+              return (
+                <div key={item._id} className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-black text-brand-text">{historyUser?.fullName || "Tutor applicant"}</p>
+                      <StatusBadge status={item.status} />
+                      <span className="text-[10px] font-bold text-brand-text-variant/50">Revision {item.revision || 1}</span>
+                    </div>
+                    <p className="text-xs text-brand-text-variant/70 mt-1">
+                      {item.teachingSubjects.map(subjectName).join(", ")}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-semibold text-brand-text-variant/55">
+                    {new Date(item.reviewedAt || item.withdrawnAt || item.updatedAt || Date.now()).toLocaleString()}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
     </div>
   );
 }

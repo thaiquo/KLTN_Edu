@@ -16,10 +16,10 @@ export class AuthUser {
   @Prop({ required: true })
   password!: string;
 
-  @Prop({ required: true, enum: ['student', 'tutor', 'admin'], default: 'student' })
+  @Prop({ type: String, required: true, enum: ['student', 'tutor', 'admin'], default: 'student' })
   role!: UserRoleName;
 
-  @Prop({ required: true, enum: ['student', 'tutor', 'admin'], default: 'student' })
+  @Prop({ type: String, required: true, enum: ['student', 'tutor', 'admin'], default: 'student' })
   currentRole!: UserRoleName;
 
   @Prop({ default: false })

@@ -18,13 +18,13 @@ export class SubjectEvidence {
   @Prop({ required: true, trim: true }) name!: string;
   @Prop({ required: true, trim: true }) issuer!: string;
   @Prop({ required: true }) issueDate!: string;
-  @Prop({ default: null }) expiryDate!: string | null;
+  @Prop({ type: String, default: null }) expiryDate!: string | null;
   @Prop({ default: '', trim: true }) description!: string;
   @Prop({ required: true }) fileKey!: string;
   @Prop({ required: true }) originalFileName!: string;
   @Prop({ required: true }) fileType!: string;
   @Prop({ required: true, min: 1 }) fileSize!: number;
-  @Prop({ required: true, enum: ['pending', 'approved', 'rejected'], default: 'pending' })
+  @Prop({ type: String, required: true, enum: ['pending', 'approved', 'rejected'], default: 'pending' })
   verificationStatus!: ReviewStatus;
   @Prop({ default: '', trim: true }) adminNote!: string;
 }
@@ -38,13 +38,13 @@ export class TutorSubject {
   @Prop({ required: true, min: 0 }) yearsOfExperience!: number;
   @Prop({ required: true, min: 1 }) minPrice!: number;
   @Prop({ required: true, min: 1 }) maxPrice!: number;
-  @Prop({ required: true, enum: ['per_hour', 'per_session', 'per_30_days', 'per_course'] })
+  @Prop({ type: String, required: true, enum: ['per_hour', 'per_session', 'per_30_days', 'per_course'] })
   priceUnit!: PriceUnit;
-  @Prop({ default: null, min: 1 }) durationDays!: number | null;
+  @Prop({ type: Number, default: null, min: 1 }) durationDays!: number | null;
   @Prop({ required: true, min: 1 }) sessionsPerPeriod!: number;
   @Prop({ required: true, min: 1 }) minutesPerSession!: number;
   @Prop({ type: [SubjectEvidenceSchema], default: [] }) evidences!: SubjectEvidence[];
-  @Prop({ required: true, enum: ['pending', 'approved', 'rejected'], default: 'pending' })
+  @Prop({ type: String, required: true, enum: ['pending', 'approved', 'rejected'], default: 'pending' })
   verificationStatus!: ReviewStatus;
   @Prop({ default: '', trim: true }) adminNote!: string;
 }
@@ -59,11 +59,12 @@ export class TutorProfile {
   @Prop({ default: '', trim: true }) bio!: string;
   @Prop({ type: [TutorAvailabilitySchema], default: [] }) weeklyAvailability!: TutorAvailability[];
   @Prop({ type: [TutorSubjectSchema], default: [] }) teachingSubjects!: TutorSubject[];
-  @Prop({ required: true, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true })
+  @Prop({ type: String, required: true, enum: ['pending', 'approved', 'rejected'], default: 'pending', index: true })
   status!: ApplicationStatus;
   @Prop({ default: '', trim: true }) adminNote!: string;
   @Prop({ default: 0 }) rating!: number;
   @Prop({ default: 0 }) totalReviews!: number;
+  @Prop({ default: false, index: true }) isAggregate!: boolean;
 }
 
 export const TutorProfileSchema = SchemaFactory.createForClass(TutorProfile);

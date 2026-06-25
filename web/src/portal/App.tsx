@@ -316,6 +316,7 @@ const ENROLLMENTS_DATA = [
 interface PortalUser {
   fullName: string;
   email: string;
+  phone?: string;
   role: UserRole;
   currentRole?: UserRole;
 }
@@ -341,6 +342,7 @@ export default function App({ user, onLogout }: AppProps) {
     ...INITIAL_PROFILE_SETTINGS,
     fullName: user.fullName,
     email: user.email,
+    phoneNumber: user.phone || '',
   });
 
   const [activeConversationId, setActiveConversationId] = useState<string>("vance");

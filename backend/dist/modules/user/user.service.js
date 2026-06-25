@@ -15,24 +15,29 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.UserService = void 0;
 const common_1 = require("@nestjs/common");
 const mongoose_1 = require("@nestjs/mongoose");
-const promises_1 = require("fs/promises");
 const mongoose_2 = require("mongoose");
-const path_1 = require("path");
-const crypto_1 = require("crypto");
+const storage_service_1 = require("../../common/storage/storage.service");
 const profile_schema_1 = require("./schemas/profile.schema");
+const tutor_application_schema_1 = require("./schemas/tutor-application.schema");
 const tutor_profile_schema_1 = require("./schemas/tutor-profile.schema");
 const user_schema_1 = require("./schemas/user.schema");
 let UserService = class UserService {
-    constructor(userModel, profileModel, tutorProfileModel) {
+    constructor(userModel, profileModel, tutorProfileModel, tutorApplicationModel, storageService) {
         this.userModel = userModel;
         this.profileModel = profileModel;
         this.tutorProfileModel = tutorProfileModel;
+        this.tutorApplicationModel = tutorApplicationModel;
+        this.storageService = storageService;
+    }
+    async onModuleInit() {
+        await this.migrateLegacyTutorApplications();
     }
     async createStudent(input) {
         try {
             return await this.userModel.create({
                 fullName: input.fullName.trim(),
                 email: input.email.toLowerCase().trim(),
+                phone: input.phone.trim(),
                 password: input.password,
                 role: 'student',
                 currentRole: 'student'
@@ -47,59 +52,108 @@ let UserService = class UserService {
     findByEmailWithPassword(email) {
         return this.userModel.findOne({ email: email.toLowerCase().trim() }).select('+password');
     }
-    async findAllUsers() { return this.userModel.find().select('-password').lean(); }
+    async findAllUsers() {
+        return this.userModel.find().select('-password').lean();
+    }
     async findUserById(userId) {
         const user = await this.userModel.findById(userId).lean();
         if (!user)
             throw new common_1.NotFoundException('User not found');
         return this.toSafeUser(user);
     }
-    findSafeUserById(userId) { return this.findUserById(userId); }
+    findSafeUserById(userId) {
+        return this.findUserById(userId);
+    }
     async upsertProfile(userId, dto) {
-        return this.profileModel.findOneAndUpdate({ userId }, { $set: { name: dto.name, avatar: dto.avatar ?? '', address: dto.address ?? '', gender: dto.gender ?? '', phone: dto.phone ?? '', dateOfBirth: dto.dateOfBirth ?? '', bio: dto.bio ?? '' } }, { upsert: true, new: true }).lean();
-    }
-    async submitTutorApplication(userId, dto) {
-        await this.findUserById(userId);
-        this.validateTutorApplication(dto);
-        const teachingSubjects = dto.teachingSubjects.map((subject) => ({
-            ...subject,
-            durationDays: subject.priceUnit === 'per_30_days' ? (subject.durationDays ?? 30) : (subject.durationDays ?? null),
-            verificationStatus: 'pending',
-            adminNote: '',
-            evidences: subject.evidences.map((evidence) => ({
-                ...evidence,
-                expiryDate: evidence.expiryDate ?? null,
-                description: evidence.description ?? '',
-                verificationStatus: 'pending',
-                adminNote: ''
-            }))
-        }));
-        return this.tutorProfileModel.findOneAndUpdate({ userId }, {
+        return this.profileModel.findOneAndUpdate({ userId }, {
             $set: {
-                bio: dto.bio.trim(),
-                weeklyAvailability: dto.weeklyAvailability,
-                teachingSubjects,
-                status: 'pending',
-                adminNote: ''
-            },
-            $setOnInsert: { rating: 0, totalReviews: 0 }
-        }, { upsert: true, new: true, runValidators: true }).lean();
+                name: dto.name,
+                avatar: dto.avatar ?? '',
+                address: dto.address ?? '',
+                gender: dto.gender ?? '',
+                phone: dto.phone ?? '',
+                dateOfBirth: dto.dateOfBirth ?? '',
+                bio: dto.bio ?? ''
+            }
+        }, { upsert: true, new: true }).lean();
     }
-    getTutorProfile(userId) {
-        return this.tutorProfileModel.findOne({ userId }).lean();
+    async createTutorApplication(userId, dto) {
+        await this.findUserById(userId);
+        const pendingApplication = await this.tutorApplicationModel.exists({ userId, status: 'pending' });
+        if (pendingApplication) {
+            throw new common_1.ConflictException('Update or withdraw your pending application before creating another one');
+        }
+        const prepared = await this.prepareTutorApplication(userId, dto);
+        return this.tutorApplicationModel.create({
+            userId,
+            ...prepared,
+            status: 'pending',
+            adminNote: '',
+            revision: 1,
+            submittedAt: new Date(),
+            reviewedAt: null,
+            withdrawnAt: null
+        });
+    }
+    submitTutorApplication(userId, dto) {
+        return this.createTutorApplication(userId, dto);
+    }
+    async updateTutorApplication(userId, applicationId, dto) {
+        const application = await this.tutorApplicationModel.findOne({ _id: applicationId, userId });
+        if (!application)
+            throw new common_1.NotFoundException('Tutor application not found');
+        if (!['pending', 'rejected'].includes(application.status)) {
+            throw new common_1.BadRequestException('Only pending or rejected applications can be updated');
+        }
+        const prepared = await this.prepareTutorApplication(userId, dto);
+        application.set({
+            ...prepared,
+            status: 'pending',
+            adminNote: '',
+            revision: application.revision + 1,
+            submittedAt: new Date(),
+            reviewedAt: null,
+            withdrawnAt: null
+        });
+        await application.save();
+        return application.toObject();
+    }
+    async withdrawTutorApplication(userId, applicationId) {
+        const application = await this.tutorApplicationModel.findOne({ _id: applicationId, userId });
+        if (!application)
+            throw new common_1.NotFoundException('Tutor application not found');
+        if (!['pending', 'rejected'].includes(application.status)) {
+            throw new common_1.BadRequestException('Only pending or rejected applications can be withdrawn');
+        }
+        application.status = 'withdrawn';
+        application.withdrawnAt = new Date();
+        application.reviewedAt = null;
+        await application.save();
+        return application.toObject();
+    }
+    listOwnTutorApplications(userId) {
+        return this.tutorApplicationModel.find({ userId }).sort({ submittedAt: -1, createdAt: -1 }).lean();
     }
     listTutorApplications() {
-        return this.tutorProfileModel
-            .find({ status: { $in: ['pending', 'approved', 'rejected'] } })
-            .populate('userId', 'fullName email role currentRole')
+        return this.tutorApplicationModel
+            .find({ status: 'pending' })
+            .populate('userId', 'fullName email phone role currentRole')
+            .sort({ submittedAt: -1, updatedAt: -1 })
+            .lean();
+    }
+    listTutorApplicationHistory() {
+        return this.tutorApplicationModel
+            .find({ status: { $in: ['approved', 'rejected', 'withdrawn'] } })
+            .populate('userId', 'fullName email phone role currentRole')
             .sort({ updatedAt: -1 })
             .lean();
     }
-    async reviewTutorSubject(profileId, subjectId, dto) {
-        const profile = await this.tutorProfileModel.findById(profileId);
-        if (!profile)
-            throw new common_1.NotFoundException('Tutor application not found');
-        const subject = profile.teachingSubjects.id(subjectId);
+    getTutorProfile(userId) {
+        return this.tutorProfileModel.findOne({ userId, isAggregate: true }).lean();
+    }
+    async reviewTutorSubject(applicationId, subjectId, dto) {
+        const application = await this.getPendingApplication(applicationId);
+        const subject = application.teachingSubjects.id(subjectId);
         if (!subject)
             throw new common_1.NotFoundException('Teaching subject not found');
         if (dto.status === 'approved') {
@@ -113,14 +167,12 @@ let UserService = class UserService {
         }
         subject.verificationStatus = dto.status;
         subject.adminNote = dto.adminNote?.trim() ?? '';
-        await this.recalculateApplicationStatus(profile);
-        return profile.toObject();
+        await this.recalculateApplicationStatus(application);
+        return application.toObject();
     }
-    async reviewSubjectEvidence(profileId, subjectId, evidenceId, dto) {
-        const profile = await this.tutorProfileModel.findById(profileId);
-        if (!profile)
-            throw new common_1.NotFoundException('Tutor application not found');
-        const subject = profile.teachingSubjects.id(subjectId);
+    async reviewSubjectEvidence(applicationId, subjectId, evidenceId, dto) {
+        const application = await this.getPendingApplication(applicationId);
+        const subject = application.teachingSubjects.id(subjectId);
         if (!subject)
             throw new common_1.NotFoundException('Teaching subject not found');
         const evidence = subject.evidences.id(evidenceId);
@@ -131,22 +183,77 @@ let UserService = class UserService {
         if (dto.status === 'rejected' && subject.verificationStatus === 'approved') {
             subject.verificationStatus = 'pending';
         }
-        await this.recalculateApplicationStatus(profile);
-        return profile.toObject();
+        await application.save();
+        return application.toObject();
     }
-    async storeEvidenceFile(file) {
+    async storeEvidenceFile(userId, file) {
         const allowed = ['application/pdf', 'image/png', 'image/jpeg'];
         if (!allowed.includes(file.mimetype)) {
             throw new common_1.BadRequestException('Only PDF, PNG and JPG files are accepted');
         }
-        const uploadDirectory = (0, path_1.join)(process.cwd(), 'uploads', 'tutor-evidence');
-        await (0, promises_1.mkdir)(uploadDirectory, { recursive: true });
-        const safeExtension = (0, path_1.extname)(file.originalname).toLowerCase().replace(/[^.a-z0-9]/g, '');
-        const filename = `${(0, crypto_1.randomUUID)()}${safeExtension}`;
-        await (0, promises_1.writeFile)((0, path_1.join)(uploadDirectory, filename), file.buffer);
-        return { fileUrl: `/uploads/tutor-evidence/${filename}`, fileType: file.mimetype };
+        return this.storageService.uploadTutorEvidence(userId, file);
     }
-    getProfile(userId) { return this.profileModel.findOne({ userId }).lean(); }
+    async getEvidenceDownloadUrl(applicationId, subjectId, evidenceId) {
+        const application = await this.tutorApplicationModel.findById(applicationId);
+        if (!application)
+            throw new common_1.NotFoundException('Tutor application not found');
+        const subject = application.teachingSubjects.id(subjectId);
+        if (!subject)
+            throw new common_1.NotFoundException('Teaching subject not found');
+        const evidence = subject.evidences.id(evidenceId);
+        if (!evidence)
+            throw new common_1.NotFoundException('Evidence not found');
+        const url = await this.storageService.createDownloadUrl(evidence.fileKey, evidence.originalFileName, 'inline', 300);
+        return { url, expiresIn: 300 };
+    }
+    async getOwnEvidenceDownloadUrl(userId, evidenceId) {
+        const applications = await this.tutorApplicationModel.find({
+            userId,
+            'teachingSubjects.evidences._id': evidenceId
+        });
+        for (const application of applications) {
+            for (const subject of application.teachingSubjects) {
+                const evidence = subject.evidences.id(evidenceId);
+                if (evidence) {
+                    const url = await this.storageService.createDownloadUrl(evidence.fileKey, evidence.originalFileName, 'inline', 300);
+                    return { url, expiresIn: 300 };
+                }
+            }
+        }
+        throw new common_1.NotFoundException('Evidence not found');
+    }
+    getProfile(userId) {
+        return this.profileModel.findOne({ userId }).lean();
+    }
+    async prepareTutorApplication(userId, dto) {
+        this.validateTutorApplication(dto);
+        for (const subject of dto.teachingSubjects) {
+            for (const evidence of subject.evidences) {
+                if (!this.storageService.isTutorEvidenceOwnedBy(evidence.fileKey, userId)) {
+                    throw new common_1.BadRequestException('Evidence file does not belong to the current user');
+                }
+            }
+        }
+        return {
+            bio: dto.bio.trim(),
+            weeklyAvailability: dto.weeklyAvailability,
+            teachingSubjects: dto.teachingSubjects.map((subject) => ({
+                ...subject,
+                durationDays: subject.priceUnit === 'per_30_days'
+                    ? (subject.durationDays ?? 30)
+                    : (subject.durationDays ?? null),
+                verificationStatus: 'pending',
+                adminNote: '',
+                evidences: subject.evidences.map((evidence) => ({
+                    ...evidence,
+                    expiryDate: evidence.expiryDate ?? null,
+                    description: evidence.description ?? '',
+                    verificationStatus: 'pending',
+                    adminNote: ''
+                }))
+            }))
+        };
+    }
     validateTutorApplication(dto) {
         for (const slot of dto.weeklyAvailability) {
             if (slot.startTime >= slot.endTime) {
@@ -164,30 +271,108 @@ let UserService = class UserService {
         const subjectKeys = new Set();
         for (const subject of dto.teachingSubjects) {
             const key = `${subject.levelGroupId}:${subject.subjectId}`;
-            if (subjectKeys.has(key))
+            if (subjectKeys.has(key)) {
                 throw new common_1.BadRequestException('The same teaching subject cannot be added twice');
+            }
             subjectKeys.add(key);
             if (subject.maxPrice < subject.minPrice) {
                 throw new common_1.BadRequestException('Maximum price must be greater than or equal to minimum price');
             }
-            if (['per_30_days', 'per_course'].includes(subject.priceUnit) && !subject.durationDays && subject.priceUnit !== 'per_30_days') {
+            if (subject.priceUnit === 'per_course' && !subject.durationDays) {
                 throw new common_1.BadRequestException('Duration is required for course pricing');
             }
         }
     }
-    async recalculateApplicationStatus(profile) {
-        const statuses = profile.teachingSubjects.map((subject) => subject.verificationStatus);
-        if (statuses.length > 0 && statuses.every((status) => status === 'approved')) {
-            profile.status = 'approved';
-            await this.userModel.updateOne({ _id: profile.userId }, { $set: { role: 'tutor', currentRole: 'tutor', isVerified: true } });
+    async getPendingApplication(applicationId) {
+        const application = await this.tutorApplicationModel.findById(applicationId);
+        if (!application)
+            throw new common_1.NotFoundException('Tutor application not found');
+        if (application.status !== 'pending') {
+            throw new common_1.BadRequestException('This tutor application is no longer pending');
         }
-        else if (statuses.some((status) => status === 'rejected')) {
-            profile.status = 'rejected';
+        return application;
+    }
+    async recalculateApplicationStatus(application) {
+        const statuses = application.teachingSubjects.map((subject) => subject.verificationStatus);
+        if (statuses.length > 0 && statuses.every((status) => status === 'approved')) {
+            application.status = 'approved';
+            application.reviewedAt = new Date();
+            await application.save();
+            await this.promoteApprovedApplication(application);
+            return;
+        }
+        if (statuses.some((status) => status === 'rejected')) {
+            application.status = 'rejected';
+            application.reviewedAt = new Date();
         }
         else {
-            profile.status = 'pending';
+            application.status = 'pending';
+            application.reviewedAt = null;
         }
+        await application.save();
+    }
+    async promoteApprovedApplication(application) {
+        let profile = await this.tutorProfileModel.findOne({ userId: application.userId, isAggregate: true });
+        if (!profile) {
+            profile = new this.tutorProfileModel({
+                userId: application.userId,
+                teachingSubjects: [],
+                rating: 0,
+                totalReviews: 0,
+                isAggregate: true
+            });
+        }
+        const mergedSubjects = profile.teachingSubjects.map((subject) => typeof subject.toObject === 'function' ? subject.toObject() : subject);
+        for (const applicationSubject of application.teachingSubjects) {
+            const nextSubject = typeof applicationSubject.toObject === 'function'
+                ? applicationSubject.toObject()
+                : applicationSubject;
+            const existingIndex = mergedSubjects.findIndex((subject) => subject.levelGroupId === nextSubject.levelGroupId &&
+                subject.subjectId === nextSubject.subjectId);
+            if (existingIndex >= 0)
+                mergedSubjects[existingIndex] = nextSubject;
+            else
+                mergedSubjects.push(nextSubject);
+        }
+        profile.set({
+            bio: application.bio,
+            weeklyAvailability: application.weeklyAvailability,
+            teachingSubjects: mergedSubjects,
+            status: 'approved',
+            adminNote: '',
+            isAggregate: true
+        });
         await profile.save();
+        await this.userModel.updateOne({ _id: application.userId }, { $set: { role: 'tutor', currentRole: 'tutor', isVerified: true } });
+    }
+    async migrateLegacyTutorApplications() {
+        const legacyProfiles = await this.tutorProfileModel.find({ isAggregate: { $ne: true } });
+        for (const legacy of legacyProfiles) {
+            const legacyProfileId = legacy._id.toString();
+            const alreadyMigrated = await this.tutorApplicationModel.exists({ legacyProfileId });
+            if (!alreadyMigrated) {
+                await this.tutorApplicationModel.create({
+                    userId: legacy.userId,
+                    bio: legacy.bio,
+                    weeklyAvailability: legacy.weeklyAvailability,
+                    teachingSubjects: legacy.teachingSubjects,
+                    status: legacy.status,
+                    adminNote: legacy.adminNote,
+                    revision: 1,
+                    submittedAt: legacy.createdAt ?? new Date(),
+                    reviewedAt: legacy.status === 'pending' ? null : (legacy.updatedAt ?? new Date()),
+                    withdrawnAt: null,
+                    legacyProfileId
+                });
+            }
+            if (legacy.status === 'approved') {
+                legacy.isAggregate = true;
+                await legacy.save();
+            }
+            else {
+                await this.tutorProfileModel.deleteOne({ _id: legacy._id });
+            }
+        }
     }
     isDuplicateKeyError(error) {
         return typeof error === 'object' && error !== null && 'code' in error && error.code === 11000;
@@ -197,6 +382,7 @@ let UserService = class UserService {
             id: user._id.toString(),
             fullName: user.fullName,
             email: user.email,
+            phone: user.phone || '',
             role: user.role,
             currentRole: user.currentRole,
             isVerified: user.isVerified
@@ -209,8 +395,11 @@ exports.UserService = UserService = __decorate([
     __param(0, (0, mongoose_1.InjectModel)(user_schema_1.User.name)),
     __param(1, (0, mongoose_1.InjectModel)(profile_schema_1.Profile.name)),
     __param(2, (0, mongoose_1.InjectModel)(tutor_profile_schema_1.TutorProfile.name)),
+    __param(3, (0, mongoose_1.InjectModel)(tutor_application_schema_1.TutorApplicationRecord.name)),
     __metadata("design:paramtypes", [mongoose_2.Model,
         mongoose_2.Model,
-        mongoose_2.Model])
+        mongoose_2.Model,
+        mongoose_2.Model,
+        storage_service_1.StorageService])
 ], UserService);
 //# sourceMappingURL=user.service.js.map

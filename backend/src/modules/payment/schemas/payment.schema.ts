@@ -23,7 +23,7 @@ export class Payment {
   @Prop({ required: true, default: '' })
   transactionHash!: string;
 
-  @Prop({ required: true, enum: ['pending', 'paid', 'failed', 'refunded'], default: 'pending', index: true })
+  @Prop({ type: String, required: true, enum: ['pending', 'paid', 'failed', 'refunded'], default: 'pending', index: true })
   status!: 'pending' | 'paid' | 'failed' | 'refunded';
 
   @Prop({ required: true, default: '' })

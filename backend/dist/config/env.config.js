@@ -33,6 +33,15 @@ exports.envConfig = {
     mongodbUri: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/educonnect',
     jwtSecret: process.env.JWT_SECRET || 'educonnect_dev_secret',
     jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
-    corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:8081').split(',').map((origin) => origin.trim()).filter(Boolean)
+    corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:8081').split(',').map((origin) => origin.trim()).filter(Boolean),
+    aws: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
+        sessionToken: process.env.AWS_SESSION_TOKEN || '',
+        region: process.env.AWS_REGION || '',
+        bucketName: process.env.AWS_S3_BUCKET_NAME || '',
+        endpoint: process.env.S3_ENDPOINT || '',
+        forcePathStyle: ['1', 'true', 'yes', 'on'].includes(String(process.env.S3_FORCE_PATH_STYLE || '').trim().toLowerCase())
+    }
 };
 //# sourceMappingURL=env.config.js.map

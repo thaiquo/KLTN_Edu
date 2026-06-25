@@ -1,5 +1,5 @@
 import {
-  BadRequestException, Body, Controller, ForbiddenException, Get, Param, Patch, Post, Req,
+  BadRequestException, Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Req,
   UploadedFile, UseGuards, UseInterceptors
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -22,6 +22,13 @@ export class UserController {
   listTutorApplications(@Req() request: AuthenticatedRequest) {
     this.assertAdmin(request.user);
     return this.userService.listTutorApplications();
+  }
+
+  @Get('tutor-applications-history')
+  @UseGuards(JwtAuthGuard)
+  listTutorApplicationHistory(@Req() request: AuthenticatedRequest) {
+    this.assertAdmin(request.user);
+    return this.userService.listTutorApplicationHistory();
   }
 
   @Patch('tutor-applications/:profileId/subjects/:subjectId')
@@ -65,6 +72,40 @@ export class UserController {
   @UseGuards(JwtAuthGuard)
   getOwnTutorProfile(@Req() request: AuthenticatedRequest) {
     return this.userService.getTutorProfile(request.user.sub);
+  }
+
+  @Get('me/tutor-applications')
+  @UseGuards(JwtAuthGuard)
+  listOwnTutorApplications(@Req() request: AuthenticatedRequest) {
+    return this.userService.listOwnTutorApplications(request.user.sub);
+  }
+
+  @Post('me/tutor-applications')
+  @UseGuards(JwtAuthGuard)
+  createOwnTutorApplication(
+    @Req() request: AuthenticatedRequest,
+    @Body() dto: CreateTutorProfileDto
+  ) {
+    return this.userService.createTutorApplication(request.user.sub, dto);
+  }
+
+  @Patch('me/tutor-applications/:applicationId')
+  @UseGuards(JwtAuthGuard)
+  updateOwnTutorApplication(
+    @Req() request: AuthenticatedRequest,
+    @Param('applicationId') applicationId: string,
+    @Body() dto: CreateTutorProfileDto
+  ) {
+    return this.userService.updateTutorApplication(request.user.sub, applicationId, dto);
+  }
+
+  @Delete('me/tutor-applications/:applicationId')
+  @UseGuards(JwtAuthGuard)
+  withdrawOwnTutorApplication(
+    @Req() request: AuthenticatedRequest,
+    @Param('applicationId') applicationId: string
+  ) {
+    return this.userService.withdrawTutorApplication(request.user.sub, applicationId);
   }
 
   @Get('me/tutor-evidences/:evidenceId/download-url')

@@ -14,7 +14,7 @@ export class Contract {
   @Prop({ required: true, default: '' })
   network!: string;
 
-  @Prop({ required: true, enum: ['draft', 'active', 'released', 'cancelled'], default: 'draft', index: true })
+  @Prop({ type: String, required: true, enum: ['draft', 'active', 'released', 'cancelled'], default: 'draft', index: true })
   status!: 'draft' | 'active' | 'released' | 'cancelled';
 
   @Prop({ required: true, min: 0, default: 10 })

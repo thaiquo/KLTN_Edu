@@ -47,7 +47,7 @@ __decorate([
     __metadata("design:type", String)
 ], SubjectEvidence.prototype, "issueDate", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ default: null }),
+    (0, mongoose_1.Prop)({ type: String, default: null }),
     __metadata("design:type", Object)
 ], SubjectEvidence.prototype, "expiryDate", void 0);
 __decorate([
@@ -57,11 +57,19 @@ __decorate([
 __decorate([
     (0, mongoose_1.Prop)({ required: true }),
     __metadata("design:type", String)
-], SubjectEvidence.prototype, "fileUrl", void 0);
+], SubjectEvidence.prototype, "fileKey", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true }),
+    __metadata("design:type", String)
+], SubjectEvidence.prototype, "originalFileName", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ required: true }),
     __metadata("design:type", String)
 ], SubjectEvidence.prototype, "fileType", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ required: true, min: 1 }),
+    __metadata("design:type", Number)
+], SubjectEvidence.prototype, "fileSize", void 0);
 __decorate([
     (0, mongoose_1.Prop)({ required: true, enum: ['pending', 'approved', 'rejected'], default: 'pending' }),
     __metadata("design:type", String)
@@ -106,7 +114,7 @@ __decorate([
     __metadata("design:type", String)
 ], TutorSubject.prototype, "priceUnit", void 0);
 __decorate([
-    (0, mongoose_1.Prop)({ default: null, min: 1 }),
+    (0, mongoose_1.Prop)({ type: Number, default: null, min: 1 }),
     __metadata("design:type", Object)
 ], TutorSubject.prototype, "durationDays", void 0);
 __decorate([
@@ -168,6 +176,10 @@ __decorate([
     (0, mongoose_1.Prop)({ default: 0 }),
     __metadata("design:type", Number)
 ], TutorProfile.prototype, "totalReviews", void 0);
+__decorate([
+    (0, mongoose_1.Prop)({ default: false, index: true }),
+    __metadata("design:type", Boolean)
+], TutorProfile.prototype, "isAggregate", void 0);
 exports.TutorProfile = TutorProfile = __decorate([
     (0, mongoose_1.Schema)({ timestamps: true, collection: 'tutor_profiles' })
 ], TutorProfile);

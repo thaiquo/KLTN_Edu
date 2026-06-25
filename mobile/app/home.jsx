@@ -24,6 +24,7 @@ export default function Home() {
       <Text style={styles.title}>Xin chào, {user.fullName}!</Text>
       <View style={styles.card}>
         <Text style={styles.email}>{user.email}</Text>
+        <Text style={styles.phone}>{user.phone}</Text>
         <Text>Vai trò: {roleLabel}</Text>
       </View>
       <Pressable onPress={exit}><Text style={styles.logout}>Đăng xuất</Text></Pressable>
@@ -38,5 +39,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 34, fontWeight: '800', marginVertical: 18 },
   card: { padding: 22, borderRadius: 16, backgroundColor: '#fff' },
   email: { fontWeight: '700', marginBottom: 7 },
+  phone: { color: '#657373', marginBottom: 7 },
   logout: { color: '#147b77', fontWeight: '700', marginTop: 24 }
 });

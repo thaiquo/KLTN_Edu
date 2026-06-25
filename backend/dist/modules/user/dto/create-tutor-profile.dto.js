@@ -62,11 +62,21 @@ __decorate([
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.IsNotEmpty)(),
     __metadata("design:type", String)
-], SubjectEvidenceDto.prototype, "fileUrl", void 0);
+], SubjectEvidenceDto.prototype, "fileKey", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.IsNotEmpty)(),
+    __metadata("design:type", String)
+], SubjectEvidenceDto.prototype, "originalFileName", void 0);
 __decorate([
     (0, class_validator_1.IsMimeType)(),
     __metadata("design:type", String)
 ], SubjectEvidenceDto.prototype, "fileType", void 0);
+__decorate([
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.Min)(1),
+    __metadata("design:type", Number)
+], SubjectEvidenceDto.prototype, "fileSize", void 0);
 class TutorSubjectDto {
 }
 exports.TutorSubjectDto = TutorSubjectDto;

@@ -29,10 +29,10 @@ export class ClassRoom {
   @Prop({ required: true, min: 0 })
   price!: number;
 
-  @Prop({ required: true, enum: ['per_hour', 'per_session', 'per_30_days', 'per_course'] })
+  @Prop({ type: String, required: true, enum: ['per_hour', 'per_session', 'per_30_days', 'per_course'] })
   priceUnit!: 'per_hour' | 'per_session' | 'per_30_days' | 'per_course';
 
-  @Prop({ required: true, enum: ['draft', 'active', 'completed', 'cancelled'], default: 'draft', index: true })
+  @Prop({ type: String, required: true, enum: ['draft', 'active', 'completed', 'cancelled'], default: 'draft', index: true })
   status!: 'draft' | 'active' | 'completed' | 'cancelled';
 
   @Prop({ default: 1, min: 1 })

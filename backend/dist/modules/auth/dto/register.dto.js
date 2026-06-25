@@ -26,6 +26,11 @@ __decorate([
 ], RegisterDto.prototype, "email", void 0);
 __decorate([
     (0, class_validator_1.IsString)(),
+    (0, class_validator_1.Matches)(/^0\d{9}$/, { message: 'Phone number must contain 10 digits and start with 0' }),
+    __metadata("design:type", String)
+], RegisterDto.prototype, "phone", void 0);
+__decorate([
+    (0, class_validator_1.IsString)(),
     (0, class_validator_1.MinLength)(8),
     (0, class_validator_1.MaxLength)(128),
     __metadata("design:type", String)
