@@ -1,0 +1,242 @@
+@import "tailwindcss";
+
+/* ============================================================
+   DESIGN TOKENS — dùng chung toàn bộ ứng dụng
+   ============================================================ */
+@theme {
+  --color-primary:      #2563eb;
+  --color-primary-dark: #1d4ed8;
+  --color-ink:          #0f172a;
+  --color-muted:        #64748b;
+  --color-subtle:       #94a3b8;
+  --color-border:       #e2e8f0;
+  --color-surface:      #ffffff;
+  --color-bg:           #f8fafc;
+  --color-success:      #22c55e;
+
+  --font-sans:    'IBM Plex Sans', sans-serif;
+  --font-display: 'Plus Jakarta Sans', sans-serif;
+}
+
+/* ============================================================
+   GLOBAL RESET & BASE
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap');
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'DM Sans', sans-serif;
+  color: #17233c;
+  background: #f8fafc;
+}
+
+button, input, select { font: inherit; }
+img { display: block; max-width: 100%; }
+
+/* ============================================================
+   KEYFRAME ANIMATIONS — tái sử dụng trên nhiều trang
+   ============================================================ */
+@keyframes pulse-ring {
+  0%   { transform: scale(.7); opacity: .9; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+@keyframes float-y {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50%       { transform: translateY(-9px) rotate(2deg); }
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================================
+   TIỆN ÍCH CHUNG — dùng lại ở bất kỳ trang nào
+   ============================================================ */
+@layer components {
+  .container-app {
+    width: min(1180px, calc(100% - 48px));
+    margin-inline: auto;
+  }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
+
+  /* Pulse dot animation helper */
+  .pulse-dot::after {
+    position: absolute; inset: -5px; content: '';
+    border: 1px solid rgba(37, 99, 235, .35);
+    border-radius: 50%;
+    animation: pulse-ring 2s infinite;
+  }
+
+  /* Step-list vertical dashed line helper */
+  .step-list-line::before {
+    position: absolute; top: 28px; bottom: 28px; left: 21px;
+    content: ''; border-left: 1px dashed currentColor; opacity: .14;
+  }
+
+  /* Animate on reveal */
+  .reveal { animation: fade-up .75s ease both; }
+  .reveal-delay { animation-delay: .12s; }
+}
+
+/* ============================================================
+   AUTH SHELL — Login / Register (shared với tất cả auth pages)
+   ============================================================ */
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 46% 54%;
+}
+
+.story {
+  padding: 48px 9%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: #fff;
+  background:
+    radial-gradient(circle at 15% 20%, #2d9a95 0, transparent 32%),
+    linear-gradient(145deg, #102d42, #112638 60%, #0b202f);
+  overflow: hidden;
+}
+
+.logo { font: 700 21px Manrope; }
+.logo:first-letter {
+  background: #e8a554;
+  border-radius: 9px;
+  padding: 7px 12px;
+  margin-right: 8px;
+}
+
+.story small,
+.card > i,
+.dashboard i {
+  color: #e7aa59;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+}
+
+.story h1 { font: 800 clamp(38px, 4.4vw, 68px) / 1.08 Manrope; margin: 22px 0; }
+.story p  { max-width: 520px; line-height: 1.7; color: #cfdae1; font-size: 17px; }
+.story footer { color: #bdd0d8; }
+.story footer b { color: #fff; font-size: 22px; }
+
+.content {
+  display: grid;
+  place-items: center;
+  padding: 35px;
+  background: linear-gradient(135deg, #fff, #f2f7f7);
+}
+
+.card { width: min(460px, 100%); }
+.card h2 { font: 800 40px Manrope; margin: 10px 0; }
+.card > p { color: #778193; margin-bottom: 25px; }
+.card form { display: grid; gap: 16px; }
+
+.field { display: grid; gap: 7px; font-weight: 600; }
+.field div {
+  display: flex;
+  border: 1px solid #dbe1e7;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+.field input { width: 100%; padding: 14px; border: 0; outline: 0; }
+.field div:focus-within { border-color: #167c78; box-shadow: 0 0 0 3px #167c7815; }
+.field button { border: 0; background: none; color: #167c78; padding: 0 14px; cursor: pointer; }
+
+.primary {
+  border: 0; border-radius: 12px; padding: 15px;
+  background: #147b77; color: #fff; font-weight: 700;
+  cursor: pointer; box-shadow: 0 9px 24px #147b7730;
+}
+.primary:disabled { opacity: .6; }
+
+.error { padding: 11px; border-radius: 10px; background: #fff0f0; color: #b83333; }
+.switch { text-align: center !important; }
+.switch a { color: #147b77; font-weight: 700; }
+
+.student {
+  display: flex; gap: 12px; padding: 13px; margin-bottom: 18px;
+  background: #edf8f5; border-radius: 12px; color: #147b77;
+}
+.student span { display: grid; }
+.student small { color: #687a79; margin-top: 3px; }
+
+/* ============================================================
+   DASHBOARD — shared styles
+   ============================================================ */
+.dashboard {
+  min-height: 100vh;
+  padding: 30px max(5%, calc((100% - 1050px) / 2));
+}
+.dashboard header { display: flex; justify-content: space-between; font: 700 22px Manrope; }
+.dashboard header button {
+  border: 1px solid #d8e0e4; background: #fff;
+  border-radius: 10px; padding: 9px 14px;
+}
+.dashboard section {
+  margin-top: 80px; background: #fff; border-radius: 24px;
+  padding: 50px; box-shadow: 0 20px 60px #17233c12;
+}
+.dashboard h1 { font: 800 42px Manrope; margin: 12px 0; }
+
+.profile {
+  margin-top: 32px; padding: 20px; background: #f2f8f7;
+  border-radius: 16px; display: flex; align-items: center; gap: 15px;
+}
+.profile > strong {
+  width: 52px; height: 52px; display: grid; place-items: center;
+  border-radius: 50%; background: #147b77; color: #fff; font-size: 22px;
+}
+.profile span { display: grid; flex: 1; }
+.profile small { margin-top: 4px; color: #657373; }
+.profile em { color: #147b77; background: #dff1ed; padding: 6px 10px; border-radius: 20px; }
+
+/* ============================================================
+   LOADER
+   ============================================================ */
+.loader {
+  position: fixed; inset: 0;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Ccircle cx='20' cy='20' r='15' fill='none' stroke='%23147b77' stroke-width='4' stroke-dasharray='70 30'/%3E%3C/svg%3E") center no-repeat;
+}
+
+/* ============================================================
+   RESPONSIVE — auth/dashboard
+   ============================================================ */
+@media (max-width: 800px) {
+  .auth-shell { display: block; }
+  .story      { display: none; }
+  .content    { min-height: 100vh; padding: 28px 20px; }
+  .card h2    { font-size: 34px; }
+  .dashboard section { padding: 28px; }
+  .dashboard h1      { font-size: 32px; }
+  .profile em        { display: none; }
+}
+
+/* ============================================================
+   MOTION SAFE
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
