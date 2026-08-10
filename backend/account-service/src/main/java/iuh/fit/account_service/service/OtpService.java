@@ -4,6 +4,8 @@ import iuh.fit.account_service.entity.OtpVerification;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.enums.OtpType;
 import iuh.fit.account_service.repository.OtpVerificationRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,6 +15,7 @@ import java.time.LocalDateTime;
 @Service
 public class OtpService {
 
+    private static final Logger log = LoggerFactory.getLogger(OtpService.class);
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final OtpVerificationRepository otpRepository;
@@ -37,6 +40,19 @@ public class OtpService {
         verification.setVerified(false);
 
         otpRepository.save(verification);
+
+        log.info(
+                "\n================ EDUCONNECT DEV OTP ================\n"
+                        + "Email : {}\n"
+                        + "OTP   : {}\n"
+                        + "Type  : {}\n"
+                        + "Expire: {}\n"
+                        + "====================================================",
+                user.getEmail(),
+                otp,
+                OtpType.EMAIL_VERIFICATION,
+                expiredAt
+        );
 
         emailService.sendVerificationOtp(user.getEmail(), otp);
     }

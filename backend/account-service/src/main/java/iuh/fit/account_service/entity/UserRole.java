@@ -45,6 +45,14 @@ public class UserRole {
     @Column(nullable = false, length = 20)
     private Role role;
 
+    public User getUser() {
+        return user;
+    }
+
+    public Role getRole() {
+        return role;
+    }
+
     public void setUser(User user) {
         this.user = user;
     }

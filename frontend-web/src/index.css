@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap');
 @import "tailwindcss";
 
 /* ============================================================
@@ -21,8 +22,6 @@
 /* ============================================================
    GLOBAL RESET & BASE
    ============================================================ */
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap');
-
 *,
 *::before,
 *::after { box-sizing: border-box; }
@@ -34,7 +33,7 @@ body {
   background: #f8fafc;
 }
 
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 img { display: block; max-width: 100%; }
 
 /* ============================================================
@@ -144,6 +143,7 @@ img { display: block; max-width: 100%; }
 }
 
 .card { width: min(460px, 100%); }
+.auth-card-wide { width: min(680px, 100%); }
 .card h2 { font: 800 40px Manrope; margin: 10px 0; }
 .card > p { color: #778193; margin-bottom: 25px; }
 .card form { display: grid; gap: 16px; }
@@ -156,7 +156,10 @@ img { display: block; max-width: 100%; }
   background: #fff;
   overflow: hidden;
 }
-.field input { width: 100%; padding: 14px; border: 0; outline: 0; }
+.field input,
+.field select,
+.field textarea { width: 100%; padding: 14px; border: 0; outline: 0; background: #fff; color: #17233c; }
+.field textarea { resize: vertical; min-height: 112px; }
 .field div:focus-within { border-color: #167c78; box-shadow: 0 0 0 3px #167c7815; }
 .field button { border: 0; background: none; color: #167c78; padding: 0 14px; cursor: pointer; }
 
@@ -168,8 +171,10 @@ img { display: block; max-width: 100%; }
 .primary:disabled { opacity: .6; }
 
 .error { padding: 11px; border-radius: 10px; background: #fff0f0; color: #b83333; }
+.success { padding: 11px; border-radius: 10px; background: #ecfdf3; color: #137a3d; font-weight: 700; }
 .switch { text-align: center !important; }
 .switch a { color: #147b77; font-weight: 700; }
+.auth-link-button { display: block; text-align: center; text-decoration: none; }
 
 .student {
   display: flex; gap: 12px; padding: 13px; margin-bottom: 18px;
@@ -238,5 +243,180 @@ img { display: block; max-width: 100%; }
     animation-iteration-count: 1 !important;
     transition-duration: .001ms !important;
     scroll-behavior: auto !important;
+  }
+}
+
+.tutor-profile-page {
+  min-height: 100vh;
+  padding: 48px 20px;
+  background: linear-gradient(135deg, #f8fafc, #eef7f5);
+}
+
+.tutor-profile-shell {
+  width: min(920px, 100%);
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid #dbe1e7;
+  border-radius: 8px;
+  padding: 32px;
+  box-shadow: 0 24px 70px #17233c12;
+}
+
+.profile-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+  margin-bottom: 22px;
+}
+
+.profile-heading p {
+  margin: 0;
+  color: #e8a554;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.profile-heading h1 {
+  margin: 6px 0 10px;
+  font: 800 36px Manrope;
+  color: #102d42;
+}
+
+.profile-heading span,
+.profile-heading small {
+  display: block;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.profile-heading button {
+  border: 1px solid #dbe1e7;
+  background: #fff;
+  color: #147b77;
+  font-weight: 800;
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+
+.tutor-profile-form {
+  display: grid;
+  gap: 18px;
+  margin-top: 20px;
+}
+
+.tutor-profile-form label,
+.subject-tools label {
+  display: grid;
+  gap: 7px;
+  font-weight: 800;
+  color: #102d42;
+}
+
+.tutor-profile-form input,
+.tutor-profile-form textarea,
+.subject-tools input,
+.subject-tools select {
+  width: 100%;
+  border: 1px solid #dbe1e7;
+  border-radius: 8px;
+  background: #fff;
+  padding: 13px 14px;
+  outline: none;
+}
+
+.tutor-profile-form input:focus,
+.tutor-profile-form textarea:focus,
+.subject-tools input:focus,
+.subject-tools select:focus {
+  border-color: #147b77;
+  box-shadow: 0 0 0 3px #147b7815;
+}
+
+.section-label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 800;
+  color: #102d42;
+}
+
+.subject-tools {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.subject-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.subject-option {
+  border: 1px solid #dbe1e7;
+  border-radius: 8px;
+  background: #fff;
+  color: #102d42;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  font-weight: 800;
+}
+
+.subject-option.selected {
+  border-color: #147b77;
+  background: #edf8f5;
+  color: #147b77;
+}
+
+.selected-subjects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.selected-subjects button {
+  border: 0;
+  border-radius: 999px;
+  background: #147b77;
+  color: #fff;
+  font-weight: 800;
+  padding: 7px 11px;
+}
+
+.status-badge {
+  border-radius: 8px;
+  padding: 12px;
+  font-weight: 800;
+  margin: 14px 0;
+}
+
+.status-badge.pending { background: #fff7e6; color: #996c00; }
+.status-badge.approved { background: #ecfdf3; color: #137a3d; }
+.status-badge.rejected { background: #fff0f0; color: #b83333; }
+
+.reject-note {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  background: #fff0f0;
+  color: #b83333;
+  border-radius: 8px;
+}
+
+@media (max-width: 760px) {
+  .profile-heading,
+  .subject-tools {
+    grid-template-columns: 1fr;
+    display: grid;
+  }
+
+  .tutor-profile-shell {
+    padding: 22px;
   }
 }

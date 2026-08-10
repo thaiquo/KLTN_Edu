@@ -31,11 +31,14 @@ export function Header({
       "https://lh3.googleusercontent.com/aida-public/AB6AXuBhwW3n6U0eBWTDne_iulj_Auj40EVPpMpQb_Ty2AmFqUqnCNtOtcugJcmoz3Wqy5667xVuLljO9Q7wnie5Nlxc0xfVQ4EW-BkKrLtK7ulPXjCY2tNCUPRksiYJkTTOuRQi4l12qR7vruVIbGkokyxG2U5HamxYV8xTj2EAiBram-_YsKG4hlqzbt1VQGJIZcsEI-_LymkavkzmdrrbDSNe1lBDVhtMVZJxmhimVQREO5_faCg4la-rGcz9tzLq9zH_bWjSEgA-qwnm",
     admin:
       "https://lh3.googleusercontent.com/aida-public/AB6AXuDorJ4qyZIREwslmenco5ww4h0VRgSSNFoXCmlbkX5YQV4zfkBU9R8uwO3h_zUzV3dQnwAwKnelgvSLtMmAu-wVqElbpvZBkcCY8emLnlFN___0WClwM-gopuij--L9ufoma_ZEl84CiEeaAt-I7B98SBpZ-AXMqn1fLROFbb-TkRDfhhagZpFmnJHOmE2IdK0atd1ziPmgUGcPDq1y387vZI34s2955gCXwPjvxE1GBVFtAp7TKNst8Bl0UGsE3OzdAkYPf6Jm4Ir4",
+    staff:
+      "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&q=80",
   };
 
   const statusMap = {
     student: "Học viên",
     tutor: "Gia sư",
+    staff: "Staff Operations",
     admin: "Quản trị viên",
   };
 
@@ -48,7 +51,7 @@ export function Header({
           </div>
           <div>
             <span className="font-display text-2xl font-black text-brand-primary tracking-tight">
-              EduConnect
+              {activeRole === "staff" ? "TutorConnect" : "EduConnect"}
             </span>
           </div>
         </div>
@@ -62,6 +65,8 @@ export function Header({
             placeholder={
               activeRole === "admin"
                 ? "Search platform logs..."
+                : activeRole === "staff"
+                ? "Tìm kiếm hồ sơ..."
                 : "Search courses, topics, tutors..."
             }
             value={searchValue}

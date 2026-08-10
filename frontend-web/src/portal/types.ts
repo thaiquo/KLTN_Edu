@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type UserRole = "student" | "tutor" | "admin";
+export type UserRole = "student" | "tutor" | "staff" | "admin";
 
 export interface StudentRequest {
   id: string;
@@ -99,4 +99,34 @@ export interface AppProfileSettings {
   hourlyRate?: number;
   teachingLevel?: string;
   subjects?: string[];
+}
+
+export type TutorApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface TutorApprovalSubject {
+  id: number;
+  name: string;
+}
+
+export interface TutorApprovalDocument {
+  id: string;
+  name: string;
+  type?: string;
+  url?: string;
+}
+
+export interface TutorApprovalItem {
+  id: number;
+  userId?: number;
+  fullName: string;
+  email: string;
+  bio: string;
+  education: string;
+  experienceYears: number;
+  status: TutorApprovalStatus;
+  rejectionReason?: string | null;
+  subjects: TutorApprovalSubject[];
+  documents?: TutorApprovalDocument[];
+  createdAt?: string;
+  updatedAt?: string;
 }

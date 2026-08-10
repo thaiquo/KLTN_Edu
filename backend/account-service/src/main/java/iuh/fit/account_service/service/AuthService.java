@@ -3,21 +3,28 @@ package iuh.fit.account_service.service;
 import iuh.fit.account_service.dto.auth.RegisterRequest;
 import iuh.fit.account_service.dto.auth.RegisterResponse;
 import iuh.fit.account_service.dto.auth.VerifyEmailRequest;
+import iuh.fit.account_service.dto.auth.LoginRequest;
+import iuh.fit.account_service.dto.auth.LoginResult;
 import iuh.fit.account_service.entity.OtpVerification;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.entity.UserRole;
+import iuh.fit.account_service.config.security.JwtService;
 import iuh.fit.account_service.enums.AccountStatus;
 import iuh.fit.account_service.enums.OtpType;
 import iuh.fit.account_service.enums.Role;
 import iuh.fit.account_service.repository.OtpVerificationRepository;
+import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.repository.UserRoleRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -26,21 +33,30 @@ public class AuthService {
     private final UserRepository userRepository;
     private final UserRoleRepository userRoleRepository;
     private final OtpVerificationRepository otpRepository;
+    private final TutorRepository tutorRepository;
     private final PasswordEncoder passwordEncoder;
     private final OtpService otpService;
+    private final AuthenticationManager authenticationManager;
+    private final JwtService jwtService;
 
     public AuthService(
             UserRepository userRepository,
             UserRoleRepository userRoleRepository,
             OtpVerificationRepository otpRepository,
+            TutorRepository tutorRepository,
             PasswordEncoder passwordEncoder,
-            OtpService otpService
+            OtpService otpService,
+            AuthenticationManager authenticationManager,
+            JwtService jwtService
     ) {
         this.userRepository = userRepository;
         this.userRoleRepository = userRoleRepository;
         this.otpRepository = otpRepository;
+        this.tutorRepository = tutorRepository;
         this.passwordEncoder = passwordEncoder;
         this.otpService = otpService;
+        this.authenticationManager = authenticationManager;
+        this.jwtService = jwtService;
     }
 
     @Transactional
@@ -116,5 +132,41 @@ public class AuthService {
 
         user.setEmailVerified(true);
         userRepository.save(user);
+    }
+
+    public LoginResult login(LoginRequest request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new RuntimeException("Invalid email or password"));
+
+        if (!user.isEmailVerified()) {
+            throw new RuntimeException("Please verify your email first");
+        }
+
+        authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(
+                        request.getEmail(),
+                        request.getPassword()
+                )
+        );
+
+        List<UserRole> userRoles = userRoleRepository.findByUserId(user.getId());
+
+        List<String> roles = userRoles.stream()
+                .map(userRole -> userRole.getRole().name())
+                .toList();
+
+        if (roles.contains(Role.TUTOR.name()) && !tutorRepository.existsByUserId(user.getId())) {
+            throw new RuntimeException("Please complete your tutor profile before login");
+        }
+
+        String token = jwtService.generateToken(user.getEmail(), roles);
+
+        return new LoginResult(
+                user.getId(),
+                user.getEmail(),
+                user.getFullName(),
+                roles,
+                token
+        );
     }
 }

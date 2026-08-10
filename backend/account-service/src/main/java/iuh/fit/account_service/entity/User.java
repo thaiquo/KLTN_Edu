@@ -80,6 +80,14 @@ public class User {
         return email;
     }
 
+    public String getPassword() {
+        return password;
+    }
+
+    public String getFullName() {
+        return fullName;
+    }
+
     public void setEmail(String email) {
         this.email = email;
     }

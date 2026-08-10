@@ -329,7 +329,7 @@ interface AppProps {
 export default function App({ user, onLogout }: AppProps) {
   // Global States holding data consistently across tabs
   const [activeRole] = useState<UserRole>(user.currentRole || user.role || "student");
-  const [currentPage, setCurrentPage] = useState<string>("dashboard");
+  const [currentPage, setCurrentPage] = useState<string>(activeRole === "staff" ? "tutor-approval" : "dashboard");
   const [searchValue, setSearchValue] = useState("");
   
   // Custom mock database tables binded in React
@@ -452,6 +452,8 @@ export default function App({ user, onLogout }: AppProps) {
               onNavigate={setCurrentPage}
             />
           );
+        } else if (activeRole === "staff") {
+          return <TutorApprovalPanel />;
         } else if (activeRole === "admin") {
           // Comprehensive ADMIN DASHBOARD layout compiling active graphs!
           const colors = ["#0058be", "#6b38d4", "#f43f5e", "#eab308"];
@@ -699,6 +701,18 @@ export default function App({ user, onLogout }: AppProps) {
 
       case "tutor-approval":
         return <TutorApprovalPanel />;
+
+      case "complaints":
+      case "reports":
+        return (
+          <div className="mx-auto max-w-3xl border border-brand-border/30 bg-white p-10 text-center shadow-sm">
+            <HelpCircle className="mx-auto mb-4 h-10 w-10 text-[#ff695f]" />
+            <h3 className="font-display text-lg font-black text-brand-text">Module nghiệp vụ đang được chuẩn bị</h3>
+            <p className="mx-auto mt-2 max-w-md text-sm font-semibold leading-6 text-brand-text-variant/70">
+              Staff hiện tập trung vào duyệt hồ sơ gia sư. Chức năng này sẽ được kết nối API ở bước sau.
+            </p>
+          </div>
+        );
 
       case "user-management":
         return (
