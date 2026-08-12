@@ -36,7 +36,8 @@ export function RegisterPage() {
         fullName: form.fullName.trim(),
         email: form.email.trim().toLowerCase(),
         phone: form.phone.trim(),
-        password: form.password
+        password: form.password,
+        confirmPassword: form.confirm
       });
       navigate('/dashboard', { replace: true });
     } catch (registerError) {

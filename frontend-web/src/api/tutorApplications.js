@@ -1,37 +1,38 @@
-import { apiRequest } from './client';
+import { apiDownload, apiRequest } from './client';
 
 export const tutorApplicationApi = {
-  getMine: () => apiRequest('/users/me/tutor-applications'),
-  create: (payload) => apiRequest('/users/me/tutor-applications', {
-    method: 'POST',
-    body: JSON.stringify(payload)
+  getMine: () => apiRequest('/tutor-applications'),
+  create: (payload) => apiRequest('/tutor-applications', { method: 'POST', body: JSON.stringify(payload) }),
+  update: (applicationId, payload) => apiRequest(`/tutor-applications/${applicationId}`, {
+    method: 'PUT', body: JSON.stringify(payload)
   }),
-  update: (applicationId, payload) => apiRequest(`/users/me/tutor-applications/${applicationId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(payload)
-  }),
-  withdraw: (applicationId) => apiRequest(`/users/me/tutor-applications/${applicationId}`, {
-    method: 'DELETE'
-  }),
+  submit: (applicationId) => apiRequest(`/tutor-applications/${applicationId}/submit`, { method: 'POST' }),
   uploadEvidence: (file) => {
     const body = new FormData();
     body.append('file', file);
-    return apiRequest('/users/me/tutor-evidence-files', { method: 'POST', body });
+    return apiRequest('/tutor-applications/certificates/upload', { method: 'POST', body });
   },
-  list: () => apiRequest('/users/tutor-applications'),
-  history: () => apiRequest('/users/tutor-applications-history'),
-  reviewSubject: (profileId, subjectId, payload) => apiRequest(
-    `/users/tutor-applications/${profileId}/subjects/${subjectId}`,
-    { method: 'PATCH', body: JSON.stringify(payload) }
+  list: async () => {
+    const page = await apiRequest('/admin/tutor-applications?size=100');
+    return page.content || [];
+  },
+  approve: (applicationId, note) => apiRequest(`/admin/tutor-applications/${applicationId}/approve`, {
+    method: 'POST', body: JSON.stringify({ note })
+  }),
+  reject: (applicationId, reason) => apiRequest(`/admin/tutor-applications/${applicationId}/reject`, {
+    method: 'POST', body: JSON.stringify({ reason })
+  }),
+  openOwnCertificate: (certificateId) => apiDownload(`/tutor-applications/certificates/${certificateId}/content`),
+  openForReview: (applicationId, certificateId) => apiDownload(
+    `/admin/tutor-applications/${applicationId}/certificates/${certificateId}/content`
   ),
-  reviewEvidence: (profileId, subjectId, evidenceId, payload) => apiRequest(
-    `/users/tutor-applications/${profileId}/subjects/${subjectId}/evidences/${evidenceId}`,
-    { method: 'PATCH', body: JSON.stringify(payload) }
-  ),
-  getEvidenceDownloadUrl: (profileId, subjectId, evidenceId) => apiRequest(
-    `/users/tutor-applications/${profileId}/subjects/${subjectId}/evidences/${evidenceId}/download-url`
-  ),
-  getOwnEvidenceDownloadUrl: (evidenceId) => apiRequest(
-    `/users/me/tutor-evidences/${evidenceId}/download-url`
-  )
+  subscribeMine: (onUpdate) => subscribe("/tutor-applications/events", onUpdate),
+  subscribeAdmin: (onUpdate) => subscribe("/admin/tutor-applications/events", onUpdate)
 };
+
+function subscribe(path, onUpdate) {
+  const base = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
+  const stream = new EventSource(`${base}${path}`, { withCredentials: true });
+  stream.addEventListener("tutor-application.updated", event => onUpdate(JSON.parse(event.data)));
+  return () => stream.close();
+}

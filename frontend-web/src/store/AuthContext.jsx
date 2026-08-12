@@ -1,62 +1,67 @@
-import { createContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useEffect, useState } from 'react';
 import { authApi } from '../api/auth';
 
 export const AuthContext = createContext(null);
-const TOKEN_KEY = 'educonnect_token';
+
+function portalUser(account, activeRole) {
+  const roles = (account.roles || []).map((role) => role.toLowerCase());
+  const requested = activeRole?.toLowerCase();
+  const preferred = roles.includes('admin')
+    ? 'admin'
+    : requested && roles.includes(requested)
+      ? requested
+      : roles.includes('student')
+        ? 'student'
+        : roles.includes('tutor')
+          ? 'tutor'
+          : 'student';
+  return {
+    ...account,
+    fullName: account.profile?.fullName || account.email,
+    phone: account.profile?.phone || '',
+    avatar: account.profile?.avatarUrl || '',
+    role: preferred,
+    currentRole: preferred,
+    roles
+  };
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let active = true;
-
-    async function restoreSession() {
-      if (!localStorage.getItem(TOKEN_KEY)) {
-        if (active) setLoading(false);
-        return;
-      }
-
-      try {
-        const currentUser = await authApi.me();
-        if (active) setUser(currentUser);
-      } catch {
-        localStorage.removeItem(TOKEN_KEY);
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-
-    restoreSession();
-    return () => {
-      active = false;
-    };
+  const refreshUser = useCallback(async () => {
+    const account = await authApi.me();
+    const current = portalUser(account);
+    setUser(current);
+    return current;
   }, []);
 
-  async function authenticate(request) {
-    const result = await request();
-    if (!result?.accessToken || !result?.user) {
-      throw new Error('Phản hồi đăng nhập không hợp lệ.');
-    }
-    localStorage.setItem(TOKEN_KEY, result.accessToken);
-    setUser(result.user);
-    return result.user;
+  useEffect(() => {
+    let active = true;
+    authApi.me()
+      .then((account) => active && setUser(portalUser(account)))
+      .catch(() => active && setUser(null))
+      .finally(() => active && setLoading(false));
+    return () => { active = false; };
+  }, []);
+
+  async function login(payload) {
+    const result = await authApi.login(payload);
+    const current = portalUser(result.user, result.activeRole);
+    setUser(current);
+    return current;
   }
 
-  function logout() {
-    localStorage.removeItem(TOKEN_KEY);
-    setUser(null);
+  async function register(payload) {
+    await authApi.register(payload);
+    return login({ email: payload.email, password: payload.password });
   }
 
-  return (
-    <AuthContext.Provider value={{
-      user,
-      loading,
-      login: (payload) => authenticate(() => authApi.login(payload)),
-      register: (payload) => authenticate(() => authApi.register(payload)),
-      logout
-    }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  async function logout() {
+    try { await authApi.logout(); }
+    finally { setUser(null); }
+  }
+
+  return <AuthContext.Provider value={{ user, loading, login, register, logout, refreshUser }}>{children}</AuthContext.Provider>;
 }

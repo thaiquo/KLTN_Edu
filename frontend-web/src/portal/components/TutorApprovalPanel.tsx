@@ -1,201 +1,130 @@
 import React, { useEffect, useState } from "react";
-import { Award, BookOpen, CalendarDays, Check, FileText, LoaderCircle, RefreshCw, UserCheck, X } from "lucide-react";
+import { Check, ChevronRight, Download, ExternalLink, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { tutorApplicationApi } from "../../api/tutorApplications";
-import { LEVEL_GROUPS, SUBJECTS_BY_GROUP, TutorApplication, TutorTeachingSubject } from "../tutorApplication";
+import { levelGroupLabelVi, levelLabelVi, subjectLabelVi } from "../tutorApplication";
 import { StatusBadge } from "./EvidenceUploader";
 
-function subjectName(subject: TutorTeachingSubject) {
-  return SUBJECTS_BY_GROUP[subject.levelGroupId]?.find((item) => item.id === subject.subjectId)?.name || subject.subjectId;
-}
+type Certificate = { id: string; name: string; issueDate: string; expiryDate?: string | null; fileUrl?: string; originalFileName: string; contentType: string; fileSize: number; verificationStatus: string };
+type TeachingSubject = { id: string; levelGroup: string; subjectName: string; teachingLevel: string; bio: string; experience: string; certificates: Certificate[] };
+type Application = { id: string; userId: string; applicantName?: string; applicantEmail?: string; status: string; rejectionReason?: string | null; reviewNote?: string | null; certificates: Certificate[]; teachingSubjects?: TeachingSubject[]; submittedAt?: string; reviewedAt?: string };
+
+const isReviewable = (status: string) => ["PENDING", "SUBMITTED", "UNDER_REVIEW"].includes(status);
+const badge = (status: string) => status === "APPROVED" ? "approved" : status === "REJECTED" ? "rejected" : "pending";
+const formatSize = (bytes: number) => bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+const PREVIEW_MAX_BYTES = 10 * 1024 * 1024;
+
+const isImage = (c: Certificate) =>
+  (c.contentType && c.contentType.startsWith("image/")) ||
+  /\.(png|jpe?g|webp|gif|svg)$/i.test(c.originalFileName || "");
+
+const isPdf = (c: Certificate) =>
+  c.contentType === "application/pdf" ||
+  /\.pdf$/i.test(c.originalFileName || "");
+
+const isWord = (c: Certificate) =>
+  (c.contentType && (c.contentType.includes("word") || c.contentType.includes("officedocument"))) ||
+  /\.(docx?)$/i.test(c.originalFileName || "");
+
+const supportsBrowserPreview = (certificate: Certificate) =>
+  certificate.fileSize <= PREVIEW_MAX_BYTES && (isImage(certificate) || isPdf(certificate) || isWord(certificate));
 
 export function TutorApprovalPanel() {
-  const [applications, setApplications] = useState<TutorApplication[]>([]);
-  const [applicationHistory, setApplicationHistory] = useState<TutorApplication[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [selected, setSelected] = useState<Application | null>(null);
   const [loading, setLoading] = useState(true);
-  const [actionKey, setActionKey] = useState("");
+  const [actionId, setActionId] = useState("");
+  const [note, setNote] = useState("");
   const [error, setError] = useState("");
+  const [preview, setPreview] = useState<{ url: string; contentType: string; name: string } | null>(null);
 
-  const load = async (silent = false) => {
-    if (!silent) setLoading(true);
-    setError("");
-    try {
-      const [pending, history] = await Promise.all([
-        tutorApplicationApi.list(),
-        tutorApplicationApi.history()
-      ]);
-      setApplications(pending);
-      setApplicationHistory(history);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not load tutor applications.");
-    } finally {
-      if (!silent) setLoading(false);
-    }
+  const load = async () => {
+    setLoading(true);
+    try { setApplications(await tutorApplicationApi.list()); setError(""); }
+    catch (e) { setError(e instanceof Error ? e.message : "Không thể tải hồ sơ."); }
+    finally { setLoading(false); }
   };
+
   useEffect(() => {
     load();
-    const intervalId = window.setInterval(() => load(true), 5000);
-    return () => window.clearInterval(intervalId);
+    return tutorApplicationApi.subscribeAdmin((updated: Application) => {
+      setApplications(old => old.some(item => item.id === updated.id) ? old.map(item => item.id === updated.id ? updated : item) : [updated, ...old]);
+      setSelected(old => old?.id === updated.id ? updated : old);
+    });
   }, []);
 
-  const reviewEvidence = async (profileId: string, subjectId: string, evidenceId: string, status: "approved" | "rejected") => {
-    const key = `evidence-${evidenceId}`;
-    setActionKey(key);
+  const review = async (approved: boolean) => {
+    if (!selected) return;
+    if (!note.trim()) { setError("Vui lòng nhập ghi chú gửi cho người dùng trước khi duyệt hoặc từ chối."); return; }
+    setActionId(selected.id); setError("");
     try {
-      const adminNote = status === "rejected" ? (window.prompt("Reason for rejecting this evidence:") || "") : "";
-      if (status === "rejected" && !adminNote) return;
-      await tutorApplicationApi.reviewEvidence(profileId, subjectId, evidenceId, { status, adminNote });
-      await load();
-    } catch (reviewError) {
-      setError(reviewError instanceof Error ? reviewError.message : "Could not review this evidence.");
-    } finally {
-      setActionKey("");
-    }
+      if (approved) await tutorApplicationApi.approve(selected.id, note.trim());
+      else await tutorApplicationApi.reject(selected.id, note.trim());
+      setNote(""); setSelected(null); await load();
+    } catch (e) { setError(e instanceof Error ? e.message : "Không thể cập nhật hồ sơ."); }
+    finally { setActionId(""); }
   };
 
-  const reviewSubject = async (profileId: string, subjectId: string, status: "approved" | "rejected") => {
-    const key = `subject-${subjectId}`;
-    setActionKey(key);
-    try {
-      const adminNote = status === "rejected" ? (window.prompt("Reason for rejecting this subject or tuition range:") || "") : "";
-      if (status === "rejected" && !adminNote) return;
-      await tutorApplicationApi.reviewSubject(profileId, subjectId, { status, adminNote });
-      await load();
-    } catch (reviewError) {
-      setError(reviewError instanceof Error ? reviewError.message : "Could not review this subject.");
-    } finally {
-      setActionKey("");
-    }
+  const openCertificate = async (certificate: Certificate) => {
+    if (!selected) return;
+    if (!supportsBrowserPreview(certificate)) return;
+    try { const url = await tutorApplicationApi.openForReview(selected.id, certificate.id); setPreview({ url, contentType: certificate.contentType, name: certificate.originalFileName }); }
+    catch (e) { setError(e instanceof Error ? e.message : "Không thể mở minh chứng."); }
   };
 
-  const openEvidence = async (profileId: string, subjectId: string, evidenceId: string) => {
-    const previewWindow = window.open("about:blank", "_blank");
-    setActionKey(`open-${evidenceId}`);
+  const downloadCertificate = async (certificate: Certificate) => {
+    if (!selected) return;
     try {
-      const result = await tutorApplicationApi.getEvidenceDownloadUrl(profileId, subjectId, evidenceId);
-      if (previewWindow) previewWindow.location.href = result.url;
-      else window.open(result.url, "_blank", "noopener,noreferrer");
-    } catch (openError) {
-      previewWindow?.close();
-      setError(openError instanceof Error ? openError.message : "Could not open this evidence.");
-    } finally {
-      setActionKey("");
-    }
+      const url = await tutorApplicationApi.openForReview(selected.id, certificate.id);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = certificate.originalFileName || "minh-chung";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    } catch (e) { setError(e instanceof Error ? e.message : "Không thể tải minh chứng."); }
   };
 
-  if (loading) return <div className="py-24 flex justify-center"><LoaderCircle className="w-8 h-8 animate-spin text-brand-primary" /></div>;
+  const applicationCard = (application: Application) => <button key={application.id} type="button" onClick={() => { setSelected(application); setNote(""); setError(""); }} className="w-full bg-white border border-brand-border/30 rounded-xl p-5 flex items-center justify-between gap-4 text-left hover:border-brand-primary hover:shadow-sm transition">
+    <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="font-black text-sm truncate">{application.applicantName || "Người đăng ký"}</h3><StatusBadge status={badge(application.status)} /></div><p className="text-xs text-brand-text-variant mt-1 truncate">{application.applicantEmail || application.userId}</p><p className="text-xs text-brand-text-variant mt-2">{application.submittedAt ? new Date(application.submittedAt).toLocaleString("vi-VN") : "Bản nháp"} · {application.teachingSubjects?.length || 0} môn · {application.certificates.length} minh chứng</p></div><ChevronRight className="w-5 h-5 shrink-0 text-brand-primary" />
+  </button>;
 
-  return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-10">
-      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-        <div>
-          <h2 className="font-display font-black text-xl lg:text-2xl text-brand-text">Tutor Application Review</h2>
-          <p className="text-brand-text-variant/60 text-xs mt-1">Review evidence first, then approve each subject and its proposed tuition range.</p>
-        </div>
-        <button onClick={() => load()} className="inline-flex items-center gap-2 px-4 py-2.5 border border-brand-border/40 rounded-xl text-xs font-bold text-brand-primary bg-white"><RefreshCw className="w-4 h-4" /> Refresh</button>
-      </header>
-      {error && <p className="p-3 rounded-xl bg-red-50 border border-red-200 text-xs font-semibold text-red-700">{error}</p>}
-      {applications.length === 0 ? (
-        <div className="bg-white border border-brand-border/30 rounded-3xl py-16 text-center">
-          <UserCheck className="w-10 h-10 text-emerald-500 mx-auto mb-3" />
-          <p className="text-sm font-bold text-brand-text">No pending tutor applications.</p>
-        </div>
-      ) : applications.map((application) => {
-        const user = typeof application.userId === "object" ? application.userId : null;
-        return (
-          <article key={application._id} className="bg-white border border-brand-border/30 rounded-3xl overflow-hidden shadow-sm">
-            <header className="p-6 bg-brand-low/40 border-b border-brand-border/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2"><h3 className="font-display font-black text-base text-brand-text">{user?.fullName || "Tutor applicant"}</h3><StatusBadge status={application.status} /></div>
-                <p className="text-xs text-brand-text-variant/60 mt-1">{user?.email}</p>
-              </div>
-              {application.updatedAt && <span className="inline-flex items-center gap-2 text-xs text-brand-text-variant/60"><CalendarDays className="w-4 h-4" /> Updated {new Date(application.updatedAt).toLocaleString()}</span>}
-            </header>
-            <div className="p-6 space-y-5">
-              <div className="p-4 rounded-xl bg-brand-low/30">
-                <p className="text-[10px] font-black uppercase tracking-wider text-brand-text-variant/50 mb-2">Professional Bio</p>
-                <p className="text-xs leading-6 text-brand-text">{application.bio}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-wider text-brand-text-variant/50 mb-2">Weekly Availability</p>
-                <div className="flex flex-wrap gap-2">{application.weeklyAvailability.map((slot, index) => <span key={slot._id || index} className="px-3 py-1.5 rounded-lg bg-brand-primary/5 border border-brand-primary/15 text-xs font-bold text-brand-primary">Day {slot.dayOfWeek} · {slot.startTime}–{slot.endTime}</span>)}</div>
-              </div>
-              {application.teachingSubjects.map((subject) => {
-                const subjectId = subject._id || "";
-                const evidenceApproved = subject.evidences.length > 0 && subject.evidences.every((evidence) => evidence.verificationStatus === "approved");
-                return (
-                  <section key={subjectId} className="border border-brand-secondary/20 rounded-2xl overflow-hidden">
-                    <div className="p-4 bg-brand-secondary/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <BookOpen className="w-5 h-5 text-brand-secondary" />
-                        <div><p className="text-sm font-black text-brand-text">{subjectName(subject)}</p><p className="text-[10px] uppercase font-bold text-brand-text-variant/55">{LEVEL_GROUPS.find((item) => item.id === subject.levelGroupId)?.name} · {subject.yearsOfExperience} years</p></div>
-                        <StatusBadge status={subject.verificationStatus || "pending"} />
-                      </div>
-                      <div className="text-left sm:text-right"><p className="text-sm font-black text-brand-secondary">{subject.minPrice.toLocaleString("vi-VN")}₫ – {subject.maxPrice.toLocaleString("vi-VN")}₫</p><p className="text-[10px] font-bold text-brand-text-variant/55">{subject.priceUnit.replaceAll("_", " ")} · {subject.sessionsPerPeriod} × {subject.minutesPerSession} min</p></div>
-                    </div>
-                    <div className="p-4 space-y-3">
-                      {subject.evidences.map((evidence) => {
-                        const evidenceId = evidence._id || "";
-                        return (
-                          <div key={evidenceId} className="p-3 rounded-xl border border-brand-border/30 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
-                            <div className="flex items-start gap-3 min-w-0">
-                              {evidence.fileType === "application/pdf" ? <FileText className="w-5 h-5 text-brand-primary shrink-0" /> : <Award className="w-5 h-5 text-brand-secondary shrink-0" />}
-                              <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><button type="button" onClick={() => openEvidence(application._id || "", subjectId, evidenceId)} className="text-xs font-black text-brand-primary hover:underline text-left">{actionKey === `open-${evidenceId}` ? "Opening..." : evidence.name}</button><StatusBadge status={evidence.verificationStatus || "pending"} /></div><p className="text-[10px] text-brand-text-variant/60 mt-1">{evidence.issuer} · {evidence.originalFileName} · issued {evidence.issueDate}</p>{evidence.description && <p className="text-xs text-brand-text-variant mt-1">{evidence.description}</p>}{evidence.adminNote && <p className="text-xs text-red-700 mt-1">Note: {evidence.adminNote}</p>}</div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button disabled={!!actionKey} onClick={() => reviewEvidence(application._id || "", subjectId, evidenceId, "approved")} className="p-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 disabled:opacity-40" title="Approve evidence">{actionKey === `evidence-${evidenceId}` ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}</button>
-                              <button disabled={!!actionKey} onClick={() => reviewEvidence(application._id || "", subjectId, evidenceId, "rejected")} className="p-2 rounded-lg bg-red-50 text-red-700 border border-red-200 disabled:opacity-40" title="Reject evidence"><X className="w-4 h-4" /></button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {subject.adminNote && <p className="text-xs text-red-700 font-semibold">Subject note: {subject.adminNote}</p>}
-                      <div className="pt-2 flex flex-wrap items-center justify-end gap-2">
-                        <button disabled={!!actionKey} onClick={() => reviewSubject(application._id || "", subjectId, "rejected")} className="px-4 py-2 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-black disabled:opacity-40">Reject Subject</button>
-                        <button disabled={!!actionKey || !evidenceApproved} onClick={() => reviewSubject(application._id || "", subjectId, "approved")} title={!evidenceApproved ? "Approve every evidence first" : "Approve subject and tuition range"} className="px-4 py-2 rounded-xl bg-brand-primary text-white text-xs font-black disabled:opacity-40">{actionKey === `subject-${subjectId}` ? "Saving..." : "Approve Subject & Price"}</button>
-                      </div>
-                    </div>
-                  </section>
-                );
-              })}
-            </div>
-          </article>
-        );
-      })} 
-      <section className="bg-white border border-brand-border/30 rounded-3xl p-6 shadow-sm">
-        <div className="flex items-center justify-between gap-3 mb-4">
-          <div>
-            <h3 className="font-display font-black text-base text-brand-text">Application History</h3>
-            <p className="text-xs text-brand-text-variant/60 mt-1">Approved, rejected and user-withdrawn applications.</p>
+  const pending = applications.filter(item => isReviewable(item.status));
+  const history = applications.filter(item => ["APPROVED", "REJECTED"].includes(item.status));
+
+  return <div className="space-y-7 max-w-5xl mx-auto pb-10">
+    <header className="flex items-center justify-between gap-4"><div><h2 className="font-display font-black text-xl text-brand-text">Duyệt hồ sơ giảng viên</h2><p className="text-xs text-brand-text-variant mt-1">Chọn một hồ sơ để xem chi tiết và xử lý.</p></div><button type="button" onClick={load} disabled={loading} title="Tải lại" className="p-2.5 rounded-lg border text-brand-primary disabled:opacity-40"><RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /></button></header>
+    {error && !selected && <p className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs font-semibold text-red-700">{error}</p>}
+    {loading && !applications.length && <LoaderCircle className="w-6 h-6 animate-spin mx-auto text-brand-primary" />}
+    <section className="space-y-3"><div className="flex items-center justify-between"><h3 className="font-black text-sm">Hồ sơ chờ xử lý</h3><span className="text-xs text-brand-text-variant">{pending.length} hồ sơ</span></div>{!pending.length && !loading ? <p className="p-6 text-center bg-white border rounded-xl text-sm text-brand-text-variant">Không có hồ sơ đang chờ duyệt.</p> : pending.map(applicationCard)}</section>
+    <section className="space-y-3"><div className="flex items-center justify-between"><h3 className="font-black text-sm">Lịch sử xét duyệt</h3><span className="text-xs text-brand-text-variant">{history.length} hồ sơ</span></div>{!history.length ? <p className="p-6 text-center bg-white border rounded-xl text-sm text-brand-text-variant">Chưa có lịch sử xét duyệt.</p> : history.map(applicationCard)}</section>
+
+    {selected && <div className="fixed inset-0 z-50 bg-black/45 grid place-items-center p-4"><div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-auto p-6 space-y-5">
+      <div className="flex justify-between gap-4"><div><h3 className="font-black text-lg">Chi tiết hồ sơ giảng viên</h3><p className="text-xs text-brand-text-variant mt-1">{selected.applicantName || "Người đăng ký"} · {selected.applicantEmail || selected.userId}</p></div><button type="button" onClick={() => { setSelected(null); setNote(""); setError(""); }} aria-label="Đóng"><X /></button></div>
+      <div className="flex flex-wrap justify-between gap-3 p-3 rounded-lg bg-slate-50"><p className="text-xs"><b>Ngày nộp:</b> {selected.submittedAt ? new Date(selected.submittedAt).toLocaleString("vi-VN") : "Chưa nộp"}<br /><b>Ngày xử lý:</b> {selected.reviewedAt ? new Date(selected.reviewedAt).toLocaleString("vi-VN") : "—"}</p><StatusBadge status={badge(selected.status)} /></div>
+      {selected.teachingSubjects?.map((subject, index) => <section key={subject.id} className="p-4 rounded-xl border space-y-3 text-xs"><h4 className="font-black text-sm">Môn học {index + 1}: {subjectLabelVi(subject.subjectName)}</h4><div className="grid sm:grid-cols-2 gap-2"><p><b>Cấp bậc:</b> {levelGroupLabelVi(subject.levelGroup)}</p><p><b>Lớp / trình độ:</b> {subject.teachingLevel.split(",").map(levelLabelVi).join(", ")}</p></div><p><b>Giới thiệu theo môn:</b> {subject.bio}</p><p><b>Kinh nghiệm giảng dạy / làm việc:</b> {subject.experience}</p><div className="space-y-2"><b>Chứng chỉ / bằng cấp ({subject.certificates.length}):</b>{subject.certificates.map(certificate => <div key={certificate.id} className="w-full p-3 rounded-lg bg-slate-50 border flex justify-between gap-3 text-left"><span><b className="block">{certificate.name}</b><small className="text-brand-text-variant">File: {certificate.originalFileName}<br />Ngày cấp: {certificate.issueDate} · {certificate.expiryDate ? `Hết hạn: ${certificate.expiryDate}` : "Không thời hạn"} · {certificate.contentType} · {formatSize(certificate.fileSize)}</small>{!supportsBrowserPreview(certificate) && <small className="block mt-1 text-brand-text-variant">{certificate.fileSize > PREVIEW_MAX_BYTES ? "File lớn: tải xuống để xem." : "Định dạng này cần tải xuống để xem."}</small>}</span><span className="flex shrink-0 items-center gap-2">{supportsBrowserPreview(certificate) && <button type="button" title="Xem trước" onClick={() => openCertificate(certificate)} className="p-2 rounded-lg text-brand-primary hover:bg-brand-primary/10"><ExternalLink className="w-4 h-4" /></button>}<button type="button" title="Tải xuống" onClick={() => downloadCertificate(certificate)} className="p-2 rounded-lg text-brand-primary hover:bg-brand-primary/10"><Download className="w-4 h-4" /></button></span></div>)}</div></section>)}
+      {!isReviewable(selected.status) && selected.reviewNote && <p className={`p-3 rounded-lg border text-xs ${selected.status === "REJECTED" ? "bg-red-50 border-red-200 text-red-700" : "bg-emerald-50 border-emerald-200 text-emerald-700"}`}><b>Ghi chú đã gửi người dùng:</b> {selected.reviewNote}</p>}
+      {error && <p className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs font-semibold text-red-700">{error}</p>}
+      {isReviewable(selected.status) && <div className="space-y-3 border-t pt-4"><label className="field-label">Ghi chú gửi cho người dùng <span className="text-red-600">*</span><textarea value={note} onChange={e => setNote(e.target.value)} rows={3} maxLength={1000} className="field-control resize-none mt-2" placeholder="Nêu nhận xét, kết quả xác minh hoặc lý do từ chối" /></label><div className="flex justify-end gap-2"><button type="button" onClick={() => review(false)} disabled={!!actionId} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs font-black disabled:opacity-40"><X className="w-4 h-4" /> Từ chối</button><button type="button" onClick={() => review(true)} disabled={!!actionId || !selected.certificates.length} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand-primary text-white text-xs font-black disabled:opacity-40">{actionId ? <LoaderCircle className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Duyệt hồ sơ</button></div></div>}
+    </div></div>}
+    {preview && (
+      <div className="fixed inset-0 z-[60] bg-black/60 grid place-items-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-5xl h-[88vh] p-4 flex flex-col gap-3">
+          <div className="flex justify-between items-center pb-2 border-b">
+            <b className="text-sm truncate font-display">{preview.name}</b>
+            <button type="button" onClick={() => { URL.revokeObjectURL(preview.url); setPreview(null); }} className="p-1 hover:bg-slate-100 rounded-lg">
+              <X className="w-5 h-5 text-slate-600" />
+            </button>
           </div>
-          <span className="px-3 py-1.5 rounded-full bg-brand-low text-xs font-black text-brand-primary">{applicationHistory.length}</span>
+          {preview.contentType.startsWith("image/") || /\.(png|jpe?g|webp|gif|svg)$/i.test(preview.name) ? (
+            <img src={preview.url} alt={preview.name} className="min-h-0 flex-1 object-contain mx-auto" />
+          ) : preview.contentType.includes("word") || /\.(docx?)$/i.test(preview.name) ? (
+            <iframe title={preview.name} src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(preview.url)}`} className="min-h-0 flex-1 w-full border rounded-lg" />
+          ) : (
+            <iframe title={preview.name} src={preview.url} className="min-h-0 flex-1 w-full border rounded-lg" />
+          )}
         </div>
-        {applicationHistory.length === 0 ? (
-          <p className="p-5 rounded-xl bg-brand-low/30 text-xs text-brand-text-variant">No completed or withdrawn applications yet.</p>
-        ) : (
-          <div className="divide-y divide-brand-border/15">
-            {applicationHistory.map((item) => {
-              const historyUser = typeof item.userId === "object" ? item.userId : null;
-              return (
-                <div key={item._id} className="py-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-xs font-black text-brand-text">{historyUser?.fullName || "Tutor applicant"}</p>
-                      <StatusBadge status={item.status} />
-                      <span className="text-[10px] font-bold text-brand-text-variant/50">Revision {item.revision || 1}</span>
-                    </div>
-                    <p className="text-xs text-brand-text-variant/70 mt-1">
-                      {item.teachingSubjects.map(subjectName).join(", ")}
-                    </p>
-                  </div>
-                  <span className="text-[10px] font-semibold text-brand-text-variant/55">
-                    {new Date(item.reviewedAt || item.withdrawnAt || item.updatedAt || Date.now()).toLocaleString()}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-    </div>
-  );
+      </div>
+    )}
+  </div>;
 }

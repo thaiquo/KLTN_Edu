@@ -5,3 +5,7 @@ web/node_modules/
 educonnect/node_modules/
 .env
 backend/.env
+.data/
+.env
+*.env
+*.log

@@ -19,12 +19,14 @@ export interface SubjectEvidence {
   expiryDate: string | null;
   description: string;
   fileKey: string;
+  fileUrl?: string;
   originalFileName: string;
   fileType: string;
   fileSize: number;
   category?: 'image' | 'video' | 'audio' | 'file';
   verificationStatus?: ReviewStatus;
   adminNote?: string;
+  uploadFile?: File;
 }
 
 export interface TutorTeachingSubject {
@@ -41,6 +43,11 @@ export interface TutorTeachingSubject {
   sessionsPerPeriod: number;
   minutesPerSession: number;
   evidences: SubjectEvidence[];
+  bio?: string;
+  experience?: string;
+  customLevelGroup?: string;
+  customSubject?: string;
+  customTeachingLevel?: string;
   verificationStatus?: ReviewStatus;
   adminNote?: string;
 }
@@ -63,13 +70,13 @@ export interface TutorApplication {
 type CatalogOption = { id: string; name: string };
 
 export const LEVEL_GROUPS: CatalogOption[] = [
-  { id: 'primary', name: 'Tiểu học (Primary)' },
-  { id: 'secondary', name: 'THCS (Secondary)' },
-  { id: 'high_school', name: 'THPT (High School)' },
-  { id: 'university', name: 'Đại học (University)' },
-  { id: 'language', name: 'Ngoại ngữ (Language)' },
-  { id: 'it_skills', name: 'CNTT & Công nghệ (IT Skills)' },
-  { id: 'soft_skills', name: 'Kỹ năng mềm (Soft Skills)' }
+  { id: 'primary', name: 'Cấp 1 (Tiểu học)' },
+  { id: 'secondary', name: 'Cấp 2 (THCS)' },
+  { id: 'high_school', name: 'Cấp 3 (THPT)' },
+  { id: 'university', name: 'Đại học' },
+  { id: 'language', name: 'Ngoại ngữ' },
+  { id: 'it_skills', name: 'CNTT & Công nghệ' },
+  { id: 'soft_skills', name: 'Kỹ năng mềm' }
 ];
 
 export const SUBJECTS_BY_GROUP: Record<string, CatalogOption[]> = {
@@ -210,47 +217,72 @@ export const SUBJECTS_BY_GROUP: Record<string, CatalogOption[]> = {
 
 const grades = (from: number, to: number): CatalogOption[] =>
   Array.from({ length: to - from + 1 }, (_, index) => ({
-    id: `grade_${from + index}`, name: `Grade ${from + index}`
+    id: `grade_${from + index}`, name: `Lớp ${from + index}`
   }));
 
 export const LEVELS_BY_GROUP: Record<string, CatalogOption[]> = {
   primary: grades(1, 5),
   secondary: [
     ...grades(6, 9),
-    { id: 'high_school_entrance_exam_preparation', name: 'High School Entrance Exam Preparation' }
+    { id: 'high_school_entrance_exam_preparation', name: 'Luyện thi vào lớp 10' }
   ],
   high_school: [
     ...grades(10, 12),
-    { id: 'national_high_school_exam_preparation', name: 'National High School Exam Preparation' }
+    { id: 'national_high_school_exam_preparation', name: 'Luyện thi tốt nghiệp THPT' }
   ],
   university: [
-    { id: 'year_1', name: 'Year 1' },
-    { id: 'year_2', name: 'Year 2' },
-    { id: 'year_3', name: 'Year 3' },
-    { id: 'year_4_plus', name: 'Year 4+' },
-    { id: 'thesis_support', name: 'Thesis Support' },
-    { id: 'graduation_exam_preparation', name: 'Graduation Exam Preparation' }
+    { id: 'year_1', name: 'Năm nhất' },
+    { id: 'year_2', name: 'Năm hai' },
+    { id: 'year_3', name: 'Năm ba' },
+    { id: 'year_4_plus', name: 'Năm tư trở lên' },
+    { id: 'thesis_support', name: 'Hỗ trợ làm luận văn' },
+    { id: 'graduation_exam_preparation', name: 'Ôn thi tốt nghiệp' }
   ],
   language: [
-    { id: 'beginner', name: 'Beginner' },
-    { id: 'elementary', name: 'Elementary' },
-    { id: 'intermediate', name: 'Intermediate' },
-    { id: 'upper_intermediate', name: 'Upper Intermediate' },
-    { id: 'advanced', name: 'Advanced' }
+    { id: 'beginner', name: 'Cơ bản' },
+    { id: 'elementary', name: 'Sơ cấp' },
+    { id: 'intermediate', name: 'Trung cấp' },
+    { id: 'upper_intermediate', name: 'Trung cấp cao' },
+    { id: 'advanced', name: 'Nâng cao' }
   ],
   it_skills: [
-    { id: 'beginner', name: 'Beginner' },
-    { id: 'intermediate', name: 'Intermediate' },
-    { id: 'advanced', name: 'Advanced' },
-    { id: 'interview_preparation', name: 'Interview Preparation' },
-    { id: 'project_mentoring', name: 'Project Mentoring' }
+    { id: 'beginner', name: 'Cơ bản' },
+    { id: 'intermediate', name: 'Trung cấp' },
+    { id: 'advanced', name: 'Nâng cao' },
+    { id: 'interview_preparation', name: 'Luyện phỏng vấn' },
+    { id: 'project_mentoring', name: 'Hướng dẫn dự án' }
   ],
   soft_skills: [
-    { id: 'basic', name: 'Basic' },
-    { id: 'advanced', name: 'Advanced' },
-    { id: 'one_on_one_coaching', name: 'One-on-One Coaching' }
+  { id: 'basic', name: 'Cơ bản' },
+  { id: 'advanced', name: 'Nâng cao' },
+  { id: 'one_on_one_coaching', name: 'Kèm 1-1' }
   ]
 };
+
+const SUBJECT_LABELS_VI: Record<string, string> = {
+  mathematics: "Toán học", vietnamese: "Tiếng Việt", english: "Tiếng Anh", informatics: "Tin học", science: "Khoa học", history_geography: "Lịch sử và Địa lý", music: "Âm nhạc", fine_arts: "Mỹ thuật",
+  literature: "Ngữ văn", physics: "Vật lý", chemistry: "Hóa học", biology: "Sinh học", history: "Lịch sử", geography: "Địa lý", civic_education: "Giáo dục công dân", technology: "Công nghệ", economic_law_education: "Giáo dục kinh tế và pháp luật",
+  calculus: "Giải tích", linear_algebra: "Đại số tuyến tính", probability_statistics: "Xác suất và thống kê", discrete_mathematics: "Toán rời rạc", c_cpp: "Lập trình C/C++", java: "Lập trình Java", python: "Lập trình Python", javascript: "Lập trình JavaScript", typescript: "Lập trình TypeScript", data_structures_algorithms: "Cấu trúc dữ liệu và giải thuật", database_systems: "Hệ quản trị cơ sở dữ liệu", operating_systems: "Hệ điều hành", computer_networks: "Mạng máy tính", software_engineering: "Kỹ thuật phần mềm", web_development: "Phát triển web", mobile_development: "Phát triển ứng dụng di động", accounting: "Kế toán", finance: "Tài chính", marketing: "Tiếp thị", microeconomics: "Kinh tế vi mô", macroeconomics: "Kinh tế vĩ mô", business_administration: "Quản trị kinh doanh",
+  english_communication: "Giao tiếp tiếng Anh", english_grammar: "Ngữ pháp tiếng Anh", ielts: "IELTS", toeic: "TOEIC", toefl: "TOEFL", jlpt_n5: "JLPT N5", jlpt_n4: "JLPT N4", jlpt_n3: "JLPT N3", jlpt_n2: "JLPT N2", jlpt_n1: "JLPT N1", topik_i: "TOPIK I", topik_ii: "TOPIK II", hsk_1: "HSK 1", hsk_2: "HSK 2", hsk_3: "HSK 3", hsk_4: "HSK 4", hsk_5: "HSK 5", hsk_6: "HSK 6", french_communication: "Giao tiếp tiếng Pháp", delf_preparation: "Luyện thi DELF",
+  html_css: "HTML/CSS", reactjs: "ReactJS", nextjs: "NextJS", angular: "Angular", vuejs: "VueJS", nodejs: "NodeJS", expressjs: "ExpressJS", nestjs: "NestJS", spring_boot: "Spring Boot", django: "Django", fastapi: "FastAPI", laravel: "Laravel", asp_net: "ASP.NET", c_sharp: "Lập trình C#", c_plus_plus: "Lập trình C++", php: "Lập trình PHP", go: "Lập trình Go", mysql: "MySQL", postgresql: "PostgreSQL", mongodb: "MongoDB", redis: "Redis", docker: "Docker", kubernetes: "Kubernetes", aws: "AWS", azure: "Azure", ci_cd: "Tự động tích hợp và triển khai (CI/CD)", git_github: "Git/GitHub", system_design: "Thiết kế hệ thống", design_patterns: "Mẫu thiết kế", figma: "Figma", ui_design: "Thiết kế giao diện", ux_design: "Thiết kế trải nghiệm người dùng",
+  communication_skills: "Kỹ năng giao tiếp", presentation_skills: "Kỹ năng thuyết trình", critical_thinking: "Tư duy phản biện", teamwork: "Làm việc nhóm", time_management: "Quản lý thời gian", leadership: "Kỹ năng lãnh đạo", problem_solving: "Giải quyết vấn đề", cv_writing: "Viết CV", interview_preparation: "Luyện phỏng vấn", career_orientation: "Định hướng nghề nghiệp"
+};
+
+export const subjectLabelVi = (subject: CatalogOption | string) => {
+  const id = typeof subject === "string" ? subject : subject.id;
+  return SUBJECT_LABELS_VI[id] || (typeof subject === "string" ? subject : subject.name);
+};
+
+export const levelLabelVi = (level: string) => {
+  for (const levels of Object.values(LEVELS_BY_GROUP)) {
+    const match = levels.find(item => item.id === level);
+    if (match) return match.name;
+  }
+  return level;
+};
+
+export const levelGroupLabelVi = (group: string) =>
+  LEVEL_GROUPS.find(item => item.id === group)?.name || group;
 
 export const newClientId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random());
@@ -258,5 +290,5 @@ export const newClientId = () =>
 export const createSubject = (): TutorTeachingSubject => ({
   clientId: newClientId(), levelGroupId: '', subjectId: '', teachingLevelIds: [],
   yearsOfExperience: 0, minPrice: 0, maxPrice: 0, priceUnit: 'per_hour',
-  durationDays: null, sessionsPerPeriod: 1, minutesPerSession: 60, evidences: []
+  durationDays: null, sessionsPerPeriod: 1, minutesPerSession: 60, evidences: [], bio: '', experience: ''
 });

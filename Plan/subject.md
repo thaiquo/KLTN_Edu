@@ -272,13 +272,3 @@ Level Group
 → Experience Years
 → Tuition Range
 → Certificates / Evidence
-
-Example:
-
-HIGH_SCHOOL
-→ Grade 10, Grade 11, Grade 12
-→ Mathematics
-→ 3 years experience
-→ 1,500,000 - 2,000,000 VND / 30 days
-→ University Transcript.pdf
-→ Teaching Certificate.pdf

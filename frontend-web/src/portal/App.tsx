@@ -57,6 +57,8 @@ import { MessagesView } from "./components/MessagesView";
 import { ProfileSettings } from "./components/ProfileSettings";
 import { AdminPortal } from "./components/AdminPortal";
 import { TutorApprovalPanel } from "./components/TutorApprovalPanel";
+import { TutorClassManagement } from "./components/TutorClassManagement";
+import { TutorAvailabilitySchedule } from "./components/TutorAvailabilitySchedule";
 
 // High Resolution course and avatar placeholders
 const studentAvatar =
@@ -328,7 +330,7 @@ interface AppProps {
 
 export default function App({ user, onLogout }: AppProps) {
   // Global States holding data consistently across tabs
-  const [activeRole] = useState<UserRole>(user.currentRole || user.role || "student");
+  const [activeRole, setActiveRole] = useState<UserRole>(user.currentRole || user.role || "student");
   const [currentPage, setCurrentPage] = useState<string>("dashboard");
   const [searchValue, setSearchValue] = useState("");
   
@@ -711,19 +713,10 @@ export default function App({ user, onLogout }: AppProps) {
         );
 
       case "my-classes":
+        return <TutorClassManagement isAdmin={false} />;
+
       case "class-management":
-        // Sub-page shortcuts
-        return (
-          <div className="bg-white p-12 text-center rounded-3xl border border-brand-border/30 max-w-2xl mx-auto my-8">
-            <GraduationCap className="w-12 h-12 text-brand-secondary mx-auto mb-4" />
-            <h3 className="font-display font-black text-sm text-brand-text uppercase tracking-wider">
-              Class Schedule Control
-            </h3>
-            <p className="text-xs text-brand-text-variant mt-2 max-w-sm mx-auto leading-relaxed">
-              Construct curricula, coordinate lesson materials and deploy peer learning groups seamlessly from here.
-            </p>
-          </div>
-        );
+        return <TutorClassManagement isAdmin={true} />;
 
       case "requests":
         return (
@@ -758,6 +751,9 @@ export default function App({ user, onLogout }: AppProps) {
         );
 
       case "schedule":
+        if (activeRole === "tutor") {
+          return <TutorAvailabilitySchedule userId={user.id} />;
+        }
         // Complete visual Interactive Schedule
         return (
           <div className="space-y-6 max-w-5xl mx-auto pb-10">
@@ -863,12 +859,35 @@ export default function App({ user, onLogout }: AppProps) {
     }
   };
 
+  const userRoleLower = (user.role || "").toLowerCase();
+  const currentRoleLower = (user.currentRole || "").toLowerCase();
+  const userRoles = Array.isArray((user as any).roles)
+    ? (user as any).roles.map((r: any) => String(r).toLowerCase())
+    : [];
+
+  const isApprovedTutor =
+    userRoles.includes("tutor") ||
+    profileSettings.status === "approved" ||
+    userRoleLower === "tutor" ||
+    currentRoleLower === "tutor" ||
+    (user as any).tutorStatus === "approved" ||
+    (user as any).tutorStatus === "APPROVED";
+
+  const availableRoles: UserRole[] =
+    userRoles.includes("admin") || userRoleLower === "admin" || currentRoleLower === "admin" || activeRole === "admin"
+      ? ["admin"]
+      : isApprovedTutor
+      ? ["student", "tutor"]
+      : ["student"];
+
   return (
     <div className="min-h-screen bg-brand-surface text-brand-text selection:bg-brand-primary/10 select-none">
       
       {/* Dynamic Unified Header */}
       <Header
         activeRole={activeRole}
+        availableRoles={availableRoles}
+        onRoleChange={setActiveRole}
         user={user}
         searchValue={searchValue}
         onSearchChange={setSearchValue}

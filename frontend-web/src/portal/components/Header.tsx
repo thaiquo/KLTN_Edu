@@ -9,6 +9,8 @@ import { UserRole } from "../types";
 
 interface HeaderProps {
   activeRole: UserRole;
+  availableRoles?: UserRole[];
+  onRoleChange?: (role: UserRole) => void;
   user: {
     fullName: string;
     email: string;
@@ -19,6 +21,8 @@ interface HeaderProps {
 
 export function Header({
   activeRole,
+  availableRoles = ["student", "tutor"],
+  onRoleChange,
   user,
   searchValue,
   onSearchChange,
@@ -35,7 +39,7 @@ export function Header({
 
   const statusMap = {
     student: "Học viên",
-    tutor: "Gia sư",
+    tutor: "Giảng viên",
     admin: "Quản trị viên",
   };
 
@@ -71,11 +75,30 @@ export function Header({
       </div>
 
       <div className="flex items-center gap-4">
-        <div className="hidden lg:flex items-center bg-brand-low px-3 py-2 rounded-xl border border-brand-border/20">
-          <span className="text-[11px] font-display font-black tracking-widest text-brand-primary uppercase">
-            {statusMap[activeRole]}
-          </span>
-        </div>
+        {/* Role Switcher Pills or Single Role Badge */}
+        {availableRoles.length > 1 ? (
+          <div className="hidden lg:flex items-center bg-brand-low p-1 rounded-xl border border-brand-border/20 gap-1">
+            {availableRoles.map((role) => (
+              <button
+                key={role}
+                onClick={() => onRoleChange?.(role)}
+                className={`px-3 py-1.5 rounded-lg text-[11px] font-display font-black tracking-wider uppercase transition-all cursor-pointer ${
+                  activeRole === role
+                    ? "bg-brand-primary text-white shadow-sm"
+                    : "text-brand-text-variant hover:text-brand-primary"
+                }`}
+              >
+                {statusMap[role] || role}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="hidden lg:flex items-center bg-brand-low px-3 py-2 rounded-xl border border-brand-border/20">
+            <span className="text-[11px] font-display font-black tracking-widest text-brand-primary uppercase">
+              {statusMap[activeRole] || activeRole}
+            </span>
+          </div>
+        )}
 
         {/* Notifications and Help Buttons */}
         <div className="flex items-center gap-1.5 border-r border-brand-border/30 pr-3">
