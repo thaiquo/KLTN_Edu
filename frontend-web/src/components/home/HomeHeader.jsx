@@ -26,11 +26,13 @@ export function HomeHeader() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const isAuthenticated = Boolean(user);
-  const navLinks = isAuthenticated ? studentNavLinks : homeNavLinks;
+  const navLinks = isAuthenticated ? navLinksFor(user?.roles) : homeNavLinks;
   const displayName = user?.fullName || user?.email || 'Tài khoản';
   const initials = getInitials(displayName);
   const avatarUrl = getAvatarUrl(user);
   const hasTutorRole = user?.roles?.includes('TUTOR');
+  const hasStaffRole = user?.roles?.includes('STAFF') || user?.roles?.includes('ADMIN');
+  const roleText = displayRole(user?.roles);
 
   useEffect(() => {
     function closeOnEscape(event) {
@@ -125,7 +127,7 @@ export function HomeHeader() {
                   <span className="min-w-0 text-left">
                     <span className="block truncate text-sm font-extrabold">{displayName}</span>
                     <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
-                      {hasTutorRole ? 'Nhiều vai trò' : 'Học viên'}
+                      {roleText}
                     </span>
                   </span>
                   <ChevronDown size={15} className="shrink-0 text-slate-400" />
@@ -134,6 +136,7 @@ export function HomeHeader() {
                 {accountOpen && (
                   <AccountMenu
                     hasTutorRole={hasTutorRole}
+                    hasStaffRole={hasStaffRole}
                     onLogout={handleLogout}
                     onClose={() => setAccountOpen(false)}
                   />
@@ -258,7 +261,7 @@ function NavItem({ link, className, onClick, children }) {
   );
 }
 
-function AccountMenu({ hasTutorRole, onLogout, onClose }) {
+function AccountMenu({ hasTutorRole, hasStaffRole, onLogout, onClose }) {
   return (
     <div
       className="absolute right-0 top-[calc(100%+12px)] z-50 w-72 overflow-hidden rounded-[14px] border border-slate-200 bg-white p-2 shadow-[0_24px_64px_rgba(15,23,42,.16)]"
@@ -270,7 +273,12 @@ function AccountMenu({ hasTutorRole, onLogout, onClose }) {
       <MenuButton disabled icon={<BookOpen size={16} />}>
         Hồ sơ học tập
       </MenuButton>
-      {hasTutorRole ? (
+      {hasStaffRole && (
+        <MenuLink to="/staff/tutors" icon={<Settings size={16} />} onClick={onClose}>
+          Staff Dashboard
+        </MenuLink>
+      )}
+      {hasStaffRole ? null : hasTutorRole ? (
         <MenuButton disabled icon={<GraduationCap size={16} />}>
           Chuyển sang chế độ Gia sư
         </MenuButton>
@@ -326,6 +334,24 @@ function MenuButton({ icon, children, disabled }) {
       </span>
     </button>
   );
+}
+
+function navLinksFor(roles = []) {
+  if (roles.includes('STAFF') || roles.includes('ADMIN')) {
+    return [
+      { label: 'Duyệt hồ sơ gia sư', href: '/staff/tutors', icon: 'sparkles' },
+      { label: 'Tìm gia sư', href: '/tutors', icon: 'search' }
+    ];
+  }
+  return studentNavLinks;
+}
+
+function displayRole(roles = []) {
+  if (roles.includes('ADMIN')) return 'Quản trị viên';
+  if (roles.includes('STAFF')) return 'Nhân viên';
+  if (roles.includes('STUDENT') && roles.includes('TUTOR')) return 'Nhiều vai trò';
+  if (roles.includes('TUTOR')) return 'Gia sư';
+  return 'Học viên';
 }
 
 function getInitials(value) {

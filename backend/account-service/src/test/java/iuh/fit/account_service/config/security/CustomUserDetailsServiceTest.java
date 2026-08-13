@@ -44,6 +44,19 @@ class CustomUserDetailsServiceTest {
     }
 
     @Test
+    void staffOnlyUserHasOnlyStaffAuthority() {
+        User user = user(AccountStatus.ACTIVE, true);
+        when(userRepository.findByEmailIgnoreCase("staff@gmail.com")).thenReturn(Optional.of(user));
+        when(userRoleRepository.findByUserId(1L)).thenReturn(List.of(role(user, Role.STAFF)));
+
+        var details = service.loadUserByUsername("staff@gmail.com");
+
+        assertThat(details.getAuthorities())
+                .extracting(Object::toString)
+                .containsExactly("ROLE_STAFF");
+    }
+
+    @Test
     void disabledUserIsNotEnabledForJwtReuse() {
         User user = user(AccountStatus.DISABLED, true);
         when(userRepository.findByEmailIgnoreCase("test@gmail.com")).thenReturn(Optional.of(user));

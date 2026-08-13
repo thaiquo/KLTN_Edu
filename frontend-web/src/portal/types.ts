@@ -147,6 +147,10 @@ export interface TutorApprovalItem {
   documentCount?: number;
   phone?: string;
   dateOfBirth?: string;
+  gender?: string;
+  province?: string;
+  commune?: string;
+  addressDetail?: string;
   accountStatus?: string;
   avatarUrl?: string;
   institution?: string;

@@ -38,6 +38,10 @@ function normalizeDetail(raw: any): TutorApprovalItem {
     email: applicant.email || "",
     phone: applicant.phone || "",
     dateOfBirth: applicant.dateOfBirth || "",
+    gender: applicant.gender || "",
+    province: applicant.province || "",
+    commune: applicant.commune || "",
+    addressDetail: applicant.addressDetail || "",
     accountStatus: applicant.accountStatus || "",
     avatarUrl: applicant.avatarUrl || "",
     bio: application.bio || "",
@@ -360,6 +364,7 @@ function SubjectSuggestionReview({
   suggestions,
   busyId,
   onApproveAsNew,
+  onMapExisting,
   onReject,
 }: {
   suggestions: any[];

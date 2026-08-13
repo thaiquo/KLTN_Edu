@@ -20,22 +20,26 @@ const DashboardPage = lazy(() =>
   import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage }))
 );
 
-function defaultRouteFor() {
+function defaultRouteFor(user) {
+  if (user?.roles?.includes('STAFF') || user?.roles?.includes('ADMIN')) {
+    return '/staff/tutors';
+  }
   return '/';
 }
 
 function Gate({ guest = false, children }) {
-  const { authenticated, loading } = useAuth();
+  const { user, authenticated, loading } = useAuth();
   const location = useLocation();
   if (loading) return <div className="loader" aria-label="Dang tai" />;
-  if (guest) return authenticated ? <Navigate to={defaultRouteFor()} replace /> : children;
+  if (guest) return authenticated ? <Navigate to={defaultRouteFor(user)} replace /> : children;
   return authenticated ? children : <Navigate to="/login" replace state={{ from: location }} />;
 }
 
 function HomeEntry() {
-  const { authenticated, loading } = useAuth();
+  const { user, authenticated, loading } = useAuth();
   if (loading) return <div className="loader" aria-label="Dang tai" />;
-  if (authenticated && defaultRouteFor() !== '/') return <Navigate to={defaultRouteFor()} replace />;
+  const nextRoute = defaultRouteFor(user);
+  if (authenticated && nextRoute !== '/') return <Navigate to={nextRoute} replace />;
 
   return <HomePage />;
 }

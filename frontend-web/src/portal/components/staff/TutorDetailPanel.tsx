@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { CalendarDays, Eye, FileText, GraduationCap, Mail, Phone, UserRoundCheck } from "lucide-react";
+import { CalendarDays, Eye, FileText, GraduationCap, Mail, MapPin, Phone, UserRoundCheck } from "lucide-react";
 import { TutorApprovalItem } from "../../types";
 import { TutorStatusBadge } from "./TutorStatusBadge";
 
@@ -35,6 +35,7 @@ export function TutorDetailPanel({
   onViewDocument: (tutor: TutorApprovalItem, documentId: string) => void;
 }) {
   const [approveNote, setApproveNote] = useState("");
+  const [confirmApprove, setConfirmApprove] = useState(false);
 
   if (loading) {
     return <aside className="h-[620px] animate-pulse border border-[#d7dde6] bg-white shadow-sm" />;
@@ -75,6 +76,20 @@ export function TutorDetailPanel({
       </div>
 
       <div className="max-h-[calc(100vh-320px)] space-y-5 overflow-y-auto p-6 custom-scrollbar">
+        <section>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Thông tin người đăng ký</p>
+          <div className="mt-3 grid grid-cols-2 gap-3 text-xs font-bold text-[#073554]">
+            <InfoTile label="Ngày sinh" value={formatDate(tutor.dateOfBirth)} />
+            <InfoTile label="Giới tính" value={genderLabel(tutor.gender)} />
+            <InfoTile label="Email" value={tutor.email || "--"} />
+            <InfoTile label="Điện thoại" value={tutor.phone || "--"} />
+          </div>
+          <p className="mt-3 flex gap-2 bg-[#f7f9fc] p-3 text-xs font-semibold leading-5 text-slate-600">
+            <MapPin className="mt-0.5 h-4 w-4 flex-none text-[#ff695f]" />
+            {formatAddress(tutor)}
+          </p>
+        </section>
+
         <section>
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Học vấn & kinh nghiệm</p>
           <p className="mt-2 flex gap-2 text-sm font-bold leading-6 text-[#073554]">
@@ -167,9 +182,46 @@ export function TutorDetailPanel({
 
       <footer className="grid grid-cols-2 gap-3 border-t border-[#e4e8ee] p-5">
         <button type="button" disabled={busy} onClick={() => onReject(tutor)} className="border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-rose-700 hover:bg-rose-100 disabled:opacity-50">Từ chối</button>
-        <button type="button" disabled={busy} onClick={() => onApprove(tutor, approveNote)} className="bg-[#ff695f] px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-white hover:bg-[#ef5c52] disabled:opacity-50">Phê duyệt</button>
+        <button type="button" disabled={busy} onClick={() => setConfirmApprove(true)} className="bg-[#ff695f] px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-white hover:bg-[#ef5c52] disabled:opacity-50">Phê duyệt</button>
       </footer>
+
+      {confirmApprove && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-[#061827]/60 p-4">
+          <div className="w-full max-w-md border border-[#d7dde6] bg-white p-6 shadow-2xl">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff695f]">Approve Tutor Application</p>
+            <h3 className="mt-2 font-display text-xl font-black text-[#073554]">Phê duyệt hồ sơ gia sư?</h3>
+            <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">
+              Sau khi phê duyệt, người dùng sẽ được cấp quyền Gia sư và hồ sơ giảng dạy được kích hoạt.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" disabled={busy} onClick={() => setConfirmApprove(false)} className="border border-[#d7dde6] px-4 py-2.5 text-xs font-black uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setConfirmApprove(false);
+                  onApprove(tutor, approveNote);
+                }}
+                className="bg-[#ff695f] px-4 py-2.5 text-xs font-black uppercase tracking-[0.12em] text-white hover:bg-[#ef5c52] disabled:opacity-50"
+              >
+                {busy ? "Đang phê duyệt..." : "Phê duyệt"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
+  );
+}
+
+function InfoTile({ label, value }: { label: string; value?: string }) {
+  return (
+    <div className="bg-[#f7f9fc] p-3">
+      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{label}</p>
+      <p className="mt-1 break-words text-xs font-black text-[#073554]">{value || "--"}</p>
+    </div>
   );
 }
 
@@ -186,6 +238,21 @@ function formatValidity(document: any) {
   if (document.validityType === "DOES_NOT_EXPIRE") return "Không thời hạn";
   if (document.expiryDate) return `Hết hạn ${formatDate(document.expiryDate)}`;
   return "Có thời hạn";
+}
+
+function genderLabel(value?: string) {
+  const labels: Record<string, string> = {
+    FEMALE: "Nữ",
+    MALE: "Nam",
+    OTHER: "Khác",
+    PREFER_NOT_TO_SAY: "Không muốn chia sẻ",
+  };
+  return value ? labels[value] || value : "--";
+}
+
+function formatAddress(tutor: TutorApprovalItem) {
+  const administrativeLine = [tutor.commune, tutor.province].filter(Boolean).join(", ");
+  return [tutor.addressDetail, administrativeLine].filter(Boolean).join(" - ") || "Chưa cập nhật địa chỉ";
 }
 
 function documentLabel(type?: string) {

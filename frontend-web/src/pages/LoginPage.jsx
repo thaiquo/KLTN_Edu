@@ -74,7 +74,7 @@ export function LoginPage() {
     setFieldErrors({});
 
     try {
-      await login({
+      const currentUser = await login({
         email: form.email.trim().toLowerCase(),
         password: form.password
       });
@@ -85,7 +85,7 @@ export function LoginPage() {
         return;
       }
 
-      navigate('/', { replace: true });
+      navigate(defaultRouteFor(currentUser), { replace: true });
     } catch (loginError) {
       applyApiErrors(loginError);
     } finally {
@@ -156,6 +156,13 @@ export function LoginPage() {
       </p>
     </AuthLayout>
   );
+}
+
+function defaultRouteFor(user) {
+  if (user?.roles?.includes('STAFF') || user?.roles?.includes('ADMIN')) {
+    return '/staff/tutors';
+  }
+  return '/';
 }
 
 function mapValidationErrors(error) {
