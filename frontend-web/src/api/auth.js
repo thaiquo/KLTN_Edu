@@ -9,12 +9,24 @@ export const authApi = {
     method: 'POST',
     body: JSON.stringify(payload)
   }),
+  resendVerificationOtp: (payload) => apiRequest('/api/auth/resend-verification-otp', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }),
   login: (payload) => apiRequest('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify(payload)
   }),
   logout: () => apiRequest('/api/auth/logout', {
     method: 'POST'
+  }),
+  forgotPassword: (payload) => apiRequest('/api/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }),
+  resetPassword: (payload) => apiRequest('/api/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify(payload)
   }),
   csrf: () => apiRequest('/api/auth/csrf')
 };

@@ -1,12 +1,15 @@
 import { apiRequest } from './client';
 
 export const staffTutorsApi = {
-  pending: () => apiRequest('/api/staff/tutors/pending'),
-  approve: (tutorId) => apiRequest(`/api/staff/tutors/${tutorId}/approve`, {
-    method: 'PATCH'
-  }),
-  reject: (tutorId, reason) => apiRequest(`/api/staff/tutors/${tutorId}/reject`, {
+  pending: () => apiRequest('/api/staff/tutor-applications/pending'),
+  detail: (applicationId) => apiRequest(`/api/staff/tutor-applications/${applicationId}`),
+  documentDownload: (applicationId, documentId) => apiRequest(`/api/staff/tutor-applications/${applicationId}/documents/${documentId}/download`),
+  approve: (applicationId, note) => apiRequest(`/api/staff/tutor-applications/${applicationId}/approve`, {
     method: 'PATCH',
-    body: JSON.stringify({ reason })
+    body: JSON.stringify({ note })
+  }),
+  reject: (applicationId, reason, note) => apiRequest(`/api/staff/tutor-applications/${applicationId}/reject`, {
+    method: 'PATCH',
+    body: JSON.stringify({ reason, note })
   })
 };

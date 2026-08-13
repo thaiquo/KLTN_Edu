@@ -4,11 +4,6 @@ import { AuthLayout } from '../components/AuthLayout';
 import { FormField } from '../components/FormField';
 import { useAuth } from '../hooks/useAuth';
 
-const ROLE_OPTIONS = [
-  { value: 'STUDENT', label: 'Học viên' },
-  { value: 'TUTOR', label: 'Gia sư' }
-];
-
 export function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
@@ -16,49 +11,104 @@ export function RegisterPage() {
     fullName: '',
     email: '',
     password: '',
-    confirmPassword: '',
-    role: 'STUDENT'
+    confirmPassword: ''
   });
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   function change(event) {
     setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+    if (fieldErrors[event.target.name]) {
+      setFieldErrors((current) => ({ ...current, [event.target.name]: '' }));
+    }
     if (error) setError('');
+  }
+
+  function validate() {
+    const errors = {};
+
+    if (!form.fullName.trim()) {
+      errors.fullName = 'Vui lòng nhập họ và tên.';
+    }
+
+    if (!form.email.trim()) {
+      errors.email = 'Vui lòng nhập email.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      errors.email = 'Email không hợp lệ.';
+    }
+
+    if (!form.password) {
+      errors.password = 'Vui lòng nhập mật khẩu.';
+    } else if (form.password.length < 8) {
+      errors.password = 'Mật khẩu phải có ít nhất 8 ký tự.';
+    }
+
+    if (!form.confirmPassword) {
+      errors.confirmPassword = 'Vui lòng xác nhận mật khẩu.';
+    } else if (form.password !== form.confirmPassword) {
+      errors.confirmPassword = 'Mật khẩu xác nhận chưa khớp.';
+    }
+
+    return errors;
+  }
+
+  function applyApiErrors(registerError) {
+    const errors = mapValidationErrors(registerError);
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setError('Vui lòng kiểm tra lại thông tin đăng ký.');
+      return;
+    }
+
+    if (registerError.status === 409) {
+      const message = registerError.message || 'Email đã được sử dụng.';
+      setFieldErrors({ email: message });
+      setError(message);
+      return;
+    }
+
+    if (registerError.status === 429) {
+      setError(registerError.message || 'Bạn thao tác quá nhanh. Vui lòng thử lại sau.');
+      return;
+    }
+
+    setError(registerError.message || 'Đăng ký không thành công.');
   }
 
   async function submit(event) {
     event.preventDefault();
     if (busy) return;
 
-    if (form.password !== form.confirmPassword) {
-      setError('Mật khẩu xác nhận chưa khớp !.');
+    const errors = validate();
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      setError('Vui lòng kiểm tra lại thông tin đăng ký.');
       return;
     }
 
     setBusy(true);
     setError('');
+    setFieldErrors({});
 
     try {
       const payload = {
         fullName: form.fullName.trim(),
         email: form.email.trim().toLowerCase(),
         password: form.password,
-        confirmPassword: form.confirmPassword,
-        role: form.role
+        confirmPassword: form.confirmPassword
       };
 
-      await register(payload);
+      const response = await register(payload);
+      const verificationEmail = response?.email || payload.email;
 
       navigate('/verify-email', {
         replace: true,
-        state: {
-          email: payload.email,
-          role: payload.role
-        }
+        state: { email: verificationEmail }
       });
     } catch (registerError) {
-      setError(registerError.message || 'Đăng ký không thành công.');
+      applyApiErrors(registerError);
     } finally {
       setBusy(false);
     }
@@ -67,7 +117,7 @@ export function RegisterPage() {
   return (
     <AuthLayout
       title="Tạo tài khoản"
-      description="Đăng ký tài khoản học viên và gia sư."
+      description="Đăng ký tài khoản học tập và xác minh email để bắt đầu sử dụng EduConnect."
     >
       <form onSubmit={submit}>
         <FormField
@@ -75,9 +125,10 @@ export function RegisterPage() {
           name="fullName"
           value={form.fullName}
           onChange={change}
-          placeholder="Nguyen Van A"
+          placeholder="Nguyễn Văn A"
           autoComplete="name"
           maxLength="100"
+          error={fieldErrors.fullName}
           required
         />
 
@@ -89,21 +140,9 @@ export function RegisterPage() {
           onChange={change}
           placeholder="student@gmail.com"
           autoComplete="email"
+          error={fieldErrors.email}
           required
         />
-
-        <label className="field">
-          <span>Vai tro</span>
-          <div>
-            <select name="role" value={form.role} onChange={change} required>
-              {ROLE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        </label>
 
         <FormField
           label="Mật khẩu"
@@ -114,7 +153,8 @@ export function RegisterPage() {
           placeholder="Tối thiểu 8 ký tự"
           autoComplete="new-password"
           minLength="8"
-          maxLength="128"
+          maxLength="100"
+          error={fieldErrors.password}
           required
         />
 
@@ -127,7 +167,8 @@ export function RegisterPage() {
           placeholder="Nhập lại mật khẩu"
           autoComplete="new-password"
           minLength="8"
-          maxLength="128"
+          maxLength="100"
+          error={fieldErrors.confirmPassword}
           required
         />
 
@@ -142,4 +183,17 @@ export function RegisterPage() {
       </p>
     </AuthLayout>
   );
+}
+
+function mapValidationErrors(error) {
+  if (!Array.isArray(error?.validationErrors)) {
+    return {};
+  }
+
+  return error.validationErrors.reduce((result, item) => {
+    if (item?.field) {
+      result[item.field] = item.message || 'Thông tin không hợp lệ.';
+    }
+    return result;
+  }, {});
 }

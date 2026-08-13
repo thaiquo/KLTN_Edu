@@ -106,6 +106,12 @@ export type TutorApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
 export interface TutorApprovalSubject {
   id: number;
   name: string;
+  category?: string;
+  group?: string;
+  oneToOneHourlyRate?: number;
+  experienceYears?: number;
+  description?: string;
+  levels?: string[];
 }
 
 export interface TutorApprovalDocument {
@@ -113,6 +119,16 @@ export interface TutorApprovalDocument {
   name: string;
   type?: string;
   url?: string;
+  contentType?: string;
+  fileSize?: number;
+  verificationStatus?: string;
+  title?: string;
+  issuer?: string;
+  issueDate?: string;
+  validityType?: string;
+  expiryDate?: string;
+  credentialNumber?: string;
+  expired?: boolean;
 }
 
 export interface TutorApprovalItem {
@@ -127,6 +143,17 @@ export interface TutorApprovalItem {
   rejectionReason?: string | null;
   subjects: TutorApprovalSubject[];
   documents?: TutorApprovalDocument[];
+  subjectCount?: number;
+  documentCount?: number;
+  phone?: string;
+  dateOfBirth?: string;
+  accountStatus?: string;
+  avatarUrl?: string;
+  institution?: string;
+  major?: string;
+  experienceSummary?: string;
+  submittedAt?: string;
+  reviewNote?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

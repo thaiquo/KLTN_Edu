@@ -47,6 +47,36 @@ public class User {
 
     private LocalDate dateOfBirth;
 
+    @Column(name = "avatar_key", length = 512)
+    private String avatarKey;
+
+    @Column(length = 30)
+    private String gender;
+
+    @Column(name = "province_code", length = 30)
+    private String provinceCode;
+
+    @Column(length = 100)
+    private String province;
+
+    @Column(name = "commune_code", length = 40)
+    private String communeCode;
+
+    @Column(length = 160)
+    private String commune;
+
+    @Column(length = 100)
+    private String district;
+
+    @Column(length = 100)
+    private String ward;
+
+    @Column(name = "address_detail", length = 255)
+    private String addressDetail;
+
+    @Column(length = 300)
+    private String bio;
+
     @Column(nullable = false)
     @Builder.Default
     private boolean emailVerified = false;
@@ -88,6 +118,62 @@ public class User {
         return fullName;
     }
 
+    public String getPhone() {
+        return phone;
+    }
+
+    public LocalDate getDateOfBirth() {
+        return dateOfBirth;
+    }
+
+    public String getAvatarKey() {
+        return avatarKey;
+    }
+
+    public String getGender() {
+        return gender;
+    }
+
+    public String getProvince() {
+        return province;
+    }
+
+    public String getProvinceCode() {
+        return provinceCode;
+    }
+
+    public String getCommuneCode() {
+        return communeCode;
+    }
+
+    public String getCommune() {
+        return commune;
+    }
+
+    public String getDistrict() {
+        return district;
+    }
+
+    public String getWard() {
+        return ward;
+    }
+
+    public String getAddressDetail() {
+        return addressDetail;
+    }
+
+    public String getBio() {
+        return bio;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
     public void setEmail(String email) {
         this.email = email;
     }
@@ -100,12 +186,64 @@ public class User {
         this.fullName = fullName;
     }
 
+    public void setPhone(String phone) {
+        this.phone = phone;
+    }
+
+    public void setDateOfBirth(LocalDate dateOfBirth) {
+        this.dateOfBirth = dateOfBirth;
+    }
+
+    public void setAvatarKey(String avatarKey) {
+        this.avatarKey = avatarKey;
+    }
+
+    public void setGender(String gender) {
+        this.gender = gender;
+    }
+
+    public void setProvince(String province) {
+        this.province = province;
+    }
+
+    public void setProvinceCode(String provinceCode) {
+        this.provinceCode = provinceCode;
+    }
+
+    public void setCommuneCode(String communeCode) {
+        this.communeCode = communeCode;
+    }
+
+    public void setCommune(String commune) {
+        this.commune = commune;
+    }
+
+    public void setDistrict(String district) {
+        this.district = district;
+    }
+
+    public void setWard(String ward) {
+        this.ward = ward;
+    }
+
+    public void setAddressDetail(String addressDetail) {
+        this.addressDetail = addressDetail;
+    }
+
+    public void setBio(String bio) {
+        this.bio = bio;
+    }
+
     public void setEmailVerified(boolean emailVerified) {
         this.emailVerified = emailVerified;
     }
 
     public boolean isEmailVerified() {
         return emailVerified;
+    }
+
+    public AccountStatus getAccountStatus() {
+        return accountStatus;
     }
 
     public void setAccountStatus(AccountStatus accountStatus) {

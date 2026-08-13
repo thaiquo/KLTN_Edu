@@ -2,11 +2,13 @@ services:
   postgres:
     image: postgres:16
     container_name: kltn-postgres
+    env_file:
+      - .env
 
     environment:
-      POSTGRES_DB: kltn_db
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 123456
+      POSTGRES_DB: ${POSTGRES_DB:-kltn_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
     ports:
       - "5432:5432"

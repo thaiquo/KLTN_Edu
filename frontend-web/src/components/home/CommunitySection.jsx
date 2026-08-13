@@ -10,8 +10,6 @@ export function CommunitySection() {
   return (
     <section className="py-[clamp(88px,10vw,144px)] bg-bg scroll-mt-[90px]" id="community" aria-labelledby="community-title">
       <div className="container-app">
-
-        {/* Header */}
         <div className="flex items-end justify-between gap-7 reveal max-[760px]:flex-col max-[760px]:items-start">
           <div className="grid gap-3.5">
             <span className="text-primary text-[11px] font-extrabold tracking-[.22em] uppercase">Cộng đồng</span>
@@ -27,14 +25,13 @@ export function CommunitySection() {
           </a>
         </div>
 
-        {/* Tabs */}
         <div
           className="inline-flex gap-1 p-1.5 mt-12 mb-6 ml-auto border border-slate-200 rounded-[14px] bg-slate-100 max-[760px]:mt-8 max-[760px]:ml-0"
           role="tablist"
           aria-label="Khám phá cộng đồng"
         >
           {[
-            { id: 'tutors', label: 'Gia sư Nổi bật' },
+            { id: 'tutors', label: 'Gia sư nổi bật' },
             { id: 'classes', label: 'Lớp mới đăng' },
           ].map((tab) => (
             <button
@@ -56,7 +53,6 @@ export function CommunitySection() {
           ))}
         </div>
 
-        {/* Panels */}
         {activeTab === 'tutors' ? (
           <div
             className="grid grid-cols-3 gap-6 max-[920px]:grid-cols-2 max-[760px]:flex max-[760px]:overflow-x-auto max-[760px]:gap-3.5 max-[760px]:pb-3 max-[760px]:snap-x"

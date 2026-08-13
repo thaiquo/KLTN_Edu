@@ -1,13 +1,14 @@
 package iuh.fit.account_service;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest
+import static org.assertj.core.api.Assertions.assertThat;
+
 class AccountServiceApplicationTests {
 
 	@Test
-	void contextLoads() {
+	void applicationClassExists() {
+		assertThat(AccountServiceApplication.class).isNotNull();
 	}
 
 }

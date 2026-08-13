@@ -10,7 +10,7 @@ export function AuthLayout({ title, description, children, wide = false }) {
             Tìm gia sư phù hợp, quản lý hành trình học tập và chinh phục mục tiêu của bạn tại một nơi.
           </p>
         </div>
-        <footer><b>1:1</b> Kết nối tận tâm　 <b>24/7</b> Chủ động học tập</footer>
+        <footer><b>1:1</b> Kết nối tận tâm · <b>24/7</b> Chủ động học tập</footer>
       </section>
       <section className="content">
         <div className={wide ? 'card auth-card-wide' : 'card'}>

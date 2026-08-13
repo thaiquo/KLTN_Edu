@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export function FormField({ label, type = 'text', ...props }) {
+export function FormField({ label, type = 'text', error, hint, ...props }) {
   const [showPassword, setShowPassword] = useState(false);
   const isPassword = type === 'password';
 
@@ -19,6 +19,8 @@ export function FormField({ label, type = 'text', ...props }) {
           </button>
         )}
       </div>
+      {hint && !error && <small className="field-hint">{hint}</small>}
+      {error && <small className="field-error">{error}</small>}
     </label>
   );
 }

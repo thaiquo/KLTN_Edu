@@ -56,6 +56,12 @@ public class OtpVerification {
     @Builder.Default
     private boolean verified = false;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private boolean invalidated = false;
+
+    private LocalDateTime usedAt;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -96,8 +102,32 @@ public class OtpVerification {
         this.verified = verified;
     }
 
+    public boolean isInvalidated() {
+        return invalidated;
+    }
+
+    public void setInvalidated(boolean invalidated) {
+        this.invalidated = invalidated;
+    }
+
+    public LocalDateTime getUsedAt() {
+        return usedAt;
+    }
+
+    public void setUsedAt(LocalDateTime usedAt) {
+        this.usedAt = usedAt;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
     public void setUser(User user) {
         this.user = user;
+    }
+
+    public OtpType getType() {
+        return type;
     }
 
     public void setType(OtpType type) {

@@ -171,7 +171,61 @@ img { display: block; max-width: 100%; }
 .primary:disabled { opacity: .6; }
 
 .error { padding: 11px; border-radius: 10px; background: #fff0f0; color: #b83333; }
+.error button {
+  margin-left: 10px;
+  border: 0;
+  background: transparent;
+  color: #147b77;
+  font-weight: 800;
+  cursor: pointer;
+}
 .success { padding: 11px; border-radius: 10px; background: #ecfdf3; color: #137a3d; font-weight: 700; }
+.success button {
+  margin-left: 10px;
+  border: 0;
+  background: transparent;
+  color: #147b77;
+  font-weight: 800;
+  cursor: pointer;
+}
+.auth-inline-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -6px;
+}
+.auth-inline-actions a {
+  color: #147b77;
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+.auth-inline-actions a:hover,
+.auth-inline-actions a:focus {
+  text-decoration: underline;
+}
+.field-hint { color: #778193; font-size: 12px; font-weight: 600; }
+.field-error { color: #b83333; font-size: 12px; font-weight: 700; }
+.resend-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  color: #778193;
+  font-weight: 600;
+}
+.resend-row button {
+  border: 0;
+  background: transparent;
+  color: #147b77;
+  font-weight: 800;
+  cursor: pointer;
+}
+.resend-row button:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+}
 .switch { text-align: center !important; }
 .switch a { color: #147b77; font-weight: 700; }
 .auth-link-button { display: block; text-align: center; text-decoration: none; }

@@ -3,8 +3,11 @@ package iuh.fit.account_service.controller;
 import iuh.fit.account_service.dto.auth.LoginRequest;
 import iuh.fit.account_service.dto.auth.LoginResponse;
 import iuh.fit.account_service.dto.auth.LoginResult;
+import iuh.fit.account_service.dto.auth.ForgotPasswordRequest;
 import iuh.fit.account_service.dto.auth.RegisterRequest;
 import iuh.fit.account_service.dto.auth.RegisterResponse;
+import iuh.fit.account_service.dto.auth.ResendVerificationOtpRequest;
+import iuh.fit.account_service.dto.auth.ResetPasswordRequest;
 import iuh.fit.account_service.dto.auth.VerifyEmailRequest;
 import iuh.fit.account_service.service.AuthService;
 import jakarta.servlet.http.HttpServletResponse;
@@ -48,6 +51,29 @@ public class AuthController {
         authService.verifyEmail(request);
 
         return ResponseEntity.ok("Email verified successfully");
+    }
+
+    @PostMapping("/resend-verification-otp")
+    public ResponseEntity<String> resendVerificationOtp(
+            @Valid @RequestBody ResendVerificationOtpRequest request
+    ) {
+        authService.resendVerificationOtp(request);
+
+        return ResponseEntity.ok("If the email exists and is not verified, a new OTP has been sent.");
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<String> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        authService.forgotPassword(request);
+
+        return ResponseEntity.ok("If the email exists, a password reset OTP has been sent.");
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<String> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request);
+
+        return ResponseEntity.ok("Password has been reset successfully.");
     }
 
     @GetMapping("/csrf")

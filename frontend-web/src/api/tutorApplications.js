@@ -1,37 +1,47 @@
 import { apiRequest } from './client';
 
 export const tutorApplicationApi = {
-  getMine: () => apiRequest('/users/me/tutor-applications'),
-  create: (payload) => apiRequest('/users/me/tutor-applications', {
+  getMyTutorApplication: () => apiRequest('/api/tutor-applications/me'),
+  createTutorApplication: () => apiRequest('/api/tutor-applications', {
+    method: 'POST'
+  }),
+  updateMyTutorApplication: (payload) => apiRequest('/api/tutor-applications/me', {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  }),
+  submitMyTutorApplication: () => apiRequest('/api/tutor-applications/me/submit', {
+    method: 'POST'
+  }),
+  getMyTutorApplicationSubjects: () => apiRequest('/api/tutor-applications/me/subjects'),
+  addApplicationSubject: (payload) => apiRequest('/api/tutor-applications/me/subjects', {
     method: 'POST',
     body: JSON.stringify(payload)
   }),
-  update: (applicationId, payload) => apiRequest(`/users/me/tutor-applications/${applicationId}`, {
-    method: 'PATCH',
+  updateApplicationSubject: (id, payload) => apiRequest(`/api/tutor-applications/me/subjects/${id}`, {
+    method: 'PUT',
     body: JSON.stringify(payload)
   }),
-  withdraw: (applicationId) => apiRequest(`/users/me/tutor-applications/${applicationId}`, {
+  deleteApplicationSubject: (id) => apiRequest(`/api/tutor-applications/me/subjects/${id}`, {
     method: 'DELETE'
   }),
-  uploadEvidence: (file) => {
-    const body = new FormData();
-    body.append('file', file);
-    return apiRequest('/users/me/tutor-evidence-files', { method: 'POST', body });
+  getMyApplicationDocuments: () => apiRequest('/api/tutor-applications/me/documents'),
+  uploadApplicationDocument: ({ documentType, file, metadata = {} }) => {
+    const formData = new FormData();
+    formData.append('documentType', documentType);
+    formData.append('file', file);
+    Object.entries(metadata).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        formData.append(key, value);
+      }
+    });
+
+    return apiRequest('/api/tutor-applications/me/documents', {
+      method: 'POST',
+      body: formData
+    });
   },
-  list: () => apiRequest('/users/tutor-applications'),
-  history: () => apiRequest('/users/tutor-applications-history'),
-  reviewSubject: (profileId, subjectId, payload) => apiRequest(
-    `/users/tutor-applications/${profileId}/subjects/${subjectId}`,
-    { method: 'PATCH', body: JSON.stringify(payload) }
-  ),
-  reviewEvidence: (profileId, subjectId, evidenceId, payload) => apiRequest(
-    `/users/tutor-applications/${profileId}/subjects/${subjectId}/evidences/${evidenceId}`,
-    { method: 'PATCH', body: JSON.stringify(payload) }
-  ),
-  getEvidenceDownloadUrl: (profileId, subjectId, evidenceId) => apiRequest(
-    `/users/tutor-applications/${profileId}/subjects/${subjectId}/evidences/${evidenceId}/download-url`
-  ),
-  getOwnEvidenceDownloadUrl: (evidenceId) => apiRequest(
-    `/users/me/tutor-evidences/${evidenceId}/download-url`
-  )
+  getApplicationDocumentDownloadUrl: (id) => apiRequest(`/api/tutor-applications/me/documents/${id}/download`),
+  deleteApplicationDocument: (id) => apiRequest(`/api/tutor-applications/me/documents/${id}`, {
+    method: 'DELETE'
+  })
 };

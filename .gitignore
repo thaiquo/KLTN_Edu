@@ -4,4 +4,6 @@ mobile/node_modules/
 web/node_modules/
 educonnect/node_modules/
 .env
+.env.*
+!.env.example
 backend/.env

@@ -1,5 +1,16 @@
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8080').replace(/\/$/, '');
 
+export class ApiError extends Error {
+  constructor({ status, message, validationErrors, path, raw }) {
+    super(message || 'Yêu cầu không thành công.');
+    this.name = 'ApiError';
+    this.status = status;
+    this.validationErrors = validationErrors || [];
+    this.path = path;
+    this.raw = raw;
+  }
+}
+
 function getCookie(name) {
   return document.cookie
     .split('; ')
@@ -12,16 +23,64 @@ function getCookie(name) {
 async function ensureCsrfToken() {
   if (getCookie('XSRF-TOKEN')) return;
 
-  await fetch(`${API_URL}/api/auth/csrf`, {
+  await fetch(buildUrl('/api/auth/csrf'), {
     method: 'GET',
     credentials: 'include'
   }).catch(() => {});
 }
 
+function buildUrl(path) {
+  return `${API_URL}${path}`;
+}
+
+function isMutation(method) {
+  return !['GET', 'HEAD', 'OPTIONS'].includes(method);
+}
+
+function buildHeaders(options, needsCsrf, isFormData) {
+  const csrfToken = getCookie('XSRF-TOKEN');
+
+  return {
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...options.headers,
+    ...(needsCsrf && csrfToken ? { 'X-XSRF-TOKEN': decodeURIComponent(csrfToken) } : {})
+  };
+}
+
+async function parseResponseBody(response) {
+  const contentType = response.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    return response.json().catch(() => ({}));
+  }
+
+  return response.text().catch(() => '');
+}
+
+function getErrorMessage(data) {
+  if (typeof data === 'string') {
+    return data;
+  }
+
+  if (Array.isArray(data?.message)) {
+    return data.message[0];
+  }
+
+  return data?.message || data?.error || data?.detail || data?.title;
+}
+
+function normalizeValidationErrors(data) {
+  if (!Array.isArray(data?.validationErrors)) {
+    return [];
+  }
+
+  return data.validationErrors;
+}
+
 export async function apiRequest(path, options = {}) {
   const isFormData = options.body instanceof FormData;
   const method = (options.method || 'GET').toUpperCase();
-  const needsCsrf = !['GET', 'HEAD', 'OPTIONS'].includes(method);
+  const needsCsrf = isMutation(method);
 
   if (needsCsrf) {
     await ensureCsrfToken();
@@ -30,35 +89,45 @@ export async function apiRequest(path, options = {}) {
   let response;
 
   try {
-    response = await fetch(`${API_URL}${path}`, {
+    response = await fetch(buildUrl(path), {
       ...options,
       credentials: 'include',
-      headers: {
-        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-        ...options.headers,
-        ...(needsCsrf && getCookie('XSRF-TOKEN')
-          ? { 'X-XSRF-TOKEN': decodeURIComponent(getCookie('XSRF-TOKEN')) }
-          : {})
-      }
+      headers: buildHeaders(options, needsCsrf, isFormData)
     });
   } catch {
-    throw new Error('Khong the ket noi may chu. Vui long thu lai.');
+    throw new ApiError({
+      status: 0,
+      message: 'Không thể kết nối máy chủ. Vui lòng thử lại.'
+    });
   }
 
-  const contentType = response.headers.get('content-type') || '';
-  const data = contentType.includes('application/json')
-    ? await response.json().catch(() => ({}))
-    : await response.text().catch(() => '');
+  const data = await parseResponseBody(response);
 
   if (!response.ok) {
-    const message = typeof data === 'string'
-      ? data
-      : Array.isArray(data.message)
-        ? data.message[0]
-        : data.message || data.error || data.detail || data.title;
-
-    throw new Error(message || 'Yeu cau khong thanh cong.');
+    throw new ApiError({
+      status: response.status,
+      message: getErrorMessage(data),
+      validationErrors: normalizeValidationErrors(data),
+      path: typeof data === 'object' ? data?.path : undefined,
+      raw: data
+    });
   }
 
   return data;
+}
+
+export function isUnauthorized(error) {
+  return error?.status === 401;
+}
+
+export function isForbidden(error) {
+  return error?.status === 403;
+}
+
+export function isConflict(error) {
+  return error?.status === 409;
+}
+
+export function isRateLimited(error) {
+  return error?.status === 429;
 }

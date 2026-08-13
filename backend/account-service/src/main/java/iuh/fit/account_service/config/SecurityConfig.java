@@ -69,12 +69,17 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/auth/register",
                                 "/api/auth/verify-email",
+                                "/api/auth/resend-verification-otp",
+                                "/api/auth/forgot-password",
+                                "/api/auth/reset-password",
                                 "/api/auth/login",
                                 "/api/auth/logout",
                                 "/api/auth/csrf",
                                 "/api/tutors/profile/registration",
-                                "/api/subjects/**"
+                                "/api/subjects/**",
+                                "/api/reference/**"
                         ).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/tutors/**").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated()
                 )

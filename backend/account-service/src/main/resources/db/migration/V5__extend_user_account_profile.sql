@@ -1,0 +1,8 @@
+ALTER TABLE users
+    ADD COLUMN avatar_key VARCHAR(512),
+    ADD COLUMN gender VARCHAR(30),
+    ADD COLUMN province VARCHAR(100),
+    ADD COLUMN district VARCHAR(100),
+    ADD COLUMN ward VARCHAR(100),
+    ADD COLUMN address_detail VARCHAR(255),
+    ADD COLUMN bio VARCHAR(300);

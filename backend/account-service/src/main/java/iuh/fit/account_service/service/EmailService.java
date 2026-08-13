@@ -19,16 +19,24 @@ public class EmailService {
     }
 
     public void sendVerificationOtp(String email, String otp) {
+        sendOtp(email, otp, "EduConnect - Email Verification");
+    }
+
+    public void sendPasswordResetOtp(String email, String otp) {
+        sendOtp(email, otp, "EduConnect - Password Reset");
+    }
+
+    private void sendOtp(String email, String otp, String subject) {
         JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
 
         if (mailSender == null) {
-            log.warn("Mail sender is not configured. Verification OTP for {} is {}", email, otp);
+            log.warn("Mail sender is not configured. OTP email was not sent for {}", email);
             return;
         }
 
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(email);
-        message.setSubject("EduConnect - Email Verification");
+        message.setSubject(subject);
         message.setText(
                 "Your verification OTP is: " + otp
                         + "\n\n"

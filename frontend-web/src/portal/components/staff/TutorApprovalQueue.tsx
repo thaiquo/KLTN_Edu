@@ -38,8 +38,8 @@ export function TutorApprovalQueue({
       <header className="border-b border-[#e4e8ee] p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff695f]">Tutor Approval Queue</p>
-            <h2 className="mt-1 font-display text-xl font-black text-[#073554]">Hang doi duyet ho so</h2>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff695f]">Tutor Application Queue</p>
+            <h2 className="mt-1 font-display text-xl font-black text-[#073554]">Hàng đợi duyệt hồ sơ</h2>
           </div>
 
           <div className="grid gap-3 md:grid-cols-[minmax(220px,1fr)_180px_150px]">
@@ -48,7 +48,7 @@ export function TutorApprovalQueue({
               <input
                 value={search}
                 onChange={(event) => onSearchChange(event.target.value)}
-                placeholder="Tim theo ten Tutor..."
+                placeholder="Tìm theo tên hoặc email..."
                 className="h-10 w-full border border-[#d7dde6] bg-[#f7f9fc] pl-9 pr-3 text-xs font-semibold outline-none focus:border-[#ff695f]"
               />
             </label>
@@ -58,7 +58,7 @@ export function TutorApprovalQueue({
               onChange={(event) => onSubjectFilterChange(event.target.value)}
               className="h-10 border border-[#d7dde6] bg-[#f7f9fc] px-3 text-xs font-bold text-[#073554] outline-none focus:border-[#ff695f]"
             >
-              <option value="">Tat ca mon</option>
+              <option value="">Tất cả môn</option>
               {subjectOptions.map((subject) => (
                 <option key={subject} value={subject}>{subject}</option>
               ))}
@@ -69,8 +69,8 @@ export function TutorApprovalQueue({
               onChange={(event) => onSortChange(event.target.value)}
               className="h-10 border border-[#d7dde6] bg-[#f7f9fc] px-3 text-xs font-bold text-[#073554] outline-none focus:border-[#ff695f]"
             >
-              <option value="newest">Moi nhat</option>
-              <option value="oldest">Cho lau nhat</option>
+              <option value="newest">Mới nhất</option>
+              <option value="oldest">Chờ lâu nhất</option>
             </select>
           </div>
         </div>
@@ -82,7 +82,7 @@ export function TutorApprovalQueue({
             <tr>
               <th className="px-5 py-4">Tutor</th>
               <th className="px-5 py-4">Subjects</th>
-              <th className="px-5 py-4">Experience</th>
+              <th className="px-5 py-4">Documents</th>
               <th className="px-5 py-4">Submitted Date</th>
               <th className="px-5 py-4">Status</th>
               <th className="px-5 py-4 text-right">Action</th>
@@ -110,9 +110,10 @@ export function TutorApprovalQueue({
                         <span key={subject.id} className="bg-[#eff4f8] px-2 py-1 text-[10px] font-bold text-[#073554]">{subject.name}</span>
                       ))}
                       {tutor.subjects.length > 3 && <span className="px-2 py-1 text-[10px] font-bold text-slate-500">+{tutor.subjects.length - 3}</span>}
+                      {tutor.subjects.length === 0 && <span className="text-xs font-bold text-slate-500">{tutor.subjectCount ?? 0} môn</span>}
                     </div>
                   </td>
-                  <td className="px-5 py-4 text-xs font-bold text-slate-600">{tutor.experienceYears} years</td>
+                  <td className="px-5 py-4 text-xs font-bold text-slate-600">{tutor.documentCount ?? tutor.documents?.length ?? 0} tài liệu</td>
                   <td className="px-5 py-4 text-xs font-bold text-slate-600">{formatDate(tutor.createdAt)}</td>
                   <td className="px-5 py-4"><TutorStatusBadge status={tutor.status} /></td>
                   <td className="px-5 py-4 text-right">
@@ -122,7 +123,7 @@ export function TutorApprovalQueue({
                       className="inline-flex items-center gap-2 bg-[#073554] px-3 py-2 text-[10px] font-black uppercase tracking-[0.12em] text-white hover:bg-[#0b456c]"
                     >
                       <Eye className="h-3.5 w-3.5" />
-                      View
+                      Xem hồ sơ
                     </button>
                   </td>
                 </tr>
@@ -134,8 +135,8 @@ export function TutorApprovalQueue({
 
       {tutors.length === 0 && (
         <div className="px-6 py-14 text-center">
-          <p className="font-display text-sm font-black text-[#073554]">Khong co ho so gia su dang cho duyet.</p>
-          <p className="mt-2 text-xs font-semibold text-slate-500">Khi Tutor gui ho so moi, danh sach se hien thi tai day.</p>
+          <p className="font-display text-sm font-black text-[#073554]">Không có hồ sơ gia sư đang chờ duyệt.</p>
+          <p className="mt-2 text-xs font-semibold text-slate-500">Khi người dùng gửi hồ sơ mới, danh sách sẽ hiển thị tại đây.</p>
         </div>
       )}
     </section>

@@ -1,15 +1,23 @@
 export const homeNavLinks = [
-  { label: 'Tìm gia sư', href: '#community' },
+  { label: 'Tìm gia sư', href: '/tutors' },
   { label: 'Lớp học', href: '#community' },
   { label: 'Gợi ý phù hợp', href: '#matching' },
   { label: 'An toàn & hợp đồng', href: '#trust' },
+];
+
+export const studentNavLinks = [
+  { label: 'Tìm gia sư', href: '/tutors', icon: 'search' },
+  { label: 'Tìm lớp', href: '#community', icon: 'book' },
+  { label: 'Lớp học của tôi', href: '#my-learning', icon: 'book' },
+  { label: 'Tin nhắn', href: '#student-inbox', icon: 'message' },
+  { label: 'Gợi ý cho bạn', href: '#matching', icon: 'sparkles' },
 ];
 
 export const pathways = [
   {
     tone: 'student',
     title: 'Dành cho Học viên',
-    intro: 'Từ nhu cầu học tập đến người đồng hành phù hợp — chỉ trong vài bước đơn giản.',
+    intro: 'Từ nhu cầu học tập đến người đồng hành phù hợp - chỉ trong vài bước đơn giản.',
     steps: [
       {
         number: '01',
@@ -45,7 +53,7 @@ export const pathways = [
       },
       {
         number: '03',
-        title: 'Dạy & nhận thù lao đúng hẹn',
+        title: 'Dạy & nhận thù lao đúng hạn',
         description: 'Giảng dạy chuyên nghiệp và nhận thanh toán theo tiến độ cam kết trong hợp đồng.',
       },
     ],
@@ -55,7 +63,7 @@ export const pathways = [
 export const featuredTutors = [
   {
     name: 'Nguyễn Mai Phương',
-    credential: 'ĐH Ngoại Thương — Chuyên Anh văn & IELTS',
+    credential: 'ĐH Ngoại Thương - Chuyên Anh văn & IELTS',
     tags: ['IELTS 8.5', 'SAT 1550'],
     rate: '350.000đ',
     rating: '4.9',
@@ -64,7 +72,7 @@ export const featuredTutors = [
   },
   {
     name: 'Lê Minh Anh',
-    credential: 'ĐH Bách Khoa — Chuyên Toán & Vật lý',
+    credential: 'ĐH Bách Khoa - Chuyên Toán & Vật lý',
     tags: ['Toán nâng cao', 'Luyện thi ĐH'],
     rate: '450.000đ',
     rating: '5.0',
@@ -73,7 +81,7 @@ export const featuredTutors = [
   },
   {
     name: 'Trần Thu Hà',
-    credential: 'RMIT — Kinh tế & Tài chính',
+    credential: 'RMIT - Kinh tế & Tài chính',
     tags: ['Kế toán', 'Tài chính DN'],
     rate: '500.000đ',
     rating: '4.8',
@@ -123,7 +131,7 @@ export const trustFeatures = [
   {
     icon: 'matching',
     title: 'Gợi ý gia sư phù hợp',
-    description: 'Hệ thống đề xuất dựa trên chuyên môn, khu vực, mức học phí và lịch rảnh — không chỉ dựa trên rating.',
+    description: 'Hệ thống đề xuất dựa trên chuyên môn, khu vực, mức học phí và lịch rảnh - không chỉ dựa trên rating.',
   },
 ];
 
