@@ -1,6 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useState } from 'react';
-import { authRequest, TOKEN_KEY } from './api';
+import { authRequest } from './api';
 
 const AuthContext = createContext(null);
 
@@ -16,17 +15,11 @@ export function AuthProvider({ children }) {
     let active = true;
 
     async function restoreSession() {
-      const token = await AsyncStorage.getItem(TOKEN_KEY);
-      if (!token) {
-        if (active) setLoading(false);
-        return;
-      }
-
       try {
-        const currentUser = await authRequest('/auth/me');
+        const currentUser = await authRequest('/api/users/me');
         if (active) setUser(currentUser);
       } catch {
-        await AsyncStorage.removeItem(TOKEN_KEY);
+        if (active) setUser(null);
       } finally {
         if (active) setLoading(false);
       }
@@ -39,18 +32,18 @@ export function AuthProvider({ children }) {
   }, []);
 
   async function authenticate(path, payload) {
-    const result = await authRequest(path, payload);
-    if (!result?.accessToken || !result?.user) {
+    await authRequest(path, payload);
+    const currentUser = await authRequest('/api/users/me');
+    if (false) {
       throw new Error('Phản hồi đăng nhập không hợp lệ.');
     }
 
-    await AsyncStorage.setItem(TOKEN_KEY, result.accessToken);
-    setUser(result.user);
-    return result.user;
+    setUser(currentUser);
+    return currentUser;
   }
 
   async function logout() {
-    await AsyncStorage.removeItem(TOKEN_KEY);
+    await authRequest('/api/auth/logout', {}).catch(() => {});
     setUser(null);
   }
 
@@ -58,8 +51,8 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{
       user,
       loading,
-      login: (payload) => authenticate('/auth/login', payload),
-      register: (payload) => authenticate('/auth/register', payload),
+      login: (payload) => authenticate('/api/auth/login', payload),
+      register: (payload) => authenticate('/api/auth/register', payload),
       logout
     }}>
       {children}

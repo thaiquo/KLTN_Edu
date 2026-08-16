@@ -18,6 +18,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Field;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -89,10 +90,13 @@ class AuthServiceRegisterTest {
     }
 
     @Test
-    void duplicateEmailIsCheckedCaseInsensitively() {
+    void verifiedDuplicateEmailIsCheckedCaseInsensitively() {
         RegisterRequest request = validRequest();
         request.setEmail("TEST@gmail.com");
-        when(userRepository.existsByEmailIgnoreCase("test@gmail.com")).thenReturn(true);
+        User existingUser = new User();
+        existingUser.setEmail("test@gmail.com");
+        existingUser.setEmailVerified(true);
+        when(userRepository.findByEmailIgnoreCase("test@gmail.com")).thenReturn(Optional.of(existingUser));
 
         assertThatThrownBy(() -> authService.register(request))
                 .isInstanceOf(ConflictException.class)
@@ -100,6 +104,30 @@ class AuthServiceRegisterTest {
 
         verify(userRepository, never()).save(any(User.class));
         verify(userRoleRepository, never()).save(any(UserRole.class));
+        verify(otpService, never()).generateAndSendEmailVerificationOtp(any(User.class));
+    }
+
+    @Test
+    void pendingRegistrationResendsOtpWithoutCreatingDuplicateUser() {
+        RegisterRequest request = validRequest();
+        request.setEmail(" TEST@gmail.com ");
+        request.setFullName(" Updated Name ");
+        User existingUser = new User();
+        ReflectionTestUtils.setField(existingUser, "id", 44L);
+        existingUser.setEmail("test@gmail.com");
+        existingUser.setEmailVerified(false);
+        when(userRepository.findByEmailIgnoreCase("test@gmail.com")).thenReturn(Optional.of(existingUser));
+        when(userRoleRepository.existsByUserIdAndRole(44L, Role.STUDENT)).thenReturn(true);
+
+        var response = authService.register(request);
+
+        assertThat(response.getUserId()).isEqualTo(44L);
+        assertThat(response.getEmail()).isEqualTo("test@gmail.com");
+        assertThat(existingUser.getFullName()).isEqualTo("Updated Name");
+        assertThat(new BCryptPasswordEncoder().matches("12345678", existingUser.getPassword())).isTrue();
+        verify(userRepository).save(existingUser);
+        verify(userRoleRepository, never()).save(any(UserRole.class));
+        verify(otpService).resendEmailVerificationOtp(existingUser);
         verify(otpService, never()).generateAndSendEmailVerificationOtp(any(User.class));
     }
 

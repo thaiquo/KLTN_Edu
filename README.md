@@ -155,7 +155,7 @@ Từ root project:
 cd backend/account-service
 ./run-local.sh
 ```
-
+./mvnw spring-boot:run
 Script này sẽ:
 
 - Tìm root `.env`.

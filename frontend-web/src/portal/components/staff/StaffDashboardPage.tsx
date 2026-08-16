@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
 import { staffTutorsApi } from "../../../api/staffTutors";
 import { subjectSuggestionApi } from "../../../api/subjectSuggestions";
+import { useAuth } from "../../../hooks/useAuth";
 import { TutorApprovalItem } from "../../types";
 import { DashboardStats } from "./DashboardStats";
 import { RejectTutorModal } from "./RejectTutorModal";
@@ -85,6 +86,7 @@ function normalizeDetail(raw: any): TutorApprovalItem {
 }
 
 export function StaffDashboardPage() {
+  const { user } = useAuth();
   const [tutors, setTutors] = useState<TutorApprovalItem[]>([]);
   const [selectedTutorId, setSelectedTutorId] = useState<number>();
   const [selectedTutor, setSelectedTutor] = useState<TutorApprovalItem>();
@@ -224,7 +226,7 @@ export function StaffDashboardPage() {
     setSuggestionBusyId(id);
     setError("");
     try {
-      await subjectSuggestionApi.approveAsNew(id);
+      await subjectSuggestionApi.approveAsNew(id, user?.id);
       setSuggestions((current) => current.filter((item) => item.id !== id));
       setToast("Đã duyệt đề xuất thành môn học mới.");
     } catch (error: any) {
@@ -240,7 +242,7 @@ export function StaffDashboardPage() {
     setSuggestionBusyId(id);
     setError("");
     try {
-      await subjectSuggestionApi.reject(id, reason.trim());
+      await subjectSuggestionApi.reject(id, reason.trim(), user?.id);
       setSuggestions((current) => current.filter((item) => item.id !== id));
       setToast("Đã từ chối đề xuất môn học.");
     } catch (error: any) {

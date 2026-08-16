@@ -1,7 +1,5 @@
 package iuh.fit.account_service.dto.tutorapplication;
 
-import iuh.fit.account_service.enums.TeachingLevel;
-
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Set;
@@ -10,7 +8,7 @@ public class TutorApplicationSubjectResponse {
 
     private Long id;
     private SubjectSummary subject;
-    private Set<TeachingLevel> levels;
+    private Set<String> levels;
     private BigDecimal oneToOneHourlyRate;
     private Integer experienceYears;
     private String description;
@@ -20,7 +18,7 @@ public class TutorApplicationSubjectResponse {
     public TutorApplicationSubjectResponse(
             Long id,
             SubjectSummary subject,
-            Set<TeachingLevel> levels,
+            Set<String> levels,
             BigDecimal oneToOneHourlyRate,
             Integer experienceYears,
             String description,
@@ -45,7 +43,7 @@ public class TutorApplicationSubjectResponse {
         return subject;
     }
 
-    public Set<TeachingLevel> getLevels() {
+    public Set<String> getLevels() {
         return levels;
     }
 
@@ -75,13 +73,13 @@ public class TutorApplicationSubjectResponse {
         private String name;
         private String category;
         private String group;
-        private Set<TeachingLevel> supportedLevels;
+        private Set<String> supportedLevels;
 
-        public SubjectSummary(Long id, String name, String category, Set<TeachingLevel> supportedLevels) {
+        public SubjectSummary(Long id, String name, String category, Set<String> supportedLevels) {
             this(id, name, category, null, supportedLevels);
         }
 
-        public SubjectSummary(Long id, String name, String category, String group, Set<TeachingLevel> supportedLevels) {
+        public SubjectSummary(Long id, String name, String category, String group, Set<String> supportedLevels) {
             this.id = id;
             this.name = name;
             this.category = category;
@@ -105,7 +103,7 @@ public class TutorApplicationSubjectResponse {
             return group;
         }
 
-        public Set<TeachingLevel> getSupportedLevels() {
+        public Set<String> getSupportedLevels() {
             return supportedLevels;
         }
     }

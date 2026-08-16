@@ -1,6 +1,5 @@
 package iuh.fit.account_service.dto.tutorapplication;
 
-import iuh.fit.account_service.enums.TeachingLevel;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -18,7 +17,7 @@ public class TutorApplicationSubjectRequest {
     private Long subjectId;
 
     @NotEmpty(message = "At least one teaching level is required")
-    private Set<TeachingLevel> levels = new LinkedHashSet<>();
+    private Set<String> levels = new LinkedHashSet<>();
 
     @NotNull(message = "One-to-one hourly rate is required")
     @DecimalMin(value = "0.01", message = "One-to-one hourly rate must be greater than 0")
@@ -40,11 +39,11 @@ public class TutorApplicationSubjectRequest {
         this.subjectId = subjectId;
     }
 
-    public Set<TeachingLevel> getLevels() {
+    public Set<String> getLevels() {
         return levels;
     }
 
-    public void setLevels(Set<TeachingLevel> levels) {
+    public void setLevels(Set<String> levels) {
         this.levels = levels == null ? new LinkedHashSet<>() : levels;
     }
 

@@ -4,6 +4,7 @@ import { isUnauthorized } from '../../../api/client';
 import { subjectApi } from '../../../api/subjects';
 import { subjectSuggestionApi } from '../../../api/subjectSuggestions';
 import { tutorApplicationApi } from '../../../api/tutorApplications';
+import { useAuth } from '../../../hooks/useAuth';
 import { ApplicationSubjectCard } from '../subjects/ApplicationSubjectCard';
 import { ApplicationSubjectForm } from '../subjects/ApplicationSubjectForm';
 import { DeleteSubjectDialog } from '../subjects/DeleteSubjectDialog';
@@ -11,6 +12,7 @@ import { DeleteSubjectDialog } from '../subjects/DeleteSubjectDialog';
 const EDITABLE_STATUSES = ['DRAFT', 'REJECTED'];
 
 export function TeachingSubjectsStep({ application, readOnly, onSubjectsChanged }) {
+  const { user } = useAuth();
   const [subjects, setSubjects] = useState([]);
   const [catalog, setCatalog] = useState({ categories: [], groups: [], groupSubjects: [] });
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -44,7 +46,7 @@ export function TeachingSubjectsStep({ application, readOnly, onSubjectsChanged 
       try {
         const [nextSubjects, nextSuggestions] = await Promise.all([
           tutorApplicationApi.getMyTutorApplicationSubjects(),
-          subjectSuggestionApi.mine()
+          user?.id ? subjectSuggestionApi.mine(user.id) : Promise.resolve([])
         ]);
         if (!active) return;
         const normalized = Array.isArray(nextSubjects) ? nextSubjects : [];
@@ -113,7 +115,7 @@ export function TeachingSubjectsStep({ application, readOnly, onSubjectsChanged 
   }
 
   async function refreshSuggestions() {
-    const nextSuggestions = await subjectSuggestionApi.mine();
+    const nextSuggestions = user?.id ? await subjectSuggestionApi.mine(user.id) : [];
     setSuggestions(Array.isArray(nextSuggestions) ? nextSuggestions : []);
   }
 
@@ -310,6 +312,7 @@ export function TeachingSubjectsStep({ application, readOnly, onSubjectsChanged 
                 groups={catalog.groups}
                 selectedCategory={selectedCategory}
                 selectedGroup={selectedGroup}
+                requestedByUserId={user?.id}
                 busy={actionBusy === 'suggest'}
                 onCancel={() => setSuggestingName('')}
                 onSubmit={async (payload) => {
@@ -541,7 +544,7 @@ function PendingSuggestionsSection({ suggestions }) {
   );
 }
 
-function SubjectSuggestionForm({ initialName, categories, groups, selectedCategory, selectedGroup, busy, onCancel, onSubmit }) {
+function SubjectSuggestionForm({ initialName, categories, groups, selectedCategory, selectedGroup, requestedByUserId, busy, onCancel, onSubmit }) {
   const [form, setForm] = useState({
     suggestedName: initialName,
     categoryId: selectedCategory?.id || '',
@@ -569,6 +572,7 @@ function SubjectSuggestionForm({ initialName, categories, groups, selectedCatego
           suggestedName: form.suggestedName.trim(),
           categoryId: Number(form.categoryId),
           groupId: Number(form.groupId),
+          requestedByUserId,
           levels: form.levels,
           note: form.note.trim() || null
         });

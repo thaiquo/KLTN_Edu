@@ -10,8 +10,6 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
-import jakarta.persistence.JoinTable;
-import jakarta.persistence.ManyToMany;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
@@ -23,8 +21,6 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
-import java.util.LinkedHashSet;
-import java.util.Set;
 
 @Entity
 @Table(name = "tutors")
@@ -64,15 +60,6 @@ public class Tutor {
 
     @Column(columnDefinition = "TEXT")
     private String rejectionReason;
-
-    @ManyToMany
-    @JoinTable(
-            name = "tutor_subjects",
-            joinColumns = @JoinColumn(name = "tutor_id"),
-            inverseJoinColumns = @JoinColumn(name = "subject_id")
-    )
-    @Builder.Default
-    private Set<Subject> subjects = new LinkedHashSet<>();
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -151,14 +138,6 @@ public class Tutor {
 
     public void setRejectionReason(String rejectionReason) {
         this.rejectionReason = rejectionReason;
-    }
-
-    public Set<Subject> getSubjects() {
-        return subjects;
-    }
-
-    public void setSubjects(Set<Subject> subjects) {
-        this.subjects = subjects;
     }
 
     public LocalDateTime getCreatedAt() {

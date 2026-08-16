@@ -9,13 +9,13 @@ export const subjectApi = {
     if (limit) params.set('limit', limit);
     const query = params.toString();
 
-    return apiRequest(`/api/subjects${query ? `?${query}` : ''}`);
+    return apiRequest(`/api/learning/subjects${query ? `?${query}` : ''}`);
   },
-  categories: () => apiRequest('/api/subjects/categories'),
+  categories: () => apiRequest('/api/learning/subjects/categories'),
   groups: ({ categoryId } = {}) => {
     const params = new URLSearchParams();
     if (categoryId) params.set('categoryId', categoryId);
     const query = params.toString();
-    return apiRequest(`/api/subjects/groups${query ? `?${query}` : ''}`);
+    return apiRequest(`/api/learning/subjects/groups${query ? `?${query}` : ''}`);
   }
 };

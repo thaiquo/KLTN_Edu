@@ -34,6 +34,9 @@ CREATE TABLE tutor_application_subjects (
     id BIGSERIAL PRIMARY KEY,
     tutor_application_id BIGINT NOT NULL,
     subject_id BIGINT NOT NULL,
+    subject_name VARCHAR(160) NOT NULL,
+    subject_category_name VARCHAR(120),
+    subject_group_name VARCHAR(140),
     one_to_one_hourly_rate NUMERIC(12, 2) NOT NULL,
     experience_years INTEGER NOT NULL DEFAULT 0,
     description VARCHAR(1000),
@@ -43,9 +46,6 @@ CREATE TABLE tutor_application_subjects (
         FOREIGN KEY (tutor_application_id)
         REFERENCES tutor_applications (id)
         ON DELETE CASCADE,
-    CONSTRAINT fk_tutor_application_subjects_subject
-        FOREIGN KEY (subject_id)
-        REFERENCES subjects (id),
     CONSTRAINT uk_tutor_application_subjects_application_subject
         UNIQUE (tutor_application_id, subject_id),
     CONSTRAINT ck_tutor_application_subjects_rate
@@ -87,47 +87,3 @@ CREATE TABLE tutor_profiles (
 
 CREATE INDEX idx_tutor_profiles_user_id
     ON tutor_profiles (user_id);
-
-CREATE TABLE tutor_profile_subjects (
-    id BIGSERIAL PRIMARY KEY,
-    tutor_profile_id BIGINT NOT NULL,
-    subject_id BIGINT NOT NULL,
-    one_to_one_hourly_rate NUMERIC(12, 2) NOT NULL,
-    experience_years INTEGER NOT NULL DEFAULT 0,
-    description VARCHAR(1000),
-    active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMP(6) NOT NULL,
-    updated_at TIMESTAMP(6),
-    CONSTRAINT fk_tutor_profile_subjects_profile
-        FOREIGN KEY (tutor_profile_id)
-        REFERENCES tutor_profiles (id)
-        ON DELETE CASCADE,
-    CONSTRAINT fk_tutor_profile_subjects_subject
-        FOREIGN KEY (subject_id)
-        REFERENCES subjects (id),
-    CONSTRAINT uk_tutor_profile_subjects_profile_subject
-        UNIQUE (tutor_profile_id, subject_id),
-    CONSTRAINT ck_tutor_profile_subjects_rate
-        CHECK (one_to_one_hourly_rate > 0),
-    CONSTRAINT ck_tutor_profile_subjects_experience_years
-        CHECK (experience_years >= 0)
-);
-
-CREATE INDEX idx_tutor_profile_subjects_profile_id
-    ON tutor_profile_subjects (tutor_profile_id);
-
-CREATE INDEX idx_tutor_profile_subjects_subject_id
-    ON tutor_profile_subjects (subject_id);
-
-CREATE TABLE tutor_profile_subject_levels (
-    tutor_profile_subject_id BIGINT NOT NULL,
-    level VARCHAR(40) NOT NULL,
-    CONSTRAINT pk_tutor_profile_subject_levels
-        PRIMARY KEY (tutor_profile_subject_id, level),
-    CONSTRAINT fk_tutor_profile_subject_levels_subject
-        FOREIGN KEY (tutor_profile_subject_id)
-        REFERENCES tutor_profile_subjects (id)
-        ON DELETE CASCADE,
-    CONSTRAINT ck_tutor_profile_subject_levels_level
-        CHECK (level IN ('PRIMARY', 'LOWER_SECONDARY', 'UPPER_SECONDARY', 'UNIVERSITY', 'ADULT', 'EXAM_PREPARATION'))
-);

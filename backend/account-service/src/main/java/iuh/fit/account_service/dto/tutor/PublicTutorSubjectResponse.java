@@ -1,7 +1,5 @@
 package iuh.fit.account_service.dto.tutor;
 
-import iuh.fit.account_service.enums.TeachingLevel;
-
 import java.math.BigDecimal;
 import java.util.Set;
 
@@ -11,7 +9,7 @@ public class PublicTutorSubjectResponse {
     private final String name;
     private final SubjectCategoryResponse category;
     private final SubjectGroupResponse group;
-    private final Set<TeachingLevel> levels;
+    private final Set<String> levels;
     private final BigDecimal oneToOneHourlyRate;
     private final Integer experienceYears;
     private final String description;
@@ -21,7 +19,7 @@ public class PublicTutorSubjectResponse {
             String name,
             SubjectCategoryResponse category,
             SubjectGroupResponse group,
-            Set<TeachingLevel> levels,
+            Set<String> levels,
             BigDecimal oneToOneHourlyRate,
             Integer experienceYears,
             String description
@@ -52,7 +50,7 @@ public class PublicTutorSubjectResponse {
         return group;
     }
 
-    public Set<TeachingLevel> getLevels() {
+    public Set<String> getLevels() {
         return levels;
     }
 

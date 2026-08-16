@@ -1,21 +1,40 @@
 import { apiRequest } from './client';
 
+function normalizeSuggestion(item) {
+  if (!item || typeof item !== 'object') return item;
+  return {
+    ...item,
+    suggestedName: item.suggestedName || item.requestedName,
+    rejectionReason: item.rejectionReason || item.rejectReason
+  };
+}
+
+function normalizeList(items) {
+  return Array.isArray(items) ? items.map(normalizeSuggestion) : items;
+}
+
 export const subjectSuggestionApi = {
-  create: (payload) => apiRequest('/api/subject-suggestions', {
+  create: async (payload) => normalizeSuggestion(await apiRequest('/api/learning/subject-requests', {
     method: 'POST',
-    body: JSON.stringify(payload)
-  }),
-  mine: () => apiRequest('/api/subject-suggestions/me'),
-  staffPending: () => apiRequest('/api/staff/subject-suggestions/pending'),
-  approveAsNew: (id) => apiRequest(`/api/staff/subject-suggestions/${id}/approve-new`, {
+    body: JSON.stringify({
+      requestedName: payload.suggestedName || payload.requestedName,
+      categoryId: payload.categoryId,
+      groupId: payload.groupId,
+      requestedByUserId: payload.requestedByUserId,
+      levels: payload.levels,
+      note: payload.note
+    })
+  })),
+  mine: async (userId) => normalizeList(await apiRequest(`/api/learning/subject-requests/me?userId=${encodeURIComponent(userId)}`)),
+  staffPending: async () => normalizeList(await apiRequest('/api/learning/subject-requests/pending')),
+  approveAsNew: (id, reviewedByUserId) => apiRequest(`/api/learning/subject-requests/${id}/approve${reviewedByUserId ? `?reviewedByUserId=${encodeURIComponent(reviewedByUserId)}` : ''}`, {
     method: 'PATCH'
   }),
-  mapExisting: (id, payload) => apiRequest(`/api/staff/subject-suggestions/${id}/map-existing`, {
-    method: 'PATCH',
-    body: JSON.stringify(payload)
+  mapExisting: (id) => apiRequest(`/api/learning/subject-requests/${id}/approve`, {
+    method: 'PATCH'
   }),
-  reject: (id, reason) => apiRequest(`/api/staff/subject-suggestions/${id}/reject`, {
+  reject: (id, reason, reviewedByUserId) => apiRequest(`/api/learning/subject-requests/${id}/reject`, {
     method: 'PATCH',
-    body: JSON.stringify({ reason })
+    body: JSON.stringify({ reason, reviewedByUserId })
   })
 };

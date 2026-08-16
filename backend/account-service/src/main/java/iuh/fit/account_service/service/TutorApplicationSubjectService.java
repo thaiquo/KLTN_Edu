@@ -3,16 +3,14 @@ package iuh.fit.account_service.service;
 import iuh.fit.account_service.dto.tutorapplication.TutorApplicationSubjectRequest;
 import iuh.fit.account_service.dto.tutorapplication.TutorApplicationSubjectResponse;
 import iuh.fit.account_service.dto.tutorapplication.UpdateTutorApplicationSubjectRequest;
-import iuh.fit.account_service.entity.Subject;
+import iuh.fit.account_service.dto.learning.LearningSubjectResponse;
 import iuh.fit.account_service.entity.TutorApplication;
 import iuh.fit.account_service.entity.TutorApplicationSubject;
 import iuh.fit.account_service.entity.User;
-import iuh.fit.account_service.enums.TeachingLevel;
 import iuh.fit.account_service.enums.TutorApplicationStatus;
 import iuh.fit.account_service.exception.BadRequestException;
 import iuh.fit.account_service.exception.ConflictException;
 import iuh.fit.account_service.exception.ResourceNotFoundException;
-import iuh.fit.account_service.repository.SubjectRepository;
 import iuh.fit.account_service.repository.TutorApplicationRepository;
 import iuh.fit.account_service.repository.TutorApplicationSubjectRepository;
 import iuh.fit.account_service.repository.UserRepository;
@@ -29,18 +27,18 @@ public class TutorApplicationSubjectService {
 
     private final TutorApplicationRepository tutorApplicationRepository;
     private final TutorApplicationSubjectRepository tutorApplicationSubjectRepository;
-    private final SubjectRepository subjectRepository;
+    private final LearningSubjectLookupService learningSubjectLookupService;
     private final UserRepository userRepository;
 
     public TutorApplicationSubjectService(
             TutorApplicationRepository tutorApplicationRepository,
             TutorApplicationSubjectRepository tutorApplicationSubjectRepository,
-            SubjectRepository subjectRepository,
+            LearningSubjectLookupService learningSubjectLookupService,
             UserRepository userRepository
     ) {
         this.tutorApplicationRepository = tutorApplicationRepository;
         this.tutorApplicationSubjectRepository = tutorApplicationSubjectRepository;
-        this.subjectRepository = subjectRepository;
+        this.learningSubjectLookupService = learningSubjectLookupService;
         this.userRepository = userRepository;
     }
 
@@ -63,8 +61,8 @@ public class TutorApplicationSubjectService {
         TutorApplication application = getCurrentApplication(email);
         assertEditable(application);
 
-        Subject subject = getActiveSubject(request.getSubjectId());
-        if (tutorApplicationSubjectRepository.existsByTutorApplication_IdAndSubject_Id(
+        LearningSubjectResponse subject = learningSubjectLookupService.getActiveSubject(request.getSubjectId());
+        if (tutorApplicationSubjectRepository.existsByTutorApplication_IdAndSubjectId(
                 application.getId(),
                 subject.getId()
         )) {
@@ -73,7 +71,7 @@ public class TutorApplicationSubjectService {
 
         TutorApplicationSubject applicationSubject = new TutorApplicationSubject();
         applicationSubject.setTutorApplication(application);
-        applicationSubject.setSubject(subject);
+        applySubjectSnapshot(applicationSubject, subject);
         applyMetadata(
                 applicationSubject,
                 subject,
@@ -101,7 +99,7 @@ public class TutorApplicationSubjectService {
 
         applyMetadata(
                 applicationSubject,
-                applicationSubject.getSubject(),
+                learningSubjectLookupService.getActiveSubject(applicationSubject.getSubjectId()),
                 request.getLevels(),
                 request.getOneToOneHourlyRate(),
                 request.getExperienceYears(),
@@ -135,17 +133,6 @@ public class TutorApplicationSubjectService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
-    private Subject getActiveSubject(Long subjectId) {
-        Subject subject = subjectRepository.findById(subjectId)
-                .orElseThrow(() -> new ResourceNotFoundException("Subject not found"));
-
-        if (!subject.isActive()) {
-            throw new BadRequestException("Subject is inactive");
-        }
-
-        return subject;
-    }
-
     private void assertEditable(TutorApplication application) {
         if (application.getStatus() == TutorApplicationStatus.DRAFT
                 || application.getStatus() == TutorApplicationStatus.REJECTED) {
@@ -157,8 +144,8 @@ public class TutorApplicationSubjectService {
 
     private void applyMetadata(
             TutorApplicationSubject applicationSubject,
-            Subject subject,
-            Set<TeachingLevel> levels,
+            LearningSubjectResponse subject,
+            Set<String> levels,
             java.math.BigDecimal oneToOneHourlyRate,
             Integer experienceYears,
             String description
@@ -169,13 +156,17 @@ public class TutorApplicationSubjectService {
         applicationSubject.setDescription(normalizeBlankToNull(description));
     }
 
-    private Set<TeachingLevel> validateLevels(Subject subject, Set<TeachingLevel> requestedLevels) {
+    private Set<String> validateLevels(LearningSubjectResponse subject, Set<String> requestedLevels) {
         if (requestedLevels == null || requestedLevels.isEmpty()) {
             throw new BadRequestException("At least one teaching level is required");
         }
 
-        Set<TeachingLevel> normalizedLevels = new LinkedHashSet<>(requestedLevels);
-        Set<TeachingLevel> supportedLevels = subject.getSupportedLevels();
+        Set<String> normalizedLevels = requestedLevels.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(String::trim)
+                .filter(level -> !level.isBlank())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        Set<String> supportedLevels = subject.getSupportedLevels();
         if (supportedLevels == null || supportedLevels.isEmpty()) {
             throw new BadRequestException("Subject does not support teaching levels");
         }
@@ -197,18 +188,14 @@ public class TutorApplicationSubjectService {
     }
 
     private TutorApplicationSubjectResponse toResponse(TutorApplicationSubject applicationSubject) {
-        Subject subject = applicationSubject.getSubject();
-        String categoryName = subject.getCategory() == null ? null : subject.getCategory().getName();
-        String groupName = subject.getGroup() == null ? null : subject.getGroup().getName();
-
         return new TutorApplicationSubjectResponse(
                 applicationSubject.getId(),
                 new TutorApplicationSubjectResponse.SubjectSummary(
-                        subject.getId(),
-                        subject.getName(),
-                        categoryName,
-                        groupName,
-                        new LinkedHashSet<>(subject.getSupportedLevels())
+                        applicationSubject.getSubjectId(),
+                        applicationSubject.getSubjectName(),
+                        applicationSubject.getSubjectCategoryName(),
+                        applicationSubject.getSubjectGroupName(),
+                        new LinkedHashSet<>(applicationSubject.getLevels())
                 ),
                 new LinkedHashSet<>(applicationSubject.getLevels()),
                 applicationSubject.getOneToOneHourlyRate(),
@@ -217,5 +204,12 @@ public class TutorApplicationSubjectService {
                 applicationSubject.getCreatedAt(),
                 applicationSubject.getUpdatedAt()
         );
+    }
+
+    private void applySubjectSnapshot(TutorApplicationSubject applicationSubject, LearningSubjectResponse subject) {
+        applicationSubject.setSubjectId(subject.getId());
+        applicationSubject.setSubjectName(subject.getName());
+        applicationSubject.setSubjectCategoryName(subject.getCategory() == null ? null : subject.getCategory().getName());
+        applicationSubject.setSubjectGroupName(subject.getGroup() == null ? null : subject.getGroup().getName());
     }
 }

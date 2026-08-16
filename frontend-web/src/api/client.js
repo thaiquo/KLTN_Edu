@@ -69,6 +69,14 @@ function getErrorMessage(data) {
   return data?.message || data?.error || data?.detail || data?.title;
 }
 
+function getStatusFallbackMessage(status) {
+  if (status === 400) return 'Dữ liệu gửi lên không hợp lệ.';
+  if (status === 409) return 'Yêu cầu bị xung đột với dữ liệu hiện có.';
+  if (status === 429) return 'Bạn thao tác quá nhanh. Vui lòng thử lại sau.';
+  if (status >= 500) return 'Máy chủ gặp lỗi. Vui lòng thử lại sau.';
+  return 'Yêu cầu không thành công.';
+}
+
 function normalizeValidationErrors(data) {
   if (!Array.isArray(data?.validationErrors)) {
     return [];
@@ -106,7 +114,7 @@ export async function apiRequest(path, options = {}) {
   if (!response.ok) {
     throw new ApiError({
       status: response.status,
-      message: getErrorMessage(data),
+      message: getErrorMessage(data) || getStatusFallbackMessage(response.status),
       validationErrors: normalizeValidationErrors(data),
       path: typeof data === 'object' ? data?.path : undefined,
       raw: data

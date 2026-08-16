@@ -5,12 +5,10 @@ import iuh.fit.account_service.dto.staff.StaffReviewNoteRequest;
 import iuh.fit.account_service.dto.staff.StaffTutorApplicationDetailResponse;
 import iuh.fit.account_service.dto.staff.StaffTutorApplicationSummaryResponse;
 import iuh.fit.account_service.dto.tutorapplication.TutorDocumentDownloadResponse;
-import iuh.fit.account_service.entity.Subject;
 import iuh.fit.account_service.entity.TutorApplication;
 import iuh.fit.account_service.entity.TutorApplicationSubject;
 import iuh.fit.account_service.entity.TutorDocument;
 import iuh.fit.account_service.entity.TutorProfile;
-import iuh.fit.account_service.entity.TutorSubject;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.entity.UserRole;
 import iuh.fit.account_service.enums.Role;
@@ -20,11 +18,13 @@ import iuh.fit.account_service.enums.TutorDocumentVerificationStatus;
 import iuh.fit.account_service.exception.ConflictException;
 import iuh.fit.account_service.exception.IncompleteTutorApplicationException;
 import iuh.fit.account_service.exception.ResourceNotFoundException;
+import iuh.fit.account_service.messaging.AccountEventPublisher;
+import iuh.fit.account_service.messaging.event.TutorApprovedEvent;
+import iuh.fit.account_service.messaging.event.TutorRejectedEvent;
 import iuh.fit.account_service.repository.TutorApplicationRepository;
 import iuh.fit.account_service.repository.TutorApplicationSubjectRepository;
 import iuh.fit.account_service.repository.TutorDocumentRepository;
 import iuh.fit.account_service.repository.TutorProfileRepository;
-import iuh.fit.account_service.repository.TutorSubjectRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.repository.UserRoleRepository;
 import iuh.fit.account_service.service.storage.FileStorageService;
@@ -38,9 +38,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.function.Function;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -50,29 +49,29 @@ public class TutorApprovalService {
     private final TutorApplicationSubjectRepository tutorApplicationSubjectRepository;
     private final TutorDocumentRepository tutorDocumentRepository;
     private final TutorProfileRepository tutorProfileRepository;
-    private final TutorSubjectRepository tutorSubjectRepository;
     private final UserRoleRepository userRoleRepository;
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
+    private final AccountEventPublisher eventPublisher;
 
     public TutorApprovalService(
             TutorApplicationRepository tutorApplicationRepository,
             TutorApplicationSubjectRepository tutorApplicationSubjectRepository,
             TutorDocumentRepository tutorDocumentRepository,
             TutorProfileRepository tutorProfileRepository,
-            TutorSubjectRepository tutorSubjectRepository,
             UserRoleRepository userRoleRepository,
             UserRepository userRepository,
-            FileStorageService fileStorageService
+            FileStorageService fileStorageService,
+            AccountEventPublisher eventPublisher
     ) {
         this.tutorApplicationRepository = tutorApplicationRepository;
         this.tutorApplicationSubjectRepository = tutorApplicationSubjectRepository;
         this.tutorDocumentRepository = tutorDocumentRepository;
         this.tutorProfileRepository = tutorProfileRepository;
-        this.tutorSubjectRepository = tutorSubjectRepository;
         this.userRoleRepository = userRoleRepository;
         this.userRepository = userRepository;
         this.fileStorageService = fileStorageService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -117,7 +116,7 @@ public class TutorApprovalService {
         profile.setActive(true);
         profile.setBio(application.getBio());
         profile = tutorProfileRepository.save(profile);
-        upsertTutorSubjects(profile, applicationSubjects);
+        publishTutorApproved(application, profile, applicationSubjects);
         markDocumentsVerified(documents);
 
         application.setStatus(TutorApplicationStatus.APPROVED);
@@ -143,39 +142,14 @@ public class TutorApprovalService {
         application.setReviewNote(normalize(request.getNote()));
 
         tutorApplicationRepository.save(application);
+        eventPublisher.publishTutorRejected(new TutorRejectedEvent(
+                UUID.randomUUID().toString(),
+                application.getId(),
+                application.getUser().getId(),
+                application.getRejectionReason(),
+                LocalDateTime.now()
+        ));
         return toDetail(application);
-    }
-
-    private void upsertTutorSubjects(TutorProfile profile, List<TutorApplicationSubject> applicationSubjects) {
-        List<TutorSubject> existingSubjects = tutorSubjectRepository.findByTutorProfile_IdOrderByCreatedAtAsc(profile.getId());
-        Map<Long, TutorSubject> existingBySubjectId = existingSubjects.stream()
-                .collect(Collectors.toMap(item -> item.getSubject().getId(), Function.identity()));
-        Set<Long> approvedSubjectIds = applicationSubjects.stream()
-                .map(item -> item.getSubject().getId())
-                .collect(Collectors.toSet());
-        List<TutorSubject> toSave = new ArrayList<>();
-
-        for (TutorApplicationSubject applicationSubject : applicationSubjects) {
-            Long subjectId = applicationSubject.getSubject().getId();
-            TutorSubject tutorSubject = existingBySubjectId.getOrDefault(subjectId, new TutorSubject());
-            tutorSubject.setTutorProfile(profile);
-            tutorSubject.setSubject(applicationSubject.getSubject());
-            tutorSubject.setOneToOneHourlyRate(applicationSubject.getOneToOneHourlyRate());
-            tutorSubject.setExperienceYears(applicationSubject.getExperienceYears());
-            tutorSubject.setDescription(applicationSubject.getDescription());
-            tutorSubject.setLevels(new java.util.LinkedHashSet<>(applicationSubject.getLevels()));
-            tutorSubject.setActive(true);
-            toSave.add(tutorSubject);
-        }
-
-        for (TutorSubject existingSubject : existingSubjects) {
-            if (!approvedSubjectIds.contains(existingSubject.getSubject().getId())) {
-                existingSubject.setActive(false);
-                toSave.add(existingSubject);
-            }
-        }
-
-        tutorSubjectRepository.saveAll(toSave);
     }
 
     private void ensureTutorRole(User applicant) {
@@ -269,13 +243,12 @@ public class TutorApprovalService {
     }
 
     private StaffTutorApplicationDetailResponse.SubjectItem toSubjectItem(TutorApplicationSubject item) {
-        Subject subject = item.getSubject();
         return new StaffTutorApplicationDetailResponse.SubjectItem(
                 item.getId(),
-                subject.getId(),
-                subject.getName(),
-                subject.getCategory() == null ? null : subject.getCategory().getName(),
-                subject.getGroup() == null ? null : subject.getGroup().getName(),
+                item.getSubjectId(),
+                item.getSubjectName(),
+                item.getSubjectCategoryName(),
+                item.getSubjectGroupName(),
                 item.getOneToOneHourlyRate(),
                 item.getExperienceYears(),
                 item.getDescription(),
@@ -333,15 +306,33 @@ public class TutorApprovalService {
     }
 
     private boolean invalidSubject(TutorApplicationSubject subject) {
-        return subject.getSubject() == null
-                || !subject.getSubject().isActive()
+        return subject.getSubjectId() == null
+                || !StringUtils.hasText(subject.getSubjectName())
                 || subject.getOneToOneHourlyRate() == null
                 || subject.getOneToOneHourlyRate().compareTo(BigDecimal.ZERO) <= 0
                 || subject.getExperienceYears() == null
                 || subject.getExperienceYears() < 0
                 || subject.getLevels() == null
-                || subject.getLevels().isEmpty()
-                || !subject.getSubject().getSupportedLevels().containsAll(subject.getLevels());
+                || subject.getLevels().isEmpty();
+    }
+
+    private void publishTutorApproved(TutorApplication application, TutorProfile profile, List<TutorApplicationSubject> subjects) {
+        eventPublisher.publishTutorApproved(new TutorApprovedEvent(
+                UUID.randomUUID().toString(),
+                application.getId(),
+                profile.getId(),
+                application.getUser().getId(),
+                subjects.stream()
+                        .map(subject -> new TutorApprovedEvent.SubjectItem(
+                                subject.getSubjectId(),
+                                new java.util.LinkedHashSet<>(subject.getLevels()),
+                                subject.getOneToOneHourlyRate(),
+                                subject.getExperienceYears(),
+                                subject.getDescription()
+                        ))
+                        .collect(Collectors.toCollection(java.util.LinkedHashSet::new)),
+                LocalDateTime.now()
+        ));
     }
 
     private boolean hasIdentityDocument(List<TutorDocument> documents) {

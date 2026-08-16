@@ -2,7 +2,6 @@ package iuh.fit.account_service.dto.staff;
 
 import iuh.fit.account_service.enums.AccountStatus;
 import iuh.fit.account_service.enums.CredentialValidityType;
-import iuh.fit.account_service.enums.TeachingLevel;
 import iuh.fit.account_service.enums.TutorApplicationStatus;
 import iuh.fit.account_service.enums.TutorDocumentType;
 import iuh.fit.account_service.enums.TutorDocumentVerificationStatus;
@@ -154,9 +153,9 @@ public class StaffTutorApplicationDetailResponse {
         private BigDecimal oneToOneHourlyRate;
         private Integer experienceYears;
         private String description;
-        private Set<TeachingLevel> levels;
+        private Set<String> levels;
 
-        public SubjectItem(Long id, Long subjectId, String name, String category, String group, BigDecimal oneToOneHourlyRate, Integer experienceYears, String description, Set<TeachingLevel> levels) {
+        public SubjectItem(Long id, Long subjectId, String name, String category, String group, BigDecimal oneToOneHourlyRate, Integer experienceYears, String description, Set<String> levels) {
             this.id = id;
             this.subjectId = subjectId;
             this.name = name;
@@ -176,7 +175,7 @@ public class StaffTutorApplicationDetailResponse {
         public BigDecimal getOneToOneHourlyRate() { return oneToOneHourlyRate; }
         public Integer getExperienceYears() { return experienceYears; }
         public String getDescription() { return description; }
-        public Set<TeachingLevel> getLevels() { return levels; }
+        public Set<String> getLevels() { return levels; }
     }
 
     public static class DocumentItem {

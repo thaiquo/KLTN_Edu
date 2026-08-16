@@ -1,12 +1,9 @@
 package iuh.fit.account_service.entity;
 
-import iuh.fit.account_service.enums.TeachingLevel;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -44,9 +41,17 @@ public class TutorApplicationSubject {
     @JoinColumn(name = "tutor_application_id", nullable = false)
     private TutorApplication tutorApplication;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "subject_id", nullable = false)
-    private Subject subject;
+    @Column(nullable = false)
+    private Long subjectId;
+
+    @Column(nullable = false, length = 160)
+    private String subjectName;
+
+    @Column(length = 120)
+    private String subjectCategoryName;
+
+    @Column(length = 140)
+    private String subjectGroupName;
 
     @DecimalMin(value = "0.01", message = "One-to-one hourly rate must be greater than 0")
     @Column(name = "one_to_one_hourly_rate", nullable = false, precision = 12, scale = 2)
@@ -66,9 +71,8 @@ public class TutorApplicationSubject {
             name = "tutor_application_subject_levels",
             joinColumns = @JoinColumn(name = "tutor_application_subject_id")
     )
-    @Enumerated(EnumType.STRING)
     @Column(name = "level", nullable = false, length = 40)
-    private Set<TeachingLevel> levels = new LinkedHashSet<>();
+    private Set<String> levels = new LinkedHashSet<>();
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -101,12 +105,36 @@ public class TutorApplicationSubject {
         this.tutorApplication = tutorApplication;
     }
 
-    public Subject getSubject() {
-        return subject;
+    public Long getSubjectId() {
+        return subjectId;
     }
 
-    public void setSubject(Subject subject) {
-        this.subject = subject;
+    public void setSubjectId(Long subjectId) {
+        this.subjectId = subjectId;
+    }
+
+    public String getSubjectName() {
+        return subjectName;
+    }
+
+    public void setSubjectName(String subjectName) {
+        this.subjectName = subjectName;
+    }
+
+    public String getSubjectCategoryName() {
+        return subjectCategoryName;
+    }
+
+    public void setSubjectCategoryName(String subjectCategoryName) {
+        this.subjectCategoryName = subjectCategoryName;
+    }
+
+    public String getSubjectGroupName() {
+        return subjectGroupName;
+    }
+
+    public void setSubjectGroupName(String subjectGroupName) {
+        this.subjectGroupName = subjectGroupName;
     }
 
     public BigDecimal getOneToOneHourlyRate() {
@@ -133,11 +161,11 @@ public class TutorApplicationSubject {
         this.description = description;
     }
 
-    public Set<TeachingLevel> getLevels() {
+    public Set<String> getLevels() {
         return levels;
     }
 
-    public void setLevels(Set<TeachingLevel> levels) {
+    public void setLevels(Set<String> levels) {
         this.levels = levels == null ? new LinkedHashSet<>() : levels;
     }
 

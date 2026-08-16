@@ -4,21 +4,17 @@ import iuh.fit.account_service.dto.tutor.SubjectSummaryResponse;
 import iuh.fit.account_service.dto.tutor.TutorProfileRequest;
 import iuh.fit.account_service.dto.tutor.TutorRegistrationProfileRequest;
 import iuh.fit.account_service.dto.tutor.TutorResponse;
-import iuh.fit.account_service.entity.Subject;
 import iuh.fit.account_service.entity.Tutor;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.enums.Role;
 import iuh.fit.account_service.enums.TutorStatus;
-import iuh.fit.account_service.repository.SubjectRepository;
 import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.repository.UserRoleRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 @Service
 public class TutorService {
@@ -26,18 +22,18 @@ public class TutorService {
     private final TutorRepository tutorRepository;
     private final UserRepository userRepository;
     private final UserRoleRepository userRoleRepository;
-    private final SubjectRepository subjectRepository;
+    private final LearningSubjectLookupService learningSubjectLookupService;
 
     public TutorService(
             TutorRepository tutorRepository,
             UserRepository userRepository,
             UserRoleRepository userRoleRepository,
-            SubjectRepository subjectRepository
+            LearningSubjectLookupService learningSubjectLookupService
     ) {
         this.tutorRepository = tutorRepository;
         this.userRepository = userRepository;
         this.userRoleRepository = userRoleRepository;
-        this.subjectRepository = subjectRepository;
+        this.learningSubjectLookupService = learningSubjectLookupService;
     }
 
     @Transactional
@@ -74,7 +70,7 @@ public class TutorService {
         tutor.setBio(request.getBio());
         tutor.setEducation(request.getEducation());
         tutor.setExperienceYears(request.getExperienceYears());
-        tutor.setSubjects(loadSubjects(request.getSubjectIds()));
+        validateSubjectIds(request.getSubjectIds());
         tutor.setStatus(TutorStatus.PENDING);
         tutor.setRejectionReason(null);
 
@@ -109,10 +105,6 @@ public class TutorService {
     }
 
     public TutorResponse toResponse(Tutor tutor) {
-        List<SubjectSummaryResponse> subjects = tutor.getSubjects().stream()
-                .map(subject -> new SubjectSummaryResponse(subject.getId(), subject.getName()))
-                .toList();
-
         User user = tutor.getUser();
 
         return new TutorResponse(
@@ -125,7 +117,7 @@ public class TutorService {
                 tutor.getExperienceYears(),
                 tutor.getStatus(),
                 tutor.getRejectionReason(),
-                subjects,
+                List.of(),
                 tutor.getCreatedAt(),
                 tutor.getUpdatedAt()
         );
@@ -146,20 +138,16 @@ public class TutorService {
         tutor.setBio(request.getBio());
         tutor.setEducation(request.getEducation());
         tutor.setExperienceYears(request.getExperienceYears());
-        tutor.setSubjects(loadSubjects(request.getSubjectIds()));
+        validateSubjectIds(request.getSubjectIds());
     }
 
-    private Set<Subject> loadSubjects(List<Long> subjectIds) {
-        List<Subject> subjects = subjectRepository.findAllById(subjectIds);
-
-        if (subjects.size() != new LinkedHashSet<>(subjectIds).size()) {
-            throw new RuntimeException("One or more subjects are invalid");
+    private void validateSubjectIds(List<Long> subjectIds) {
+        if (subjectIds == null) {
+            return;
         }
-
-        if (subjects.stream().anyMatch(subject -> !subject.isActive())) {
-            throw new RuntimeException("One or more subjects are inactive");
-        }
-
-        return new LinkedHashSet<>(subjects);
+        subjectIds.stream()
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .forEach(learningSubjectLookupService::getActiveSubject);
     }
 }

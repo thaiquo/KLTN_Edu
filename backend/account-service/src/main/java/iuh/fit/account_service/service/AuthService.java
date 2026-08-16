@@ -69,12 +69,35 @@ public class AuthService {
         String normalizedEmail = EmailNormalizer.normalize(request.getEmail());
         String fullName = request.getFullName() == null ? null : request.getFullName().trim();
 
-        if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
-            throw new ConflictException("Email already exists");
-        }
-
         if (!request.getPassword().equals(request.getConfirmPassword())) {
             throw new BadRequestException("Passwords do not match");
+        }
+
+        User existingUser = userRepository.findByEmailIgnoreCase(normalizedEmail).orElse(null);
+        if (existingUser != null) {
+            if (existingUser.isEmailVerified()) {
+                throw new ConflictException("Email already exists");
+            }
+
+            existingUser.setFullName(fullName);
+            existingUser.setPassword(passwordEncoder.encode(request.getPassword()));
+            existingUser.setAccountStatus(AccountStatus.ACTIVE);
+            userRepository.save(existingUser);
+
+            if (!userRoleRepository.existsByUserIdAndRole(existingUser.getId(), Role.STUDENT)) {
+                UserRole userRole = new UserRole();
+                userRole.setUser(existingUser);
+                userRole.setRole(Role.STUDENT);
+                userRoleRepository.save(userRole);
+            }
+
+            otpService.resendEmailVerificationOtp(existingUser);
+
+            return new RegisterResponse(
+                    existingUser.getId(),
+                    existingUser.getEmail(),
+                    "Registration is pending verification. A new OTP has been sent."
+            );
         }
 
         User user = new User();

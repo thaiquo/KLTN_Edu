@@ -10,7 +10,7 @@ public interface TutorApplicationSubjectRepository extends JpaRepository<TutorAp
 
     List<TutorApplicationSubject> findByTutorApplication_IdOrderByCreatedAtAsc(Long tutorApplicationId);
 
-    boolean existsByTutorApplication_IdAndSubject_Id(Long tutorApplicationId, Long subjectId);
+    boolean existsByTutorApplication_IdAndSubjectId(Long tutorApplicationId, Long subjectId);
 
     long countByTutorApplication_Id(Long tutorApplicationId);
 

@@ -46,54 +46,6 @@ CREATE TABLE students (
         REFERENCES users (id)
 );
 
-CREATE TABLE subject_categories (
-    id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(120) NOT NULL UNIQUE
-);
-
-CREATE TABLE subject_groups (
-    id BIGSERIAL PRIMARY KEY,
-    category_id BIGINT NOT NULL,
-    name VARCHAR(140) NOT NULL,
-    active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP(6),
-    CONSTRAINT fk_subject_groups_category
-        FOREIGN KEY (category_id)
-        REFERENCES subject_categories (id),
-    CONSTRAINT uk_subject_groups_category_name
-        UNIQUE (category_id, name)
-);
-
-CREATE TABLE subjects (
-    id BIGSERIAL PRIMARY KEY,
-    name VARCHAR(160) NOT NULL,
-    category_id BIGINT NOT NULL,
-    group_id BIGINT,
-    active BOOLEAN NOT NULL DEFAULT TRUE,
-    CONSTRAINT fk_subjects_category
-        FOREIGN KEY (category_id)
-        REFERENCES subject_categories (id),
-    CONSTRAINT fk_subjects_group
-        FOREIGN KEY (group_id)
-        REFERENCES subject_groups (id),
-    CONSTRAINT uk_subjects_name_category
-        UNIQUE (name, category_id)
-);
-
-CREATE TABLE subject_levels (
-    subject_id BIGINT NOT NULL,
-    level VARCHAR(40) NOT NULL,
-    CONSTRAINT pk_subject_levels
-        PRIMARY KEY (subject_id, level),
-    CONSTRAINT fk_subject_levels_subject
-        FOREIGN KEY (subject_id)
-        REFERENCES subjects (id)
-        ON DELETE CASCADE,
-    CONSTRAINT ck_subject_levels_level
-        CHECK (level IN ('PRIMARY', 'LOWER_SECONDARY', 'UPPER_SECONDARY', 'UNIVERSITY', 'ADULT', 'EXAM_PREPARATION'))
-);
-
 CREATE TABLE tutors (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL UNIQUE,
@@ -110,30 +62,5 @@ CREATE TABLE tutors (
         REFERENCES users (id)
 );
 
-CREATE TABLE tutor_subjects (
-    tutor_id BIGINT NOT NULL,
-    subject_id BIGINT NOT NULL,
-    CONSTRAINT pk_tutor_subjects
-        PRIMARY KEY (tutor_id, subject_id),
-    CONSTRAINT fk_tutor_subjects_tutor
-        FOREIGN KEY (tutor_id)
-        REFERENCES tutors (id),
-    CONSTRAINT fk_tutor_subjects_subject
-        FOREIGN KEY (subject_id)
-        REFERENCES subjects (id)
-);
-
 CREATE INDEX idx_otp_verifications_user_type_created_at
     ON otp_verifications (user_id, type, created_at DESC);
-
-CREATE INDEX idx_subjects_category_id
-    ON subjects (category_id);
-
-CREATE INDEX idx_subjects_group_id
-    ON subjects (group_id);
-
-CREATE INDEX idx_subject_groups_category_id
-    ON subject_groups (category_id);
-
-CREATE INDEX idx_subject_levels_level
-    ON subject_levels (level);

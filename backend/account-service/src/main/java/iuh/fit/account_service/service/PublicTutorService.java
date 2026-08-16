@@ -1,16 +1,15 @@
 package iuh.fit.account_service.service;
 
+import iuh.fit.account_service.client.LearningTutorSubjectClient;
+import iuh.fit.account_service.dto.learning.LearningTutorSubjectResponse;
 import iuh.fit.account_service.dto.tutor.PublicTutorResponse;
 import iuh.fit.account_service.dto.tutor.PublicTutorSubjectResponse;
 import iuh.fit.account_service.dto.tutor.SubjectCategoryResponse;
 import iuh.fit.account_service.dto.tutor.SubjectGroupResponse;
-import iuh.fit.account_service.entity.Subject;
 import iuh.fit.account_service.entity.TutorProfile;
-import iuh.fit.account_service.entity.TutorSubject;
 import iuh.fit.account_service.exception.BadRequestException;
 import iuh.fit.account_service.exception.ResourceNotFoundException;
 import iuh.fit.account_service.repository.TutorProfileRepository;
-import iuh.fit.account_service.repository.TutorSubjectRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,14 +27,14 @@ public class PublicTutorService {
     private static final int MAX_LIMIT = 50;
 
     private final TutorProfileRepository tutorProfileRepository;
-    private final TutorSubjectRepository tutorSubjectRepository;
+    private final LearningTutorSubjectClient learningTutorSubjectClient;
 
     public PublicTutorService(
             TutorProfileRepository tutorProfileRepository,
-            TutorSubjectRepository tutorSubjectRepository
+            LearningTutorSubjectClient learningTutorSubjectClient
     ) {
         this.tutorProfileRepository = tutorProfileRepository;
-        this.tutorSubjectRepository = tutorSubjectRepository;
+        this.learningTutorSubjectClient = learningTutorSubjectClient;
     }
 
     @Transactional(readOnly = true)
@@ -48,22 +47,20 @@ public class PublicTutorService {
     ) {
         validateRateRange(minRate, maxRate);
 
-        List<TutorProfile> profiles = tutorProfileRepository.searchPublicTutors(
-                normalizeKeyword(keyword),
-                subjectId,
-                minRate,
-                maxRate,
-                PageRequest.of(0, normalizeLimit(limit))
-        );
+        String normalizedKeyword = normalizeKeyword(keyword);
+        PageRequest pageRequest = PageRequest.of(0, normalizeLimit(limit));
+        List<TutorProfile> profiles = normalizedKeyword == null
+                ? tutorProfileRepository.findPublicTutors(pageRequest)
+                : tutorProfileRepository.findPublicTutorsByKeyword(normalizedKeyword, pageRequest);
 
         if (profiles.isEmpty()) {
             return List.of();
         }
 
         List<Long> profileIds = profiles.stream().map(TutorProfile::getId).toList();
-        Map<Long, List<TutorSubject>> subjectsByProfileId = tutorSubjectRepository.findActiveByTutorProfileIds(profileIds)
+        Map<Long, List<LearningTutorSubjectResponse>> subjectsByProfileId = learningTutorSubjectClient.getTutorSubjects(profileIds)
                 .stream()
-                .collect(Collectors.groupingBy(subject -> subject.getTutorProfile().getId()));
+                .collect(Collectors.groupingBy(LearningTutorSubjectResponse::getTutorProfileId));
 
         return profiles.stream()
                 .map(profile -> toResponse(
@@ -79,7 +76,7 @@ public class PublicTutorService {
         TutorProfile profile = tutorProfileRepository.findByIdAndActiveTrue(tutorProfileId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tutor profile not found"));
 
-        List<TutorSubject> subjects = tutorSubjectRepository.findActiveByTutorProfileId(profile.getId());
+        List<LearningTutorSubjectResponse> subjects = learningTutorSubjectClient.getTutorSubjects(profile.getId());
         if (subjects.isEmpty()) {
             throw new ResourceNotFoundException("Tutor profile not found");
         }
@@ -87,20 +84,20 @@ public class PublicTutorService {
         return toResponse(profile, subjects);
     }
 
-    private List<TutorSubject> filterListSubjects(
-            List<TutorSubject> subjects,
+    private List<LearningTutorSubjectResponse> filterListSubjects(
+            List<LearningTutorSubjectResponse> subjects,
             Long subjectId,
             BigDecimal minRate,
             BigDecimal maxRate
     ) {
         return subjects.stream()
-                .filter(subject -> subjectId == null || subject.getSubject().getId().equals(subjectId))
+                .filter(subject -> subjectId == null || subject.getSubjectId().equals(subjectId))
                 .filter(subject -> minRate == null || subject.getOneToOneHourlyRate().compareTo(minRate) >= 0)
                 .filter(subject -> maxRate == null || subject.getOneToOneHourlyRate().compareTo(maxRate) <= 0)
                 .toList();
     }
 
-    private PublicTutorResponse toResponse(TutorProfile profile, List<TutorSubject> subjects) {
+    private PublicTutorResponse toResponse(TutorProfile profile, List<LearningTutorSubjectResponse> subjects) {
         return new PublicTutorResponse(
                 profile.getId(),
                 profile.getUser().getId(),
@@ -111,23 +108,13 @@ public class PublicTutorService {
         );
     }
 
-    private PublicTutorSubjectResponse toSubjectResponse(TutorSubject tutorSubject) {
-        Subject subject = tutorSubject.getSubject();
+    private PublicTutorSubjectResponse toSubjectResponse(LearningTutorSubjectResponse tutorSubject) {
         return new PublicTutorSubjectResponse(
-                subject.getId(),
-                subject.getName(),
-                new SubjectCategoryResponse(
-                        subject.getCategory().getId(),
-                        subject.getCategory().getName()
-                ),
-                subject.getGroup() == null ? null : new SubjectGroupResponse(
-                        subject.getGroup().getId(),
-                        subject.getGroup().getName(),
-                        new SubjectCategoryResponse(
-                                subject.getCategory().getId(),
-                                subject.getCategory().getName()
-                        )
-                ),
+                tutorSubject.getSubjectId(),
+                tutorSubject.getSubjectName(),
+                tutorSubject.getSubjectCategoryName() == null ? null : new SubjectCategoryResponse(null, tutorSubject.getSubjectCategoryName()),
+                tutorSubject.getSubjectGroupName() == null ? null : new SubjectGroupResponse(null, tutorSubject.getSubjectGroupName(),
+                        tutorSubject.getSubjectCategoryName() == null ? null : new SubjectCategoryResponse(null, tutorSubject.getSubjectCategoryName())),
                 new LinkedHashSet<>(tutorSubject.getLevels()),
                 tutorSubject.getOneToOneHourlyRate(),
                 tutorSubject.getExperienceYears(),

@@ -62,8 +62,18 @@ export function RegisterPage() {
       return;
     }
 
+    if (registerError.status === 0) {
+      setError(registerError.message || 'Không thể kết nối máy chủ. Vui lòng thử lại.');
+      return;
+    }
+
+    if (registerError.status === 400) {
+      setError(registerError.message || 'Dữ liệu đăng ký không hợp lệ.');
+      return;
+    }
+
     if (registerError.status === 409) {
-      const message = registerError.message || 'Email đã được sử dụng.';
+      const message = registerError.message || 'Yêu cầu đăng ký bị xung đột với dữ liệu hiện có.';
       setFieldErrors({ email: message });
       setError(message);
       return;
@@ -71,6 +81,11 @@ export function RegisterPage() {
 
     if (registerError.status === 429) {
       setError(registerError.message || 'Bạn thao tác quá nhanh. Vui lòng thử lại sau.');
+      return;
+    }
+
+    if (registerError.status >= 500) {
+      setError(registerError.message || 'Máy chủ gặp lỗi. Vui lòng thử lại sau.');
       return;
     }
 

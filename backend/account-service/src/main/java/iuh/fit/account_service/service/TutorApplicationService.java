@@ -15,6 +15,8 @@ import iuh.fit.account_service.repository.TutorApplicationRepository;
 import iuh.fit.account_service.repository.TutorApplicationSubjectRepository;
 import iuh.fit.account_service.repository.TutorDocumentRepository;
 import iuh.fit.account_service.repository.UserRepository;
+import iuh.fit.account_service.messaging.AccountEventPublisher;
+import iuh.fit.account_service.messaging.event.TutorApplicationSubmittedEvent;
 import iuh.fit.account_service.util.EmailNormalizer;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +28,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 @Service
 public class TutorApplicationService {
@@ -34,17 +37,20 @@ public class TutorApplicationService {
     private final TutorApplicationSubjectRepository tutorApplicationSubjectRepository;
     private final TutorDocumentRepository tutorDocumentRepository;
     private final UserRepository userRepository;
+    private final AccountEventPublisher eventPublisher;
 
     public TutorApplicationService(
             TutorApplicationRepository tutorApplicationRepository,
             TutorApplicationSubjectRepository tutorApplicationSubjectRepository,
             TutorDocumentRepository tutorDocumentRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            AccountEventPublisher eventPublisher
     ) {
         this.tutorApplicationRepository = tutorApplicationRepository;
         this.tutorApplicationSubjectRepository = tutorApplicationSubjectRepository;
         this.tutorDocumentRepository = tutorDocumentRepository;
         this.userRepository = userRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -68,7 +74,14 @@ public class TutorApplicationService {
         application.setUser(user);
         application.setStatus(TutorApplicationStatus.DRAFT);
 
-        return toResponse(tutorApplicationRepository.save(application));
+        TutorApplication saved = tutorApplicationRepository.save(application);
+        eventPublisher.publishTutorApplicationSubmitted(new TutorApplicationSubmittedEvent(
+                UUID.randomUUID().toString(),
+                saved.getId(),
+                user.getId(),
+                LocalDateTime.now()
+        ));
+        return toResponse(saved);
     }
 
     @Transactional
@@ -206,15 +219,14 @@ public class TutorApplicationService {
     }
 
     private boolean invalidSubject(TutorApplicationSubject subject) {
-        return subject.getSubject() == null
-                || !subject.getSubject().isActive()
+        return subject.getSubjectId() == null
+                || !StringUtils.hasText(subject.getSubjectName())
                 || subject.getOneToOneHourlyRate() == null
                 || subject.getOneToOneHourlyRate().compareTo(BigDecimal.ZERO) <= 0
                 || subject.getExperienceYears() == null
                 || subject.getExperienceYears() < 0
                 || subject.getLevels() == null
-                || subject.getLevels().isEmpty()
-                || !subject.getSubject().getSupportedLevels().containsAll(subject.getLevels());
+                || subject.getLevels().isEmpty();
     }
 
     private boolean hasIdentityDocument(List<TutorDocument> documents) {

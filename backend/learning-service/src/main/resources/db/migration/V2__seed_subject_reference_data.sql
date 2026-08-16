@@ -1,0 +1,200 @@
+INSERT INTO teaching_levels (code, display_name, sort_order, active)
+VALUES
+    ('PRIMARY', 'Primary', 1, TRUE),
+    ('LOWER_SECONDARY', 'Lower secondary', 2, TRUE),
+    ('UPPER_SECONDARY', 'Upper secondary', 3, TRUE),
+    ('UNIVERSITY', 'University', 4, TRUE),
+    ('ADULT', 'Adult', 5, TRUE),
+    ('EXAM_PREPARATION', 'Exam preparation', 6, TRUE)
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO subject_categories (id, name)
+VALUES
+    (1, 'Ngôn ngữ'),
+    (2, 'Toán và khoa học'),
+    (3, 'Nghệ thuật và âm nhạc'),
+    (4, 'Kinh doanh'),
+    (5, 'Công nghệ'),
+    (6, 'Khoa học xã hội'),
+    (7, 'Sở thích')
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO subject_groups (id, category_id, name, active)
+VALUES
+    (1, 1, 'Tieng Anh va chung chi', TRUE),
+    (2, 1, 'Ngoai ngu Chau A', TRUE),
+    (3, 1, 'Ngoai ngu khac', TRUE),
+    (4, 2, 'Toan hoc', TRUE),
+    (5, 2, 'Khoa hoc tu nhien', TRUE),
+    (6, 3, 'Am nhac', TRUE),
+    (7, 3, 'My thuat va thiet ke', TRUE),
+    (8, 4, 'Tai chinh va ke toan', TRUE),
+    (9, 4, 'Quan tri va marketing', TRUE),
+    (10, 5, 'Phat trien phan mem', TRUE),
+    (11, 5, 'Ngon ngu lap trinh', TRUE),
+    (12, 5, 'Du lieu va tri tue nhan tao', TRUE),
+    (13, 5, 'Co so du lieu', TRUE),
+    (14, 6, 'Ngu van va xa hoi', TRUE),
+    (15, 7, 'Ky nang ca nhan', TRUE)
+ON CONFLICT (category_id, name) DO NOTHING;
+
+INSERT INTO subjects (id, name, category_id, group_id, active)
+VALUES
+    (1, 'Tieng Anh', 1, 1, TRUE),
+    (2, 'Tieng Anh giao tiep', 1, 1, TRUE),
+    (3, 'IELTS', 1, 1, TRUE),
+    (4, 'TOEIC', 1, 1, TRUE),
+    (5, 'TOEFL', 1, 1, TRUE),
+    (6, 'Tieng Nhat', 1, 2, TRUE),
+    (7, 'JLPT', 1, 2, TRUE),
+    (8, 'Tieng Han', 1, 2, TRUE),
+    (9, 'TOPIK', 1, 2, TRUE),
+    (10, 'Tieng Trung', 1, 2, TRUE),
+    (11, 'HSK', 1, 2, TRUE),
+    (12, 'Tieng Phap', 1, 3, TRUE),
+    (13, 'Toan hoc', 2, 4, TRUE),
+    (14, 'Dai so', 2, 4, TRUE),
+    (15, 'Hinh hoc', 2, 4, TRUE),
+    (16, 'Giai tich', 2, 4, TRUE),
+    (17, 'Dai so tuyen tinh', 2, 4, TRUE),
+    (18, 'Xac suat thong ke', 2, 4, TRUE),
+    (19, 'Toan roi rac', 2, 4, TRUE),
+    (20, 'Vat ly', 2, 5, TRUE),
+    (21, 'Hoa hoc', 2, 5, TRUE),
+    (22, 'Sinh hoc', 2, 5, TRUE),
+    (23, 'Piano', 3, 6, TRUE),
+    (24, 'Guitar', 3, 6, TRUE),
+    (25, 'Thanh nhac', 3, 6, TRUE),
+    (26, 'Ve', 3, 7, TRUE),
+    (27, 'Thiet ke do hoa', 3, 7, TRUE),
+    (28, 'Nguyen ly ke toan', 4, 8, TRUE),
+    (29, 'Ke toan tai chinh', 4, 8, TRUE),
+    (30, 'Tai chinh', 4, 8, TRUE),
+    (31, 'Kinh te vi mo', 4, 9, TRUE),
+    (32, 'Kinh te vi mo va vi mo', 4, 9, TRUE),
+    (33, 'Marketing', 4, 9, TRUE),
+    (34, 'Quan tri kinh doanh', 4, 9, TRUE),
+    (35, 'Web Development', 5, 10, TRUE),
+    (36, 'Mobile Development', 5, 10, TRUE),
+    (37, 'Software Engineering', 5, 10, TRUE),
+    (38, 'Java', 5, 11, TRUE),
+    (39, 'C', 5, 11, TRUE),
+    (40, 'C++', 5, 11, TRUE),
+    (41, 'C#', 5, 11, TRUE),
+    (42, 'Python', 5, 11, TRUE),
+    (43, 'JavaScript', 5, 11, TRUE),
+    (44, 'TypeScript', 5, 11, TRUE),
+    (45, 'Spring Boot', 5, 10, TRUE),
+    (46, 'React', 5, 10, TRUE),
+    (47, 'Node.js', 5, 10, TRUE),
+    (48, 'HTML/CSS', 5, 10, TRUE),
+    (49, 'Cau truc du lieu va giai thuat', 5, 10, TRUE),
+    (50, 'Lap trinh huong doi tuong', 5, 10, TRUE),
+    (51, 'Data Science', 5, 12, TRUE),
+    (52, 'Machine Learning', 5, 12, TRUE),
+    (53, 'Artificial Intelligence', 5, 12, TRUE),
+    (54, 'Data Analysis', 5, 12, TRUE),
+    (55, 'SQL', 5, 13, TRUE),
+    (56, 'PostgreSQL', 5, 13, TRUE),
+    (57, 'MySQL', 5, 13, TRUE),
+    (58, 'Co so du lieu', 5, 13, TRUE),
+    (59, 'Ngu van', 6, 14, TRUE),
+    (60, 'Lich su', 6, 14, TRUE),
+    (61, 'Dia ly', 6, 14, TRUE),
+    (62, 'Giao duc kinh te va phap luat', 6, 14, TRUE),
+    (63, 'Ky nang giao tiep', 7, 15, TRUE),
+    (64, 'Thuyet trinh', 7, 15, TRUE),
+    (65, 'Dinh huong nghe nghiep', 7, 15, TRUE)
+ON CONFLICT (name, category_id) DO NOTHING;
+
+INSERT INTO subject_levels (subject_id, level)
+SELECT s.id, level
+FROM subjects s
+JOIN (
+    VALUES
+        ('Tieng Anh', 'PRIMARY'), ('Tieng Anh', 'LOWER_SECONDARY'), ('Tieng Anh', 'UPPER_SECONDARY'), ('Tieng Anh', 'UNIVERSITY'), ('Tieng Anh', 'ADULT'),
+        ('Tieng Anh giao tiep', 'LOWER_SECONDARY'), ('Tieng Anh giao tiep', 'UPPER_SECONDARY'), ('Tieng Anh giao tiep', 'UNIVERSITY'), ('Tieng Anh giao tiep', 'ADULT'),
+        ('IELTS', 'LOWER_SECONDARY'), ('IELTS', 'UPPER_SECONDARY'), ('IELTS', 'UNIVERSITY'), ('IELTS', 'ADULT'), ('IELTS', 'EXAM_PREPARATION'),
+        ('TOEIC', 'UPPER_SECONDARY'), ('TOEIC', 'UNIVERSITY'), ('TOEIC', 'ADULT'), ('TOEIC', 'EXAM_PREPARATION'),
+        ('TOEFL', 'UPPER_SECONDARY'), ('TOEFL', 'UNIVERSITY'), ('TOEFL', 'ADULT'), ('TOEFL', 'EXAM_PREPARATION'),
+        ('Tieng Nhat', 'UPPER_SECONDARY'), ('Tieng Nhat', 'UNIVERSITY'), ('Tieng Nhat', 'ADULT'),
+        ('JLPT', 'UPPER_SECONDARY'), ('JLPT', 'UNIVERSITY'), ('JLPT', 'ADULT'), ('JLPT', 'EXAM_PREPARATION'),
+        ('Tieng Han', 'UPPER_SECONDARY'), ('Tieng Han', 'UNIVERSITY'), ('Tieng Han', 'ADULT'),
+        ('TOPIK', 'UPPER_SECONDARY'), ('TOPIK', 'UNIVERSITY'), ('TOPIK', 'ADULT'), ('TOPIK', 'EXAM_PREPARATION'),
+        ('Tieng Trung', 'UPPER_SECONDARY'), ('Tieng Trung', 'UNIVERSITY'), ('Tieng Trung', 'ADULT'),
+        ('HSK', 'UPPER_SECONDARY'), ('HSK', 'UNIVERSITY'), ('HSK', 'ADULT'), ('HSK', 'EXAM_PREPARATION'),
+        ('Tieng Phap', 'UPPER_SECONDARY'), ('Tieng Phap', 'UNIVERSITY'), ('Tieng Phap', 'ADULT'),
+        ('Toan hoc', 'PRIMARY'), ('Toan hoc', 'LOWER_SECONDARY'), ('Toan hoc', 'UPPER_SECONDARY'), ('Toan hoc', 'UNIVERSITY'),
+        ('Dai so', 'LOWER_SECONDARY'), ('Dai so', 'UPPER_SECONDARY'), ('Dai so', 'UNIVERSITY'),
+        ('Hinh hoc', 'LOWER_SECONDARY'), ('Hinh hoc', 'UPPER_SECONDARY'),
+        ('Giai tich', 'UPPER_SECONDARY'), ('Giai tich', 'UNIVERSITY'),
+        ('Dai so tuyen tinh', 'UNIVERSITY'),
+        ('Xac suat thong ke', 'UPPER_SECONDARY'), ('Xac suat thong ke', 'UNIVERSITY'),
+        ('Toan roi rac', 'UNIVERSITY'),
+        ('Vat ly', 'LOWER_SECONDARY'), ('Vat ly', 'UPPER_SECONDARY'), ('Vat ly', 'UNIVERSITY'),
+        ('Hoa hoc', 'LOWER_SECONDARY'), ('Hoa hoc', 'UPPER_SECONDARY'), ('Hoa hoc', 'UNIVERSITY'),
+        ('Sinh hoc', 'LOWER_SECONDARY'), ('Sinh hoc', 'UPPER_SECONDARY'), ('Sinh hoc', 'UNIVERSITY'),
+        ('Piano', 'PRIMARY'), ('Piano', 'LOWER_SECONDARY'), ('Piano', 'UPPER_SECONDARY'), ('Piano', 'UNIVERSITY'), ('Piano', 'ADULT'),
+        ('Guitar', 'PRIMARY'), ('Guitar', 'LOWER_SECONDARY'), ('Guitar', 'UPPER_SECONDARY'), ('Guitar', 'UNIVERSITY'), ('Guitar', 'ADULT'),
+        ('Thanh nhac', 'PRIMARY'), ('Thanh nhac', 'LOWER_SECONDARY'), ('Thanh nhac', 'UPPER_SECONDARY'), ('Thanh nhac', 'UNIVERSITY'), ('Thanh nhac', 'ADULT'),
+        ('Ve', 'PRIMARY'), ('Ve', 'LOWER_SECONDARY'), ('Ve', 'UPPER_SECONDARY'), ('Ve', 'ADULT'),
+        ('Thiet ke do hoa', 'UPPER_SECONDARY'), ('Thiet ke do hoa', 'UNIVERSITY'), ('Thiet ke do hoa', 'ADULT'),
+        ('Nguyen ly ke toan', 'UPPER_SECONDARY'), ('Nguyen ly ke toan', 'UNIVERSITY'), ('Nguyen ly ke toan', 'ADULT'),
+        ('Ke toan tai chinh', 'UNIVERSITY'), ('Ke toan tai chinh', 'ADULT'),
+        ('Tai chinh', 'UNIVERSITY'), ('Tai chinh', 'ADULT'),
+        ('Kinh te vi mo', 'UNIVERSITY'), ('Kinh te vi mo', 'ADULT'),
+        ('Kinh te vi mo va vi mo', 'UNIVERSITY'), ('Kinh te vi mo va vi mo', 'ADULT'),
+        ('Marketing', 'UNIVERSITY'), ('Marketing', 'ADULT'),
+        ('Quan tri kinh doanh', 'UNIVERSITY'), ('Quan tri kinh doanh', 'ADULT'),
+        ('Web Development', 'UPPER_SECONDARY'), ('Web Development', 'UNIVERSITY'), ('Web Development', 'ADULT'),
+        ('Mobile Development', 'UPPER_SECONDARY'), ('Mobile Development', 'UNIVERSITY'), ('Mobile Development', 'ADULT'),
+        ('Software Engineering', 'UPPER_SECONDARY'), ('Software Engineering', 'UNIVERSITY'), ('Software Engineering', 'ADULT'),
+        ('Java', 'UPPER_SECONDARY'), ('Java', 'UNIVERSITY'), ('Java', 'ADULT'),
+        ('C', 'UPPER_SECONDARY'), ('C', 'UNIVERSITY'), ('C', 'ADULT'),
+        ('C++', 'UPPER_SECONDARY'), ('C++', 'UNIVERSITY'), ('C++', 'ADULT'),
+        ('C#', 'UPPER_SECONDARY'), ('C#', 'UNIVERSITY'), ('C#', 'ADULT'),
+        ('Python', 'UPPER_SECONDARY'), ('Python', 'UNIVERSITY'), ('Python', 'ADULT'),
+        ('JavaScript', 'UPPER_SECONDARY'), ('JavaScript', 'UNIVERSITY'), ('JavaScript', 'ADULT'),
+        ('TypeScript', 'UPPER_SECONDARY'), ('TypeScript', 'UNIVERSITY'), ('TypeScript', 'ADULT'),
+        ('Spring Boot', 'UNIVERSITY'), ('Spring Boot', 'ADULT'),
+        ('React', 'UPPER_SECONDARY'), ('React', 'UNIVERSITY'), ('React', 'ADULT'),
+        ('Node.js', 'UNIVERSITY'), ('Node.js', 'ADULT'),
+        ('HTML/CSS', 'LOWER_SECONDARY'), ('HTML/CSS', 'UPPER_SECONDARY'), ('HTML/CSS', 'UNIVERSITY'), ('HTML/CSS', 'ADULT'),
+        ('Cau truc du lieu va giai thuat', 'UPPER_SECONDARY'), ('Cau truc du lieu va giai thuat', 'UNIVERSITY'), ('Cau truc du lieu va giai thuat', 'ADULT'),
+        ('Lap trinh huong doi tuong', 'UPPER_SECONDARY'), ('Lap trinh huong doi tuong', 'UNIVERSITY'), ('Lap trinh huong doi tuong', 'ADULT'),
+        ('Data Science', 'UNIVERSITY'), ('Data Science', 'ADULT'),
+        ('Machine Learning', 'UNIVERSITY'), ('Machine Learning', 'ADULT'),
+        ('Artificial Intelligence', 'UNIVERSITY'), ('Artificial Intelligence', 'ADULT'),
+        ('Data Analysis', 'UNIVERSITY'), ('Data Analysis', 'ADULT'),
+        ('SQL', 'UPPER_SECONDARY'), ('SQL', 'UNIVERSITY'), ('SQL', 'ADULT'),
+        ('PostgreSQL', 'UNIVERSITY'), ('PostgreSQL', 'ADULT'),
+        ('MySQL', 'UNIVERSITY'), ('MySQL', 'ADULT'),
+        ('Co so du lieu', 'UPPER_SECONDARY'), ('Co so du lieu', 'UNIVERSITY'), ('Co so du lieu', 'ADULT'),
+        ('Ngu van', 'LOWER_SECONDARY'), ('Ngu van', 'UPPER_SECONDARY'),
+        ('Lich su', 'LOWER_SECONDARY'), ('Lich su', 'UPPER_SECONDARY'),
+        ('Dia ly', 'LOWER_SECONDARY'), ('Dia ly', 'UPPER_SECONDARY'),
+        ('Giao duc kinh te va phap luat', 'UPPER_SECONDARY'),
+        ('Ky nang giao tiep', 'UPPER_SECONDARY'), ('Ky nang giao tiep', 'UNIVERSITY'), ('Ky nang giao tiep', 'ADULT'),
+        ('Thuyet trinh', 'UPPER_SECONDARY'), ('Thuyet trinh', 'UNIVERSITY'), ('Thuyet trinh', 'ADULT'),
+        ('Dinh huong nghe nghiep', 'UPPER_SECONDARY'), ('Dinh huong nghe nghiep', 'UNIVERSITY'), ('Dinh huong nghe nghiep', 'ADULT')
+) AS seed(subject_name, level)
+    ON seed.subject_name = s.name
+ON CONFLICT (subject_id, level) DO NOTHING;
+
+SELECT setval(
+    pg_get_serial_sequence('subject_categories', 'id'),
+    COALESCE((SELECT MAX(id) FROM subject_categories), 1),
+    TRUE
+);
+
+SELECT setval(
+    pg_get_serial_sequence('subject_groups', 'id'),
+    COALESCE((SELECT MAX(id) FROM subject_groups), 1),
+    TRUE
+);
+
+SELECT setval(
+    pg_get_serial_sequence('subjects', 'id'),
+    COALESCE((SELECT MAX(id) FROM subjects), 1),
+    TRUE
+);
