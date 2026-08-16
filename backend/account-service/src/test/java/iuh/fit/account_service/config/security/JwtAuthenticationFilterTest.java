@@ -37,7 +37,8 @@ class JwtAuthenticationFilterTest {
 
         when(jwtService.isTokenValid("token")).thenReturn(true);
         when(jwtService.extractEmail("token")).thenReturn("test@gmail.com");
-        when(userDetailsService.loadUserByUsername("test@gmail.com")).thenReturn(
+        when(jwtService.extractActiveRole("token")).thenReturn("STUDENT");
+        when(userDetailsService.loadUserByUsernameAndActiveRole("test@gmail.com", "STUDENT")).thenReturn(
                 new User("test@gmail.com", "password", false, true, true, true, List.of())
         );
 
@@ -59,7 +60,8 @@ class JwtAuthenticationFilterTest {
 
         when(jwtService.isTokenValid("stale-token")).thenReturn(true);
         when(jwtService.extractEmail("stale-token")).thenReturn("deleted@example.com");
-        when(userDetailsService.loadUserByUsername("deleted@example.com"))
+        when(jwtService.extractActiveRole("stale-token")).thenReturn("STUDENT");
+        when(userDetailsService.loadUserByUsernameAndActiveRole("deleted@example.com", "STUDENT"))
                 .thenThrow(new UsernameNotFoundException("User not found"));
 
         filter.doFilter(request, response, chain);
@@ -80,7 +82,8 @@ class JwtAuthenticationFilterTest {
 
         when(jwtService.isTokenValid("stale-token")).thenReturn(true);
         when(jwtService.extractEmail("stale-token")).thenReturn("deleted@example.com");
-        when(userDetailsService.loadUserByUsername("deleted@example.com"))
+        when(jwtService.extractActiveRole("stale-token")).thenReturn("STUDENT");
+        when(userDetailsService.loadUserByUsernameAndActiveRole("deleted@example.com", "STUDENT"))
                 .thenThrow(new UsernameNotFoundException("User not found"));
 
         filter.doFilter(request, response, chain);

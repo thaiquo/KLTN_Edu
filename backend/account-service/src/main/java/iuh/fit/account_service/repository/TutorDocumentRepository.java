@@ -13,6 +13,8 @@ public interface TutorDocumentRepository extends JpaRepository<TutorDocument, Lo
 
     Optional<TutorDocument> findByIdAndTutorApplication_Id(Long id, Long tutorApplicationId);
 
+    Optional<TutorDocument> findFirstByTutorApplication_IdAndSha256Hash(Long tutorApplicationId, String sha256Hash);
+
     long countByTutorApplication_IdAndDocumentType(Long tutorApplicationId, TutorDocumentType documentType);
 
     long countByTutorApplication_Id(Long tutorApplicationId);

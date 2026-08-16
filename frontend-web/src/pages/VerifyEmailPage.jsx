@@ -86,15 +86,24 @@ export function VerifyEmailPage() {
         otp: form.otp.trim()
       });
 
-      setMessage('Xác minh email thành công. Đang chuyển đến trang đăng nhập...');
+      const role = location.state?.role || 'STUDENT';
+      setMessage('Xác minh email thành công. Đang chuyển tiếp...');
       window.setTimeout(() => {
-        navigate('/login', {
-          replace: true,
-          state: {
-            email,
-            message: 'Email đã được xác minh. Vui lòng đăng nhập.'
-          }
-        });
+        if (role === 'TUTOR') {
+          navigate('/tutor/complete-profile', {
+            replace: true,
+            state: { email, message: 'Email đã được xác minh. Vui lòng hoàn tất hồ sơ gia sư.' }
+          });
+        } else {
+          navigate('/login', {
+            replace: true,
+            state: {
+              email,
+              role: 'STUDENT',
+              message: 'Email đã được xác minh. Vui lòng đăng nhập.'
+            }
+          });
+        }
       }, 500);
     } catch (verifyError) {
       applyApiErrors(verifyError);

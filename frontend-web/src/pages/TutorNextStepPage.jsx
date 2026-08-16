@@ -1,219 +1,235 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { subjectApi } from '../api/subjects';
-import { tutorApi } from '../api/tutors';
-import { AuthLayout } from '../components/AuthLayout';
-import { SubjectSelector } from '../components/tutor/SubjectSelector';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowRight, Edit3, LogOut, RefreshCw, UserCheck } from 'lucide-react';
+import { tutorApplicationApi } from '../api/tutorApplications';
+import { HomeHeader } from '../components/home/HomeHeader';
+import { TutorApplicationStatusBanner } from '../components/tutor-application/TutorApplicationStatusBanner';
 import { useAuth } from '../hooks/useAuth';
 
 export function TutorNextStepPage() {
-  const location = useLocation();
   const navigate = useNavigate();
-  const { logout } = useAuth();
-  const verifiedEmail = location.state?.email || '';
-  const [subjects, setSubjects] = useState([]);
-  const [form, setForm] = useState({
-    email: verifiedEmail,
-    bio: '',
-    education: '',
-    experienceYears: 0,
-    subjectIds: []
-  });
-  const [categoryId, setCategoryId] = useState('');
-  const [keyword, setKeyword] = useState('');
+  const { user, logout, switchRole, refreshUser } = useAuth();
+  const [application, setApplication] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-
-  const selectedSubjects = useMemo(
-    () => subjects.filter((subject) => form.subjectIds.includes(subject.id)),
-    [subjects, form.subjectIds]
-  );
+  const [switching, setSwitching] = useState(false);
 
   useEffect(() => {
     let active = true;
 
-    async function loadSubjects() {
+    async function loadStatus() {
+      setLoading(true);
+      setError('');
       try {
-        const subjectList = await subjectApi.list();
-        if (active) setSubjects(subjectList);
-      } catch (loadError) {
-        if (active) setError(loadError.message || 'Không thể tải danh sách môn học.');
+        const appData = await tutorApplicationApi.getMyTutorApplication();
+        if (active) setApplication(appData);
+      } catch (err) {
+        if (!active) return;
+        if (err.status === 404) {
+          setApplication(null);
+        } else {
+          setError(err.message || 'Không thể tải trạng thái hồ sơ.');
+        }
       } finally {
         if (active) setLoading(false);
       }
     }
 
-    loadSubjects();
+    loadStatus();
+
     return () => {
       active = false;
     };
   }, []);
 
-  function change(event) {
-    const { name, value } = event.target;
-    setForm((current) => ({
-      ...current,
-      [name]: name === 'experienceYears' ? Number(value) : value
-    }));
-    if (error) setError('');
-  }
-
-  function toggleSubject(subjectId) {
-    setForm((current) => ({
-      ...current,
-      subjectIds: current.subjectIds.includes(subjectId)
-        ? current.subjectIds.filter((id) => id !== subjectId)
-        : [...current.subjectIds, subjectId]
-    }));
-  }
-
-  async function submit(event) {
-    event.preventDefault();
-    if (busy) return;
-
-    if (!form.email.trim()) {
-      setError('Thiếu email đã xác minh. Vui lòng đăng ký lại hoặc quay về bước OTP.');
-      return;
-    }
-
-    if (form.subjectIds.length === 0) {
-      setError('Vui lòng chọn ít nhất một môn/chuyên môn.');
-      return;
-    }
-
-    setBusy(true);
-    setError('');
-
+  async function handleSwitchToStudent() {
+    if (switching) return;
+    setSwitching(true);
     try {
-      const email = form.email.trim().toLowerCase();
-
-      await tutorApi.createRegistrationProfile({
-        email,
-        bio: form.bio.trim(),
-        education: form.education.trim(),
-        experienceYears: Number(form.experienceYears),
-        subjectIds: form.subjectIds
-      });
-
-      await logout();
-
-      navigate('/', {
-        replace: true,
-        state: {
-          message: 'Hồ sơ gia sư đã được gửi. EduConnect sẽ thông báo cho bạn khi hồ sơ được Staff duyệt.'
-        }
-      });
-    } catch (saveError) {
-      setError(saveError.message || 'Không thể gửi hồ sơ gia sư.');
+      await switchRole('STUDENT');
+      navigate('/', { replace: true });
+    } catch (err) {
+      setError(err.message || 'Không thể chuyển đổi vai trò.');
     } finally {
-      setBusy(false);
+      setSwitching(false);
     }
   }
+
+  async function handleLogout() {
+    await logout();
+    navigate('/login', { replace: true });
+  }
+
+  async function handleRetry() {
+    setLoading(true);
+    setError('');
+    try {
+      const appData = await tutorApplicationApi.getMyTutorApplication();
+      setApplication(appData);
+    } catch (err) {
+      if (err.status === 404) {
+        setApplication(null);
+      } else {
+        setError(err.message || 'Không thể tải trạng thái hồ sơ.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const status = application?.status || (user?.tutorStatus || 'DRAFT');
 
   return (
-    <AuthLayout
-      title="Hoàn tất hồ sơ gia sư"
-      description="Điền thông tin cần thiết để Staff xét duyệt hồ sơ trước khi bạn hoạt động với vai trò gia sư."
-      wide
-    >
-      <form onSubmit={submit}>
-        <label className="field">
-          <span>Email đã xác minh</span>
-          <div>
-            <input
-              type="email"
-              name="email"
-              value={form.email}
-              onChange={change}
-              placeholder="tutor@gmail.com"
-              required
-              readOnly={Boolean(verifiedEmail)}
-            />
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+      <HomeHeader />
+
+      <main className="container-app pt-28 pb-16 max-w-4xl mx-auto">
+        <section className="overflow-hidden rounded-[8px] border border-slate-200 bg-white shadow-[0_22px_60px_rgba(15,23,42,.07)]">
+          <div className="bg-slate-900 px-6 py-8 text-white sm:px-8">
+            <h1 className="font-display text-3xl font-extrabold tracking-tight">
+              Trạng thái hồ sơ gia sư
+            </h1>
+            <p className="mt-2 text-sm font-semibold text-slate-300">
+              Chào mừng bạn đến với EduConnect. Dưới đây là thông tin tiến trình hồ sơ của bạn.
+            </p>
           </div>
-        </label>
 
-        <label className="field">
-          <span>Giới thiệu</span>
-          <div>
-            <textarea
-              name="bio"
-              value={form.bio}
-              onChange={change}
-              placeholder="Tôi có kinh nghiệm giảng dạy Java và cơ sở dữ liệu..."
-              rows="4"
-              required
-            />
+          <div className="p-6 sm:p-8 space-y-6">
+            {loading ? (
+              <div className="py-12 text-center text-slate-500">
+                <RefreshCw size={24} className="mx-auto mb-3 animate-spin text-indigo-600" />
+                <p className="text-sm font-bold">Đang kiểm tra trạng thái hồ sơ...</p>
+              </div>
+            ) : error ? (
+              <div className="rounded-lg bg-red-50 p-4 text-red-800 text-sm font-semibold flex items-center justify-between">
+                <span>{error}</span>
+                <button type="button" onClick={handleRetry} className="underline text-red-900">Thử lại</button>
+              </div>
+            ) : (
+              <>
+                <TutorApplicationStatusBanner application={application} />
+
+                {status === 'DRAFT' || !application ? (
+                  <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-6 text-slate-800">
+                    <h3 className="font-display text-lg font-bold text-slate-900">
+                      Hồ sơ của bạn chưa hoàn tất
+                    </h3>
+                    <p className="mt-2 text-sm text-slate-600">
+                      Vui lòng điền đầy đủ các thông tin cá nhân, bằng cấp, thông tin giảng dạy và tài liệu để gửi Staff xét duyệt.
+                    </p>
+                    <div className="mt-5">
+                      <button
+                        type="button"
+                        onClick={() => navigate('/tutor/complete-profile')}
+                        className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-3 text-sm font-extrabold text-white hover:bg-indigo-700 transition-all shadow-md hover:shadow-indigo-500/20"
+                      >
+                        Hoàn tất hồ sơ gia sư
+                        <ArrowRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ) : status === 'PENDING' ? (
+                  <div className="rounded-xl border border-amber-100 bg-amber-50/50 p-6 text-slate-800 space-y-4">
+                    <div>
+                      <h3 className="font-display text-lg font-bold text-slate-900">
+                        Đang chờ Staff duyệt
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Bộ phận kiểm duyệt đang xem xét thông tin và bằng cấp của bạn. Thời gian xử lý thường từ 1 đến 2 ngày làm việc.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => navigate('/tutor/complete-profile')}
+                        className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                      >
+                        <Edit3 size={16} />
+                        Xem lại hồ sơ
+                      </button>
+
+                      {user?.roles?.includes('STUDENT') && (
+                        <button
+                          type="button"
+                          onClick={handleSwitchToStudent}
+                          disabled={switching}
+                          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-indigo-700 transition-colors"
+                        >
+                          <UserCheck size={16} />
+                          {switching ? 'Đang chuyển...' : 'Chuyển sang vai trò Học viên'}
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleLogout}
+                        className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-bold text-red-600 hover:bg-red-50 transition-colors ml-auto"
+                      >
+                        <LogOut size={16} />
+                        Đăng xuất
+                      </button>
+                    </div>
+                  </div>
+                ) : status === 'REJECTED' ? (
+                  <div className="rounded-xl border border-red-100 bg-red-50/50 p-6 text-slate-800 space-y-4">
+                    <div>
+                      <h3 className="font-display text-lg font-bold text-slate-900">
+                        Hồ sơ cần chỉnh sửa lại
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Hồ sơ gia sư của bạn chưa được thông qua. Vui lòng kiểm tra lý do và cập nhật thông tin chính xác trước khi gửi lại.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => navigate('/tutor/complete-profile')}
+                        className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-3 text-sm font-extrabold text-white hover:bg-indigo-700 transition-all shadow-md"
+                      >
+                        <Edit3 size={16} />
+                        Chỉnh sửa & gửi lại hồ sơ
+                      </button>
+
+                      {user?.roles?.includes('STUDENT') && (
+                        <button
+                          type="button"
+                          onClick={handleSwitchToStudent}
+                          disabled={switching}
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+                        >
+                          <UserCheck size={16} />
+                          Chuyển sang Học viên
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ) : status === 'APPROVED' ? (
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-6 text-slate-800 space-y-4">
+                    <div>
+                      <h3 className="font-display text-lg font-bold text-slate-900">
+                        Hồ sơ gia sư đã được chấp nhận!
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Chúc mừng bạn! Tài khoản gia sư của bạn đã hoạt động bình thường trên hệ thống.
+                      </p>
+                    </div>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => navigate('/tutor/profile')}
+                        className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-3 text-sm font-extrabold text-white hover:bg-emerald-700 transition-all shadow-md"
+                      >
+                        Vào trang hồ sơ Gia sư
+                        <ArrowRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            )}
           </div>
-        </label>
-
-        <label className="field">
-          <span>Học vấn</span>
-          <div>
-            <input
-              name="education"
-              value={form.education}
-              onChange={change}
-              placeholder="Đại học Công nghiệp TP.HCM"
-              required
-            />
-          </div>
-        </label>
-
-        <label className="field">
-          <span>Số năm kinh nghiệm</span>
-          <div>
-            <input
-              type="number"
-              min="0"
-              max="60"
-              name="experienceYears"
-              value={form.experienceYears}
-              onChange={change}
-              required
-            />
-          </div>
-        </label>
-
-        <div>
-          <span className="section-label">Môn/chuyên môn</span>
-          {selectedSubjects.length > 0 && (
-            <div className="selected-subjects">
-              {selectedSubjects.map((subject) => (
-                <button key={subject.id} type="button" onClick={() => toggleSubject(subject.id)}>
-                  {subject.name} ×
-                </button>
-              ))}
-            </div>
-          )}
-
-          {loading ? (
-            <div className="student">
-              <span aria-hidden="true">...</span>
-              <span>Đang tải danh sách môn học</span>
-            </div>
-          ) : (
-            <SubjectSelector
-              subjects={subjects}
-              selectedIds={form.subjectIds}
-              categoryId={categoryId}
-              keyword={keyword}
-              onCategoryChange={setCategoryId}
-              onKeywordChange={setKeyword}
-              onToggleSubject={toggleSubject}
-            />
-          )}
-        </div>
-
-        {error && <div className="error" role="alert">{error}</div>}
-        <button className="primary" disabled={busy || loading}>
-          {busy ? 'Đang gửi hồ sơ...' : 'Gửi hồ sơ xét duyệt'}
-        </button>
-      </form>
-
-      <p className="switch">
-        Không phải gia sư? <Link to="/login" state={{ email: form.email }}>Quay về đăng nhập</Link>
-      </p>
-    </AuthLayout>
+        </section>
+      </main>
+    </div>
   );
 }

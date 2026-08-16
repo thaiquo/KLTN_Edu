@@ -26,11 +26,16 @@ public class JwtService {
     }
 
     public String generateToken(String email, List<String> roles) {
+        return generateToken(email, roles.isEmpty() ? null : roles.get(0), roles);
+    }
+
+    public String generateToken(String email, String activeRole, List<String> roles) {
         Date now = new Date();
         Date expirationDate = new Date(now.getTime() + expiration);
 
         return Jwts.builder()
                 .subject(email)
+                .claim("activeRole", activeRole)
                 .claim("roles", roles)
                 .issuedAt(now)
                 .expiration(expirationDate)
@@ -40,6 +45,15 @@ public class JwtService {
 
     public String extractEmail(String token) {
         return getClaims(token).getSubject();
+    }
+
+    public String extractActiveRole(String token) {
+        try {
+            Claims claims = getClaims(token);
+            return claims.get("activeRole", String.class);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     public boolean isTokenValid(String token) {

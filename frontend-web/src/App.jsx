@@ -12,6 +12,7 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { TutorNextStepPage } from './pages/TutorNextStepPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { TutorApplicationWizardPage } from './pages/tutor-application/TutorApplicationWizardPage';
+import { TutorCompleteProfilePage } from './pages/tutor-application/TutorCompleteProfilePage';
 import { PublicTutorProfilePage } from './pages/tutor/PublicTutorProfilePage';
 import { TutorMarketplacePage } from './pages/tutor/TutorMarketplacePage';
 import { TutorProfilePage } from './pages/tutor/TutorProfilePage';
@@ -23,6 +24,12 @@ const DashboardPage = lazy(() =>
 function defaultRouteFor(user) {
   if (user?.roles?.includes('STAFF') || user?.roles?.includes('ADMIN')) {
     return '/staff/tutors';
+  }
+  if (user?.activeRole === 'TUTOR') {
+    if (user?.tutorStatus === 'APPROVED') {
+      return '/tutor/profile';
+    }
+    return '/tutor-next-step';
   }
   return '/';
 }
@@ -47,11 +54,33 @@ function HomeEntry() {
 function RoleGate({ roles, children }) {
   const { user, authenticated, loading } = useAuth();
   const location = useLocation();
+
   if (loading) return <div className="loader" aria-label="Dang tai" />;
   if (!authenticated) return <Navigate to="/login" replace state={{ from: location }} />;
 
-  const allowed = roles.some((role) => user.roles?.includes(role));
-  return allowed ? children : <Navigate to="/" replace />;
+  const isStaffOrAdmin = user?.roles?.includes('STAFF') || user?.roles?.includes('ADMIN');
+  if (isStaffOrAdmin && (roles.includes('STAFF') || roles.includes('ADMIN'))) {
+    return children;
+  }
+
+  if (roles.includes('TUTOR')) {
+    if (user.activeRole === 'TUTOR') {
+      if (user.tutorStatus === 'APPROVED') {
+        return children;
+      }
+      return <Navigate to="/tutor-next-step" replace />;
+    }
+    return <Navigate to="/" replace />;
+  }
+
+  if (roles.includes('STUDENT')) {
+    if (user.activeRole === 'STUDENT') {
+      return children;
+    }
+    return <Navigate to="/tutor-next-step" replace />;
+  }
+
+  return <Navigate to="/" replace />;
 }
 
 function ProtectedDashboard() {
@@ -106,6 +135,14 @@ function ProtectedBecomeTutor() {
   );
 }
 
+function ProtectedCompleteProfile() {
+  return (
+    <Gate>
+      <TutorCompleteProfilePage />
+    </Gate>
+  );
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -122,6 +159,7 @@ export default function App() {
           <Route path="/profile" element={<ProtectedProfile />} />
           <Route path="/profile/password" element={<ProtectedChangePassword />} />
           <Route path="/become-tutor" element={<ProtectedBecomeTutor />} />
+          <Route path="/tutor/complete-profile" element={<ProtectedCompleteProfile />} />
           <Route path="/tutor-next-step" element={<TutorNextStepPage />} />
           <Route path="/tutor/profile" element={<ProtectedTutorProfile />} />
           <Route path="/staff/tutors" element={<ProtectedStaffDashboard />} />

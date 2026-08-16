@@ -18,7 +18,7 @@ const STEP_BY_MISSING_ITEM = {
   degreeOrCertificate: 4
 };
 
-export function ReviewSubmitStep({ application, readOnly, onApplicationUpdated, onBack, onStepChange }) {
+export function ReviewSubmitStep({ application, readOnly, onApplicationUpdated, onBack, onStepChange, onSubmitSuccess }) {
   const { user } = useAuth();
   const [subjects, setSubjects] = useState([]);
   const [documents, setDocuments] = useState([]);
@@ -89,6 +89,13 @@ export function ReviewSubmitStep({ application, readOnly, onApplicationUpdated, 
       setConfirming(false);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function handleSuccessClose() {
+    setSubmitSuccessOpen(false);
+    if (onSubmitSuccess) {
+      onSubmitSuccess();
     }
   }
 
@@ -189,7 +196,7 @@ export function ReviewSubmitStep({ application, readOnly, onApplicationUpdated, 
                 <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[16px] bg-emerald-50 text-emerald-600">
                   <CheckCircle2 size={24} />
                 </span>
-                <button type="button" onClick={() => setSubmitSuccessOpen(false)} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Đóng">
+                <button type="button" onClick={handleSuccessClose} className="rounded-full p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700" aria-label="Đóng">
                   <X size={18} />
                 </button>
               </div>
@@ -197,7 +204,7 @@ export function ReviewSubmitStep({ application, readOnly, onApplicationUpdated, 
               <p className="mt-3 text-sm font-semibold leading-7 text-slate-600">
                 Hồ sơ đăng ký gia sư của bạn đã được gửi đến bộ phận xét duyệt. Trong thời gian chờ xử lý, hồ sơ đã gửi sẽ ở trạng thái chỉ đọc.
               </p>
-              <button type="button" onClick={() => setSubmitSuccessOpen(false)} className="mt-6 inline-flex w-full items-center justify-center rounded-[8px] bg-[#147b77] px-4 py-3 text-sm font-extrabold text-white hover:bg-slate-900">
+              <button type="button" onClick={handleSuccessClose} className="mt-6 inline-flex w-full items-center justify-center rounded-[8px] bg-[#147b77] px-4 py-3 text-sm font-extrabold text-white hover:bg-slate-900">
                 Đã hiểu
               </button>
             </div>

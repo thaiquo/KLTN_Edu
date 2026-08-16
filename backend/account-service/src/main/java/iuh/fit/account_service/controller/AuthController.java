@@ -8,6 +8,7 @@ import iuh.fit.account_service.dto.auth.RegisterRequest;
 import iuh.fit.account_service.dto.auth.RegisterResponse;
 import iuh.fit.account_service.dto.auth.ResendVerificationOtpRequest;
 import iuh.fit.account_service.dto.auth.ResetPasswordRequest;
+import iuh.fit.account_service.dto.auth.SwitchRoleRequest;
 import iuh.fit.account_service.dto.auth.VerifyEmailRequest;
 import iuh.fit.account_service.service.AuthService;
 import jakarta.servlet.http.HttpServletResponse;
@@ -17,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,10 +34,6 @@ import java.time.Duration;
 public class AuthController {
 
     private final AuthService authService;
-
-    public AuthController(AuthService authService) {
-        this.authService = authService;
-    }
 
     @PostMapping("/register")
     public ResponseEntity<RegisterResponse> register(@Valid @RequestBody RegisterRequest request) {
@@ -55,8 +53,7 @@ public class AuthController {
 
     @PostMapping("/resend-verification-otp")
     public ResponseEntity<String> resendVerificationOtp(
-            @Valid @RequestBody ResendVerificationOtpRequest request
-    ) {
+            @Valid @RequestBody ResendVerificationOtpRequest request) {
         authService.resendVerificationOtp(request);
 
         return ResponseEntity.ok("If the email exists and is not verified, a new OTP has been sent.");
@@ -85,8 +82,7 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(
             @Valid @RequestBody LoginRequest request,
-            HttpServletResponse response
-    ) {
+            HttpServletResponse response) {
         LoginResult result = authService.login(request);
 
         ResponseCookie cookie = ResponseCookie
@@ -105,9 +101,45 @@ public class AuthController {
                         result.getUserId(),
                         result.getEmail(),
                         result.getFullName(),
-                        result.getRoles()
-                )
-        );
+                        result.getRoles(),
+                        result.getActiveRole(),
+                        result.isHasStudentProfile(),
+                        result.isHasTutorProfile(),
+                        result.getTutorStatus()));
+    }
+
+    @PostMapping("/switch-role")
+    public ResponseEntity<LoginResponse> switchRole(
+            @Valid @RequestBody SwitchRoleRequest request,
+            Authentication authentication,
+            HttpServletResponse response) {
+        if (authentication == null || authentication.getName() == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        LoginResult result = authService.switchRole(authentication.getName(), request);
+
+        ResponseCookie cookie = ResponseCookie
+                .from("access_token", result.getToken())
+                .httpOnly(true)
+                .secure(false)
+                .sameSite("Lax")
+                .path("/")
+                .maxAge(Duration.ofDays(1))
+                .build();
+
+        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+
+        return ResponseEntity.ok(
+                new LoginResponse(
+                        result.getUserId(),
+                        result.getEmail(),
+                        result.getFullName(),
+                        result.getRoles(),
+                        result.getActiveRole(),
+                        result.isHasStudentProfile(),
+                        result.isHasTutorProfile(),
+                        result.getTutorStatus()));
     }
 
     @PostMapping("/logout")

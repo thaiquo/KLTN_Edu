@@ -27,6 +27,10 @@ public class UserProfileResponse {
     private boolean emailVerified;
     private AccountStatus accountStatus;
     private List<String> roles;
+    private String activeRole;
+    private boolean hasStudentProfile;
+    private boolean hasTutorProfile;
+    private String tutorStatus;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -41,7 +45,7 @@ public class UserProfileResponse {
             List<String> roles
     ) {
         this(id, fullName, email, phone, dateOfBirth, null, null, null, null, null, null, null, null, null, null, null,
-                emailVerified, accountStatus, roles, null, null);
+                emailVerified, accountStatus, roles, null, false, false, null, null, null);
     }
 
     public UserProfileResponse(
@@ -67,6 +71,38 @@ public class UserProfileResponse {
             LocalDateTime createdAt,
             LocalDateTime updatedAt
     ) {
+        this(id, fullName, email, phone, dateOfBirth, avatarKey, avatarUrl, gender, provinceCode, province,
+                communeCode, commune, district, ward, addressDetail, bio, emailVerified, accountStatus, roles,
+                null, false, false, null, createdAt, updatedAt);
+    }
+
+    public UserProfileResponse(
+            Long id,
+            String fullName,
+            String email,
+            String phone,
+            LocalDate dateOfBirth,
+            String avatarKey,
+            String avatarUrl,
+            String gender,
+            String provinceCode,
+            String province,
+            String communeCode,
+            String commune,
+            String district,
+            String ward,
+            String addressDetail,
+            String bio,
+            boolean emailVerified,
+            AccountStatus accountStatus,
+            List<String> roles,
+            String activeRole,
+            boolean hasStudentProfile,
+            boolean hasTutorProfile,
+            String tutorStatus,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt
+    ) {
         this.id = id;
         this.fullName = fullName;
         this.email = email;
@@ -86,6 +122,10 @@ public class UserProfileResponse {
         this.emailVerified = emailVerified;
         this.accountStatus = accountStatus;
         this.roles = roles;
+        this.activeRole = activeRole;
+        this.hasStudentProfile = hasStudentProfile;
+        this.hasTutorProfile = hasTutorProfile;
+        this.tutorStatus = tutorStatus;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
     }
@@ -164,6 +204,22 @@ public class UserProfileResponse {
 
     public List<String> getRoles() {
         return roles;
+    }
+
+    public String getActiveRole() {
+        return activeRole;
+    }
+
+    public boolean isHasStudentProfile() {
+        return hasStudentProfile;
+    }
+
+    public boolean isHasTutorProfile() {
+        return hasTutorProfile;
+    }
+
+    public String getTutorStatus() {
+        return tutorStatus;
     }
 
     public LocalDateTime getCreatedAt() {

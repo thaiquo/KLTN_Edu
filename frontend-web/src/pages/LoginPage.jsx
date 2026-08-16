@@ -10,7 +10,8 @@ export function LoginPage() {
   const location = useLocation();
   const [form, setForm] = useState({
     email: location.state?.email || '',
-    password: ''
+    password: '',
+    tutorMode: location.state?.role === 'TUTOR' || false
   });
   const [message] = useState(location.state?.message || '');
   const [fieldErrors, setFieldErrors] = useState({});
@@ -19,7 +20,8 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false);
 
   function change(event) {
-    setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+    const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
+    setForm((current) => ({ ...current, [event.target.name]: value }));
     if (fieldErrors[event.target.name]) {
       setFieldErrors((current) => ({ ...current, [event.target.name]: '' }));
     }
@@ -76,7 +78,8 @@ export function LoginPage() {
     try {
       const currentUser = await login({
         email: form.email.trim().toLowerCase(),
-        password: form.password
+        password: form.password,
+        tutorMode: Boolean(form.tutorMode)
       });
 
       const from = location.state?.from?.pathname;
@@ -102,7 +105,7 @@ export function LoginPage() {
   return (
     <AuthLayout
       title="Đăng nhập"
-      description="Nhập email và mật khẩu đã xác minh OTP để vào hệ thống."
+      description="Nhập tài khoản và mật khẩu để tiếp tục."
     >
       <form onSubmit={submit}>
         <FormField
@@ -111,7 +114,7 @@ export function LoginPage() {
           name="email"
           value={form.email}
           onChange={change}
-          placeholder="student@gmail.com"
+          placeholder="email@example.com"
           autoComplete="email"
           error={fieldErrors.email}
           required
@@ -131,16 +134,29 @@ export function LoginPage() {
           required
         />
 
-        <div className="auth-inline-actions">
-          <Link to="/forgot-password">Quên mật khẩu?</Link>
+        <div className="mb-4 flex items-center justify-between">
+          <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">
+            <input
+              type="checkbox"
+              name="tutorMode"
+              checked={form.tutorMode}
+              onChange={change}
+              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <span>Đăng nhập với vai trò Gia sư</span>
+          </label>
+
+          <Link to="/forgot-password" className="text-sm font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400">
+            Quên mật khẩu?
+          </Link>
         </div>
 
-        {message && <div className="success" role="status">{message}</div>}
+        {message && <div className="success mb-4" role="status">{message}</div>}
         {error && (
-          <div className="error" role="alert">
+          <div className="error mb-4" role="alert">
             <span>{error}</span>
             {showVerifyAction && (
-              <button type="button" onClick={goVerifyEmail}>
+              <button type="button" onClick={goVerifyEmail} className="ml-2 underline">
                 Xác minh email
               </button>
             )}
@@ -151,8 +167,8 @@ export function LoginPage() {
         </button>
       </form>
 
-      <p className="switch">
-        Chưa có tài khoản? <Link to="/register">Đăng ký miễn phí</Link>
+      <p className="switch mt-4">
+        Chưa có tài khoản? <Link to="/register">Đăng ký ngay</Link>
       </p>
     </AuthLayout>
   );
@@ -161,6 +177,12 @@ export function LoginPage() {
 function defaultRouteFor(user) {
   if (user?.roles?.includes('STAFF') || user?.roles?.includes('ADMIN')) {
     return '/staff/tutors';
+  }
+  if (user?.activeRole === 'TUTOR') {
+    if (user?.tutorStatus === 'APPROVED') {
+      return '/tutor/dashboard';
+    }
+    return '/tutor-next-step';
   }
   return '/';
 }

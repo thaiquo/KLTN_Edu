@@ -15,6 +15,10 @@ import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.repository.UserRoleRepository;
 import iuh.fit.account_service.repository.AdministrativeCommuneRepository;
 import iuh.fit.account_service.repository.AdministrativeProvinceRepository;
+import iuh.fit.account_service.repository.StudentRepository;
+import iuh.fit.account_service.repository.TutorRepository;
+import iuh.fit.account_service.repository.UserRepository;
+import iuh.fit.account_service.repository.UserRoleRepository;
 import iuh.fit.account_service.service.storage.FileStorageService;
 import iuh.fit.account_service.service.storage.StoredFile;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +41,8 @@ class UserServiceTest {
 
     private final UserRepository userRepository = mock(UserRepository.class);
     private final UserRoleRepository userRoleRepository = mock(UserRoleRepository.class);
+    private final StudentRepository studentRepository = mock(StudentRepository.class);
+    private final TutorRepository tutorRepository = mock(TutorRepository.class);
     private final AdministrativeProvinceRepository provinceRepository = mock(AdministrativeProvinceRepository.class);
     private final AdministrativeCommuneRepository communeRepository = mock(AdministrativeCommuneRepository.class);
     private final FileStorageService fileStorageService = mock(FileStorageService.class);
@@ -50,6 +56,8 @@ class UserServiceTest {
         userService = new UserService(
                 userRepository,
                 userRoleRepository,
+                studentRepository,
+                tutorRepository,
                 passwordEncoder,
                 fileStorageService,
                 filePolicyProperties,

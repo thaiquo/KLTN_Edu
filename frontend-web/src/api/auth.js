@@ -17,6 +17,10 @@ export const authApi = {
     method: 'POST',
     body: JSON.stringify(payload)
   }),
+  switchRole: (payload) => apiRequest('/api/auth/switch-role', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }),
   logout: () => apiRequest('/api/auth/logout', {
     method: 'POST'
   }),

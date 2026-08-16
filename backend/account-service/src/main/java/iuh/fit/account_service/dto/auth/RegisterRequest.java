@@ -25,6 +25,8 @@ public class RegisterRequest {
     @NotBlank(message = "Confirm password is required")
     private String confirmPassword;
 
+    private String role;
+
     public String getFullName() {
         return fullName;
     }
@@ -56,4 +58,13 @@ public class RegisterRequest {
     public void setConfirmPassword(String confirmPassword) {
         this.confirmPassword = confirmPassword;
     }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
+    }
 }
+

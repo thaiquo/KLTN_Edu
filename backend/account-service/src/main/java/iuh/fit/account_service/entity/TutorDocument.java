@@ -48,6 +48,9 @@ public class TutorDocument {
     @Column(nullable = false)
     private Long fileSize;
 
+    @Column(length = 64)
+    private String sha256Hash;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private TutorDocumentVerificationStatus verificationStatus = TutorDocumentVerificationStatus.PENDING;
@@ -108,6 +111,8 @@ public class TutorDocument {
     public void setContentType(String contentType) { this.contentType = contentType; }
     public Long getFileSize() { return fileSize; }
     public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
+    public String getSha256Hash() { return sha256Hash; }
+    public void setSha256Hash(String sha256Hash) { this.sha256Hash = sha256Hash; }
     public TutorDocumentVerificationStatus getVerificationStatus() { return verificationStatus; }
     public void setVerificationStatus(TutorDocumentVerificationStatus verificationStatus) { this.verificationStatus = verificationStatus; }
     public LocalDateTime getUploadedAt() { return uploadedAt; }

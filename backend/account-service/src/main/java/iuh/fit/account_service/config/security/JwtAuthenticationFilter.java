@@ -50,9 +50,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             String email = jwtService.extractEmail(token);
+            String activeRole = jwtService.extractActiveRole(token);
 
             if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+                UserDetails userDetails = userDetailsService.loadUserByUsernameAndActiveRole(email, activeRole);
 
                 if (!isAccountAllowed(userDetails)) {
                     continueAsGuest(request, response, filterChain);

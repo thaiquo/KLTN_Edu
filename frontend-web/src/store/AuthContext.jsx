@@ -14,7 +14,11 @@ export function AuthProvider({ children }) {
 
     return {
       ...profile,
-      roles: Array.isArray(profile.roles) ? profile.roles : []
+      roles: Array.isArray(profile.roles) ? profile.roles : [],
+      activeRole: profile.activeRole || (Array.isArray(profile.roles) && profile.roles.length > 0 ? profile.roles[0] : null),
+      hasStudentProfile: Boolean(profile.hasStudentProfile),
+      hasTutorProfile: Boolean(profile.hasTutorProfile),
+      tutorStatus: profile.tutorStatus || null
     };
   }, []);
 
@@ -70,6 +74,18 @@ export function AuthProvider({ children }) {
     return currentUser;
   }
 
+  async function switchRole(targetRole) {
+    await authApi.switchRole({ targetRole });
+    const currentUser = await refreshUser();
+    return currentUser;
+  }
+
+  async function activateStudentProfile() {
+    await userApi.activateStudent();
+    const currentUser = await refreshUser();
+    return currentUser;
+  }
+
   async function logout() {
     await authApi.logout().catch(() => {});
     setUser(null);
@@ -81,6 +97,8 @@ export function AuthProvider({ children }) {
     loading,
     login,
     logout,
+    switchRole,
+    activateStudentProfile,
     refreshUser,
     register: authApi.register,
     verifyEmail: authApi.verifyEmail,

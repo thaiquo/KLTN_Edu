@@ -4,18 +4,23 @@ import iuh.fit.account_service.dto.user.ChangePasswordRequest;
 import iuh.fit.account_service.dto.user.UpdateUserProfileRequest;
 import iuh.fit.account_service.dto.user.UserProfileResponse;
 import iuh.fit.account_service.config.FilePolicyProperties;
+import iuh.fit.account_service.entity.Student;
+import iuh.fit.account_service.entity.Tutor;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.entity.UserRole;
 import iuh.fit.account_service.exception.BadRequestException;
 import iuh.fit.account_service.exception.FileValidationException;
 import iuh.fit.account_service.exception.ResourceNotFoundException;
 import iuh.fit.account_service.exception.StorageException;
+import iuh.fit.account_service.repository.StudentRepository;
+import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.AdministrativeCommuneRepository;
 import iuh.fit.account_service.repository.AdministrativeProvinceRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.repository.UserRoleRepository;
 import iuh.fit.account_service.service.storage.FileStorageService;
 import iuh.fit.account_service.util.EmailNormalizer;
+import iuh.fit.account_service.util.HashUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -33,6 +38,8 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final UserRoleRepository userRoleRepository;
+    private final StudentRepository studentRepository;
+    private final TutorRepository tutorRepository;
     private final PasswordEncoder passwordEncoder;
     private final FileStorageService fileStorageService;
     private final FilePolicyProperties filePolicyProperties;
@@ -44,7 +51,7 @@ public class UserService {
             UserRoleRepository userRoleRepository,
             PasswordEncoder passwordEncoder
     ) {
-        this(userRepository, userRoleRepository, passwordEncoder, null, null, null, null);
+        this(userRepository, userRoleRepository, null, null, passwordEncoder, null, null, null, null);
     }
 
     public UserService(
@@ -54,13 +61,15 @@ public class UserService {
             FileStorageService fileStorageService,
             FilePolicyProperties filePolicyProperties
     ) {
-        this(userRepository, userRoleRepository, passwordEncoder, fileStorageService, filePolicyProperties, null, null);
+        this(userRepository, userRoleRepository, null, null, passwordEncoder, fileStorageService, filePolicyProperties, null, null);
     }
 
     @Autowired
     public UserService(
             UserRepository userRepository,
             UserRoleRepository userRoleRepository,
+            @Autowired(required = false) StudentRepository studentRepository,
+            @Autowired(required = false) TutorRepository tutorRepository,
             PasswordEncoder passwordEncoder,
             FileStorageService fileStorageService,
             FilePolicyProperties filePolicyProperties,
@@ -69,6 +78,8 @@ public class UserService {
     ) {
         this.userRepository = userRepository;
         this.userRoleRepository = userRoleRepository;
+        this.studentRepository = studentRepository;
+        this.tutorRepository = tutorRepository;
         this.passwordEncoder = passwordEncoder;
         this.fileStorageService = fileStorageService;
         this.filePolicyProperties = filePolicyProperties;
@@ -103,13 +114,45 @@ public class UserService {
     public UserProfileResponse updateCurrentUserAvatar(String authenticatedEmail, MultipartFile file) {
         User user = findCurrentUser(authenticatedEmail);
         byte[] content = validateAvatar(file);
+        String newHash = HashUtils.calculateSha256(content);
+
+        // Duplicate detection: same bytes as current avatar -> skip upload entirely
+        if (newHash != null && newHash.equals(user.getAvatarSha256())) {
+            return toProfileResponse(user);
+        }
+
         String extension = getExtension(file.getOriginalFilename());
-        String fileKey = "avatars/" + user.getId() + "/" + UUID.randomUUID() + "." + extension;
+        String fileKey = "avatars/" + user.getId() + "/" + java.util.UUID.randomUUID() + "." + extension;
+        String oldKey = user.getAvatarKey();
 
+        // 1. Upload new object
         fileStorageService.store(fileKey, content, normalizeContentType(file.getContentType()));
-        user.setAvatarKey(fileKey);
 
-        return toProfileResponse(userRepository.save(user));
+        // 2. Update DB
+        try {
+            user.setAvatarKey(fileKey);
+            user.setAvatarSha256(newHash);
+            userRepository.save(user);
+        } catch (RuntimeException ex) {
+            // DB save failed -> cleanup orphan new object
+            try {
+                fileStorageService.delete(fileKey);
+            } catch (RuntimeException cleanupErr) {
+                ex.addSuppressed(cleanupErr);
+            }
+            throw ex;
+        }
+
+        // 3. Delete old object only after DB is committed
+        if (StringUtils.hasText(oldKey) && !oldKey.equals(fileKey)) {
+            try {
+                fileStorageService.delete(oldKey);
+            } catch (RuntimeException ignored) {
+                // Best-effort; old object left orphan is acceptable over crashing the response
+            }
+        }
+
+        return toProfileResponse(user);
     }
 
     @Transactional
@@ -135,12 +178,45 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException("Current user was not found"));
     }
 
+    @Transactional
+    public UserProfileResponse activateStudentProfile(String authenticatedEmail) {
+        User user = findCurrentUser(authenticatedEmail);
+        if (studentRepository != null && !studentRepository.existsByUserId(user.getId())) {
+            Student student = new Student();
+            student.setUser(user);
+            studentRepository.save(student);
+        }
+        if (!userRoleRepository.existsByUserIdAndRole(user.getId(), iuh.fit.account_service.enums.Role.STUDENT)) {
+            UserRole userRole = new UserRole();
+            userRole.setUser(user);
+            userRole.setRole(iuh.fit.account_service.enums.Role.STUDENT);
+            userRoleRepository.save(userRole);
+        }
+        return toProfileResponse(user);
+    }
+
     private UserProfileResponse toProfileResponse(User user) {
         List<String> roles = userRoleRepository.findByUserId(user.getId())
                 .stream()
                 .map(UserRole::getRole)
                 .map(Enum::name)
                 .toList();
+
+        String activeRole = null;
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getAuthorities() != null) {
+            for (org.springframework.security.core.GrantedAuthority ga : auth.getAuthorities()) {
+                if (ga.getAuthority().startsWith("ROLE_")) {
+                    activeRole = ga.getAuthority().substring(5);
+                    break;
+                }
+            }
+        }
+
+        boolean hasStudent = studentRepository != null && studentRepository.existsByUserId(user.getId());
+        java.util.Optional<Tutor> tutorOpt = tutorRepository != null ? tutorRepository.findByUserId(user.getId()) : java.util.Optional.empty();
+        boolean hasTutor = tutorOpt.isPresent();
+        String tutorStatusStr = tutorOpt.map(t -> t.getStatus().name()).orElse(null);
 
         return new UserProfileResponse(
                 user.getId(),
@@ -162,6 +238,10 @@ public class UserService {
                 user.isEmailVerified(),
                 user.getAccountStatus(),
                 roles,
+                activeRole,
+                hasStudent,
+                hasTutor,
+                tutorStatusStr,
                 user.getCreatedAt(),
                 user.getUpdatedAt()
         );

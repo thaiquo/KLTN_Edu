@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -20,8 +20,15 @@ import {
 import { userApi } from '../api/user';
 import { referenceApi } from '../api/reference';
 import { HomeHeader } from '../components/home/HomeHeader';
-import { FormField } from '../components/FormField';
 import { useAuth } from '../hooks/useAuth';
+import {
+  ProfileEditForm,
+  mapValidationErrors,
+  normalizeOptional,
+  toFormState,
+  validateProfileForm
+} from '../components/profile/ProfileEditForm';
+import { validateAvatarFile } from '../components/profile/AvatarUploader';
 
 const ROLE_LABELS = {
   STUDENT: 'Học viên',
@@ -182,7 +189,7 @@ export function ProfilePage() {
     event.preventDefault();
     if (saving) return;
 
-    const errors = validate(form);
+    const errors = validateProfileForm(form);
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       setError('Vui lòng kiểm tra lại thông tin hồ sơ.');
@@ -225,7 +232,7 @@ export function ProfilePage() {
   }
 
   async function uploadAvatar(file) {
-    const avatarValidationError = validateAvatar(file);
+    const avatarValidationError = validateAvatarFile(file);
     if (avatarValidationError) {
       setAvatarError(avatarValidationError);
       return;
@@ -436,134 +443,7 @@ function AvatarUploadButton({ uploading, onUpload }) {
   );
 }
 
-function ProfileEditForm({ form, fieldErrors, saving, provinces, communes, addressLoading, onChange, onCancel, onSubmit }) {
-  return (
-    <form onSubmit={onSubmit} className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-      <section className="rounded-[8px] border border-slate-200 bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,.06)]">
-        <SectionTitle eyebrow="Chỉnh sửa" title="Thông tin cá nhân" />
-        <div className="mt-6 grid gap-5 sm:grid-cols-2">
-          <FormField
-            label="Họ và tên"
-            name="fullName"
-            value={form.fullName}
-            onChange={onChange}
-            placeholder="Nguyễn Văn A"
-            autoComplete="name"
-            maxLength="100"
-            error={fieldErrors.fullName}
-            required
-          />
 
-          <FormField
-            label="Số điện thoại"
-            name="phone"
-            value={form.phone}
-            onChange={onChange}
-            placeholder="0901234567"
-            inputMode="tel"
-            autoComplete="tel"
-            maxLength="16"
-            hint="Có thể để trống. Nếu nhập, dùng 8-15 chữ số và có thể bắt đầu bằng +."
-            error={fieldErrors.phone}
-          />
-
-          <FormField
-            label="Ngày sinh"
-            type="date"
-            name="dateOfBirth"
-            value={form.dateOfBirth}
-            onChange={onChange}
-            max={todayIso()}
-            error={fieldErrors.dateOfBirth}
-          />
-
-          <label className="field">
-            <span>Giới tính</span>
-            <div>
-              <select name="gender" value={form.gender} onChange={onChange}>
-                {GENDER_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-            </div>
-            {fieldErrors.gender && <small className="field-error">{fieldErrors.gender}</small>}
-          </label>
-        </div>
-
-        <div className="mt-8">
-          <SectionTitle eyebrow="Địa chỉ" title="Khu vực sinh sống" compact />
-          <div className="mt-5 grid gap-5 sm:grid-cols-2">
-            <label className="field">
-              <span>Tỉnh / Thành phố</span>
-              <div>
-                <select name="provinceCode" value={form.provinceCode} onChange={onChange}>
-                  <option value="">Chọn tỉnh / thành phố</option>
-                  {provinces.map((province) => (
-                    <option key={province.code} value={province.code}>{province.name}</option>
-                  ))}
-                </select>
-              </div>
-              {fieldErrors.provinceCode && <small className="field-error">{fieldErrors.provinceCode}</small>}
-            </label>
-            <label className="field">
-              <span>Xã / Phường / Đặc khu</span>
-              <div>
-                <select name="communeCode" value={form.communeCode} onChange={onChange} disabled={!form.provinceCode || addressLoading}>
-                  <option value="">{form.provinceCode ? 'Chọn xã / phường' : 'Chọn tỉnh trước'}</option>
-                  {communes.map((commune) => (
-                    <option key={commune.code} value={commune.code}>{commune.name}</option>
-                  ))}
-                </select>
-              </div>
-              {fieldErrors.communeCode && <small className="field-error">{fieldErrors.communeCode}</small>}
-            </label>
-            <FormField label="Địa chỉ chi tiết" name="addressDetail" value={form.addressDetail} onChange={onChange} placeholder="Tên đường, số nhà..." maxLength="255" error={fieldErrors.addressDetail} />
-          </div>
-        </div>
-
-        <div className="mt-8">
-          <TextAreaField
-            label="Giới thiệu ngắn"
-            name="bio"
-            value={form.bio}
-            onChange={onChange}
-            placeholder="Viết một vài dòng ngắn về bạn..."
-            maxLength="300"
-            rows={4}
-            error={fieldErrors.bio}
-            hint={`${form.bio.length}/300 ký tự`}
-          />
-        </div>
-      </section>
-
-      <aside className="rounded-[8px] border border-slate-200 bg-white p-5 shadow-[0_18px_45px_rgba(15,23,42,.06)]">
-        <h2 className="font-display text-xl font-extrabold tracking-tight text-slate-950">Lưu thay đổi</h2>
-        <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">
-          Email, vai trò và trạng thái tài khoản là thông tin hệ thống nên không thể chỉnh sửa trực tiếp tại đây.
-        </p>
-        <div className="mt-5 grid gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex items-center justify-center gap-2 rounded-[8px] bg-slate-900 px-4 py-3 text-sm font-extrabold text-white hover:bg-[#ff695f] transition-colors disabled:opacity-60"
-          >
-            <Save size={16} />
-            {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={saving}
-            className="inline-flex items-center justify-center gap-2 rounded-[8px] border border-slate-200 bg-white px-4 py-3 text-sm font-extrabold text-slate-700 hover:border-primary/40 hover:text-primary transition-colors disabled:opacity-60"
-          >
-            <X size={16} />
-            Hủy
-          </button>
-        </div>
-      </aside>
-    </form>
-  );
-}
 
 function PersonalInfoSection({ profile }) {
   return (

@@ -2,6 +2,9 @@ import { apiRequest } from './client';
 
 export const userApi = {
   getMe: () => apiRequest('/api/users/me'),
+  activateStudent: () => apiRequest('/api/users/me/activate-student', {
+    method: 'POST'
+  }),
   updateMe: (payload) => apiRequest('/api/users/me', {
     method: 'PUT',
     body: JSON.stringify(payload)

@@ -32,6 +32,11 @@ public class UserController {
         return ResponseEntity.ok(userService.getCurrentUserProfile(authentication.getName()));
     }
 
+    @PostMapping("/me/activate-student")
+    public ResponseEntity<UserProfileResponse> activateStudentProfile(Authentication authentication) {
+        return ResponseEntity.ok(userService.activateStudentProfile(authentication.getName()));
+    }
+
     @PutMapping("/me")
     public ResponseEntity<UserProfileResponse> updateCurrentUser(
             Authentication authentication,

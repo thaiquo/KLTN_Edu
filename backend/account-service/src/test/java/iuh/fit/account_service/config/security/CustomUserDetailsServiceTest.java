@@ -20,9 +20,13 @@ class CustomUserDetailsServiceTest {
 
     private final UserRepository userRepository = mock(UserRepository.class);
     private final UserRoleRepository userRoleRepository = mock(UserRoleRepository.class);
+    private final iuh.fit.account_service.repository.StudentRepository studentRepository = mock(iuh.fit.account_service.repository.StudentRepository.class);
+    private final iuh.fit.account_service.repository.TutorRepository tutorRepository = mock(iuh.fit.account_service.repository.TutorRepository.class);
     private final CustomUserDetailsService service = new CustomUserDetailsService(
             userRepository,
-            userRoleRepository
+            userRoleRepository,
+            studentRepository,
+            tutorRepository
     );
 
     @Test

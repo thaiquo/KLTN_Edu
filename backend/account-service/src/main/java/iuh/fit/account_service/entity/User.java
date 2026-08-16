@@ -50,6 +50,9 @@ public class User {
     @Column(name = "avatar_key", length = 512)
     private String avatarKey;
 
+    @Column(name = "avatar_sha256", length = 64)
+    private String avatarSha256;
+
     @Column(length = 30)
     private String gender;
 
@@ -130,6 +133,10 @@ public class User {
         return avatarKey;
     }
 
+    public String getAvatarSha256() {
+        return avatarSha256;
+    }
+
     public String getGender() {
         return gender;
     }
@@ -196,6 +203,10 @@ public class User {
 
     public void setAvatarKey(String avatarKey) {
         this.avatarKey = avatarKey;
+    }
+
+    public void setAvatarSha256(String avatarSha256) {
+        this.avatarSha256 = avatarSha256;
     }
 
     public void setGender(String gender) {

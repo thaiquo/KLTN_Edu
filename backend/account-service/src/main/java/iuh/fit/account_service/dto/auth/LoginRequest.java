@@ -16,6 +16,8 @@ public class LoginRequest {
     @NotBlank(message = "Password is required")
     private String password;
 
+    private Boolean tutorMode;
+
     public String getEmail() {
         return email;
     }
@@ -30,5 +32,13 @@ public class LoginRequest {
 
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    public Boolean getTutorMode() {
+        return tutorMode;
+    }
+
+    public void setTutorMode(Boolean tutorMode) {
+        this.tutorMode = tutorMode;
     }
 }

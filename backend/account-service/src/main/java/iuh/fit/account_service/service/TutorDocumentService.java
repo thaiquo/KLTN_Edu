@@ -10,6 +10,7 @@ import iuh.fit.account_service.enums.CredentialValidityType;
 import iuh.fit.account_service.enums.TutorApplicationStatus;
 import iuh.fit.account_service.enums.TutorDocumentType;
 import iuh.fit.account_service.enums.TutorDocumentVerificationStatus;
+import iuh.fit.account_service.util.HashUtils;
 import iuh.fit.account_service.exception.ConflictException;
 import iuh.fit.account_service.exception.FileValidationException;
 import iuh.fit.account_service.exception.ResourceNotFoundException;
@@ -103,14 +104,26 @@ public class TutorDocumentService {
 
         String originalFilename = sanitizeFilename(file.getOriginalFilename());
         String extension = extensionOf(originalFilename);
+
+        byte[] content = readBytes(file);
+        String sha256 = HashUtils.calculateSha256(content);
+        String contentType = normalizeContentType(file.getContentType());
+
+        // Duplicate detection scoped to this application (same bytes = skip upload, reuse record)
+        if (sha256 != null) {
+            var existing = tutorDocumentRepository.findFirstByTutorApplication_IdAndSha256Hash(
+                    application.getId(), sha256);
+            if (existing.isPresent()) {
+                return toResponse(existing.get());
+            }
+        }
+
         String fileKey = "tutor-applications/%d/documents/%s.%s".formatted(
                 application.getId(),
                 UUID.randomUUID(),
                 extension
         );
 
-        byte[] content = readBytes(file);
-        String contentType = normalizeContentType(file.getContentType());
         fileStorageService.store(fileKey, content, contentType);
 
         try {
@@ -121,6 +134,7 @@ public class TutorDocumentService {
             document.setOriginalFilename(originalFilename);
             document.setContentType(contentType);
             document.setFileSize((long) content.length);
+            document.setSha256Hash(sha256);
             document.setVerificationStatus(TutorDocumentVerificationStatus.PENDING);
             document.setUploadedAt(LocalDateTime.now());
             document.setTitle(metadata.title());

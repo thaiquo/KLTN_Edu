@@ -14,7 +14,16 @@ public class StorageProperties {
     private String region;
     private String accessKeyId;
     private String secretAccessKey;
+    private String keyPrefix = "dev";
     private Duration presignedUrlDuration = Duration.ofMinutes(10);
+
+    public String getKeyPrefix() {
+        return keyPrefix;
+    }
+
+    public void setKeyPrefix(String keyPrefix) {
+        this.keyPrefix = keyPrefix;
+    }
 
     public String getProvider() {
         return provider;

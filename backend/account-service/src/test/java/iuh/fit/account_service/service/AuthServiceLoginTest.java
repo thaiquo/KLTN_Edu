@@ -8,6 +8,7 @@ import iuh.fit.account_service.enums.AccountStatus;
 import iuh.fit.account_service.enums.Role;
 import iuh.fit.account_service.exception.ForbiddenException;
 import iuh.fit.account_service.repository.OtpVerificationRepository;
+import iuh.fit.account_service.repository.StudentRepository;
 import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.repository.UserRoleRepository;
@@ -34,6 +35,7 @@ class AuthServiceLoginTest {
 
     private final UserRepository userRepository = mock(UserRepository.class);
     private final UserRoleRepository userRoleRepository = mock(UserRoleRepository.class);
+    private final StudentRepository studentRepository = mock(StudentRepository.class);
     private final TutorRepository tutorRepository = mock(TutorRepository.class);
     private final AuthenticationManager authenticationManager = mock(AuthenticationManager.class);
     private final JwtService jwtService = mock(JwtService.class);
@@ -44,8 +46,9 @@ class AuthServiceLoginTest {
         authService = new AuthService(
                 userRepository,
                 userRoleRepository,
-                mock(OtpVerificationRepository.class),
+                studentRepository,
                 tutorRepository,
+                mock(OtpVerificationRepository.class),
                 mock(PasswordEncoder.class),
                 mock(OtpService.class),
                 authenticationManager,
@@ -58,7 +61,8 @@ class AuthServiceLoginTest {
         User user = user(1L, "test@gmail.com", true, AccountStatus.ACTIVE);
         when(userRepository.findByEmailIgnoreCase("test@gmail.com")).thenReturn(Optional.of(user));
         when(userRoleRepository.findByUserId(1L)).thenReturn(List.of(role(user, Role.STUDENT)));
-        when(jwtService.generateToken("test@gmail.com", List.of("STUDENT"))).thenReturn("jwt-token");
+        when(studentRepository.existsByUserId(1L)).thenReturn(true);
+        when(jwtService.generateToken("test@gmail.com", "STUDENT", List.of("STUDENT"))).thenReturn("jwt-token");
 
         var result = authService.login(loginRequest(" TEST@GMAIL.COM ", "12345678"));
 
@@ -131,19 +135,20 @@ class AuthServiceLoginTest {
     }
 
     @Test
-    void legacyTutorWithoutProfileIsNotBlocked() {
+    void userWithMultipleRolesDefaultsToStudentActiveRole() {
         User user = user(1L, "tutor@gmail.com", true, AccountStatus.ACTIVE);
         when(userRepository.findByEmailIgnoreCase("tutor@gmail.com")).thenReturn(Optional.of(user));
         when(userRoleRepository.findByUserId(1L)).thenReturn(List.of(
                 role(user, Role.STUDENT),
                 role(user, Role.TUTOR)
         ));
-        when(jwtService.generateToken("tutor@gmail.com", List.of("STUDENT", "TUTOR"))).thenReturn("jwt-token");
+        when(studentRepository.existsByUserId(1L)).thenReturn(true);
+        when(jwtService.generateToken("tutor@gmail.com", "STUDENT", List.of("STUDENT", "TUTOR"))).thenReturn("jwt-token");
 
         var result = authService.login(loginRequest("tutor@gmail.com", "12345678"));
 
         assertThat(result.getRoles()).containsExactly("STUDENT", "TUTOR");
-        verify(tutorRepository, never()).existsByUserId(1L);
+        assertThat(result.getActiveRole()).isEqualTo("STUDENT");
     }
 
     private LoginRequest loginRequest(String email, String password) {

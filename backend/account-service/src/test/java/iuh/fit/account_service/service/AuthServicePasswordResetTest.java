@@ -9,6 +9,7 @@ import iuh.fit.account_service.enums.AccountStatus;
 import iuh.fit.account_service.enums.Role;
 import iuh.fit.account_service.exception.BadRequestException;
 import iuh.fit.account_service.repository.OtpVerificationRepository;
+import iuh.fit.account_service.repository.StudentRepository;
 import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.repository.UserRoleRepository;
@@ -42,8 +43,9 @@ class AuthServicePasswordResetTest {
         authService = new AuthService(
                 userRepository,
                 userRoleRepository,
-                mock(OtpVerificationRepository.class),
+                mock(StudentRepository.class),
                 mock(TutorRepository.class),
+                mock(OtpVerificationRepository.class),
                 passwordEncoder,
                 otpService,
                 mock(AuthenticationManager.class),

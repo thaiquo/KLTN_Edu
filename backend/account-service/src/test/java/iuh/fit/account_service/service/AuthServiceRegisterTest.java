@@ -9,6 +9,7 @@ import iuh.fit.account_service.enums.Role;
 import iuh.fit.account_service.exception.BadRequestException;
 import iuh.fit.account_service.exception.ConflictException;
 import iuh.fit.account_service.repository.OtpVerificationRepository;
+import iuh.fit.account_service.repository.StudentRepository;
 import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.repository.UserRoleRepository;
@@ -32,14 +33,16 @@ class AuthServiceRegisterTest {
 
     private final UserRepository userRepository = mock(UserRepository.class);
     private final UserRoleRepository userRoleRepository = mock(UserRoleRepository.class);
+    private final StudentRepository studentRepository = mock(StudentRepository.class);
     private final OtpVerificationRepository otpRepository = mock(OtpVerificationRepository.class);
     private final TutorRepository tutorRepository = mock(TutorRepository.class);
     private final OtpService otpService = mock(OtpService.class);
     private final AuthService authService = new AuthService(
             userRepository,
             userRoleRepository,
-            otpRepository,
+            studentRepository,
             tutorRepository,
+            otpRepository,
             new BCryptPasswordEncoder(),
             otpService,
             mock(AuthenticationManager.class),
@@ -82,10 +85,8 @@ class AuthServiceRegisterTest {
     }
 
     @Test
-    void registerRequestNoLongerContainsRoleField() {
-        assertThatThrownBy(() -> RegisterRequest.class.getDeclaredField("role"))
-                .isInstanceOf(NoSuchFieldException.class);
-
+    void registerRequestSupportsRoleField() {
+        assertThat(hasField("role")).isTrue();
         assertThat(hasField("userType")).isFalse();
     }
 

@@ -1,10 +1,11 @@
 const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8080').replace(/\/$/, '');
 
 export class ApiError extends Error {
-  constructor({ status, message, validationErrors, path, raw }) {
+  constructor({ status, message, code, validationErrors, path, raw }) {
     super(message || 'Yêu cầu không thành công.');
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
     this.validationErrors = validationErrors || [];
     this.path = path;
     this.raw = raw;
@@ -57,16 +58,49 @@ async function parseResponseBody(response) {
   return response.text().catch(() => '');
 }
 
-function getErrorMessage(data) {
+function parseErrorPayload(data, status) {
+  let rawMessage = '';
+  let code = undefined;
+
   if (typeof data === 'string') {
-    return data;
+    rawMessage = data;
+  } else if (data && typeof data === 'object') {
+    code = data.code;
+    if (Array.isArray(data.message)) {
+      rawMessage = data.message[0] || '';
+    } else {
+      rawMessage = data.message || data.error || data.detail || data.title || '';
+    }
   }
 
-  if (Array.isArray(data?.message)) {
-    return data.message[0];
+  if (typeof rawMessage === 'string' && rawMessage.includes(':')) {
+    const parts = rawMessage.split(':');
+    const potentialCode = parts[0].trim();
+    if (/^[A-Z0-9_]+$/.test(potentialCode)) {
+      if (!code) code = potentialCode;
+      rawMessage = parts.slice(1).join(':').trim();
+    }
   }
 
-  return data?.message || data?.error || data?.detail || data?.title;
+  let userMessage = rawMessage;
+
+  if (code === 'INVALID_CREDENTIALS' || rawMessage === 'Invalid email or password' || rawMessage === 'Bad credentials') {
+    userMessage = 'Email hoặc mật khẩu không chính xác.';
+  } else if (code === 'STUDENT_PROFILE_NOT_FOUND') {
+    userMessage = 'Tài khoản chưa đăng ký làm học viên.';
+  } else if (code === 'TUTOR_PROFILE_NOT_FOUND') {
+    userMessage = 'Tài khoản chưa đăng ký làm gia sư.';
+  } else if (code === 'TUTOR_PENDING') {
+    userMessage = 'Hồ sơ gia sư đang chờ xét duyệt.';
+  } else if (code === 'TUTOR_REJECTED') {
+    userMessage = 'Hồ sơ gia sư chưa được phê duyệt.';
+  } else if (code === 'FILE_ALREADY_EXISTS') {
+    userMessage = 'Tệp này đã được tải lên trước đó.';
+  } else if (!userMessage) {
+    userMessage = getStatusFallbackMessage(status);
+  }
+
+  return { code, message: userMessage };
 }
 
 function getStatusFallbackMessage(status) {
@@ -112,9 +146,11 @@ export async function apiRequest(path, options = {}) {
   const data = await parseResponseBody(response);
 
   if (!response.ok) {
+    const { code, message } = parseErrorPayload(data, response.status);
     throw new ApiError({
       status: response.status,
-      message: getErrorMessage(data) || getStatusFallbackMessage(response.status),
+      code,
+      message,
       validationErrors: normalizeValidationErrors(data),
       path: typeof data === 'object' ? data?.path : undefined,
       raw: data

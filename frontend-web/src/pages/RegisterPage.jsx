@@ -7,6 +7,7 @@ import { useAuth } from '../hooks/useAuth';
 export function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
+  const [selectedRole, setSelectedRole] = useState('STUDENT');
   const [form, setForm] = useState({
     fullName: '',
     email: '',
@@ -112,7 +113,8 @@ export function RegisterPage() {
         fullName: form.fullName.trim(),
         email: form.email.trim().toLowerCase(),
         password: form.password,
-        confirmPassword: form.confirmPassword
+        confirmPassword: form.confirmPassword,
+        role: selectedRole
       };
 
       const response = await register(payload);
@@ -120,7 +122,7 @@ export function RegisterPage() {
 
       navigate('/verify-email', {
         replace: true,
-        state: { email: verificationEmail }
+        state: { email: verificationEmail, role: selectedRole }
       });
     } catch (registerError) {
       applyApiErrors(registerError);
@@ -132,8 +134,33 @@ export function RegisterPage() {
   return (
     <AuthLayout
       title="Tạo tài khoản"
-      description="Đăng ký tài khoản học tập và xác minh email để bắt đầu sử dụng EduConnect."
+      description="Chọn vai trò và đăng ký để bắt đầu trải nghiệm hệ thống."
     >
+      <div className="mb-6 flex rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
+        <button
+          type="button"
+          onClick={() => { setSelectedRole('STUDENT'); setError(''); }}
+          className={`flex-1 rounded-md py-2 text-sm font-semibold transition-all ${
+            selectedRole === 'STUDENT'
+              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-400'
+              : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+          }`}
+        >
+          Tôi là Học viên
+        </button>
+        <button
+          type="button"
+          onClick={() => { setSelectedRole('TUTOR'); setError(''); }}
+          className={`flex-1 rounded-md py-2 text-sm font-semibold transition-all ${
+            selectedRole === 'TUTOR'
+              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-400'
+              : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+          }`}
+        >
+          Tôi là Gia sư
+        </button>
+      </div>
+
       <form onSubmit={submit}>
         <FormField
           label="Họ và tên"
@@ -153,7 +180,7 @@ export function RegisterPage() {
           name="email"
           value={form.email}
           onChange={change}
-          placeholder="student@gmail.com"
+          placeholder="email@example.com"
           autoComplete="email"
           error={fieldErrors.email}
           required
@@ -187,13 +214,13 @@ export function RegisterPage() {
           required
         />
 
-        {error && <div className="error" role="alert">{error}</div>}
+        {error && <div className="error mb-4" role="alert">{error}</div>}
         <button className="primary" disabled={busy}>
-          {busy ? 'Đang tạo...' : 'Tạo tài khoản'}
+          {busy ? 'Đang tạo...' : `Đăng ký (${selectedRole === 'STUDENT' ? 'Học viên' : 'Gia sư'})`}
         </button>
       </form>
 
-      <p className="switch">
+      <p className="switch mt-4">
         Đã có tài khoản? <Link to="/login">Đăng nhập</Link>
       </p>
     </AuthLayout>

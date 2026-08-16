@@ -5,6 +5,7 @@ import iuh.fit.account_service.dto.auth.ResendVerificationOtpRequest;
 import iuh.fit.account_service.dto.auth.VerifyEmailRequest;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.repository.OtpVerificationRepository;
+import iuh.fit.account_service.repository.StudentRepository;
 import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.repository.UserRoleRepository;
@@ -34,8 +35,9 @@ class AuthServiceOtpLifecycleTest {
         authService = new AuthService(
                 userRepository,
                 mock(UserRoleRepository.class),
-                mock(OtpVerificationRepository.class),
+                mock(StudentRepository.class),
                 mock(TutorRepository.class),
+                mock(OtpVerificationRepository.class),
                 mock(PasswordEncoder.class),
                 otpService,
                 mock(AuthenticationManager.class),
