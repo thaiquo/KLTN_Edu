@@ -37,8 +37,8 @@ export function TutorApplicationWizard({ mode = 'INITIAL_TUTOR_REGISTRATION', on
   const isBecomeTutorMode = mode === 'BECOME_TUTOR';
   const pageTitle = isBecomeTutorMode ? 'Trở thành gia sư' : 'Hoàn tất hồ sơ gia sư';
   const pageDescription = isBecomeTutorMode
-    ? 'Xây dựng hồ sơ từng bước, rõ ràng và dễ quay lại chỉnh sửa.'
-    : 'Điền thông tin cần thiết để Staff xét duyệt hồ sơ trước khi bạn hoạt động với vai trò gia sư.';
+    ? 'Khai báo năng lực giảng dạy và minh chứng để Admin xét duyệt quyền trở thành gia sư.'
+    : 'Điền thông tin cần thiết để Admin xét duyệt hồ sơ trước khi bạn hoạt động với vai trò gia sư.';
   const backRoute = isBecomeTutorMode ? '/profile' : '/';
   const backLabel = isBecomeTutorMode ? 'Quay lại hồ sơ cá nhân' : 'Quay lại trang chủ';
 
@@ -156,7 +156,7 @@ export function TutorApplicationWizard({ mode = 'INITIAL_TUTOR_REGISTRATION', on
 
   function setStep(index) {
     const next = Math.min(Math.max(index, 0), STEPS.length - 1);
-    setSearchParams({ step: String(next + 1) });
+    setSearchParams({ step: String(next + 1) }, { replace: true });
   }
 
   function renderStep() {
@@ -248,7 +248,7 @@ export function TutorApplicationWizard({ mode = 'INITIAL_TUTOR_REGISTRATION', on
 
               <section className="rounded-[8px] border border-slate-200 bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,.06)] sm:p-8">
                 {renderStep()}
-                {!['basic', 'education', 'intro'].includes(STEPS[currentIndex].id) && (
+                {['subjects', 'documents'].includes(STEPS[currentIndex].id) && (
                   <WizardNavigation
                     currentIndex={currentIndex}
                     totalSteps={STEPS.length}
@@ -325,8 +325,8 @@ function ReadOnlyState({ application }) {
       </h2>
       <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">
         {approved
-          ? 'Hồ sơ của bạn đã được duyệt. Bạn có thể sử dụng đầy đủ các tính năng dành cho Gia sư.'
-          : 'Bạn vẫn có thể xem các bước, nhưng không thể chỉnh sửa cho đến khi Staff phản hồi.'}
+          ? 'Hồ sơ và các môn/trình độ đã khai báo được kích hoạt. Khi tạo lớp, bạn chỉ dùng các nội dung đã được Admin duyệt.'
+          : 'Bạn vẫn có thể xem các bước, nhưng không thể chỉnh sửa cho đến khi Admin phản hồi.'}
       </p>
     </section>
   );

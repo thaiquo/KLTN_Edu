@@ -232,7 +232,7 @@ export function TeachingSubjectsStep({ application, readOnly, onSubjectsChanged 
             Môn học bạn muốn dạy
           </h1>
           <p className="mt-3 max-w-2xl text-sm font-semibold leading-7 text-slate-500">
-            Chọn danh mục, nhóm môn, rồi chọn môn chính thức bạn muốn dạy. Mỗi môn có cấp độ, học phí 1:1 và kinh nghiệm riêng.
+            Chọn danh mục, nhóm môn, rồi chọn môn chính thức bạn muốn dạy. Admin sẽ kiểm tra từng môn, trình độ, mức học phí và minh chứng trước khi cho phép dùng chúng để tạo lớp.
           </p>
         </div>
       </div>

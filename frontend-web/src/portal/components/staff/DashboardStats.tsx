@@ -28,10 +28,10 @@ export function DashboardStats({
   averageReviewTime?: string;
 }) {
   const stats: StatItem[] = [
-    { label: "Pending Tutors", value: String(pendingCount), hint: "Ho so dang cho duyet", accent: "coral", icon: Clock3 },
-    { label: "Approved Today", value: String(approvedToday), hint: "Da duyet trong ngay", accent: "green", icon: CheckCircle2 },
-    { label: "Rejected Today", value: String(rejectedToday), hint: "Bi tu choi trong ngay", accent: "rose", icon: XCircle },
-    { label: "Average Review Time", value: averageReviewTime, hint: "Thoi gian xu ly TB", accent: "navy", icon: TimerReset },
+    { label: "Đang chờ duyệt", value: String(pendingCount), hint: "Hồ sơ và đề xuất cần xử lý", accent: "coral", icon: Clock3 },
+    { label: "Đã duyệt hôm nay", value: String(approvedToday), hint: "Yêu cầu đã được phê duyệt", accent: "green", icon: CheckCircle2 },
+    { label: "Từ chối hôm nay", value: String(rejectedToday), hint: "Yêu cầu không được chấp thuận", accent: "rose", icon: XCircle },
+    { label: "Thời gian xử lý TB", value: averageReviewTime, hint: "Tính từ lúc gia sư gửi duyệt", accent: "navy", icon: TimerReset },
   ];
 
   return (

@@ -5,5 +5,8 @@ public enum TutorDocumentType {
     IDENTITY_BACK,
     PASSPORT,
     DEGREE,
-    CERTIFICATE
+    CERTIFICATE,
+    WORK_EXPERIENCE,
+    PORTFOLIO,
+    OTHER
 }

@@ -52,9 +52,6 @@ const GENDER_OPTIONS = [
   { value: 'PREFER_NOT_TO_SAY', label: 'Không muốn chia sẻ' }
 ];
 
-const AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const AVATAR_MAX_SIZE = 2 * 1024 * 1024;
-
 export function ProfilePage() {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
@@ -542,16 +539,16 @@ function AccountInfoCard({ profile, roles }) {
 function BecomeTutorCard() {
   return (
     <section className="rounded-[8px] border border-blue-100 bg-blue-50 p-5 shadow-[0_18px_45px_rgba(15,23,42,.06)]">
-      <SectionTitle eyebrow="Tutor application" title="Trở thành gia sư" compact />
+      <SectionTitle eyebrow="Tutor profile" title="Hoàn thiện hồ sơ gia sư" compact />
       <p className="mt-3 text-sm font-semibold leading-6 text-blue-900/75">
-        Xây dựng hồ sơ gia sư từng bước: học vấn, môn nhận dạy, giới thiệu và tài liệu xác minh.
+        Hoàn thiện thông tin, CCCD và minh chứng một lần để Admin xét duyệt hồ sơ. Sau đó bạn có thể đăng ký thêm nhiều môn mà không cần nộp lại CCCD.
       </p>
       <Link
-        to="/become-tutor"
+        to="/tutor/teaching-registrations"
         className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[8px] bg-[#147b77] px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-slate-900"
       >
         <Sparkles size={16} />
-        Trở thành gia sư
+        Hoàn thiện hồ sơ
       </Link>
     </section>
   );
@@ -713,74 +710,6 @@ function ProfileSkeleton() {
   );
 }
 
-function validate(form) {
-  const errors = {};
-
-  if (!form.fullName.trim()) {
-    errors.fullName = 'Vui lòng nhập họ và tên.';
-  }
-
-  const phone = form.phone.trim();
-  if (phone && !/^\+?[0-9]{8,15}$/.test(phone)) {
-    errors.phone = 'Số điện thoại phải gồm 8-15 chữ số và có thể bắt đầu bằng +.';
-  }
-
-  if (form.dateOfBirth && form.dateOfBirth > todayIso()) {
-    errors.dateOfBirth = 'Ngày sinh không được ở tương lai.';
-  }
-
-  if (form.bio.trim().length > 300) {
-    errors.bio = 'Giới thiệu ngắn không được vượt quá 300 ký tự.';
-  }
-
-  return errors;
-}
-
-function validateAvatar(file) {
-  if (!file) return 'Vui lòng chọn ảnh đại diện.';
-
-  if (!AVATAR_TYPES.includes(file.type)) {
-    return 'Ảnh đại diện chỉ hỗ trợ JPG, PNG hoặc WEBP.';
-  }
-
-  if (file.size > AVATAR_MAX_SIZE) {
-    return 'Ảnh đại diện không được vượt quá 2 MB.';
-  }
-
-  return '';
-}
-
-function toFormState(profile) {
-  return {
-    fullName: profile?.fullName || '',
-    phone: profile?.phone || '',
-    dateOfBirth: toDateInputValue(profile?.dateOfBirth),
-    gender: profile?.gender || '',
-    provinceCode: profile?.provinceCode || '',
-    province: profile?.province || '',
-    communeCode: profile?.communeCode || '',
-    commune: profile?.commune || '',
-    district: profile?.district || '',
-    ward: profile?.ward || '',
-    addressDetail: profile?.addressDetail || '',
-    bio: profile?.bio || ''
-  };
-}
-
-function toDateInputValue(value) {
-  if (!value) return '';
-  return String(value).slice(0, 10);
-}
-
-function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function normalizeOptional(value) {
-  const normalized = value.trim();
-  return normalized ? normalized : null;
-}
-
 function formatDate(value) {
   if (!value) return '';
 
@@ -836,15 +765,3 @@ function getCompletion(profile) {
   };
 }
 
-function mapValidationErrors(error) {
-  if (!Array.isArray(error?.validationErrors)) {
-    return {};
-  }
-
-  return error.validationErrors.reduce((result, item) => {
-    if (item?.field) {
-      result[item.field] = item.message || 'Thông tin không hợp lệ.';
-    }
-    return result;
-  }, {});
-}

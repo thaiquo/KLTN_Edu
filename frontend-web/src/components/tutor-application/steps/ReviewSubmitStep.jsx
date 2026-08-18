@@ -343,7 +343,7 @@ function buildSections(user, application, subjects, documents, missingItems) {
       missingLabel: 'Cần giấy tờ danh tính và ít nhất một bằng cấp/chứng chỉ.',
       lines: [
         identitySummary(documents),
-        `${documents.filter((document) => ['DEGREE', 'CERTIFICATE'].includes(document.documentType)).length} bằng cấp/chứng chỉ`,
+        `${documents.filter((document) => ['DEGREE', 'CERTIFICATE', 'WORK_EXPERIENCE', 'PORTFOLIO', 'OTHER'].includes(document.documentType)).length} minh chứng chuyên môn`,
         documents.some((document) => document.documentType === 'CERTIFICATE' && document.expired) ? 'Có chứng chỉ đã hết hạn' : 'Không có chứng chỉ hết hạn'
       ]
     }
@@ -423,7 +423,10 @@ function documentLabel(type) {
     IDENTITY_BACK: 'CCCD mặt sau',
     PASSPORT: 'Hộ chiếu',
     DEGREE: 'Bằng cấp',
-    CERTIFICATE: 'Chứng chỉ'
+    CERTIFICATE: 'Chứng chỉ',
+    WORK_EXPERIENCE: 'Minh chứng kinh nghiệm',
+    PORTFOLIO: 'Portfolio',
+    OTHER: 'Minh chứng khác'
   };
   return labels[type] || type;
 }

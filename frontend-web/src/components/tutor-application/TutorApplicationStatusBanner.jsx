@@ -10,7 +10,7 @@ const STATUS_COPY = {
   REJECTED: {
     icon: AlertCircle,
     title: 'Hồ sơ cần chỉnh sửa',
-    description: 'Staff đã phản hồi hồ sơ. Bạn có thể chỉnh sửa và gửi lại ở phase tiếp theo.',
+    description: 'Admin đã phản hồi hồ sơ. Bạn có thể chỉnh sửa và gửi lại.',
     className: 'border-amber-200 bg-amber-50 text-amber-800'
   },
   PENDING: {
@@ -22,7 +22,7 @@ const STATUS_COPY = {
   APPROVED: {
     icon: CheckCircle2,
     title: 'Hồ sơ gia sư đã được phê duyệt',
-    description: 'Tài khoản của bạn đã sẵn sàng cho các bước Tutor Profile ở phase sau.',
+    description: 'Các môn và trình độ đã khai báo được kích hoạt để dùng khi tạo lớp.',
     className: 'border-emerald-200 bg-emerald-50 text-emerald-800'
   }
 };

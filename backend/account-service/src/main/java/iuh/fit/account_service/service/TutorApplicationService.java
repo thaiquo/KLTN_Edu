@@ -75,12 +75,6 @@ public class TutorApplicationService {
         application.setStatus(TutorApplicationStatus.DRAFT);
 
         TutorApplication saved = tutorApplicationRepository.save(application);
-        eventPublisher.publishTutorApplicationSubmitted(new TutorApplicationSubmittedEvent(
-                UUID.randomUUID().toString(),
-                saved.getId(),
-                user.getId(),
-                LocalDateTime.now()
-        ));
         return toResponse(saved);
     }
 
@@ -110,7 +104,14 @@ public class TutorApplicationService {
         application.setRejectionReason(null);
         application.setReviewNote(null);
 
-        return toResponse(tutorApplicationRepository.save(application));
+        TutorApplication submitted = tutorApplicationRepository.save(application);
+        eventPublisher.publishTutorApplicationSubmitted(new TutorApplicationSubmittedEvent(
+                UUID.randomUUID().toString(),
+                submitted.getId(),
+                user.getId(),
+                LocalDateTime.now()
+        ));
+        return toResponse(submitted);
     }
 
     @Transactional

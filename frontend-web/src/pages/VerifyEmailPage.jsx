@@ -90,7 +90,7 @@ export function VerifyEmailPage() {
       setMessage('Xác minh email thành công. Đang chuyển tiếp...');
       window.setTimeout(() => {
         if (role === 'TUTOR') {
-          navigate('/tutor/complete-profile', {
+          navigate('/tutor/teaching-registrations', {
             replace: true,
             state: { email, message: 'Email đã được xác minh. Vui lòng hoàn tất hồ sơ gia sư.' }
           });

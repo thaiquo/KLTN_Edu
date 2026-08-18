@@ -4,6 +4,7 @@ import iuh.fit.account_service.dto.staff.StaffRejectTutorApplicationRequest;
 import iuh.fit.account_service.dto.staff.StaffReviewNoteRequest;
 import iuh.fit.account_service.dto.staff.StaffTutorApplicationDetailResponse;
 import iuh.fit.account_service.dto.staff.StaffTutorApplicationSummaryResponse;
+import iuh.fit.account_service.dto.staff.StaffTutorDocumentAccessResponse;
 import iuh.fit.account_service.dto.tutorapplication.TutorDocumentDownloadResponse;
 import iuh.fit.account_service.entity.TutorApplication;
 import iuh.fit.account_service.entity.TutorApplicationSubject;
@@ -93,6 +94,26 @@ public class TutorApprovalService {
         TutorDocument document = tutorDocumentRepository.findByIdAndTutorApplication_Id(documentId, applicationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tutor document not found"));
         return new TutorDocumentDownloadResponse(fileStorageService.createPresignedGetUrl(document.getFileKey()));
+    }
+
+    @Transactional(readOnly = true)
+    public StaffTutorDocumentAccessResponse createDocumentAccess(Long documentId) {
+        TutorDocument document = tutorDocumentRepository.findById(documentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Tutor document not found"));
+        String contentType = document.getContentType();
+        boolean previewable = contentType != null && (
+                contentType.startsWith("image/")
+                        || "application/pdf".equals(contentType)
+                        || contentType.startsWith("text/")
+        );
+        return new StaffTutorDocumentAccessResponse(
+                document.getId(),
+                document.getOriginalFilename(),
+                contentType,
+                document.getFileSize(),
+                previewable,
+                fileStorageService.createPresignedGetUrl(document.getFileKey())
+        );
     }
 
     @Transactional

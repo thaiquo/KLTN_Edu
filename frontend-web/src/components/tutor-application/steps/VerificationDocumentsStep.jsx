@@ -5,6 +5,7 @@ import { tutorApplicationApi } from '../../../api/tutorApplications';
 const EDITABLE_STATUSES = ['DRAFT', 'REJECTED'];
 const MAX_IDENTITY_SIZE = 5 * 1024 * 1024;
 const MAX_CERTIFICATE_SIZE = 10 * 1024 * 1024;
+const EVIDENCE_DOCUMENT_TYPES = ['DEGREE', 'CERTIFICATE', 'WORK_EXPERIENCE', 'PORTFOLIO', 'OTHER'];
 
 export function VerificationDocumentsStep({ application, readOnly }) {
   const [documents, setDocuments] = useState([]);
@@ -22,7 +23,7 @@ export function VerificationDocumentsStep({ application, readOnly }) {
 
   const editable = !readOnly && EDITABLE_STATUSES.includes(application?.status);
   const byType = useMemo(() => groupByType(documents), [documents]);
-  const credentials = documents.filter((document) => ['DEGREE', 'CERTIFICATE'].includes(document.documentType));
+  const credentials = documents.filter((document) => EVIDENCE_DOCUMENT_TYPES.includes(document.documentType));
   const identityOptions = identityMode === 'PASSPORT'
     ? [{ type: 'PASSPORT', label: 'Trang thông tin hộ chiếu', accept: 'image/jpeg,image/png' }]
     : [
@@ -104,7 +105,7 @@ export function VerificationDocumentsStep({ application, readOnly }) {
       const response = await tutorApplicationApi.getMyApplicationDocuments();
       setDocuments(Array.isArray(response) ? response : []);
       setSuccess('Tài liệu đã được tải lên và đang chờ xác minh.');
-      if (['DEGREE', 'CERTIFICATE'].includes(upload.documentType)) {
+      if (EVIDENCE_DOCUMENT_TYPES.includes(upload.documentType)) {
         setCredentialForm(defaultCredentialForm(credentialType));
       }
     } catch (uploadError) {
@@ -158,7 +159,7 @@ export function VerificationDocumentsStep({ application, readOnly }) {
             Tài liệu xác minh
           </h1>
           <p className="mt-3 max-w-2xl text-sm font-semibold leading-7 text-slate-500">
-            Chọn một cách xác minh danh tính, sau đó bổ sung bằng cấp hoặc chứng chỉ có metadata rõ ràng để Staff đối chiếu.
+            CCCD/hộ chiếu được lưu một lần cho hồ sơ gia sư và dùng lại cho các lần đăng ký môn sau. Bạn có thể bổ sung nhiều minh chứng chuyên môn để chọn lại khi đăng ký từng môn dạy.
           </p>
         </div>
       </div>
@@ -175,7 +176,7 @@ export function VerificationDocumentsStep({ application, readOnly }) {
         {error && <InfoCard tone="red" title="Thao tác tài liệu không thành công">{error}</InfoCard>}
 
         <section className="rounded-[8px] border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,.05)]">
-          <SectionTitle icon={<ShieldCheck size={20} />} title="Xác minh danh tính" description="Bạn chỉ cần chọn CCCD/CMND hai mặt hoặc hộ chiếu. Không cần upload cả hai loại." />
+          <SectionTitle icon={<ShieldCheck size={20} />} title="Xác minh danh tính dùng chung" description="Bạn chỉ cần lưu CCCD/CMND hai mặt hoặc hộ chiếu một lần. Hệ thống sẽ tái sử dụng cho các đăng ký dạy tiếp theo." />
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             {[
               { id: 'CCCD', title: 'CCCD / CMND', description: 'Yêu cầu mặt trước và mặt sau.' },
@@ -210,12 +211,12 @@ export function VerificationDocumentsStep({ application, readOnly }) {
         </section>
 
         <section className="rounded-[8px] border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,.05)]">
-          <SectionTitle icon={<Award size={20} />} title="Bằng cấp & chứng chỉ" description="PDF/JPG/PNG, tối đa 10MB mỗi file. Metadata giúp Staff đối chiếu nhanh hơn." />
+          <SectionTitle icon={<Award size={20} />} title="Minh chứng chuyên môn" description="Bằng cấp, chứng chỉ, xác nhận kinh nghiệm giảng dạy, portfolio hoặc minh chứng khác. PDF/JPG/PNG, tối đa 10MB mỗi file." />
 
           {editable && (
             <form onSubmit={chooseCredentialFile} className="mt-5 rounded-[8px] border border-slate-200 bg-slate-50 p-4">
               <div className="flex flex-wrap gap-2">
-                {['DEGREE', 'CERTIFICATE'].map((type) => (
+                {EVIDENCE_DOCUMENT_TYPES.map((type) => (
                   <button
                     key={type}
                     type="button"
@@ -241,7 +242,7 @@ export function VerificationDocumentsStep({ application, readOnly }) {
             <DocumentSkeleton />
           ) : credentials.length === 0 ? (
             <div className="mt-5 rounded-[8px] border border-dashed border-slate-300 bg-slate-50 p-5 text-sm font-semibold text-slate-500">
-              Bạn chưa tải lên bằng cấp hoặc chứng chỉ nào. Hồ sơ cần ít nhất một bằng cấp/chứng chỉ hợp lệ trước khi gửi duyệt.
+              Bạn chưa tải lên minh chứng chuyên môn nào. Mỗi đăng ký dạy cần chọn tối thiểu 1 và tối đa 5 minh chứng liên quan.
             </div>
           ) : (
             <div className="mt-5 grid gap-3">
@@ -278,15 +279,15 @@ function CredentialFields({ type, form, setForm }) {
   return (
     <div className="mt-4 grid gap-4 sm:grid-cols-2">
       <label className="field">
-        <span>{type === 'DEGREE' ? 'Tên bằng cấp' : 'Tên chứng chỉ'}</span>
-        <div><input value={form.title} onChange={(e) => setForm((c) => ({ ...c, title: e.target.value }))} placeholder={type === 'DEGREE' ? 'Cử nhân Công nghệ thông tin' : 'IELTS Academic'} /></div>
+        <span>{titleFieldLabel(type)}</span>
+        <div><input value={form.title} onChange={(e) => setForm((c) => ({ ...c, title: e.target.value }))} placeholder={titlePlaceholder(type)} /></div>
       </label>
       <label className="field">
-        <span>Trường / đơn vị cấp</span>
-        <div><input value={form.issuer} onChange={(e) => setForm((c) => ({ ...c, issuer: e.target.value }))} placeholder="IUH, British Council..." /></div>
+        <span>{issuerFieldLabel(type)}</span>
+        <div><input value={form.issuer} onChange={(e) => setForm((c) => ({ ...c, issuer: e.target.value }))} placeholder="IUH, British Council, trung tâm ABC..." /></div>
       </label>
       <label className="field">
-        <span>Ngày cấp</span>
+        <span>{type === 'WORK_EXPERIENCE' ? 'Ngày xác nhận / ngày bắt đầu' : 'Ngày cấp / ngày tạo'}</span>
         <div><input type="date" value={form.issueDate} onChange={(e) => setForm((c) => ({ ...c, issueDate: e.target.value }))} /></div>
       </label>
       {type === 'CERTIFICATE' && (
@@ -410,7 +411,7 @@ function defaultCredentialForm(type) {
     title: '',
     issuer: '',
     issueDate: '',
-    validityType: type === 'DEGREE' ? 'DOES_NOT_EXPIRE' : 'EXPIRES',
+    validityType: type === 'CERTIFICATE' ? 'EXPIRES' : 'DOES_NOT_EXPIRE',
     expiryDate: '',
     credentialNumber: ''
   };
@@ -421,16 +422,16 @@ function normalizeCredentialMetadata(type, form) {
     title: form.title.trim(),
     issuer: form.issuer.trim(),
     issueDate: form.issueDate,
-    validityType: type === 'DEGREE' ? 'DOES_NOT_EXPIRE' : form.validityType,
+    validityType: type === 'CERTIFICATE' ? form.validityType : 'DOES_NOT_EXPIRE',
     expiryDate: form.validityType === 'EXPIRES' ? form.expiryDate : '',
     credentialNumber: form.credentialNumber.trim()
   };
 }
 
 function validateCredentialMetadata(type, metadata) {
-  if (!metadata.title) return type === 'DEGREE' ? 'Vui lòng nhập tên bằng cấp.' : 'Vui lòng nhập tên chứng chỉ.';
-  if (!metadata.issuer) return 'Vui lòng nhập trường hoặc đơn vị cấp.';
-  if (!metadata.issueDate) return 'Vui lòng chọn ngày cấp.';
+  if (!metadata.title) return `Vui lòng nhập ${titleFieldLabel(type).toLowerCase()}.`;
+  if (!metadata.issuer) return `Vui lòng nhập ${issuerFieldLabel(type).toLowerCase()}.`;
+  if (!metadata.issueDate) return 'Vui lòng chọn ngày cấp hoặc ngày xác nhận.';
   if (type === 'CERTIFICATE' && metadata.validityType === 'EXPIRES' && !metadata.expiryDate) return 'Vui lòng chọn ngày hết hạn.';
   return '';
 }
@@ -502,7 +503,43 @@ function documentLabel(type) {
     IDENTITY_BACK: 'CCCD mặt sau',
     PASSPORT: 'Hộ chiếu',
     DEGREE: 'Bằng cấp',
-    CERTIFICATE: 'Chứng chỉ'
+    CERTIFICATE: 'Chứng chỉ',
+    WORK_EXPERIENCE: 'Minh chứng kinh nghiệm',
+    PORTFOLIO: 'Portfolio',
+    OTHER: 'Minh chứng khác'
   };
   return labels[type] || type;
+}
+
+function titleFieldLabel(type) {
+  const labels = {
+    DEGREE: 'Tên bằng cấp',
+    CERTIFICATE: 'Tên chứng chỉ',
+    WORK_EXPERIENCE: 'Tên minh chứng kinh nghiệm',
+    PORTFOLIO: 'Tên portfolio',
+    OTHER: 'Tên minh chứng'
+  };
+  return labels[type] || 'Tên minh chứng';
+}
+
+function issuerFieldLabel(type) {
+  const labels = {
+    DEGREE: 'Trường / đơn vị cấp',
+    CERTIFICATE: 'Đơn vị cấp chứng chỉ',
+    WORK_EXPERIENCE: 'Trường / trung tâm / đơn vị xác nhận',
+    PORTFOLIO: 'Đơn vị / nguồn portfolio',
+    OTHER: 'Đơn vị / nguồn xác nhận'
+  };
+  return labels[type] || 'Đơn vị / nguồn xác nhận';
+}
+
+function titlePlaceholder(type) {
+  const placeholders = {
+    DEGREE: 'Cử nhân Sư phạm Tiếng Anh',
+    CERTIFICATE: 'IELTS Academic 7.5',
+    WORK_EXPERIENCE: 'Xác nhận giảng dạy tại Trung tâm ABC',
+    PORTFOLIO: 'Portfolio lớp đã dạy / dự án học viên',
+    OTHER: 'Minh chứng chuyên môn khác'
+  };
+  return placeholders[type] || 'Minh chứng chuyên môn';
 }

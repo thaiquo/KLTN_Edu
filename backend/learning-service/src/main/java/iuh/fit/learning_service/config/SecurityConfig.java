@@ -47,6 +47,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/subjects/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/tutor-subjects/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/teaching-catalog/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/subject-requests/pending").hasAnyRole("STAFF", "ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/subject-requests/**").hasAnyRole("STAFF", "ADMIN")
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()

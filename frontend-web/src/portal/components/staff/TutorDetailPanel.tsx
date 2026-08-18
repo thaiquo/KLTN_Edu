@@ -191,7 +191,7 @@ export function TutorDetailPanel({
             <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff695f]">Approve Tutor Application</p>
             <h3 className="mt-2 font-display text-xl font-black text-[#073554]">Phê duyệt hồ sơ gia sư?</h3>
             <p className="mt-3 text-sm font-semibold leading-6 text-slate-600">
-              Sau khi phê duyệt, người dùng sẽ được cấp quyền Gia sư và hồ sơ giảng dạy được kích hoạt.
+              Sau khi phê duyệt, người dùng sẽ được cấp quyền Gia sư. Chỉ các môn và trình độ trong hồ sơ này mới được kích hoạt để dùng khi tạo lớp.
             </p>
             <div className="mt-6 flex justify-end gap-3">
               <button type="button" disabled={busy} onClick={() => setConfirmApprove(false)} className="border border-[#d7dde6] px-4 py-2.5 text-xs font-black uppercase tracking-[0.12em] text-slate-600 hover:bg-slate-50 disabled:opacity-50">
@@ -262,6 +262,9 @@ function documentLabel(type?: string) {
     PASSPORT: "Hộ chiếu",
     DEGREE: "Bằng cấp",
     CERTIFICATE: "Chứng chỉ",
+    WORK_EXPERIENCE: "Minh chứng kinh nghiệm",
+    PORTFOLIO: "Portfolio",
+    OTHER: "Minh chứng khác",
   };
   return type ? labels[type] || type : "Tài liệu";
 }

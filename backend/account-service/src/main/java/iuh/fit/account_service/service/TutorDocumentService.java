@@ -90,7 +90,7 @@ public class TutorDocumentService {
     ) {
         TutorApplication application = getApplication(email);
         ensureEditable(application);
-        validateCertificateCount(application, documentType);
+        validateEvidenceCount(application, documentType);
         validateFile(documentType, file);
         CredentialMetadata metadata = validateCredentialMetadata(
                 documentType,
@@ -173,12 +173,15 @@ public class TutorDocumentService {
         tutorDocumentRepository.delete(document);
     }
 
-    private void validateCertificateCount(TutorApplication application, TutorDocumentType documentType) {
-        if (!isCertificateType(documentType)) {
+    private void validateEvidenceCount(TutorApplication application, TutorDocumentType documentType) {
+        if (!isEvidenceType(documentType)) {
             return;
         }
         long count = tutorDocumentRepository.countByTutorApplication_IdAndDocumentType(application.getId(), TutorDocumentType.CERTIFICATE)
-                + tutorDocumentRepository.countByTutorApplication_IdAndDocumentType(application.getId(), TutorDocumentType.DEGREE);
+                + tutorDocumentRepository.countByTutorApplication_IdAndDocumentType(application.getId(), TutorDocumentType.DEGREE)
+                + tutorDocumentRepository.countByTutorApplication_IdAndDocumentType(application.getId(), TutorDocumentType.WORK_EXPERIENCE)
+                + tutorDocumentRepository.countByTutorApplication_IdAndDocumentType(application.getId(), TutorDocumentType.PORTFOLIO)
+                + tutorDocumentRepository.countByTutorApplication_IdAndDocumentType(application.getId(), TutorDocumentType.OTHER);
         if (count >= filePolicyProperties.getMaxCertificateCount()) {
             throw new ConflictException("Maximum certificate document count reached");
         }
@@ -193,25 +196,19 @@ public class TutorDocumentService {
             LocalDate expiryDate,
             String credentialNumber
     ) {
-        if (!isCertificateType(documentType)) {
+        if (!isEvidenceType(documentType)) {
             return new CredentialMetadata(null, null, null, null, null, null);
         }
 
-        String normalizedTitle = requiredText(title, "Credential title is required");
-        String normalizedIssuer = requiredText(issuer, "Credential issuer is required");
-        if (issueDate == null) {
-            throw new FileValidationException("Credential issue date is required");
-        }
-        if (issueDate.isAfter(LocalDate.now())) {
-            throw new FileValidationException("Credential issue date cannot be in the future");
+        String normalizedTitle = requiredText(title, "Evidence title is required");
+        String normalizedIssuer = normalizeBlankToNull(issuer);
+        if (issueDate != null && issueDate.isAfter(LocalDate.now())) {
+            throw new FileValidationException("Evidence issue date cannot be in the future");
         }
 
-        CredentialValidityType nextValidityType = documentType == TutorDocumentType.DEGREE
+        CredentialValidityType nextValidityType = validityType == null
                 ? CredentialValidityType.DOES_NOT_EXPIRE
                 : validityType;
-        if (nextValidityType == null) {
-            throw new FileValidationException("Credential validity type is required");
-        }
 
         LocalDate nextExpiryDate = expiryDate;
         if (nextValidityType == CredentialValidityType.EXPIRES && nextExpiryDate == null) {
@@ -314,8 +311,12 @@ public class TutorDocumentService {
                 && document.getExpiryDate().isBefore(LocalDate.now());
     }
 
-    private boolean isCertificateType(TutorDocumentType documentType) {
-        return documentType == TutorDocumentType.CERTIFICATE || documentType == TutorDocumentType.DEGREE;
+    private boolean isEvidenceType(TutorDocumentType documentType) {
+        return documentType == TutorDocumentType.CERTIFICATE
+                || documentType == TutorDocumentType.DEGREE
+                || documentType == TutorDocumentType.WORK_EXPERIENCE
+                || documentType == TutorDocumentType.PORTFOLIO
+                || documentType == TutorDocumentType.OTHER;
     }
 
     private byte[] readBytes(MultipartFile file) {

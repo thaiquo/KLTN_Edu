@@ -120,7 +120,7 @@ export function TutorNextStepPage() {
                     <div className="mt-5">
                       <button
                         type="button"
-                        onClick={() => navigate('/tutor/complete-profile')}
+                        onClick={() => navigate('/tutor/teaching-registrations')}
                         className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-3 text-sm font-extrabold text-white hover:bg-indigo-700 transition-all shadow-md hover:shadow-indigo-500/20"
                       >
                         Hoàn tất hồ sơ gia sư
@@ -135,7 +135,7 @@ export function TutorNextStepPage() {
                         Đang chờ Staff duyệt
                       </h3>
                       <p className="mt-1 text-sm text-slate-600">
-                        Bộ phận kiểm duyệt đang xem xét thông tin và bằng cấp của bạn. Thời gian xử lý thường từ 1 đến 2 ngày làm việc.
+                        Admin đang xem xét thông tin, môn đăng ký và minh chứng của bạn. Thời gian xử lý thường từ 1 đến 2 ngày làm việc.
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-3 pt-2">

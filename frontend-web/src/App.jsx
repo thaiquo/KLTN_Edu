@@ -11,11 +11,10 @@ import { RegisterPage } from './pages/RegisterPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { TutorNextStepPage } from './pages/TutorNextStepPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
-import { TutorApplicationWizardPage } from './pages/tutor-application/TutorApplicationWizardPage';
-import { TutorCompleteProfilePage } from './pages/tutor-application/TutorCompleteProfilePage';
 import { PublicTutorProfilePage } from './pages/tutor/PublicTutorProfilePage';
 import { TutorMarketplacePage } from './pages/tutor/TutorMarketplacePage';
 import { TutorProfilePage } from './pages/tutor/TutorProfilePage';
+import { TeachingRegistrationPage } from './pages/tutor/TeachingRegistrationPage';
 
 const DashboardPage = lazy(() =>
   import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage }))
@@ -130,17 +129,17 @@ function ProtectedChangePassword() {
 function ProtectedBecomeTutor() {
   return (
     <Gate>
-      <TutorApplicationWizardPage />
+      <TeachingRegistrationPage />
     </Gate>
   );
 }
 
+function ProtectedTeachingRegistration() {
+  return <Gate><TeachingRegistrationPage /></Gate>;
+}
+
 function ProtectedCompleteProfile() {
-  return (
-    <Gate>
-      <TutorCompleteProfilePage />
-    </Gate>
-  );
+  return <Gate><TeachingRegistrationPage /></Gate>;
 }
 
 export default function App() {
@@ -162,6 +161,7 @@ export default function App() {
           <Route path="/tutor/complete-profile" element={<ProtectedCompleteProfile />} />
           <Route path="/tutor-next-step" element={<TutorNextStepPage />} />
           <Route path="/tutor/profile" element={<ProtectedTutorProfile />} />
+          <Route path="/tutor/teaching-registrations" element={<ProtectedTeachingRegistration />} />
           <Route path="/staff/tutors" element={<ProtectedStaffDashboard />} />
           <Route path="/dashboard" element={<ProtectedDashboard />} />
           <Route path="*" element={<Navigate to="/" replace />} />

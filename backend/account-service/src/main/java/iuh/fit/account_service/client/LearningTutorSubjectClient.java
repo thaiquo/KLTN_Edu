@@ -8,7 +8,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 
-@FeignClient(name = "learning-service", contextId = "learningTutorSubjectClient")
+@FeignClient(
+        name = "learning-service",
+        url = "${learning.service.url}",
+        contextId = "learningTutorSubjectClient"
+)
 public interface LearningTutorSubjectClient {
     @GetMapping("/api/tutor-subjects")
     List<LearningTutorSubjectResponse> getTutorSubjects(@RequestParam("tutorProfileIds") List<Long> tutorProfileIds);

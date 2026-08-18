@@ -4,6 +4,7 @@ import iuh.fit.account_service.dto.staff.StaffRejectTutorApplicationRequest;
 import iuh.fit.account_service.dto.staff.StaffReviewNoteRequest;
 import iuh.fit.account_service.dto.staff.StaffTutorApplicationDetailResponse;
 import iuh.fit.account_service.dto.staff.StaffTutorApplicationSummaryResponse;
+import iuh.fit.account_service.dto.staff.StaffTutorDocumentAccessResponse;
 import iuh.fit.account_service.dto.tutorapplication.TutorDocumentDownloadResponse;
 import iuh.fit.account_service.service.TutorApprovalService;
 import jakarta.validation.Valid;
@@ -37,6 +38,11 @@ public class StaffTutorApplicationController {
     @GetMapping("/{applicationId}")
     public StaffTutorApplicationDetailResponse applicationDetail(@PathVariable Long applicationId) {
         return tutorApprovalService.getApplicationDetail(applicationId);
+    }
+
+    @GetMapping("/documents/{documentId}/access")
+    public StaffTutorDocumentAccessResponse documentAccess(@PathVariable Long documentId) {
+        return tutorApprovalService.createDocumentAccess(documentId);
     }
 
     @GetMapping("/{applicationId}/documents/{documentId}/download")

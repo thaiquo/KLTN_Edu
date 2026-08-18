@@ -86,10 +86,11 @@ Sau đó điền các giá trị cần thiết trong `.env`.
 Các biến quan trọng:
 
 ```env
-DB_URL=jdbc:postgresql://localhost:5432/kltn_db
+DB_URL=jdbc:postgresql://localhost:5434/kltn_db
 DB_USERNAME=postgres
 DB_PASSWORD=
 
+POSTGRES_PORT=5434
 POSTGRES_DB=kltn_db
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=
@@ -136,7 +137,7 @@ docker ps
 PostgreSQL sẽ mở port:
 
 ```text
-localhost:5432
+localhost:5434
 ```
 
 Database mặc định:
