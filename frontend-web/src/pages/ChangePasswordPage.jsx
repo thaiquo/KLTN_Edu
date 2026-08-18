@@ -12,7 +12,7 @@ const INITIAL_FORM = {
   confirmPassword: ''
 };
 
-export function ChangePasswordPage() {
+export function ChangePasswordPage({ embedded = false, onTabChange = null }) {
   const { refreshUser } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState(INITIAL_FORM);
@@ -87,12 +87,12 @@ export function ChangePasswordPage() {
 
   return (
     <div
-      className="min-h-screen bg-slate-50 text-slate-900 font-sans"
+      className={embedded ? "" : "min-h-screen bg-slate-50 text-slate-900 font-sans"}
       style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
     >
-      <HomeHeader />
+      {!embedded && <HomeHeader />}
 
-      <main className="container-app pt-28 pb-16">
+      <main className={embedded ? "container-app pb-16" : "container-app pt-28 pb-16"}>
         <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="rounded-[8px] border border-slate-200 bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,.06)]">
             <div className="flex flex-wrap items-start justify-between gap-5 border-b border-slate-200 pb-6">
@@ -174,13 +174,24 @@ export function ChangePasswordPage() {
                   {saving ? 'Đang lưu...' : 'Lưu mật khẩu mới'}
                 </button>
 
-                <Link
-                  to="/profile"
-                  className="inline-flex items-center justify-center gap-2 rounded-[8px] border border-slate-200 bg-white px-4 py-3 text-sm font-extrabold text-slate-700 hover:border-primary/40 hover:text-primary transition-colors"
-                >
-                  <ArrowLeft size={16} />
-                  Quay lại hồ sơ
-                </Link>
+                {embedded && onTabChange ? (
+                  <button
+                    type="button"
+                    onClick={() => onTabChange("info")}
+                    className="inline-flex items-center justify-center gap-2 rounded-[8px] border border-slate-200 bg-white px-4 py-3 text-sm font-extrabold text-slate-700 hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <ArrowLeft size={16} />
+                    Quay lại hồ sơ
+                  </button>
+                ) : (
+                  <Link
+                    to="/profile"
+                    className="inline-flex items-center justify-center gap-2 rounded-[8px] border border-slate-200 bg-white px-4 py-3 text-sm font-extrabold text-slate-700 hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <ArrowLeft size={16} />
+                    Quay lại hồ sơ
+                  </Link>
+                )}
               </div>
             </form>
           </div>

@@ -12,6 +12,7 @@ import java.util.Optional;
 public interface TutorSubjectRegistrationRepository extends JpaRepository<TutorSubjectRegistration, Long> {
     List<TutorSubjectRegistration> findByTutorEmailIgnoreCaseOrderByCreatedAtDesc(String tutorEmail);
     List<TutorSubjectRegistration> findByStatusOrderBySubmittedAtAsc(TutorSubjectRegistrationStatus status);
+    List<TutorSubjectRegistration> findByStatusInOrderByReviewedAtDesc(Collection<TutorSubjectRegistrationStatus> statuses);
     Optional<TutorSubjectRegistration> findByIdAndTutorEmailIgnoreCase(Long id, String tutorEmail);
     @Query("""
             select case when count(registration) > 0 then true else false end

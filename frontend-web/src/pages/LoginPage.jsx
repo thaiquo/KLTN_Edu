@@ -179,10 +179,7 @@ function defaultRouteFor(user) {
     return '/staff/tutors';
   }
   if (user?.activeRole === 'TUTOR') {
-    if (user?.tutorStatus === 'APPROVED') {
-      return '/tutor/dashboard';
-    }
-    return '/tutor-next-step';
+    return '/dashboard';
   }
   return '/';
 }

@@ -13,7 +13,12 @@ import { TeachingRegistrationHistory } from './TeachingRegistrationHistory';
 
 const EMPTY_FORM = {
   programTypeId: '', educationLevelId: '', categoryId: '', subjectId: '', levelIds: [],
-  experienceYears: '0', tuitionMin: '', tuitionMax: '', description: '', evidenceIds: []
+  experienceYears: '0', tuitionMin: '', tuitionMax: '', description: '', evidenceIds: [],
+  isProposal: false,
+  proposedSubjectName: '',
+  proposedLevelName: '',
+  proposedLevelType: 'SKILL_LEVEL',
+  proposedNote: ''
 };
 
 const LEVEL_TYPE_LABELS = {
@@ -24,7 +29,7 @@ const LEVEL_TYPE_LABELS = {
 const TEACHING_EVIDENCE_TYPES = ['DEGREE', 'CERTIFICATE', 'WORK_EXPERIENCE', 'PORTFOLIO', 'OTHER'];
 const MAX_EVIDENCE_PER_REGISTRATION = 5;
 
-export function TeachingRegistrationPage() {
+export function TeachingRegistrationPage({ embedded = false }) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [catalog, setCatalog] = useState({ programs: [], educationLevels: [], categories: [], subjects: [], levels: [] });
   const [registrations, setRegistrations] = useState([]);
@@ -180,7 +185,13 @@ export function TeachingRegistrationPage() {
     const selectedSavedEvidence = reusableEvidence.filter((item) => form.evidenceIds.includes(item.id));
     const identityTypesAtSubmit = new Set([...documents, ...stagedDocuments.filter((item) => item.file)].map((item) => item.documentType));
     const identityReadyAtSubmit = identityTypesAtSubmit.has('PASSPORT') || (identityTypesAtSubmit.has('IDENTITY_FRONT') && identityTypesAtSubmit.has('IDENTITY_BACK'));
-    if (!form.subjectId || !form.levelIds.length) return setError('Vui lòng chọn ít nhất một lớp hoặc trình độ.');
+    
+    if (!form.isProposal) {
+      if (!form.subjectId || !form.levelIds.length) return setError('Vui lòng chọn ít nhất một lớp hoặc trình độ.');
+    } else {
+      if (!form.proposedSubjectName || !form.proposedLevelName) return setError('Vui lòng nhập đầy đủ thông tin môn học và trình độ đề xuất.');
+    }
+    
     if (!form.description.trim()) return setError('Vui lòng mô tả ngắn về năng lực giảng dạy.');
     if (!form.tuitionMin || !form.tuitionMax) return setError('Vui lòng nhập khoảng học phí dự kiến.');
     if (Number(form.tuitionMin) > Number(form.tuitionMax)) return setError('Học phí tối thiểu không được lớn hơn học phí tối đa.');
@@ -195,20 +206,34 @@ export function TeachingRegistrationPage() {
       const uploadedStaged = await Promise.all(readyStaged.map((item) => tutorApplicationApi.uploadApplicationDocument({ documentType: item.documentType, file: item.file, metadata: TEACHING_EVIDENCE_TYPES.includes(item.documentType) ? { title: item.title || item.file.name.replace(/\.[^/.]+$/, ''), issuer: '', issueDate: item.issueDate || '', validityType: item.validityType || 'DOES_NOT_EXPIRE', expiryDate: item.expiryDate || '' } : {} })));
       const freshDocuments = uploadedStaged.length ? await tutorApplicationApi.getMyApplicationDocuments() : documents;
       const selectedEvidence = [...uploadedStaged.filter((item) => TEACHING_EVIDENCE_TYPES.includes(item.documentType)), ...selectedSavedEvidence];
-      const saved = await teachingRegistrationApi.createBatch({
-        subjectId: Number(form.subjectId), levelIds: form.levelIds,
-        experienceYears: Number(form.experienceYears), tuitionMin: Number(form.tuitionMin),
-        tuitionMax: Number(form.tuitionMax), description: form.description.trim(),
+      
+      const payload = {
+        subjectId: form.isProposal ? null : Number(form.subjectId),
+        levelIds: form.isProposal ? null : form.levelIds,
+        experienceYears: Number(form.experienceYears),
+        tuitionMin: Number(form.tuitionMin),
+        tuitionMax: Number(form.tuitionMax),
+        description: form.description.trim(),
         evidence: selectedEvidence.filter((item) => TEACHING_EVIDENCE_TYPES.includes(item.documentType)).map((item) => ({
           evidenceType: toEvidenceType(item.documentType),
           title: item.title || item.originalFilename || 'Minh chứng năng lực', accountDocumentId: item.id
-        }))
-      });
+        })),
+
+        categoryId: form.isProposal ? Number(form.categoryId) : null,
+        proposedSubjectName: form.isProposal ? form.proposedSubjectName : null,
+        proposedLevelName: form.isProposal ? form.proposedLevelName : null,
+        proposedLevelType: form.isProposal ? form.proposedLevelType : null,
+        proposedNote: form.isProposal ? form.proposedNote : null
+      };
+
+      const saved = await teachingRegistrationApi.createBatch(payload);
       setRegistrations((current) => [saved, ...current]);
       setDocuments(Array.isArray(freshDocuments) ? freshDocuments : documents);
       setStagedDocuments([]);
       resetWizard(false);
-      setMessage('Đăng ký môn dạy đã được gửi. Admin sẽ duyệt riêng quyền dạy này trước khi bạn có thể tạo lớp.');
+      setMessage(form.isProposal
+        ? 'Đề xuất môn mới kèm hồ sơ dạy của bạn đã được gửi. Admin sẽ duyệt và tạo môn mới đồng thời phê duyệt hồ sơ dạy của bạn.'
+        : 'Đăng ký môn dạy đã được gửi. Admin sẽ duyệt riêng quyền dạy này trước khi bạn có thể tạo lớp.');
     } catch (saveError) {
       setError(saveError.message || 'Không thể gửi đăng ký dạy.');
     } finally {
@@ -216,22 +241,28 @@ export function TeachingRegistrationPage() {
     }
   }
 
-  async function submitSuggestion(event) {
+  function submitSuggestion(event) {
     event.preventDefault();
     if (!form.categoryId) return setError('Vui lòng chọn nhóm môn trước khi đề xuất môn mới.');
-    setBusy(true);
-    clearNotice();
-    try {
-      const saved = await catalogSuggestionApi.create({ categoryId: Number(form.categoryId), ...suggestion });
-      setSuggestions((current) => [saved, ...current]);
-      setShowSuggestion(false);
-      setSuggestion({ subjectName: '', levelName: '', levelType: academic ? 'GRADE' : 'SKILL_LEVEL', note: '' });
-      setMessage('Đề xuất môn mới đã được gửi. Khi Admin tạo môn trong danh mục, bạn sẽ thấy môn đó để hoàn tất đăng ký quyền dạy.');
-    } catch (saveError) {
-      setError(saveError.message || 'Không thể gửi đề xuất môn mới.');
-    } finally {
-      setBusy(false);
+    if (!suggestion.subjectName.trim() || !suggestion.levelName.trim()) {
+      return setError('Vui lòng nhập đầy đủ tên môn học và trình độ đề xuất.');
     }
+
+    setForm((current) => ({
+      ...current,
+      isProposal: true,
+      subjectId: '',
+      levelIds: [],
+      proposedSubjectName: suggestion.subjectName.trim(),
+      proposedLevelName: suggestion.levelName.trim(),
+      proposedLevelType: suggestion.levelType,
+      proposedNote: suggestion.note.trim()
+    }));
+
+    setShowSuggestion(false);
+    setSuggestion({ subjectName: '', levelName: '', levelType: academic ? 'GRADE' : 'SKILL_LEVEL', note: '' });
+    clearNotice();
+    setStep(academic ? 5 : 4);
   }
 
   function chooseDocument(type, metadata = {}) {
@@ -362,13 +393,20 @@ export function TeachingRegistrationPage() {
   function clearNotice() { setError(''); setMessage(''); }
 
   return (
-    <div className="min-h-screen bg-[#f4f7fa] text-slate-900">
-      <HomeHeader />
-      <main className="container-app pb-16 pt-28">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Link to="/profile" className="inline-flex items-center gap-2 text-sm font-extrabold text-slate-500 hover:text-primary"><ArrowLeft size={16} /> Hồ sơ cá nhân</Link>
-          {step > 0 && <button type="button" onClick={() => resetWizard()} className="inline-flex items-center gap-2 text-sm font-extrabold text-slate-500 hover:text-primary"><RotateCcw size={15} /> Chọn lại từ đầu</button>}
-        </div>
+    <div className={embedded ? "" : "min-h-screen bg-[#f4f7fa] text-slate-900"}>
+      {!embedded && <HomeHeader />}
+      <main className={embedded ? "container-app pb-16" : "container-app pb-16 pt-28"}>
+        {!embedded && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Link to="/profile" className="inline-flex items-center gap-2 text-sm font-extrabold text-slate-500 hover:text-primary"><ArrowLeft size={16} /> Hồ sơ cá nhân</Link>
+            {step > 0 && <button type="button" onClick={() => resetWizard()} className="inline-flex items-center gap-2 text-sm font-extrabold text-slate-500 hover:text-primary"><RotateCcw size={15} /> Chọn lại từ đầu</button>}
+          </div>
+        )}
+        {embedded && step > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button type="button" onClick={() => resetWizard()} className="inline-flex items-center gap-2 text-sm font-extrabold text-slate-500 hover:text-primary"><RotateCcw size={15} /> Chọn lại từ đầu</button>
+          </div>
+        )}
 
         <section className="mt-6 overflow-hidden rounded-[8px] border border-slate-200 bg-white shadow-[0_22px_60px_rgba(15,23,42,.07)]">
           <div className="bg-slate-900 px-6 py-8 text-white sm:px-8">

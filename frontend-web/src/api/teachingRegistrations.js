@@ -26,7 +26,8 @@ export const teachingRegistrationApi = {
   }),
   reject: (id, reason, note = '') => apiRequest(`/api/learning/admin/tutor-subject-registrations/${id}/reject`, {
     method: 'POST', body: JSON.stringify({ reason, note })
-  })
+  }),
+  adminHistory: () => apiRequest('/api/learning/admin/tutor-subject-registrations/history')
 };
 
 export const catalogSuggestionApi = {

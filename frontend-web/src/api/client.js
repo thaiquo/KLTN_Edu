@@ -1,4 +1,5 @@
-const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8080').replace(/\/$/, '');
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
+const API_URL = (configuredApiUrl || (import.meta.env.DEV ? '' : 'http://localhost:8080')).replace(/\/$/, '');
 
 export class ApiError extends Error {
   constructor({ status, message, code, validationErrors, path, raw }) {
@@ -147,6 +148,9 @@ export async function apiRequest(path, options = {}) {
 
   if (!response.ok) {
     const { code, message } = parseErrorPayload(data, response.status);
+    if (response.status === 401 && !path.startsWith('/api/auth/')) {
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+    }
     throw new ApiError({
       status: response.status,
       code,

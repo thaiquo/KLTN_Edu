@@ -298,7 +298,7 @@ public class UserService {
 
         try {
             return fileStorageService.createPresignedGetUrl(avatarKey);
-        } catch (StorageException ex) {
+        } catch (Exception ex) {
             return null;
         }
     }

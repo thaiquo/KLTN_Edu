@@ -34,9 +34,22 @@ public class TutorSubjectRegistration {
     @JoinColumn(name = "category_id", nullable = false)
     private CatalogCategory category;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "subject_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "subject_id", nullable = true)
     private CatalogSubject subject;
+
+    @Column(length = 160)
+    private String proposedSubjectName;
+
+    @Column(length = 160)
+    private String proposedLevelName;
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 40)
+    private iuh.fit.learning_service.enums.LevelType proposedLevelType;
+
+    @Column(length = 1000)
+    private String proposedNote;
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(

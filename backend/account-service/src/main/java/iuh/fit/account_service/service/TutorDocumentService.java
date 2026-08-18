@@ -30,6 +30,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -40,6 +41,18 @@ public class TutorDocumentService {
             TutorDocumentType.IDENTITY_FRONT,
             TutorDocumentType.IDENTITY_BACK,
             TutorDocumentType.PASSPORT
+    );
+    private static final Map<String, String> CONTENT_TYPE_BY_EXTENSION = Map.ofEntries(
+            Map.entry("jpg", "image/jpeg"),
+            Map.entry("jpeg", "image/jpeg"),
+            Map.entry("png", "image/png"),
+            Map.entry("gif", "image/gif"),
+            Map.entry("webp", "image/webp"),
+            Map.entry("pdf", "application/pdf"),
+            Map.entry("doc", "application/msword"),
+            Map.entry("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+            Map.entry("xls", "application/vnd.ms-excel"),
+            Map.entry("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     );
 
     private final TutorApplicationRepository tutorApplicationRepository;
@@ -107,7 +120,7 @@ public class TutorDocumentService {
 
         byte[] content = readBytes(file);
         String sha256 = HashUtils.calculateSha256(content);
-        String contentType = normalizeContentType(file.getContentType());
+        String contentType = resolveContentType(file.getContentType(), extension, content);
 
         // Duplicate detection scoped to this application (same bytes = skip upload, reuse record)
         if (sha256 != null) {
@@ -206,9 +219,9 @@ public class TutorDocumentService {
             throw new FileValidationException("Evidence issue date cannot be in the future");
         }
 
-        CredentialValidityType nextValidityType = validityType == null
-                ? CredentialValidityType.DOES_NOT_EXPIRE
-                : validityType;
+        CredentialValidityType nextValidityType = documentType == TutorDocumentType.CERTIFICATE && validityType != null
+                ? validityType
+                : CredentialValidityType.DOES_NOT_EXPIRE;
 
         LocalDate nextExpiryDate = expiryDate;
         if (nextValidityType == CredentialValidityType.EXPIRES && nextExpiryDate == null) {
@@ -238,7 +251,8 @@ public class TutorDocumentService {
                 : filePolicyProperties.getCertificate();
         String originalFilename = sanitizeFilename(file.getOriginalFilename());
         String extension = extensionOf(originalFilename);
-        String contentType = normalizeContentType(file.getContentType());
+        byte[] bytes = readBytes(file);
+        String contentType = resolveContentType(file.getContentType(), extension, bytes);
 
         if (!rule.getAllowedExtensions().contains(extension)) {
             throw new FileValidationException("File extension is not allowed");
@@ -249,26 +263,43 @@ public class TutorDocumentService {
         if (file.getSize() > rule.getMaxSize().toBytes()) {
             throw new FileValidationException("File is too large");
         }
-        validateMagicBytes(contentType, readBytes(file));
+        validateMagicBytes(contentType, bytes);
     }
 
     private void validateMagicBytes(String contentType, byte[] bytes) {
-        if ("application/pdf".equals(contentType)) {
-            if (bytes.length < 4 || bytes[0] != '%' || bytes[1] != 'P' || bytes[2] != 'D' || bytes[3] != 'F') {
-                throw new FileValidationException("PDF signature is invalid");
-            }
+        if (contentType == null || bytes == null || bytes.length == 0) {
             return;
         }
-        if ("image/png".equals(contentType)) {
-            if (bytes.length < 8 || bytes[0] != (byte) 0x89 || bytes[1] != 'P' || bytes[2] != 'N' || bytes[3] != 'G') {
-                throw new FileValidationException("PNG signature is invalid");
-            }
-            return;
-        }
-        if ("image/jpeg".equals(contentType)) {
-            if (bytes.length < 3 || bytes[0] != (byte) 0xFF || bytes[1] != (byte) 0xD8 || bytes[2] != (byte) 0xFF) {
-                throw new FileValidationException("JPEG signature is invalid");
-            }
+        switch (contentType) {
+            case "application/pdf":
+                if (bytes.length < 4 || bytes[0] != '%' || bytes[1] != 'P' || bytes[2] != 'D' || bytes[3] != 'F') {
+                    throw new FileValidationException("PDF signature is invalid");
+                }
+                break;
+            case "image/png":
+                if (bytes.length < 8 || bytes[0] != (byte) 0x89 || bytes[1] != 'P' || bytes[2] != 'N' || bytes[3] != 'G') {
+                    throw new FileValidationException("PNG signature is invalid");
+                }
+                break;
+            case "image/jpeg":
+                if (bytes.length < 3 || bytes[0] != (byte) 0xFF || bytes[1] != (byte) 0xD8 || bytes[2] != (byte) 0xFF) {
+                    throw new FileValidationException("JPEG signature is invalid");
+                }
+                break;
+            case "image/gif":
+                if (bytes.length < 4 || bytes[0] != 'G' || bytes[1] != 'I' || bytes[2] != 'F' || bytes[3] != '8') {
+                    throw new FileValidationException("GIF signature is invalid");
+                }
+                break;
+            case "image/webp":
+                if (bytes.length < 12 || bytes[0] != 'R' || bytes[1] != 'I' || bytes[2] != 'F' || bytes[3] != 'F'
+                        || bytes[8] != 'W' || bytes[9] != 'E' || bytes[10] != 'B' || bytes[11] != 'P') {
+                    throw new FileValidationException("WebP signature is invalid");
+                }
+                break;
+            default:
+                // Office formats (doc, docx, xls, xlsx) and octet-stream: skip magic byte check
+                break;
         }
     }
 
@@ -343,6 +374,71 @@ public class TutorDocumentService {
 
     private String normalizeContentType(String contentType) {
         return contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
+    }
+
+    private String resolveContentType(String suppliedContentType, String extension, byte[] bytes) {
+        String detectedContentType = detectContentType(bytes, extension);
+        if (!detectedContentType.isBlank()) {
+            return detectedContentType;
+        }
+        String inferredContentType = CONTENT_TYPE_BY_EXTENSION.getOrDefault(extension, "");
+        if (!inferredContentType.isBlank()) {
+            return inferredContentType;
+        }
+        return normalizeContentType(suppliedContentType);
+    }
+
+    private String detectContentType(byte[] bytes, String extension) {
+        if (bytes == null || bytes.length == 0) {
+            return "";
+        }
+        if (hasPrefix(bytes, (byte) 0x89, (byte) 'P', (byte) 'N', (byte) 'G', (byte) '\r', (byte) '\n', (byte) 0x1A, (byte) '\n')) {
+            return "image/png";
+        }
+        if (hasPrefix(bytes, (byte) 0xFF, (byte) 0xD8, (byte) 0xFF)) {
+            return "image/jpeg";
+        }
+        if (hasPrefix(bytes, (byte) 'G', (byte) 'I', (byte) 'F', (byte) '8')) {
+            return "image/gif";
+        }
+        if (bytes.length >= 12
+                && hasPrefix(bytes, (byte) 'R', (byte) 'I', (byte) 'F', (byte) 'F')
+                && bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P') {
+            return "image/webp";
+        }
+        if (hasPrefix(bytes, (byte) '%', (byte) 'P', (byte) 'D', (byte) 'F')) {
+            return "application/pdf";
+        }
+        if (hasPrefix(bytes, (byte) 'P', (byte) 'K', (byte) 3, (byte) 4)) {
+            if ("docx".equals(extension)) {
+                return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+            }
+            if ("xlsx".equals(extension)) {
+                return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            }
+            return "";
+        }
+        if (hasPrefix(bytes, (byte) 0xD0, (byte) 0xCF, (byte) 0x11, (byte) 0xE0, (byte) 0xA1, (byte) 0xB1, (byte) 0x1A, (byte) 0xE1)) {
+            if ("doc".equals(extension)) {
+                return "application/msword";
+            }
+            if ("xls".equals(extension)) {
+                return "application/vnd.ms-excel";
+            }
+        }
+        return "";
+    }
+
+    private boolean hasPrefix(byte[] bytes, byte... prefix) {
+        if (bytes.length < prefix.length) {
+            return false;
+        }
+        for (int i = 0; i < prefix.length; i++) {
+            if (bytes[i] != prefix[i]) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private String requiredText(String value, String message) {

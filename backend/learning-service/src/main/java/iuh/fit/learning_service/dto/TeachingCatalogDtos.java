@@ -33,13 +33,19 @@ public final class TeachingCatalogDtos {
     ) {}
 
     public record CreateRegistrationBatchRequest(
-            @NotNull Long subjectId,
-            @NotEmpty List<@NotNull Long> levelIds,
+            Long subjectId,
+            List<Long> levelIds,
             @NotNull @Min(0) @Max(60) Integer experienceYears,
             @NotNull @DecimalMin("1") BigDecimal tuitionMin,
             @NotNull @DecimalMin("1") BigDecimal tuitionMax,
             @NotBlank @Size(max = 1500) String description,
-            @NotEmpty @Size(max = 5) List<@Valid EvidenceRequest> evidence
+            @NotEmpty @Size(max = 5) List<@Valid EvidenceRequest> evidence,
+
+            Long categoryId,
+            @Size(max = 160) String proposedSubjectName,
+            @Size(max = 160) String proposedLevelName,
+            LevelType proposedLevelType,
+            @Size(max = 1000) String proposedNote
     ) {}
 
     public record ReviewRequest(@Size(max = 1000) String note) {}
@@ -65,6 +71,11 @@ public final class TeachingCatalogDtos {
             LocalDateTime submittedAt,
             LocalDateTime reviewedAt,
             String reviewedByEmail,
-            List<EvidenceResponse> evidence
+            List<EvidenceResponse> evidence,
+
+            String proposedSubjectName,
+            String proposedLevelName,
+            LevelType proposedLevelType,
+            String proposedNote
     ) {}
 }

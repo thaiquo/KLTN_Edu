@@ -60,6 +60,15 @@ export function AuthProvider({ children }) {
     };
   }, [normalizeUser]);
 
+  useEffect(() => {
+    function handleUnauthorized() {
+      setUser(null);
+    }
+
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
+  }, []);
+
   async function login(payload) {
     await authApi.login(payload);
     const currentUser = await refreshUser();

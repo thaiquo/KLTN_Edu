@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   GraduationCap,
@@ -57,6 +58,8 @@ import { MessagesView } from "./components/MessagesView";
 import { ProfileSettings } from "./components/ProfileSettings";
 import { AdminPortal } from "./components/AdminPortal";
 import { TutorApprovalPanel } from "./components/TutorApprovalPanel";
+import { TutorAvailabilityScheduler } from "./components/TutorAvailabilityScheduler";
+import { TutorClassManagement } from "./components/TutorClassManagement";
 
 // High Resolution course and avatar placeholders
 const studentAvatar =
@@ -327,6 +330,7 @@ interface AppProps {
 }
 
 export default function App({ user, onLogout }: AppProps) {
+  const navigate = useNavigate();
   // Global States holding data consistently across tabs
   const [activeRole] = useState<UserRole>(user.currentRole || user.role || "student");
   const [currentPage, setCurrentPage] = useState<string>(activeRole === "staff" ? "tutor-approval" : "dashboard");
@@ -697,7 +701,7 @@ export default function App({ user, onLogout }: AppProps) {
         );
 
       case "settings":
-        return <ProfileSettings settings={profileSettings} onSaveSettings={setProfileSettings} />;
+        return <ProfileSettings settings={profileSettings} onSaveSettings={setProfileSettings} activeRole={activeRole} />;
 
       case "tutor-approval":
         return <TutorApprovalPanel />;
@@ -726,18 +730,7 @@ export default function App({ user, onLogout }: AppProps) {
 
       case "my-classes":
       case "class-management":
-        // Sub-page shortcuts
-        return (
-          <div className="bg-white p-12 text-center rounded-3xl border border-brand-border/30 max-w-2xl mx-auto my-8">
-            <GraduationCap className="w-12 h-12 text-brand-secondary mx-auto mb-4" />
-            <h3 className="font-display font-black text-sm text-brand-text uppercase tracking-wider">
-              Class Schedule Control
-            </h3>
-            <p className="text-xs text-brand-text-variant mt-2 max-w-sm mx-auto leading-relaxed">
-              Construct curricula, coordinate lesson materials and deploy peer learning groups seamlessly from here.
-            </p>
-          </div>
-        );
+        return <TutorClassManagement />;
 
       case "requests":
         return (
@@ -772,81 +765,7 @@ export default function App({ user, onLogout }: AppProps) {
         );
 
       case "schedule":
-        // Complete visual Interactive Schedule
-        return (
-          <div className="space-y-6 max-w-5xl mx-auto pb-10">
-            <div className="flex justify-between items-center bg-white p-6 border border-brand-border/30 rounded-3xl">
-              <div>
-                <h3 className="font-display font-black text-lg text-brand-text">Interactive Calendar Core</h3>
-                <p className="text-xs text-brand-text-variant mt-1">Oct 23 - Oct 29, 2023</p>
-              </div>
-              <button
-                onClick={() => {
-                  const title = prompt("Enter scheduled lesson event title:");
-                  if (title) {
-                    const time = prompt("Enter time space (e.g. 10:30):") || "10:30";
-                    const period = prompt("Enter period (AM/PM):") || "AM";
-                    const newSch: ScheduleItem = {
-                      id: `sch-${Date.now()}`,
-                      time,
-                      period: period as "AM" | "PM",
-                      title,
-                      detailType: "virtual",
-                      detailValue: "Custom Scheduled Peer Session",
-                      status: "active",
-                    };
-                    setSchedule((prev) => [...prev, newSch]);
-                  }
-                }}
-                className="px-4 py-2 bg-brand-primary text-white hover:bg-brand-primary/95 text-xs font-display font-black tracking-widest rounded-xl transition-all cursor-pointer shadow-md"
-              >
-                + APPOINTMENT
-              </button>
-            </div>
-
-            <div className="bg-white border border-brand-border/30 rounded-3xl p-6 shadow-sm">
-              <div className="grid grid-cols-7 gap-4 text-center select-none font-display text-[10px] uppercase tracking-widest font-black text-brand-text-variant/50 border-b border-brand-border/20 pb-4">
-                <span>Mon</span>
-                <span>Tue</span>
-                <span className="text-brand-primary font-black underline decoration-2 underline-offset-4">Wed (Active)</span>
-                <span>Thu</span>
-                <span>Fri</span>
-                <span>Sat</span>
-                <span>Sun</span>
-              </div>
-              <div className="space-y-4 pt-6">
-                {schedule.map((item) => (
-                  <div key={item.id} className="p-4 bg-brand-low rounded-xl border border-brand-border/10 flex justify-between items-center hover:border-brand-primary transition-colors">
-                    <div className="flex items-center gap-4">
-                      <div className="text-center font-display border-r border-brand-border/15 pr-3 min-w-[50px]">
-                        <p className="font-black text-brand-primary text-sm leading-none">{item.time}</p>
-                        <p className="text-[9px] font-bold text-brand-text-variant/50 uppercase mt-0.5">{item.period}</p>
-                      </div>
-                      <div>
-                        <p className="font-bold text-xs text-brand-text">{item.title}</p>
-                        <p className="text-[10px] text-brand-text-variant/60">{item.detailValue}</p>
-                      </div>
-                    </div>
-                    <div>
-                      {item.status === "active" ? (
-                        <button
-                          onClick={handleStartSession}
-                          className="px-3.5 py-1.5 bg-brand-secondary text-white text-[10px] font-display font-black tracking-widest uppercase rounded-xl transition-all flex items-center gap-1 hover:bg-brand-secondary-hover mt-1 cursor-pointer"
-                        >
-                          <Video className="w-3.5 h-3.5" /> Dial Join
-                        </button>
-                      ) : (
-                        <span className="text-[10px] uppercase font-bold text-brand-text-variant/40 flex items-center gap-1">
-                          <VideoOff className="w-3.5 h-3.5" /> Concluded
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        );
+        return <TutorAvailabilityScheduler />;
 
       case "help":
         return (

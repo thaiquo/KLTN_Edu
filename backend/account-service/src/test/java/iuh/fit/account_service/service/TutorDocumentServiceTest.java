@@ -131,6 +131,68 @@ class TutorDocumentServiceTest {
     }
 
     @Test
+    void uploadCertificateUsesExtensionWhenBrowserSendsWrongMimeType() {
+        when(tutorDocumentRepository.save(org.mockito.ArgumentMatchers.any(TutorDocument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "transcript.xlsx",
+                "image/png",
+                new byte[] { 'P', 'K', 3, 4 }
+        );
+
+        var response = service.uploadMyDocument(
+                "test@example.com",
+                TutorDocumentType.DEGREE,
+                file,
+                "Transcript",
+                "IUH",
+                LocalDate.now().minusMonths(1),
+                CredentialValidityType.DOES_NOT_EXPIRE,
+                null,
+                null
+        );
+
+        assertThat(response.getContentType()).isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        verify(fileStorageService).store(
+                org.mockito.ArgumentMatchers.startsWith("tutor-applications/20/documents/"),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        );
+    }
+
+    @Test
+    void uploadEvidenceUsesMagicBytesWhenPngExtensionContainsJpegData() {
+        when(tutorDocumentRepository.save(org.mockito.ArgumentMatchers.any(TutorDocument.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "certificate.png",
+                "image/png",
+                new byte[] { (byte) 0xFF, (byte) 0xD8, (byte) 0xFF, 1 }
+        );
+
+        var response = service.uploadMyDocument(
+                "test@example.com",
+                TutorDocumentType.CERTIFICATE,
+                file,
+                "Certificate",
+                "IUH",
+                LocalDate.now().minusMonths(1),
+                CredentialValidityType.DOES_NOT_EXPIRE,
+                null,
+                null
+        );
+
+        assertThat(response.getContentType()).isEqualTo("image/jpeg");
+        verify(fileStorageService).store(
+                org.mockito.ArgumentMatchers.startsWith("tutor-applications/20/documents/"),
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq("image/jpeg")
+        );
+    }
+
+    @Test
     void certificateExpiresRequiresExpiryDate() {
         assertThatThrownBy(() -> service.uploadMyDocument(
                 "test@example.com",
@@ -284,8 +346,19 @@ class TutorDocumentServiceTest {
         properties.getIdentity().setAllowedContentTypes(List.of("image/jpeg", "image/png"));
         properties.getIdentity().setAllowedExtensions(List.of("jpg", "jpeg", "png"));
         properties.getIdentity().setMaxSize(DataSize.ofMegabytes(5));
-        properties.getCertificate().setAllowedContentTypes(List.of("image/jpeg", "image/png", "application/pdf"));
-        properties.getCertificate().setAllowedExtensions(List.of("jpg", "jpeg", "png", "pdf"));
+        properties.getCertificate().setAllowedContentTypes(List.of(
+                "image/jpeg",
+                "image/png",
+                "image/gif",
+                "image/webp",
+                "application/pdf",
+                "application/msword",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.ms-excel",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/octet-stream"
+        ));
+        properties.getCertificate().setAllowedExtensions(List.of("jpg", "jpeg", "png", "gif", "webp", "pdf", "doc", "docx", "xls", "xlsx"));
         properties.getCertificate().setMaxSize(DataSize.ofMegabytes(10));
         properties.setMaxCertificateCount(10);
         return properties;

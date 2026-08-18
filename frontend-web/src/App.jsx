@@ -25,10 +25,7 @@ function defaultRouteFor(user) {
     return '/staff/tutors';
   }
   if (user?.activeRole === 'TUTOR') {
-    if (user?.tutorStatus === 'APPROVED') {
-      return '/tutor/profile';
-    }
-    return '/tutor-next-step';
+    return '/dashboard';
   }
   return '/';
 }
@@ -64,10 +61,7 @@ function RoleGate({ roles, children }) {
 
   if (roles.includes('TUTOR')) {
     if (user.activeRole === 'TUTOR') {
-      if (user.tutorStatus === 'APPROVED') {
-        return children;
-      }
-      return <Navigate to="/tutor-next-step" replace />;
+      return children;
     }
     return <Navigate to="/" replace />;
   }
@@ -76,7 +70,7 @@ function RoleGate({ roles, children }) {
     if (user.activeRole === 'STUDENT') {
       return children;
     }
-    return <Navigate to="/tutor-next-step" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return <Navigate to="/" replace />;

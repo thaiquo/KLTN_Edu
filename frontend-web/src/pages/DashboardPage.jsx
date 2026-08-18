@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 
 export function DashboardPage() {
   const { user, logout } = useAuth();
-  const primaryRole = resolvePrimaryPortalRole(user.roles);
+  const primaryRole = resolvePortalRole(user);
 
   return (
     <PortalApp
@@ -17,7 +17,11 @@ export function DashboardPage() {
   );
 }
 
-function resolvePrimaryPortalRole(roles = []) {
+function resolvePortalRole(user = {}) {
+  const activeRole = user.activeRole?.toLowerCase();
+  if (['admin', 'staff', 'tutor', 'student'].includes(activeRole)) return activeRole;
+
+  const roles = user.roles || [];
   if (roles.includes('ADMIN')) return 'admin';
   if (roles.includes('STAFF')) return 'staff';
   if (roles.includes('TUTOR')) return 'tutor';

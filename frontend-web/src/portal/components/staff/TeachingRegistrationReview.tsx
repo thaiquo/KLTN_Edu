@@ -21,10 +21,12 @@ export function TeachingRegistrationReview({
   onNotice,
   onError,
   onPendingCountChange,
+  onActionSuccess,
 }: {
   onNotice: (message: string) => void;
   onError: (message: string) => void;
   onPendingCountChange?: (count: number) => void;
+  onActionSuccess?: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<ReviewKind>("registration");
   const [registrations, setRegistrations] = useState<any[]>([]);
@@ -36,16 +38,15 @@ export function TeachingRegistrationReview({
   async function load() {
     setLoading(true);
     try {
-      const [registrationItems, suggestionItems] = await Promise.all([
-        teachingRegistrationApi.adminPending(),
-        catalogSuggestionApi.pending(),
-      ]);
-      setRegistrations(Array.isArray(registrationItems) ? registrationItems : []);
-      setSuggestions(Array.isArray(suggestionItems) ? suggestionItems : []);
-      onPendingCountChange?.(
-        (Array.isArray(registrationItems) ? registrationItems.length : 0)
-        + (Array.isArray(suggestionItems) ? suggestionItems.length : 0)
-      );
+      const items = await teachingRegistrationApi.adminPending();
+      const list = Array.isArray(items) ? items : [];
+
+      const standard = list.filter((item: any) => item.subject !== null);
+      const proposed = list.filter((item: any) => item.subject === null);
+
+      setRegistrations(standard);
+      setSuggestions(proposed);
+      onPendingCountChange?.(list.length);
     } catch (error: any) {
       onError(error?.message || "Không thể tải hàng chờ duyệt quyền dạy.");
     } finally {
@@ -61,10 +62,19 @@ export function TeachingRegistrationReview({
     setBusy(true);
     try {
       await teachingRegistrationApi.approve(item.id, note);
-      setRegistrations((current) => current.filter((value) => value.id !== item.id));
-      onPendingCountChange?.(registrations.length - 1 + suggestions.length);
+
+      if (item.subject !== null) {
+        setRegistrations((current) => current.filter((value) => value.id !== item.id));
+      } else {
+        setSuggestions((current) => current.filter((value) => value.id !== item.id));
+      }
+
+      onPendingCountChange?.(registrations.length + suggestions.length - 1);
       setSelected(undefined);
-      onNotice("Đã duyệt quyền dạy. Gia sư có thể dùng môn và các lớp này khi tạo lớp.");
+      onNotice(!item.subject
+        ? "Đã duyệt đề xuất. Môn học mới đã được thêm vào danh mục và hồ sơ dạy của gia sư đã được duyệt."
+        : "Đã duyệt quyền dạy. Gia sư có thể dùng môn và các lớp này khi tạo lớp.");
+      onActionSuccess?.();
     } catch (error: any) {
       onError(error?.message || "Không thể duyệt đăng ký dạy.");
     } finally {
@@ -80,46 +90,19 @@ export function TeachingRegistrationReview({
     setBusy(true);
     try {
       await teachingRegistrationApi.reject(item.id, reason.trim());
-      setRegistrations((current) => current.filter((value) => value.id !== item.id));
-      onPendingCountChange?.(registrations.length - 1 + suggestions.length);
+
+      if (item.subject !== null) {
+        setRegistrations((current) => current.filter((value) => value.id !== item.id));
+      } else {
+        setSuggestions((current) => current.filter((value) => value.id !== item.id));
+      }
+
+      onPendingCountChange?.(registrations.length + suggestions.length - 1);
       setSelected(undefined);
       onNotice("Đã từ chối đăng ký dạy.");
+      onActionSuccess?.();
     } catch (error: any) {
       onError(error?.message || "Không thể từ chối đăng ký dạy.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function approveSuggestion(item: any) {
-    setBusy(true);
-    try {
-      await catalogSuggestionApi.approve(item.id);
-      setSuggestions((current) => current.filter((value) => value.id !== item.id));
-      onPendingCountChange?.(registrations.length + suggestions.length - 1);
-      setSelected(undefined);
-      onNotice("Đã tạo môn và trình độ trong catalog. Gia sư có thể chọn mục mới để hoàn tất hồ sơ quyền dạy.");
-    } catch (error: any) {
-      onError(error?.message || "Không thể duyệt đề xuất môn mới.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function rejectSuggestion(item: any, reason: string) {
-    if (!reason.trim()) {
-      onError("Vui lòng nhập lý do từ chối.");
-      return;
-    }
-    setBusy(true);
-    try {
-      await catalogSuggestionApi.reject(item.id, reason.trim());
-      setSuggestions((current) => current.filter((value) => value.id !== item.id));
-      onPendingCountChange?.(registrations.length + suggestions.length - 1);
-      setSelected(undefined);
-      onNotice("Đã từ chối đề xuất môn mới.");
-    } catch (error: any) {
-      onError(error?.message || "Không thể từ chối đề xuất môn mới.");
     } finally {
       setBusy(false);
     }
@@ -131,7 +114,7 @@ export function TeachingRegistrationReview({
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff695f]">Teaching approval queue</p>
           <h2 className="mt-1 font-display text-xl font-black text-[#073554]">Hàng chờ duyệt quyền dạy</h2>
-          <p className="mt-1 text-xs font-semibold text-slate-500">Môn có sẵn được duyệt trực tiếp. Môn nhập tay phải được bổ sung vào catalog trước.</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">Môn có sẵn được duyệt trực tiếp. Môn nhập tay phải được bổ sung vào danh mục trước.</p>
         </div>
         <button type="button" onClick={load} className="w-fit border border-[#d7dde6] px-3 py-2 text-xs font-black text-slate-600 hover:border-[#147b77]">Tải lại</button>
       </header>
@@ -146,7 +129,7 @@ export function TeachingRegistrationReview({
       ) : activeTab === "registration" ? (
         <RegistrationQueue items={registrations} onSelect={(item) => setSelected({ kind: "registration", item })} />
       ) : (
-        <SuggestionQueue items={suggestions} onSelect={(item) => setSelected({ kind: "suggestion", item })} />
+        <RegistrationQueue items={suggestions} onSelect={(item) => setSelected({ kind: "registration", item })} />
       )}
 
       {selected?.kind === "registration" && (
@@ -157,15 +140,6 @@ export function TeachingRegistrationReview({
           onApprove={(note) => approveRegistration(selected.item, note)}
           onReject={(reason) => rejectRegistration(selected.item, reason)}
           onError={onError}
-        />
-      )}
-      {selected?.kind === "suggestion" && (
-        <SuggestionDetailModal
-          item={selected.item}
-          busy={busy}
-          onClose={() => setSelected(undefined)}
-          onApprove={() => approveSuggestion(selected.item)}
-          onReject={(reason) => rejectSuggestion(selected.item, reason)}
         />
       )}
     </section>
@@ -184,49 +158,37 @@ function RegistrationQueue({ items, onSelect }: { items: any[]; onSelect: (item:
   if (!items.length) return <EmptyQueue text="Không có hồ sơ quyền dạy đang chờ duyệt." />;
   return (
     <div className="divide-y divide-[#edf0f4]">
-      {items.map((item) => (
-        <article key={item.id} className="grid gap-4 p-5 hover:bg-[#f9fbfd] md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] md:items-center">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-display text-base font-black text-[#073554]">{item.subject?.name}</h3>
-              <StatusBadge />
+      {items.map((item) => {
+        const isProposal = !item.subject;
+        return (
+          <article key={item.id} className={`grid gap-4 p-5 hover:bg-[#f9fbfd] md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] md:items-center ${isProposal ? "bg-amber-50/10" : ""}`}>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-display text-base font-black text-[#073554]">
+                  {isProposal ? `${item.proposedSubjectName} (Đề xuất mới)` : item.subject?.name}
+                </h3>
+                {isProposal ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[9px] font-black uppercase text-amber-700">Môn đề xuất</span>
+                ) : (
+                  <StatusBadge />
+                )}
+              </div>
+              <p className="mt-1 truncate text-xs font-bold text-slate-500">{item.tutorEmail}</p>
+              <p className="mt-2 text-xs font-semibold text-slate-600">
+                {item.category?.name} · {isProposal ? item.proposedLevelName : (item.levels || []).map((level: any) => level.name).join(", ")}
+              </p>
             </div>
-            <p className="mt-1 truncate text-xs font-bold text-slate-500">{item.tutorEmail}</p>
-            <p className="mt-2 text-xs font-semibold text-slate-600">{item.category?.name} · {(item.levels || []).map((level: any) => level.name).join(", ")}</p>
-          </div>
-          <div className="text-xs font-semibold text-slate-500">
-            <p className="font-black text-[#073554]">{formatCurrency(item.tuitionMin)} - {formatCurrency(item.tuitionMax)}/buổi</p>
-            <p className="mt-1">{item.experienceYears || 0} năm kinh nghiệm · {item.evidence?.length || 0} minh chứng</p>
-            <p className="mt-1">Nộp {formatDateTime(item.submittedAt)}</p>
-          </div>
-          <button type="button" onClick={() => onSelect(item)} className="inline-flex w-fit items-center gap-2 border border-[#073554] px-3 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-[#073554] hover:bg-[#073554] hover:text-white">
-            <Eye className="h-3.5 w-3.5" /> Xem chi tiết
-          </button>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function SuggestionQueue({ items, onSelect }: { items: any[]; onSelect: (item: any) => void }) {
-  if (!items.length) return <EmptyQueue text="Không có đề xuất môn mới đang chờ xử lý." />;
-  return (
-    <div className="divide-y divide-[#edf0f4]">
-      {items.map((item) => (
-        <article key={item.id} className="grid gap-4 p-5 hover:bg-amber-50/30 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-display text-base font-black text-[#073554]">{item.subjectName} · {item.levelName}</h3>
-              <span className="bg-amber-100 px-2 py-1 text-[10px] font-black uppercase text-amber-700">Chờ tạo catalog</span>
+            <div className="text-xs font-semibold text-slate-500">
+              <p className="font-black text-[#073554]">{formatCurrency(item.tuitionMin)} - {formatCurrency(item.tuitionMax)}/buổi</p>
+              <p className="mt-1">{item.experienceYears || 0} năm kinh nghiệm · {item.evidence?.length || 0} minh chứng</p>
+              <p className="mt-1">Nộp {formatDateTime(item.submittedAt)}</p>
             </div>
-            <p className="mt-1 text-xs font-bold text-slate-500">{item.requestedByEmail} · {item.category?.name}</p>
-            <p className="mt-2 text-xs font-semibold text-slate-600">Đề xuất lúc {formatDateTime(item.createdAt)}</p>
-          </div>
-          <button type="button" onClick={() => onSelect(item)} className="inline-flex w-fit items-center gap-2 border border-amber-500 px-3 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-amber-700 hover:bg-amber-500 hover:text-white">
-            <PlusCircle className="h-3.5 w-3.5" /> Xử lý đề xuất
-          </button>
-        </article>
-      ))}
+            <button type="button" onClick={() => onSelect(item)} className="inline-flex w-fit items-center gap-2 border border-[#073554] px-3 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-[#073554] hover:bg-[#073554] hover:text-white">
+              <Eye className="h-3.5 w-3.5" /> Xem chi tiết
+            </button>
+          </article>
+        );
+      })}
     </div>
   );
 }
@@ -234,15 +196,32 @@ function SuggestionQueue({ items, onSelect }: { items: any[]; onSelect: (item: a
 function RegistrationDetailModal({ item, busy, onClose, onApprove, onReject, onError }: any) {
   const [note, setNote] = useState("");
   const [rejectMode, setRejectMode] = useState(false);
+  const isProposal = !item.subject;
   return (
-    <Modal title="Chi tiết hồ sơ quyền dạy" subtitle={item.tutorEmail} onClose={onClose}>
+    <Modal title={isProposal ? "Chi tiết đề xuất môn và hồ sơ dạy" : "Chi tiết hồ sơ quyền dạy"} subtitle={item.tutorEmail} onClose={onClose}>
       <div className="flex items-center justify-between bg-[#f7f9fc] p-3 text-xs font-bold text-[#073554]">
-        <span>Nộp lúc {formatDateTime(item.submittedAt)}</span><StatusBadge />
+        <span>Nộp lúc {formatDateTime(item.submittedAt)}</span>
+        {isProposal ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-black uppercase text-amber-700">Môn đề xuất</span>
+        ) : (
+          <StatusBadge />
+        )}
       </div>
+
+      {isProposal && (
+        <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50/40 p-4 text-xs font-semibold text-amber-800 leading-5">
+          👉 **Môn học này do gia sư đề xuất thêm mới.** Khi bạn bấm **Duyệt**, hệ thống sẽ tự động tạo môn học <strong>{item.proposedSubjectName}</strong> và trình độ <strong>{item.proposedLevelName}</strong> trong danh mục, đồng thời phê duyệt luôn quyền giảng dạy môn học này cho gia sư.
+        </div>
+      )}
+
       <section className="mt-4 rounded-xl border border-[#073554] p-4">
-        <h3 className="font-display text-base font-black text-[#073554]">{item.subject?.name}</h3>
+        <h3 className="font-display text-base font-black text-[#073554]">
+          {isProposal ? item.proposedSubjectName : item.subject?.name}
+        </h3>
         <DetailRow label="Chương trình" value={[item.programType?.name, item.educationLevel?.name, item.category?.name].filter(Boolean).join(" / ")} />
-        <DetailRow label="Lớp / trình độ" value={(item.levels || []).map((level: any) => level.name).join(", ")} />
+        <DetailRow label="Lớp / trình độ" value={isProposal ? item.proposedLevelName : (item.levels || []).map((level: any) => level.name).join(", ")} />
+        {isProposal && <DetailRow label="Loại trình độ đề xuất" value={item.proposedLevelType || "--"} />}
+        {isProposal && item.proposedNote && <DetailRow label="Ghi chú đề xuất của gia sư" value={item.proposedNote} />}
         <DetailRow label="Học phí" value={`${formatCurrency(item.tuitionMin)} - ${formatCurrency(item.tuitionMax)}/buổi`} />
         <DetailRow label="Kinh nghiệm" value={`${item.experienceYears || 0} năm`} />
         <DetailRow label="Mô tả năng lực" value={item.description || "--"} />
@@ -260,35 +239,14 @@ function RegistrationDetailModal({ item, busy, onClose, onApprove, onReject, onE
       <div className="mt-4 flex flex-wrap justify-end gap-2">
         {rejectMode && <button type="button" disabled={busy} onClick={() => setRejectMode(false)} className="px-4 py-2.5 text-xs font-black text-slate-500">Hủy</button>}
         <button type="button" disabled={busy} onClick={() => rejectMode ? onReject(note) : setRejectMode(true)} className="border border-rose-300 bg-rose-50 px-4 py-2.5 text-xs font-black text-rose-700 disabled:opacity-50">{rejectMode ? "Xác nhận từ chối" : "Từ chối"}</button>
-        {!rejectMode && <button type="button" disabled={busy} onClick={() => onApprove(note)} className="bg-[#147b77] px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">{busy ? "Đang xử lý..." : "Duyệt quyền dạy"}</button>}
+        {!rejectMode && <button type="button" disabled={busy} onClick={() => onApprove(note)} className="bg-[#147b77] px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">
+          {busy ? "Đang xử lý..." : isProposal ? "Duyệt & Tạo môn" : "Duyệt quyền dạy"}
+        </button>}
       </div>
     </Modal>
   );
 }
 
-function SuggestionDetailModal({ item, busy, onClose, onApprove, onReject }: any) {
-  const [rejectMode, setRejectMode] = useState(false);
-  const [reason, setReason] = useState("");
-  return (
-    <Modal title="Xử lý đề xuất môn mới" subtitle={item.requestedByEmail} onClose={onClose}>
-      <div className="rounded-xl border border-amber-300 bg-amber-50/50 p-4">
-        <div className="flex items-center gap-2 text-amber-700"><AlertTriangle className="h-4 w-4" /><strong className="text-xs">Môn chưa tồn tại trong catalog</strong></div>
-        <DetailRow label="Tên môn đề xuất" value={item.subjectName} />
-        <DetailRow label="Danh mục" value={item.category?.name || "--"} />
-        <DetailRow label="Lớp / trình độ" value={item.levelName} />
-        <DetailRow label="Loại trình độ" value={item.levelType} />
-        <DetailRow label="Ghi chú của gia sư" value={item.note || "--"} />
-      </div>
-      <p className="mt-4 text-xs font-semibold leading-5 text-slate-500">Khi duyệt, hệ thống tạo môn và trình độ ở cuối danh mục tương ứng. Sau đó gia sư chọn mục mới và gửi hồ sơ quyền dạy với học phí, kinh nghiệm và minh chứng.</p>
-      {rejectMode && <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} placeholder="Nhập lý do từ chối..." className="mt-4 w-full resize-none rounded-lg border border-rose-200 p-3 text-sm outline-none" />}
-      <div className="mt-5 flex flex-wrap justify-end gap-2">
-        {rejectMode && <button type="button" onClick={() => setRejectMode(false)} className="px-4 py-2.5 text-xs font-black text-slate-500">Hủy</button>}
-        <button type="button" disabled={busy} onClick={() => rejectMode ? onReject(reason) : setRejectMode(true)} className="border border-rose-300 bg-rose-50 px-4 py-2.5 text-xs font-black text-rose-700 disabled:opacity-50">{rejectMode ? "Xác nhận từ chối" : "Từ chối"}</button>
-        {!rejectMode && <button type="button" disabled={busy} onClick={onApprove} className="bg-[#ff695f] px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">{busy ? "Đang tạo..." : "Tạo môn và trình độ"}</button>}
-      </div>
-    </Modal>
-  );
-}
 
 function EvidenceItem({ evidence, onError }: any) {
   const [access, setAccess] = useState<any>();

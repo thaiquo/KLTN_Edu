@@ -52,7 +52,7 @@ const GENDER_OPTIONS = [
   { value: 'PREFER_NOT_TO_SAY', label: 'Không muốn chia sẻ' }
 ];
 
-export function ProfilePage() {
+export function ProfilePage({ embedded = false, onTabChange = null }) {
   const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [profile, setProfile] = useState(user);
@@ -274,12 +274,12 @@ export function ProfilePage() {
 
   return (
     <div
-      className="min-h-screen bg-slate-50 text-slate-900 font-sans"
+      className={embedded ? "" : "min-h-screen bg-slate-50 text-slate-900 font-sans"}
       style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
     >
-      <HomeHeader />
+      {!embedded && <HomeHeader />}
 
-      <main className="container-app pt-28 pb-16">
+      <main className={embedded ? "container-app pb-16" : "container-app pt-28 pb-16"}>
         {loading ? (
           <ProfileSkeleton />
         ) : (
@@ -362,9 +362,13 @@ export function ProfilePage() {
 
                 <aside className="grid content-start gap-6">
                   <AccountInfoCard profile={profile} roles={roles} />
-                  {!roles.includes('TUTOR') && <BecomeTutorCard />}
+                  {!embedded && (!roles.includes('TUTOR') ? (
+                    <BecomeTutorCard />
+                  ) : (
+                    <TutorRegistrationCard />
+                  ))}
                   <CompletionCard completion={completion} />
-                  <SecurityCard />
+                  <SecurityCard embedded={embedded} onTabChange={onTabChange} />
                 </aside>
               </section>
             )}
@@ -554,6 +558,24 @@ function BecomeTutorCard() {
   );
 }
 
+function TutorRegistrationCard() {
+  return (
+    <section className="rounded-[8px] border border-blue-100 bg-blue-50 p-5 shadow-[0_18px_45px_rgba(15,23,42,.06)]">
+      <SectionTitle eyebrow="Tutor profile" title="Đăng ký môn dạy" compact />
+      <p className="mt-3 text-sm font-semibold leading-6 text-blue-900/75">
+        Đăng ký thêm môn học mới hoặc quản lý danh sách các môn dạy đang chờ phê duyệt của bạn.
+      </p>
+      <Link
+        to="/tutor/teaching-registrations"
+        className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[8px] bg-[#147b77] px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-slate-900"
+      >
+        <Sparkles size={16} />
+        Đăng ký môn dạy
+      </Link>
+    </section>
+  );
+}
+
 function CompletionCard({ completion }) {
   return (
     <section className="rounded-[8px] border border-slate-200 bg-white p-5 shadow-[0_18px_45px_rgba(15,23,42,.06)]">
@@ -573,20 +595,31 @@ function CompletionCard({ completion }) {
   );
 }
 
-function SecurityCard() {
+function SecurityCard({ embedded = false, onTabChange = null }) {
   return (
     <section className="rounded-[8px] border border-slate-200 bg-white p-5 shadow-[0_18px_45px_rgba(15,23,42,.06)]">
       <SectionTitle eyebrow="Security" title="Bảo mật" compact />
       <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">
         Mật khẩu và các thao tác bảo mật được tách khỏi thông tin cá nhân.
       </p>
-      <Link
-        to="/profile/password"
-        className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[8px] border border-slate-200 bg-white px-4 py-3 text-sm font-extrabold text-slate-800 hover:border-primary/40 hover:text-primary transition-colors"
-      >
-        <KeyRound size={16} />
-        Đổi mật khẩu
-      </Link>
+      {embedded && onTabChange ? (
+        <button
+          type="button"
+          onClick={() => onTabChange("password")}
+          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[8px] border border-slate-200 bg-white px-4 py-3 text-sm font-extrabold text-slate-800 hover:border-primary/40 hover:text-primary transition-colors w-full"
+        >
+          <KeyRound size={16} />
+          Đổi mật khẩu
+        </button>
+      ) : (
+        <Link
+          to="/profile/password"
+          className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[8px] border border-slate-200 bg-white px-4 py-3 text-sm font-extrabold text-slate-800 hover:border-primary/40 hover:text-primary transition-colors"
+        >
+          <KeyRound size={16} />
+          Đổi mật khẩu
+        </Link>
+      )}
       <Link
         to="/"
         className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-[8px] bg-slate-900 px-4 py-3 text-sm font-extrabold text-white hover:bg-primary transition-colors"

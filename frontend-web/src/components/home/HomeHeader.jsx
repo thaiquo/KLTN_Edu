@@ -70,11 +70,7 @@ export function HomeHeader() {
     try {
       const updatedUser = await switchRole(targetRole);
       if (targetRole === 'TUTOR') {
-        if (updatedUser?.tutorStatus === 'APPROVED') {
-          navigate('/tutor/dashboard');
-        } else {
-          navigate('/tutor-next-step');
-        }
+        navigate('/dashboard');
       } else {
         navigate('/');
       }
@@ -333,31 +329,7 @@ function AccountMenu({ user, onSwitchRole, onActivateStudent, onLogout, onClose 
         </>
       )}
 
-      {!isStaffOrAdmin && activeRole === 'TUTOR' && (
-        <>
-          {!user?.hasStudentProfile ? (
-            <button
-              type="button"
-              onClick={onActivateStudent}
-              className="flex w-full items-center gap-3 rounded-[10px] px-3 py-3 text-left text-sm font-extrabold text-indigo-600 hover:bg-indigo-50"
-              role="menuitem"
-            >
-              <BookOpen size={16} />
-              Kích hoạt chế độ Học viên
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onSwitchRole('STUDENT')}
-              className="flex w-full items-center gap-3 rounded-[10px] px-3 py-3 text-left text-sm font-extrabold text-indigo-600 hover:bg-indigo-50"
-              role="menuitem"
-            >
-              <RefreshCw size={16} />
-              Chuyển sang chế độ Học viên
-            </button>
-          )}
-        </>
-      )}
+
 
       <MenuLink to="/profile" icon={<Settings size={16} />} onClick={onClose}>
         Cài đặt tài khoản
@@ -402,7 +374,7 @@ function navLinksFor(user) {
   }
   if (user?.activeRole === 'TUTOR') {
     return [
-      { label: 'Dashboard Gia sư', href: '/tutor/dashboard', icon: 'sparkles' },
+      { label: 'Dashboard Gia sư', href: '/dashboard', icon: 'sparkles' },
       { label: 'Yêu cầu mở', href: '/class-requests', icon: 'search' }
     ];
   }

@@ -18,6 +18,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import javax.crypto.SecretKey;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 
@@ -31,8 +32,8 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
-        String token = extractTokenFromCookie(request);
-        if (token == null) {
+        String token = extractToken(request);
+        if (token == null || token.isBlank()) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -45,11 +46,22 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
             }
             String email = claims.getSubject();
             List<?> roles = claims.get("roles", List.class);
-            List<SimpleGrantedAuthority> authorities = roles == null ? List.of() : roles.stream()
-                    .map(String::valueOf)
-                    .map(role -> role.startsWith("ROLE_") ? role : "ROLE_" + role)
-                    .map(SimpleGrantedAuthority::new)
-                    .toList();
+            String activeRole = claims.get("activeRole", String.class);
+            List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+            if (roles != null) {
+                for (Object r : roles) {
+                    String roleStr = String.valueOf(r);
+                    if (!roleStr.startsWith("ROLE_")) roleStr = "ROLE_" + roleStr;
+                    authorities.add(new SimpleGrantedAuthority(roleStr));
+                }
+            }
+            if (activeRole != null && !activeRole.isBlank()) {
+                String actStr = activeRole.startsWith("ROLE_") ? activeRole : "ROLE_" + activeRole;
+                SimpleGrantedAuthority auth = new SimpleGrantedAuthority(actStr);
+                if (!authorities.contains(auth)) {
+                    authorities.add(auth);
+                }
+            }
             SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(email, null, authorities));
         } catch (RuntimeException ex) {
             SecurityContextHolder.clearContext();
@@ -58,11 +70,21 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private String extractTokenFromCookie(HttpServletRequest request) {
+    private String extractToken(HttpServletRequest request) {
+        // 1. Check Authorization Header
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7).trim();
+        }
+
+        // 2. Check Cookies
         Cookie[] cookies = request.getCookies();
-        if (cookies == null) return null;
-        for (Cookie cookie : cookies) {
-            if ("access_token".equals(cookie.getName())) return cookie.getValue();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if ("access_token".equals(cookie.getName()) || "token".equals(cookie.getName())) {
+                    return cookie.getValue();
+                }
+            }
         }
         return null;
     }

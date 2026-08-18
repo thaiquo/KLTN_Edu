@@ -19,6 +19,9 @@ public class AdminTutorSubjectRegistrationController {
     @GetMapping
     public List<TeachingCatalogDtos.RegistrationResponse> pending() { return service.pending(); }
 
+    @GetMapping("/history")
+    public List<TeachingCatalogDtos.RegistrationResponse> history() { return service.history(); }
+
     @PostMapping("/{id}/approve")
     public TeachingCatalogDtos.RegistrationResponse approve(Authentication authentication, @PathVariable Long id,
             @Valid @RequestBody(required = false) TeachingCatalogDtos.ReviewRequest request) {

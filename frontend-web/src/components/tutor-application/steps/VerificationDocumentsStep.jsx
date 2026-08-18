@@ -6,6 +6,33 @@ const EDITABLE_STATUSES = ['DRAFT', 'REJECTED'];
 const MAX_IDENTITY_SIZE = 5 * 1024 * 1024;
 const MAX_CERTIFICATE_SIZE = 10 * 1024 * 1024;
 const EVIDENCE_DOCUMENT_TYPES = ['DEGREE', 'CERTIFICATE', 'WORK_EXPERIENCE', 'PORTFOLIO', 'OTHER'];
+const IDENTITY_ACCEPT = 'image/jpeg,image/png';
+const EVIDENCE_ACCEPT = [
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx'
+].join(',');
+const EVIDENCE_ALLOWED_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+];
 
 export function VerificationDocumentsStep({ application, readOnly }) {
   const [documents, setDocuments] = useState([]);
@@ -25,10 +52,10 @@ export function VerificationDocumentsStep({ application, readOnly }) {
   const byType = useMemo(() => groupByType(documents), [documents]);
   const credentials = documents.filter((document) => EVIDENCE_DOCUMENT_TYPES.includes(document.documentType));
   const identityOptions = identityMode === 'PASSPORT'
-    ? [{ type: 'PASSPORT', label: 'Trang thông tin hộ chiếu', accept: 'image/jpeg,image/png' }]
+    ? [{ type: 'PASSPORT', label: 'Trang thông tin hộ chiếu', accept: IDENTITY_ACCEPT }]
     : [
-        { type: 'IDENTITY_FRONT', label: 'CCCD / CMND mặt trước', accept: 'image/jpeg,image/png' },
-        { type: 'IDENTITY_BACK', label: 'CCCD / CMND mặt sau', accept: 'image/jpeg,image/png' }
+        { type: 'IDENTITY_FRONT', label: 'CCCD / CMND mặt trước', accept: IDENTITY_ACCEPT },
+        { type: 'IDENTITY_BACK', label: 'CCCD / CMND mặt sau', accept: IDENTITY_ACCEPT }
       ];
 
   useEffect(() => {
@@ -67,9 +94,9 @@ export function VerificationDocumentsStep({ application, readOnly }) {
     pendingUploadRef.current = {
       documentType: credentialType,
       metadata,
-      accept: 'image/jpeg,image/png,application/pdf'
+      accept: EVIDENCE_ACCEPT
     };
-    openFileInput('image/jpeg,image/png,application/pdf');
+    openFileInput(EVIDENCE_ACCEPT);
   }
 
   function openFileInput(accept) {
@@ -211,7 +238,7 @@ export function VerificationDocumentsStep({ application, readOnly }) {
         </section>
 
         <section className="rounded-[8px] border border-slate-200 bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,.05)]">
-          <SectionTitle icon={<Award size={20} />} title="Minh chứng chuyên môn" description="Bằng cấp, chứng chỉ, xác nhận kinh nghiệm giảng dạy, portfolio hoặc minh chứng khác. PDF/JPG/PNG, tối đa 10MB mỗi file." />
+          <SectionTitle icon={<Award size={20} />} title="Minh chứng chuyên môn" description="Bằng cấp, chứng chỉ, xác nhận kinh nghiệm giảng dạy, portfolio hoặc minh chứng khác. Hỗ trợ ảnh, PDF, Word và Excel, tối đa 10MB mỗi file." />
 
           {editable && (
             <form onSubmit={chooseCredentialFile} className="mt-5 rounded-[8px] border border-slate-200 bg-slate-50 p-4">
@@ -438,7 +465,7 @@ function validateCredentialMetadata(type, metadata) {
 
 function validateFile(type, file) {
   const identity = ['IDENTITY_FRONT', 'IDENTITY_BACK', 'PASSPORT'].includes(type);
-  const allowedTypes = identity ? ['image/jpeg', 'image/png'] : ['image/jpeg', 'image/png', 'application/pdf'];
+  const allowedTypes = identity ? ['image/jpeg', 'image/png'] : EVIDENCE_ALLOWED_TYPES;
   const maxSize = identity ? MAX_IDENTITY_SIZE : MAX_CERTIFICATE_SIZE;
   if (!allowedTypes.includes(file.type)) return 'Định dạng file không phù hợp với loại tài liệu.';
   if (file.size > maxSize) return `File vượt quá giới hạn ${identity ? '5MB' : '10MB'}.`;
@@ -446,9 +473,8 @@ function validateFile(type, file) {
 }
 
 function normalizeUploadFile(file) {
-  if (file.type) return file;
   const inferredType = inferContentType(file.name);
-  return inferredType ? new File([file], file.name, { type: inferredType }) : file;
+  return inferredType && inferredType !== file.type ? new File([file], file.name, { type: inferredType }) : file;
 }
 
 function inferContentType(filename = '') {
@@ -456,6 +482,12 @@ function inferContentType(filename = '') {
   if (extension === 'pdf') return 'application/pdf';
   if (extension === 'png') return 'image/png';
   if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
+  if (extension === 'gif') return 'image/gif';
+  if (extension === 'webp') return 'image/webp';
+  if (extension === 'doc') return 'application/msword';
+  if (extension === 'docx') return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  if (extension === 'xls') return 'application/vnd.ms-excel';
+  if (extension === 'xlsx') return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   return '';
 }
 
@@ -477,6 +509,12 @@ function formatContentType(contentType) {
   if (contentType === 'application/pdf') return 'PDF';
   if (contentType === 'image/png') return 'PNG';
   if (contentType === 'image/jpeg') return 'JPG';
+  if (contentType === 'image/gif') return 'GIF';
+  if (contentType === 'image/webp') return 'WebP';
+  if (contentType === 'application/msword') return 'DOC';
+  if (contentType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'DOCX';
+  if (contentType === 'application/vnd.ms-excel') return 'XLS';
+  if (contentType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') return 'XLSX';
   return contentType || 'File';
 }
 
