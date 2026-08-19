@@ -4,6 +4,9 @@ public enum ClassRoomStatus {
     DRAFT,
     PENDING_APPROVAL,
     ACTIVE,
+    PRIVATE,
+    PUBLISHED,
+    LOCKED,
     REJECTED,
     CLOSED,
     CANCELLED

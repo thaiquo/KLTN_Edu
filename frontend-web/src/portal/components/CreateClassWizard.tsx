@@ -2,11 +2,13 @@ import React, { useState, useEffect, useMemo } from "react";
 import { 
   ArrowLeft, BookOpen, Clock, Calendar, DollarSign, Users, Video, 
   MapPin, FileText, Plus, Trash2, CheckCircle2, AlertCircle, 
-  Upload, Sparkles, HelpCircle, ChevronRight, Info
+  Upload, Sparkles, HelpCircle, ChevronRight, Info, ShieldAlert, Check
 } from "lucide-react";
 import { teachingRegistrationApi } from "../../api/teachingRegistrations";
 import { classApi } from "../../api/classes";
 import { tutorApplicationApi } from "../../api/tutorApplications";
+import { tutorApi } from "../../api/tutors";
+import { useAuth } from "../../hooks/useAuth";
 
 interface CreateClassWizardProps {
   onBack: () => void;
@@ -37,6 +39,32 @@ interface SavedSlot {
   endTime: string;
 }
 
+interface OccupiedSlot {
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  className: string;
+  status: string;
+}
+
+interface NetFreeInterval {
+  id: string;
+  dayOfWeek: number;
+  dayLabel: string;
+  slotName: string;
+  startTime: string;
+  endTime: string;
+  durationMins: number;
+}
+
+interface ConfiguredSession {
+  sessionId: number;
+  freeIntervalId: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+}
+
 const VIETNAMESE_DAYS = [
   { value: 2, label: "Thứ 2" },
   { value: 3, label: "Thứ 3" },
@@ -47,11 +75,156 @@ const VIETNAMESE_DAYS = [
   { value: 8, label: "Chủ nhật" }
 ];
 
+const BLOCKING_CLASS_STATUSES = new Set([
+  "PENDING_APPROVAL",
+  "ACTIVE",
+  "PRIVATE",
+  "PUBLISHED",
+  "LOCKED"
+]);
+
+// Time conversion helpers
+function timeToMinutes(t: string): number {
+  if (!t) return 0;
+  const [h, m] = t.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function minutesToTime(mins: number): string {
+  const h = Math.floor(mins / 60) % 24;
+  const m = mins % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function addMinutesToTime(t: string, mins: number): string {
+  return minutesToTime(timeToMinutes(t) + mins);
+}
+
+function normalize24hTime(val: string): string {
+  if (!val) return "";
+  const trimmed = val.trim();
+  if (/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(trimmed)) {
+    const [h, m] = trimmed.split(":");
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+  if (/^\d{1,4}$/.test(trimmed)) {
+    if (trimmed.length <= 2) {
+      const h = Math.min(23, Math.max(0, parseInt(trimmed, 10)));
+      return `${String(h).padStart(2, "0")}:00`;
+    } else {
+      const h = Math.min(23, Math.max(0, parseInt(trimmed.slice(0, -2), 10)));
+      const m = Math.min(59, Math.max(0, parseInt(trimmed.slice(-2), 10)));
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+  }
+  return trimmed;
+}
+
+function checkIntervalOverlap(
+  startA: string, endA: string,
+  startB: string, endB: string
+): boolean {
+  const sA = timeToMinutes(startA);
+  const eA = timeToMinutes(endA);
+  const sB = timeToMinutes(startB);
+  const eB = timeToMinutes(endB);
+  return sA < eB && eA > sB;
+}
+
+// Generate valid start time options (step 15m) within an interval for a given duration
+function generateStartTimeOptions(intervalStart: string, intervalEnd: string, durationMins: number): string[] {
+  const options: string[] = [];
+  const startMins = timeToMinutes(intervalStart);
+  const endMins = timeToMinutes(intervalEnd);
+  const maxStartMins = endMins - durationMins;
+
+  if (maxStartMins < startMins) return options;
+
+  for (let m = startMins; m <= maxStartMins; m += 15) {
+    options.push(minutesToTime(m));
+  }
+  return options;
+}
+
+// Compute Net Free Intervals sorted by day & time
+function computeNetFreeIntervals(rawSlots: SavedSlot[], occupiedSlots: OccupiedSlot[]): NetFreeInterval[] {
+  const result: NetFreeInterval[] = [];
+
+  const rawByDay: Record<number, SavedSlot[]> = {};
+  for (const raw of rawSlots) {
+    if (!rawByDay[raw.dayOfWeek]) rawByDay[raw.dayOfWeek] = [];
+    rawByDay[raw.dayOfWeek].push(raw);
+  }
+
+  Object.keys(rawByDay).forEach(dayKey => {
+    const dayNum = Number(dayKey);
+    const dayRawSlots = rawByDay[dayNum].sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const dayOccupied = occupiedSlots
+      .filter(o => o.dayOfWeek === dayNum)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    let slotCounter = 1;
+    const baseDayLabel = VIETNAMESE_DAYS.find(d => d.value === dayNum)?.label || `Thứ ${dayNum}`;
+
+    for (const raw of dayRawSlots) {
+      let curr = timeToMinutes(raw.startTime);
+      const winEnd = timeToMinutes(raw.endTime);
+
+      for (const occ of dayOccupied) {
+        const occStart = timeToMinutes(occ.startTime);
+        const occEnd = timeToMinutes(occ.endTime);
+
+        if (occEnd <= curr) continue;
+        if (occStart >= winEnd) break;
+
+        if (occStart > curr) {
+          const segEnd = Math.min(occStart, winEnd);
+          if (segEnd > curr) {
+            const hasMultipleOnDay = dayRawSlots.length > 1 || dayOccupied.length > 0;
+            const slotName = hasMultipleOnDay ? `${baseDayLabel} (Khung ${slotCounter})` : baseDayLabel;
+            result.push({
+              id: `free-${dayNum}-${curr}-${segEnd}`,
+              dayOfWeek: dayNum,
+              dayLabel: baseDayLabel,
+              slotName: `${slotName}: ${minutesToTime(curr)} - ${minutesToTime(segEnd)}`,
+              startTime: minutesToTime(curr),
+              endTime: minutesToTime(segEnd),
+              durationMins: segEnd - curr
+            });
+            slotCounter++;
+          }
+        }
+        curr = Math.min(winEnd, Math.max(curr, occEnd));
+      }
+
+      if (curr < winEnd) {
+        const hasMultipleOnDay = dayRawSlots.length > 1 || dayOccupied.length > 0;
+        const slotName = hasMultipleOnDay ? `${baseDayLabel} (Khung ${slotCounter})` : baseDayLabel;
+        result.push({
+          id: `free-${dayNum}-${curr}-${winEnd}`,
+          dayOfWeek: dayNum,
+          dayLabel: baseDayLabel,
+          slotName: `${slotName}: ${minutesToTime(curr)} - ${minutesToTime(winEnd)}`,
+          startTime: minutesToTime(curr),
+          endTime: minutesToTime(winEnd),
+          durationMins: winEnd - curr
+        });
+        slotCounter++;
+      }
+    }
+  });
+
+  return result.sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime));
+}
+
 export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps) {
+  const { user } = useAuth();
 
   // Data states
   const [registrations, setRegistrations] = useState<ApprovedRegistration[]>([]);
   const [availableSlots, setAvailableSlots] = useState<SavedSlot[]>([]);
+  const [occupiedSlots, setOccupiedSlots] = useState<OccupiedSlot[]>([]);
+  const [tutorProfile, setTutorProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
@@ -78,8 +251,8 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
     return d.toISOString().split("T")[0];
   });
 
-  // Selected schedule slots from availability
-  const [selectedSlots, setSelectedSlots] = useState<SavedSlot[]>([]);
+  // Configured class sessions
+  const [configuredSessions, setConfiguredSessions] = useState<ConfiguredSession[]>([]);
 
   // Syllabus states
   const [syllabusMode, setSyllabusMode] = useState<"FORM" | "FILE" | "BOTH">("FORM");
@@ -91,12 +264,19 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
     { id: "2", title: "Chương 2: Luyện tập chuyên sâu", description: "Thực hành giải bài tập và ứng dụng", expectedSessions: 5 }
   ]);
 
-  // Fetch approved registrations and local tutor availability
+  // Fetch approved registrations, tutor availability & existing classes
   useEffect(() => {
     async function loadData() {
       setLoading(true);
       try {
-        const regs = await teachingRegistrationApi.mine();
+        const [regs, dbSlots, myClasses, profile] = await Promise.all([
+          teachingRegistrationApi.mine().catch(() => []),
+          classApi.getAvailability().catch(() => []),
+          classApi.getMyClasses().catch(() => []),
+          tutorApi.getProfile().catch(() => null)
+        ]);
+        setTutorProfile(profile);
+
         const approved = (regs || []).filter((r: any) => r.status === "APPROVED");
         setRegistrations(approved);
 
@@ -108,28 +288,141 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
           setPricePerSession(approved[0].tuitionMin || 150000);
         }
 
-        const dbSlots = await classApi.getAvailability();
-        if (Array.isArray(dbSlots)) {
-          const mapped = dbSlots.map((s: any) => ({
-            id: String(s.id),
-            dayOfWeek: s.dayOfWeek,
-            startTime: s.startTime,
-            endTime: s.endTime
-          }));
-          setAvailableSlots(mapped);
-          if (mapped.length >= 3) {
-            setSelectedSlots(mapped.slice(0, 3));
+        // Available slots
+        const mappedSlots: SavedSlot[] = Array.isArray(dbSlots) ? dbSlots.map((s: any) => ({
+          id: String(s.id),
+          dayOfWeek: s.dayOfWeek,
+          startTime: s.startTime,
+          endTime: s.endTime
+        })) : [];
+        setAvailableSlots(mappedSlots);
+
+        // Occupied slots from existing active/pending classes
+        const occupied: OccupiedSlot[] = [];
+        if (Array.isArray(myClasses)) {
+          for (const cls of myClasses) {
+            if (BLOCKING_CLASS_STATUSES.has(cls.status)) {
+              if (Array.isArray(cls.schedules)) {
+                for (const sch of cls.schedules) {
+                  occupied.push({
+                    dayOfWeek: sch.dayOfWeek,
+                    startTime: sch.startTime,
+                    endTime: sch.endTime,
+                    className: cls.name,
+                    status: cls.status
+                  });
+                }
+              }
+            }
           }
         }
+        setOccupiedSlots(occupied);
+
+        // Compute net free intervals
+        const netFree = computeNetFreeIntervals(mappedSlots, occupied);
+        const validNetFree = netFree.filter(i => i.durationMins >= 90);
+
+        const initialConfigured: ConfiguredSession[] = [];
+        for (let i = 0; i < 3; i++) {
+          const targetInterval = validNetFree[i % validNetFree.length] || netFree[0];
+          if (targetInterval) {
+            const stOptions = generateStartTimeOptions(targetInterval.startTime, targetInterval.endTime, 90);
+            const st = stOptions[0] || targetInterval.startTime;
+            const et = addMinutesToTime(st, 90);
+            initialConfigured.push({
+              sessionId: i + 1,
+              freeIntervalId: targetInterval.id,
+              dayOfWeek: targetInterval.dayOfWeek,
+              startTime: st,
+              endTime: et
+            });
+          } else {
+            initialConfigured.push({
+              sessionId: i + 1,
+              freeIntervalId: "",
+              dayOfWeek: 2,
+              startTime: "08:00",
+              endTime: "09:30"
+            });
+          }
+        }
+        setConfiguredSessions(initialConfigured);
+
       } catch (err: any) {
-        console.error("Failed to load approved registrations", err);
-        setErrorBanner("Không thể tải danh sách môn học đã duyệt. Vui lòng thử lại.");
+        console.error("Failed to load data for class creation", err);
+        setErrorBanner("Không thể tải danh sách môn học đã duyệt hoặc lịch rảnh. Vui lòng thử lại.");
       } finally {
         setLoading(false);
       }
     }
     loadData();
   }, []);
+
+  // Compute net free intervals dynamically
+  const netFreeIntervals = useMemo(() => {
+    return computeNetFreeIntervals(availableSlots, occupiedSlots);
+  }, [availableSlots, occupiedSlots]);
+
+  // Available free intervals with duration >= durationPerSession
+  const usableFreeIntervals = useMemo(() => {
+    return netFreeIntervals.filter(i => i.durationMins >= durationPerSession);
+  }, [netFreeIntervals, durationPerSession]);
+
+  // Adjust configured sessions when sessionsPerWeek changes
+  useEffect(() => {
+    setConfiguredSessions(prev => {
+      if (prev.length === sessionsPerWeek) return prev;
+      if (prev.length > sessionsPerWeek) {
+        return prev.slice(0, sessionsPerWeek);
+      }
+      const updated = [...prev];
+      for (let i = prev.length; i < sessionsPerWeek; i++) {
+        const interval = usableFreeIntervals[i % usableFreeIntervals.length] || netFreeIntervals[0];
+        if (interval) {
+          const stOptions = generateStartTimeOptions(interval.startTime, interval.endTime, durationPerSession);
+          const st = stOptions[0] || interval.startTime;
+          const et = addMinutesToTime(st, durationPerSession);
+          updated.push({
+            sessionId: i + 1,
+            freeIntervalId: interval.id,
+            dayOfWeek: interval.dayOfWeek,
+            startTime: st,
+            endTime: et
+          });
+        } else {
+          updated.push({
+            sessionId: i + 1,
+            freeIntervalId: "",
+            dayOfWeek: 2,
+            startTime: "08:00",
+            endTime: addMinutesToTime("08:00", durationPerSession)
+          });
+        }
+      }
+      return updated;
+    });
+  }, [sessionsPerWeek, usableFreeIntervals, netFreeIntervals, durationPerSession]);
+
+  // Recalculate end times when durationPerSession changes
+  useEffect(() => {
+    setConfiguredSessions(prev => prev.map(s => {
+      const interval = netFreeIntervals.find(i => i.id === s.freeIntervalId);
+      let st = s.startTime;
+      if (interval) {
+        const startMins = timeToMinutes(interval.startTime);
+        const maxStartMins = timeToMinutes(interval.endTime) - durationPerSession;
+        const curMins = timeToMinutes(st);
+        if (curMins < startMins || curMins > maxStartMins) {
+          st = interval.startTime;
+        }
+      }
+      return {
+        ...s,
+        startTime: st,
+        endTime: addMinutesToTime(st, durationPerSession)
+      };
+    }));
+  }, [durationPerSession, netFreeIntervals]);
 
   // Selected registration object
   const activeRegistration = useMemo(() => {
@@ -148,19 +441,36 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
     }
   };
 
-  // Toggle slot selection
-  const handleToggleSlot = (slot: SavedSlot) => {
-    const isSelected = selectedSlots.some(s => s.id === slot.id);
-    if (isSelected) {
-      setSelectedSlots(selectedSlots.filter(s => s.id !== slot.id));
-    } else {
-      if (selectedSlots.length >= sessionsPerWeek) {
-        setErrorBanner(`Bạn đã chọn đủ ${sessionsPerWeek} buổi theo số buổi/tuần. Hãy bỏ chọn buổi khác trước.`);
-        return;
-      }
-      setErrorBanner(null);
-      setSelectedSlots([...selectedSlots, slot]);
-    }
+  // Handle interval selection for a session
+  const handleSelectIntervalForSession = (sessionIndex: number, intervalId: string) => {
+    const targetInterval = netFreeIntervals.find(i => i.id === intervalId);
+    if (!targetInterval) return;
+
+    const stOptions = generateStartTimeOptions(targetInterval.startTime, targetInterval.endTime, durationPerSession);
+    const defaultStart = stOptions[0] || targetInterval.startTime;
+
+    setConfiguredSessions(prev => prev.map((s, idx) => {
+      if (idx !== sessionIndex) return s;
+      return {
+        ...s,
+        freeIntervalId: intervalId,
+        dayOfWeek: targetInterval.dayOfWeek,
+        startTime: defaultStart,
+        endTime: addMinutesToTime(defaultStart, durationPerSession)
+      };
+    }));
+  };
+
+  // Handle start time selection for a session
+  const handleSelectStartTime = (sessionIndex: number, startTime: string) => {
+    setConfiguredSessions(prev => prev.map((s, idx) => {
+      if (idx !== sessionIndex) return s;
+      return {
+        ...s,
+        startTime,
+        endTime: addMinutesToTime(startTime, durationPerSession)
+      };
+    }));
   };
 
   // Calculations
@@ -223,7 +533,6 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
     setUploadingFile(true);
     setErrorBanner(null);
     try {
-      // Upload via tutor document service
       const res = await tutorApplicationApi.uploadApplicationDocument({
         documentType: "OTHER",
         file,
@@ -251,6 +560,62 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
     return `${String(h).padStart(2, "0")}:${String(m || "00").padStart(2, "0")}`;
   };
 
+  // Check schedule errors live
+  const scheduleValidation = useMemo(() => {
+    const sessionErrors: string[] = [];
+    if (configuredSessions.length !== sessionsPerWeek) {
+      sessionErrors.push(`Cần thiết lập đúng ${sessionsPerWeek} buổi học.`);
+    }
+
+    configuredSessions.forEach((sess, idx) => {
+      const interval = netFreeIntervals.find(i => i.id === sess.freeIntervalId);
+      const dayLabel = VIETNAMESE_DAYS.find(d => d.value === sess.dayOfWeek)?.label || `Thứ ${sess.dayOfWeek}`;
+
+      if (!interval) {
+        sessionErrors.push(`Buổi ${idx + 1}: Chưa chọn Khung giờ rảnh khả dụng.`);
+        return;
+      }
+
+      if (!sess.startTime || !/^\d{2}:\d{2}$/.test(sess.startTime)) {
+        sessionErrors.push(`Buổi ${idx + 1}: Vui lòng nhập giờ bắt đầu hợp lệ (định dạng HH:mm).`);
+        return;
+      }
+
+      // 1. Check bounds within chosen interval
+      const fitsInInterval = timeToMinutes(sess.startTime) >= timeToMinutes(interval.startTime) &&
+                             timeToMinutes(sess.endTime) <= timeToMinutes(interval.endTime);
+
+      if (!fitsInInterval) {
+        sessionErrors.push(`Buổi ${idx + 1} (${dayLabel} ${sess.startTime} - ${sess.endTime}): nằm ngoài Khung giờ rảnh (${interval.startTime} - ${interval.endTime}).`);
+      }
+
+      // 2. Check overlap with occupied slots of existing classes
+      const matchedOcc = occupiedSlots.find(occ => {
+        return occ.dayOfWeek === sess.dayOfWeek &&
+               checkIntervalOverlap(sess.startTime, sess.endTime, occ.startTime, occ.endTime);
+      });
+
+      if (matchedOcc) {
+        sessionErrors.push(`Buổi ${idx + 1} (${dayLabel} ${sess.startTime} - ${sess.endTime}): bị trùng giờ với lớp "${matchedOcc.className}" (${matchedOcc.startTime} - ${matchedOcc.endTime})!`);
+      }
+
+      // 3. Check overlap with other configured sessions in current class
+      for (let j = idx + 1; j < configuredSessions.length; j++) {
+        const other = configuredSessions[j];
+        if (sess.dayOfWeek === other.dayOfWeek) {
+          if (checkIntervalOverlap(sess.startTime, sess.endTime, other.startTime, other.endTime)) {
+            sessionErrors.push(`Buổi ${idx + 1} và Buổi ${j + 1} bị trùng giờ nhau (${dayLabel}).`);
+          }
+        }
+      }
+    });
+
+    return {
+      isValid: sessionErrors.length === 0 && configuredSessions.length === sessionsPerWeek,
+      errors: sessionErrors
+    };
+  }, [configuredSessions, sessionsPerWeek, netFreeIntervals, occupiedSlots]);
+
   // Real-time validation checklist
   const validationChecks = useMemo(() => {
     const isSubjectLevel = Boolean(selectedRegId && selectedLevelId);
@@ -262,7 +627,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
       numPrice > 0 &&
       (!activeRegistration || (numPrice >= activeRegistration.tuitionMin && numPrice <= activeRegistration.tuitionMax))
     );
-    const isSchedule = selectedSlots.length === sessionsPerWeek && selectedSlots.length > 0;
+    const isSchedule = scheduleValidation.isValid;
     
     let isSyllabus = false;
     if (syllabusMode === "FORM") {
@@ -287,8 +652,8 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
     };
   }, [
     selectedRegId, selectedLevelId, className, description, learningMode, 
-    meetingLink, address, pricePerSession, activeRegistration, selectedSlots, 
-    sessionsPerWeek, syllabusMode, chapters, syllabusFileUrl
+    meetingLink, address, pricePerSession, activeRegistration, scheduleValidation, 
+    syllabusMode, chapters, syllabusFileUrl
   ]);
 
   // Form submission
@@ -307,6 +672,8 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
     const payload = {
       tutorSubjectRegistrationId: Number(selectedRegId),
       levelId: Number(selectedLevelId),
+      tutorProfileId: tutorProfile?.id || null,
+      tutorFullName: tutorProfile?.fullName?.trim() || user?.fullName?.trim() || null,
       name: className.trim(),
       description: description.trim(),
       learningMode,
@@ -319,7 +686,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
       durationValue: Number(durationValue),
       durationUnit,
       startDate,
-      schedules: selectedSlots.map(s => ({
+      schedules: configuredSessions.map(s => ({
         dayOfWeek: Number(s.dayOfWeek),
         startTime: padTime(s.startTime),
         endTime: padTime(s.endTime)
@@ -350,7 +717,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
     return (
       <div className="bg-white border border-brand-border/30 rounded-3xl p-12 text-center max-w-4xl mx-auto my-8">
         <div className="animate-spin w-8 h-8 border-4 border-brand-primary border-t-transparent rounded-full mx-auto mb-4" />
-        <p className="text-xs font-bold text-slate-500">Đang tải danh mục môn học đã duyệt...</p>
+        <p className="text-xs font-bold text-slate-500">Đang tải danh mục môn học và lịch rảnh...</p>
       </div>
     );
   }
@@ -389,7 +756,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
           <span>Quay lại Quản lý Lớp học</span>
         </button>
         <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-          Tạo lớp mới &bull; Chỉ môn đã duyệt
+          Tạo lớp mới &bull; Chọn giờ bắt đầu theo buổi rảnh
         </span>
       </div>
 
@@ -399,7 +766,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
         <div className="border-b border-slate-100 pb-5">
           <h2 className="font-display font-black text-xl text-brand-text">Tạo Lớp Học Dành Cho Tutor</h2>
           <p className="text-xs text-slate-500 mt-1 font-semibold">
-            Điền đầy đủ thông tin chi tiết để gửi lớp học lên ban quản trị phê duyệt.
+            Chọn Buổi rảnh trong tuần và Giờ bắt đầu tương ứng, hệ thống tự tính Giờ kết thúc và đảm bảo không vượt quá khung rảnh.
           </p>
         </div>
 
@@ -588,7 +955,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
         <div className="space-y-5 pt-4 border-t border-slate-100">
           <div className="flex items-center gap-2 text-brand-primary font-black text-xs uppercase tracking-wider">
             <Clock className="w-4 h-4" />
-            <span>3. Thiết lập thời gian học & Lịch từ lịch rảnh</span>
+            <span>3. Thiết lập thời gian học & Chọn giờ bắt đầu mỗi buổi từ Lịch rảnh</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -598,13 +965,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
               </label>
               <select 
                 value={sessionsPerWeek}
-                onChange={(e) => {
-                  const num = Number(e.target.value);
-                  setSessionsPerWeek(num);
-                  if (selectedSlots.length > num) {
-                    setSelectedSlots(selectedSlots.slice(0, num));
-                  }
-                }}
+                onChange={(e) => setSessionsPerWeek(Number(e.target.value))}
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:border-brand-primary"
               >
                 {[1, 2, 3, 4, 5, 6, 7].map(n => (
@@ -665,51 +1026,229 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
             />
           </div>
 
-          {/* Pick Schedule from Tutor Availability Slots */}
-          <div className="space-y-3 pt-2">
-            <div className="flex items-center justify-between">
-              <label className="block text-xs font-bold text-slate-700">
-                Chọn {sessionsPerWeek} buổi học trong tuần từ Lịch rảnh của bạn: <span className="text-rose-500">*</span>
-              </label>
-              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-lg ${
-                selectedSlots.length === sessionsPerWeek 
-                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
-                  : "bg-amber-50 text-amber-700 border border-amber-200"
-              }`}>
-                Đã chọn: {selectedSlots.length} / {sessionsPerWeek} buổi
+          {/* Display Overview of Net Free Slots Organized by Day */}
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
+              <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                Chi tiết Lịch rảnh & Trạng thái chiếm dụng (Sắp xếp theo thứ):
+              </h4>
+              <span className="text-[11px] font-black text-brand-primary bg-brand-primary/10 px-2.5 py-1 rounded-lg">
+                Yêu cầu thời lượng: {durationPerSession} phút / buổi
               </span>
             </div>
 
-            {availableSlots.length === 0 ? (
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-800">
-                Bạn chưa thiết lập <strong>Lịch rảnh</strong> trong tuần. Hãy vào mục <strong>Lịch rảnh</strong> trong menu để tạo lịch trước khi mở lớp.
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                {availableSlots.map(slot => {
-                  const dayName = VIETNAMESE_DAYS.find(d => d.value === slot.dayOfWeek)?.label || `Thứ ${slot.dayOfWeek}`;
-                  const isSelected = selectedSlots.some(s => s.id === slot.id);
-                  return (
-                    <button
-                      key={slot.id}
-                      type="button"
-                      onClick={() => handleToggleSlot(slot)}
-                      className={`p-3 rounded-2xl border text-left flex flex-col gap-1 transition-all ${
-                        isSelected 
-                          ? "border-brand-primary bg-brand-primary/10 ring-2 ring-brand-primary/20 shadow-sm"
-                          : "border-slate-200 bg-white hover:border-slate-300"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-black text-slate-900">{dayName}</span>
-                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-brand-primary" />}
-                      </div>
-                      <span className="text-[11px] font-bold text-brand-primary">
-                        {slot.startTime} - {slot.endTime}
+            {/* 1. Raw Registered Slots */}
+            {availableSlots.length > 0 && (
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold text-sky-800 flex items-center gap-1">
+                  <span>📅</span> Lịch rảnh đã đăng ký ban đầu của bạn:
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {availableSlots.map((slot, idx) => {
+                    const dayLabel = VIETNAMESE_DAYS.find(d => d.value === slot.dayOfWeek)?.label || `Thứ ${slot.dayOfWeek}`;
+                    return (
+                      <span key={idx} className="px-2.5 py-1 rounded-lg bg-sky-50 text-sky-800 text-[11px] font-bold border border-sky-200">
+                        {dayLabel}: {slot.startTime} - {slot.endTime}
                       </span>
-                    </button>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 2. Occupied Slots from Existing Classes */}
+            {occupiedSlots.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[11px] font-bold text-rose-700 flex items-center gap-1">
+                  <span>🔴</span> Khung giờ đã bị chiếm bởi các lớp học trước đó (Tự động loại trừ, không cho chọn trùng):
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {occupiedSlots.map((occ, idx) => {
+                    const dayLabel = VIETNAMESE_DAYS.find(d => d.value === occ.dayOfWeek)?.label || `T${occ.dayOfWeek}`;
+                    return (
+                      <span key={idx} className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 text-[11px] font-bold border border-rose-200 flex items-center gap-1">
+                        <ShieldAlert className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                        {dayLabel}: {occ.startTime} - {occ.endTime} ({occ.className})
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 3. Net Free Intervals Available for New Class */}
+            <div className="space-y-1.5 pt-1">
+              <span className="text-[11px] font-bold text-emerald-800 flex items-center gap-1">
+                <span>🟢</span> Khung giờ rảnh còn dư sẵn sàng cho bạn xếp lớp mới (Tự động trừ thời gian đã chiếm):
+              </span>
+              {netFreeIntervals.length === 0 ? (
+                <p className="text-xs text-amber-700 font-bold bg-amber-50 p-2.5 rounded-xl border border-amber-200">
+                  Bạn chưa có khung giờ rảnh nào khả dụng. Vui lòng vào mục Lịch Rảnh để thêm lịch trống trước khi tạo lớp.
+                </p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {netFreeIntervals.map((free) => {
+                    const usable = free.durationMins >= durationPerSession;
+                    return (
+                      <span key={free.id} className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border ${
+                        usable 
+                          ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                          : "bg-slate-100 text-slate-500 border-slate-200 line-through"
+                      }`}>
+                        {free.slotName} ({free.durationMins} phút) {!usable ? "- Không đủ thời lượng" : ""}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Interactive Configuration Cards for Each Required Session */}
+          <div className="space-y-4 pt-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-slate-700">
+                Cấu hình thời gian cụ thể cho {sessionsPerWeek} buổi học trong tuần: <span className="text-rose-500">*</span>
+              </label>
+              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-lg ${
+                scheduleValidation.isValid 
+                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200" 
+                  : "bg-amber-50 text-amber-700 border border-amber-200"
+              }`}>
+                {scheduleValidation.isValid ? "✓ Lịch học hợp lệ" : "Vui lòng chọn đúng khung rảnh & giờ bắt đầu"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {configuredSessions.map((sess, idx) => {
+                const currentInterval = netFreeIntervals.find(i => i.id === sess.freeIntervalId);
+                const startTimeOptions = currentInterval 
+                  ? generateStartTimeOptions(currentInterval.startTime, currentInterval.endTime, durationPerSession)
+                  : [];
+
+                const minStart = currentInterval ? currentInterval.startTime : "00:00";
+                const maxStartMins = currentInterval 
+                  ? timeToMinutes(currentInterval.endTime) - durationPerSession 
+                  : 0;
+                const maxStart = currentInterval && maxStartMins >= timeToMinutes(currentInterval.startTime)
+                  ? minutesToTime(maxStartMins)
+                  : "23:59";
+
+                return (
+                  <div key={idx} className="p-4 bg-white border border-slate-200 rounded-2xl shadow-sm space-y-3 hover:border-brand-primary/40 transition-all">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <span className="text-xs font-black text-brand-primary uppercase">Buổi #{idx + 1}</span>
+                      {currentInterval && (
+                        <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                          {currentInterval.dayLabel}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Step 1: Select available free interval */}
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+                        1. Chọn Buổi / Khung giờ rảnh
+                      </label>
+                      <select 
+                        value={sess.freeIntervalId}
+                        onChange={(e) => handleSelectIntervalForSession(idx, e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-brand-primary"
+                      >
+                        <option value="">-- Chọn khung giờ rảnh --</option>
+                        {netFreeIntervals.map(free => {
+                          const usable = free.durationMins >= durationPerSession;
+                          return (
+                            <option key={free.id} value={free.id} disabled={!usable}>
+                              {free.slotName} ({free.durationMins} phút) {!usable ? "- Không đủ thời lượng" : ""}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+
+                    {/* Step 2: Manually enter start time in strictly 24-hour format within interval */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[10px] font-black uppercase text-slate-500">
+                          2. Nhập Giờ bắt đầu (24h)
+                        </label>
+                        {currentInterval && maxStartMins >= timeToMinutes(currentInterval.startTime) && (
+                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                            Khung hợp lệ: {minStart} ➔ {maxStart}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <input 
+                          type="text"
+                          placeholder="Ví dụ: 07:30 hoặc 14:00 (24h)"
+                          maxLength={5}
+                          value={sess.startTime || ""}
+                          onChange={(e) => handleSelectStartTime(idx, e.target.value)}
+                          onBlur={(e) => {
+                            const formatted = normalize24hTime(e.target.value);
+                            if (formatted && formatted !== e.target.value) {
+                              handleSelectStartTime(idx, formatted);
+                            }
+                          }}
+                          disabled={!currentInterval || maxStartMins < timeToMinutes(currentInterval.startTime)}
+                          className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 placeholder:font-normal placeholder:text-slate-400 focus:outline-none focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 disabled:opacity-50 transition-all"
+                        />
+
+                        {currentInterval && startTimeOptions.length > 0 && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-semibold text-slate-400 shrink-0">Hoặc chọn mốc:</span>
+                            <select 
+                              value={startTimeOptions.includes(sess.startTime) ? sess.startTime : ""}
+                              onChange={(e) => {
+                                if (e.target.value) handleSelectStartTime(idx, e.target.value);
+                              }}
+                              disabled={!currentInterval}
+                              className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 focus:outline-none focus:border-brand-primary"
+                            >
+                              <option value="">-- Mốc giờ bắt đầu (24h) --</option>
+                              {startTimeOptions.map(time => (
+                                <option key={time} value={time}>
+                                  Bắt đầu lúc {time}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Step 3: Auto calculated End Time display card */}
+                    <div className="p-3 bg-brand-primary/5 rounded-xl border border-brand-primary/10 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Thời gian buổi học:</span>
+                        <span className="text-[9px] font-bold text-brand-primary bg-brand-primary/10 px-1.5 py-0.5 rounded">
+                          Tự động +{durationPerSession}p
+                        </span>
+                      </div>
+                      <span className="text-sm font-black text-brand-primary block">
+                        {sess.startTime || "--:--"} ➔ {sess.endTime || "--:--"}
+                      </span>
+                      {currentInterval && (
+                        <span className="text-[10px] font-bold text-emerald-700 block">
+                          ✓ Khung rảnh đăng ký: {currentInterval.startTime} - {currentInterval.endTime}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Validation errors list */}
+            {scheduleValidation.errors.length > 0 && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl space-y-1 text-xs text-rose-700">
+                <span className="font-bold block">Vui lòng điều chỉnh lịch học:</span>
+                <ul className="list-disc pl-5 font-semibold space-y-0.5">
+                  {scheduleValidation.errors.map((err, i) => <li key={i}>{err}</li>)}
+                </ul>
               </div>
             )}
           </div>
@@ -881,7 +1420,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
             </div>
 
             <div className={`flex items-center gap-2 font-bold ${validationChecks.isSchedule ? "text-emerald-700" : "text-slate-400"}`}>
-              {validationChecks.isSchedule ? "✓" : "○"} Đã chọn đủ {sessionsPerWeek} buổi từ Lịch rảnh ({selectedSlots.length}/{sessionsPerWeek} buổi)
+              {validationChecks.isSchedule ? "✓" : "○"} Đã chọn đủ {sessionsPerWeek} buổi từ Lịch rảnh ({configuredSessions.length}/{sessionsPerWeek} buổi hợp lệ)
             </div>
 
             <div className={`flex items-center gap-2 font-bold ${validationChecks.isSyllabus ? "text-emerald-700" : "text-slate-400"}`}>

@@ -6,10 +6,10 @@ import iuh.fit.account_service.dto.tutor.PublicTutorResponse;
 import iuh.fit.account_service.dto.tutor.PublicTutorSubjectResponse;
 import iuh.fit.account_service.dto.tutor.SubjectCategoryResponse;
 import iuh.fit.account_service.dto.tutor.SubjectGroupResponse;
-import iuh.fit.account_service.entity.TutorProfile;
+import iuh.fit.account_service.entity.Tutor;
 import iuh.fit.account_service.exception.BadRequestException;
 import iuh.fit.account_service.exception.ResourceNotFoundException;
-import iuh.fit.account_service.repository.TutorProfileRepository;
+import iuh.fit.account_service.repository.TutorRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,14 +26,14 @@ public class PublicTutorService {
     private static final int DEFAULT_LIMIT = 12;
     private static final int MAX_LIMIT = 50;
 
-    private final TutorProfileRepository tutorProfileRepository;
+    private final TutorRepository tutorRepository;
     private final LearningTutorSubjectClient learningTutorSubjectClient;
 
     public PublicTutorService(
-            TutorProfileRepository tutorProfileRepository,
+            TutorRepository tutorRepository,
             LearningTutorSubjectClient learningTutorSubjectClient
     ) {
-        this.tutorProfileRepository = tutorProfileRepository;
+        this.tutorRepository = tutorRepository;
         this.learningTutorSubjectClient = learningTutorSubjectClient;
     }
 
@@ -49,15 +49,15 @@ public class PublicTutorService {
 
         String normalizedKeyword = normalizeKeyword(keyword);
         PageRequest pageRequest = PageRequest.of(0, normalizeLimit(limit));
-        List<TutorProfile> profiles = normalizedKeyword == null
-                ? tutorProfileRepository.findPublicTutors(pageRequest)
-                : tutorProfileRepository.findPublicTutorsByKeyword(normalizedKeyword, pageRequest);
+        List<Tutor> profiles = normalizedKeyword == null
+                ? tutorRepository.findPublicTutors(pageRequest)
+                : tutorRepository.findPublicTutorsByKeyword(normalizedKeyword, pageRequest);
 
         if (profiles.isEmpty()) {
             return List.of();
         }
 
-        List<Long> profileIds = profiles.stream().map(TutorProfile::getId).toList();
+        List<Long> profileIds = profiles.stream().map(Tutor::getId).toList();
         Map<Long, List<LearningTutorSubjectResponse>> subjectsByProfileId = learningTutorSubjectClient.getTutorSubjects(profileIds)
                 .stream()
                 .collect(Collectors.groupingBy(LearningTutorSubjectResponse::getTutorProfileId));
@@ -67,20 +67,17 @@ public class PublicTutorService {
                         profile,
                         filterListSubjects(subjectsByProfileId.getOrDefault(profile.getId(), List.of()), subjectId, minRate, maxRate)
                 ))
-                .filter(response -> !response.getSubjects().isEmpty())
+                .filter(response -> subjectId == null && minRate == null && maxRate == null
+                        || !response.getSubjects().isEmpty())
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public PublicTutorResponse getTutor(Long tutorProfileId) {
-        TutorProfile profile = tutorProfileRepository.findByIdAndActiveTrue(tutorProfileId)
+        Tutor profile = tutorRepository.findById(tutorProfileId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tutor profile not found"));
 
         List<LearningTutorSubjectResponse> subjects = learningTutorSubjectClient.getTutorSubjects(profile.getId());
-        if (subjects.isEmpty()) {
-            throw new ResourceNotFoundException("Tutor profile not found");
-        }
-
         return toResponse(profile, subjects);
     }
 
@@ -97,12 +94,14 @@ public class PublicTutorService {
                 .toList();
     }
 
-    private PublicTutorResponse toResponse(TutorProfile profile, List<LearningTutorSubjectResponse> subjects) {
+    private PublicTutorResponse toResponse(Tutor profile, List<LearningTutorSubjectResponse> subjects) {
         return new PublicTutorResponse(
                 profile.getId(),
                 profile.getUser().getId(),
                 profile.getUser().getFullName(),
-                profile.getBio(),
+                profile.getBio() == null || profile.getBio().isBlank()
+                        ? profile.getUser().getBio()
+                        : profile.getBio(),
                 subjects.stream().map(this::toSubjectResponse).toList(),
                 profile.getCreatedAt()
         );

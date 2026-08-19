@@ -2,6 +2,7 @@ package iuh.fit.learning_service.entity;
 
 import iuh.fit.learning_service.enums.ClassRoomStatus;
 import iuh.fit.learning_service.enums.DurationUnit;
+import iuh.fit.learning_service.enums.JoinMode;
 import iuh.fit.learning_service.enums.LearningMode;
 import iuh.fit.learning_service.enums.SyllabusMode;
 import jakarta.persistence.*;
@@ -35,6 +36,9 @@ public class ClassRoom {
     private String tutorEmail;
 
     private Long tutorProfileId;
+
+    @Column(length = 255)
+    private String tutorFullName;
 
     @Column(nullable = false, length = 255)
     private String name;
@@ -89,6 +93,13 @@ public class ClassRoom {
 
     @Column(length = 1000)
     private String syllabusFileUrl;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private JoinMode joinMode = JoinMode.OPEN_REQUEST;
+
+    @Column(length = 50)
+    private String joinKey;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)

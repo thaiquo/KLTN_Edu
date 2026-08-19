@@ -52,6 +52,26 @@ public class TutorClassRoomController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    @PutMapping("/{id}/details")
+    public ResponseEntity<ClassRoomDtos.ClassRoomResponse> updateClassDetails(
+            Authentication authentication,
+            @PathVariable Long id,
+            @Valid @RequestBody ClassRoomDtos.UpdateClassDetailsRequest request
+    ) {
+        ClassRoomDtos.ClassRoomResponse response = service.updateClassDetails(authentication.getName(), id, request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/{id}/visibility")
+    public ResponseEntity<ClassRoomDtos.ClassRoomResponse> updateVisibility(
+            Authentication authentication,
+            @PathVariable Long id,
+            @Valid @RequestBody ClassRoomDtos.UpdateVisibilityRequest request
+    ) {
+        ClassRoomDtos.ClassRoomResponse response = service.updateVisibility(authentication.getName(), id, request);
+        return ResponseEntity.ok(response);
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteClass(
             Authentication authentication,

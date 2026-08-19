@@ -1,7 +1,11 @@
 package iuh.fit.learning_service.controller;
 
+import iuh.fit.learning_service.entity.ClassRoom;
+import iuh.fit.learning_service.entity.ClassSchedule;
 import iuh.fit.learning_service.entity.TutorAvailability;
+import iuh.fit.learning_service.enums.ClassRoomStatus;
 import iuh.fit.learning_service.exception.BadRequestException;
+import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.TutorAvailabilityRepository;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -23,9 +27,14 @@ import java.util.stream.Collectors;
 public class TutorAvailabilityController {
 
     private final TutorAvailabilityRepository repository;
+    private final ClassRoomRepository classRoomRepository;
 
-    public TutorAvailabilityController(TutorAvailabilityRepository repository) {
+    public TutorAvailabilityController(
+            TutorAvailabilityRepository repository,
+            ClassRoomRepository classRoomRepository
+    ) {
         this.repository = repository;
+        this.classRoomRepository = classRoomRepository;
     }
 
     public record AvailabilitySlotDto(
@@ -56,6 +65,7 @@ public class TutorAvailabilityController {
     ) {
         String tutorEmail = authentication.getName();
         List<ValidatedSlot> slots = validate(request == null ? null : request.slots());
+        validateExistingClassesRemainCovered(tutorEmail, slots);
 
         repository.deleteByTutorEmailIgnoreCase(tutorEmail);
 
@@ -118,6 +128,36 @@ public class TutorAvailabilityController {
         } catch (DateTimeParseException exception) {
             throw new BadRequestException("Availability time must use HH:mm format.");
         }
+    }
+
+    private void validateExistingClassesRemainCovered(String tutorEmail, List<ValidatedSlot> availability) {
+        for (ClassRoom classRoom : classRoomRepository.findByTutorEmailWithDetails(tutorEmail)) {
+            if (!blocksTutorSchedule(classRoom.getStatus())) continue;
+            for (ClassSchedule schedule : classRoom.getSchedules()) {
+                LocalTime classStart = LocalTime.parse(schedule.getStartTime());
+                LocalTime classEnd = LocalTime.parse(schedule.getEndTime());
+                boolean covered = availability.stream().anyMatch(slot ->
+                        slot.dayOfWeek().equals(schedule.getDayOfWeek())
+                                && !classStart.isBefore(slot.startTime())
+                                && !classEnd.isAfter(slot.endTime())
+                );
+                if (!covered) {
+                    String dayLabel = schedule.getDayOfWeek() == 8 ? "Chủ nhật" : "Thứ " + schedule.getDayOfWeek();
+                    throw new BadRequestException(String.format(
+                            "Không thể lưu lịch rảnh: lớp '%s' đang chiếm %s %s - %s.",
+                            classRoom.getName(), dayLabel, schedule.getStartTime(), schedule.getEndTime()
+                    ));
+                }
+            }
+        }
+    }
+
+    private boolean blocksTutorSchedule(ClassRoomStatus status) {
+        return status == ClassRoomStatus.PENDING_APPROVAL
+                || status == ClassRoomStatus.ACTIVE
+                || status == ClassRoomStatus.PRIVATE
+                || status == ClassRoomStatus.PUBLISHED
+                || status == ClassRoomStatus.LOCKED;
     }
 
     private record ValidatedSlot(Integer dayOfWeek, LocalTime startTime, LocalTime endTime) {}

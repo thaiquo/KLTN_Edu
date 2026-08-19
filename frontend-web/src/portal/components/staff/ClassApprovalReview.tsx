@@ -13,6 +13,7 @@ interface ClassItem {
   description: string;
   tutorEmail: string;
   tutorProfileId?: number;
+  tutorFullName?: string;
   registration?: {
     id: number;
     subjectName: string;
@@ -88,8 +89,14 @@ export function ClassApprovalReview() {
 
   // Distinct lists for filters
   const distinctTutors = useMemo(() => {
-    const emails = Array.from(new Set(classes.map(c => c.tutorEmail).filter(Boolean)));
-    return emails.sort();
+    const tutors = new Map<string, string>();
+    classes.forEach((classRoom) => {
+      if (classRoom.tutorEmail) {
+        tutors.set(classRoom.tutorEmail, getTutorDisplayName(classRoom));
+      }
+    });
+    return Array.from(tutors, ([email, fullName]) => ({ email, fullName }))
+      .sort((left, right) => left.fullName.localeCompare(right.fullName, "vi"));
   }, [classes]);
 
   const distinctSubjects = useMemo(() => {
@@ -106,10 +113,11 @@ export function ClassApprovalReview() {
       if (searchKeyword.trim()) {
         const q = searchKeyword.toLowerCase();
         const matchName = c.name.toLowerCase().includes(q);
+        const matchTutorName = getTutorDisplayName(c).toLowerCase().includes(q);
         const matchEmail = c.tutorEmail.toLowerCase().includes(q);
         const matchSub = c.registration?.subjectName?.toLowerCase().includes(q);
         const matchLevel = c.level?.name?.toLowerCase().includes(q);
-        return matchName || matchEmail || matchSub || matchLevel;
+        return matchName || matchTutorName || matchEmail || matchSub || matchLevel;
       }
       return true;
     });
@@ -164,10 +172,17 @@ export function ClassApprovalReview() {
 
   const renderStatusBadge = (status: string) => {
     switch (status) {
-      case "ACTIVE":
+      case "PUBLISHED":
         return (
           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" /> Đã duyệt (Mở lớp)
+            <CheckCircle2 className="w-3 h-3" /> Đang Mở Bán
+          </span>
+        );
+      case "PRIVATE":
+      case "ACTIVE":
+        return (
+          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-sky-50 text-sky-700 border border-sky-200 inline-flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3" /> Đã duyệt (Chờ Mở bán)
           </span>
         );
       case "PENDING_APPROVAL":
@@ -292,11 +307,11 @@ export function ClassApprovalReview() {
             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:border-brand-primary"
           >
             <option value="ALL">-- Tất cả Giảng viên ({distinctTutors.length}) --</option>
-            {distinctTutors.map(tEmail => {
-              const count = classes.filter(c => c.tutorEmail.toLowerCase() === tEmail.toLowerCase()).length;
+            {distinctTutors.map(tutor => {
+              const count = classes.filter(c => c.tutorEmail.toLowerCase() === tutor.email.toLowerCase()).length;
               return (
-                <option key={tEmail} value={tEmail}>
-                  {tEmail} ({count} lớp)
+                <option key={tutor.email} value={tutor.email}>
+                  {tutor.fullName} ({count} lớp)
                 </option>
               );
             })}
@@ -380,7 +395,8 @@ export function ClassApprovalReview() {
                     </td>
 
                     <td className="py-3.5 px-4 max-w-[180px]">
-                      <div className="font-bold text-slate-800 truncate" title={cls.tutorEmail}>{cls.tutorEmail}</div>
+                      <div className="font-bold text-slate-800 truncate" title={getTutorDisplayName(cls)}>{getTutorDisplayName(cls)}</div>
+                      <div className="text-[10px] text-slate-500 truncate" title={cls.tutorEmail}>{cls.tutorEmail}</div>
                       <div className="text-[10px] text-slate-400">{new Date(cls.createdAt).toLocaleDateString("vi-VN")}</div>
                     </td>
 
@@ -466,7 +482,10 @@ export function ClassApprovalReview() {
                   {selectedClass.registration?.subjectName} &bull; {selectedClass.level?.name}
                 </span>
                 <h3 className="font-display font-black text-xl text-slate-900 mt-1">{selectedClass.name}</h3>
-                <p className="text-xs text-slate-500 font-semibold mt-0.5">Gia sư: <strong>{selectedClass.tutorEmail}</strong></p>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  Gia sư: <strong>{getTutorDisplayName(selectedClass)}</strong>
+                  <span className="ml-1 text-slate-400">({selectedClass.tutorEmail})</span>
+                </p>
               </div>
 
               <button 
@@ -628,7 +647,7 @@ export function ClassApprovalReview() {
           <div className="bg-white border border-slate-200 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 animate-scale-in">
             <h3 className="font-display font-black text-lg text-slate-900">Từ chối duyệt lớp học</h3>
             <p className="text-xs text-slate-500 font-semibold">
-              Lớp học: <strong>{rejectingClass.name}</strong> ({rejectingClass.tutorEmail})
+              Lớp học: <strong>{rejectingClass.name}</strong> - Gia sư: <strong>{getTutorDisplayName(rejectingClass)}</strong>
             </p>
 
             <div>
@@ -664,4 +683,8 @@ export function ClassApprovalReview() {
       )}
     </div>
   );
+}
+
+function getTutorDisplayName(classRoom: ClassItem) {
+  return classRoom.tutorFullName?.trim() || classRoom.tutorEmail;
 }

@@ -288,7 +288,7 @@ function NavItem({ link, className, onClick, children }) {
 
 function AccountMenu({ user, onSwitchRole, onActivateStudent, onLogout, onClose }) {
   const isStaffOrAdmin = user?.roles?.includes('STAFF') || user?.roles?.includes('ADMIN');
-  const activeRole = user?.activeRole;
+  const isTutor = user?.roles?.includes('TUTOR') || user?.activeRole === 'TUTOR';
 
   return (
     <div
@@ -299,44 +299,35 @@ function AccountMenu({ user, onSwitchRole, onActivateStudent, onLogout, onClose 
         Hồ sơ cá nhân
       </MenuLink>
 
+      <MenuLink to="/profile" icon={<Settings size={16} />} onClick={onClose}>
+        Cài đặt tài khoản
+      </MenuLink>
+
+      <MenuLink to="/profile/password" icon={<KeyRound size={16} />} onClick={onClose}>
+        Đổi mật khẩu
+      </MenuLink>
+
       {isStaffOrAdmin && (
         <MenuLink to="/staff/tutors" icon={<Settings size={16} />} onClick={onClose}>
           Staff Dashboard
         </MenuLink>
       )}
 
-      {!isStaffOrAdmin && activeRole === 'STUDENT' && (
-        <>
-          {!user?.hasTutorProfile ? (
-            <MenuLink to="/become-tutor" icon={<GraduationCap size={16} />} onClick={onClose}>
-              Trở thành gia sư
-            </MenuLink>
-          ) : user?.tutorStatus === 'PENDING' || user?.tutorStatus === 'REJECTED' ? (
-            <MenuLink to="/tutor-next-step" icon={<GraduationCap size={16} />} onClick={onClose}>
-              Hồ sơ gia sư ({user?.tutorStatus === 'PENDING' ? 'Chờ duyệt' : 'Cần cập nhật'})
-            </MenuLink>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onSwitchRole('TUTOR')}
-              className="flex w-full items-center gap-3 rounded-[10px] px-3 py-3 text-left text-sm font-extrabold text-indigo-600 hover:bg-indigo-50"
-              role="menuitem"
-            >
-              <RefreshCw size={16} />
-              Chuyển sang chế độ Gia sư
-            </button>
-          )}
-        </>
+      {isTutor && (
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            onSwitchRole('TUTOR');
+          }}
+          className="flex w-full items-center gap-3 rounded-[10px] px-3 py-3 text-left text-sm font-extrabold text-indigo-600 hover:bg-indigo-50"
+          role="menuitem"
+        >
+          <RefreshCw size={16} />
+          Chuyển sang Dashboard Gia sư
+        </button>
       )}
 
-
-
-      <MenuLink to="/profile" icon={<Settings size={16} />} onClick={onClose}>
-        Cài đặt tài khoản
-      </MenuLink>
-      <MenuLink to="/profile/password" icon={<KeyRound size={16} />} onClick={onClose}>
-        Đổi mật khẩu
-      </MenuLink>
       <button
         type="button"
         onClick={onLogout}

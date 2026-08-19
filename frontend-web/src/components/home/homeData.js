@@ -1,13 +1,13 @@
 export const homeNavLinks = [
   { label: 'Tìm gia sư', href: '/tutors' },
-  { label: 'Lớp học', href: '#community' },
+  { label: 'Tìm lớp', href: '/classes' },
   { label: 'Gợi ý phù hợp', href: '#matching' },
   { label: 'An toàn & hợp đồng', href: '#trust' },
 ];
 
 export const studentNavLinks = [
   { label: 'Tìm gia sư', href: '/tutors', icon: 'search' },
-  { label: 'Tìm lớp', href: '#community', icon: 'book' },
+  { label: 'Tìm lớp', href: '/classes', icon: 'book' },
   { label: 'Lớp học của tôi', href: '#my-learning', icon: 'book' },
   { label: 'Tin nhắn', href: '#student-inbox', icon: 'message' },
   { label: 'Gợi ý cho bạn', href: '#matching', icon: 'sparkles' },

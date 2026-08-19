@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Calendar, Edit3, Save, Trash2, Plus, Clock, AlertTriangle, CheckCircle2 } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { Calendar, Edit3, Save, Trash2, Plus, Clock, AlertTriangle, CheckCircle2, ShieldAlert, BookOpen, Video, MapPin } from "lucide-react";
 import { classApi } from "../../api/classes";
 
 export interface AvailabilitySlot {
@@ -7,6 +7,24 @@ export interface AvailabilitySlot {
   dayOfWeek: number; // 2 -> Thứ 2, 3 -> Thứ 3, ..., 8 -> Chủ nhật
   startTime: string; // "HH:MM"
   endTime: string; // "HH:MM"
+}
+
+interface OccupiedClassSlot {
+  id: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  className: string;
+  status: string;
+  learningMode: string;
+}
+
+interface NetFreeSegment {
+  id: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  durationMins: number;
 }
 
 const VIETNAMESE_DAYS = [
@@ -19,8 +37,86 @@ const VIETNAMESE_DAYS = [
   { value: 8, label: "Chủ nhật" }
 ];
 
+const BLOCKING_CLASS_STATUSES = new Set([
+  "PENDING_APPROVAL",
+  "ACTIVE",
+  "PRIVATE",
+  "PUBLISHED",
+  "LOCKED"
+]);
+
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 const MINUTES = ["00", "15", "30", "45"];
+
+function timeToMinutes(t: string): number {
+  if (!t) return 0;
+  const [h, m] = t.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function minutesToTime(mins: number): string {
+  const h = Math.floor(mins / 60) % 24;
+  const m = mins % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function getClassStatusLabel(status: string): string {
+  switch (status) {
+    case "PUBLISHED": return "Đang mở bán";
+    case "ACTIVE": return "Đang hoạt động";
+    case "PRIVATE": return "Đã duyệt";
+    case "LOCKED": return "Đã khóa";
+    case "PENDING_APPROVAL": return "Chờ duyệt";
+    default: return status;
+  }
+}
+
+function computeNetFreeIntervals(rawSlots: AvailabilitySlot[], occupiedSlots: OccupiedClassSlot[]): NetFreeSegment[] {
+  const result: NetFreeSegment[] = [];
+
+  for (const raw of rawSlots) {
+    const dayOccupied = occupiedSlots
+      .filter(o => o.dayOfWeek === raw.dayOfWeek)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    let curr = timeToMinutes(raw.startTime);
+    const winEnd = timeToMinutes(raw.endTime);
+
+    for (const occ of dayOccupied) {
+      const occStart = timeToMinutes(occ.startTime);
+      const occEnd = timeToMinutes(occ.endTime);
+
+      if (occEnd <= curr) continue;
+      if (occStart >= winEnd) break;
+
+      if (occStart > curr) {
+        const segEnd = Math.min(occStart, winEnd);
+        if (segEnd > curr) {
+          result.push({
+            id: `net-${raw.dayOfWeek}-${curr}-${segEnd}`,
+            dayOfWeek: raw.dayOfWeek,
+            startTime: minutesToTime(curr),
+            endTime: minutesToTime(segEnd),
+            durationMins: segEnd - curr
+          });
+        }
+      }
+      curr = Math.min(winEnd, Math.max(curr, occEnd));
+    }
+
+    if (curr < winEnd) {
+      result.push({
+        id: `net-${raw.dayOfWeek}-${curr}-${winEnd}`,
+        dayOfWeek: raw.dayOfWeek,
+        startTime: minutesToTime(curr),
+        endTime: minutesToTime(winEnd),
+        durationMins: winEnd - curr
+      });
+    }
+  }
+
+  return result;
+}
 
 function TimeInput24h({ value, onChange, className }: { value: string; onChange: (v: string) => void; className?: string }) {
   const [h, m] = (value || "00:00").split(":");
@@ -47,6 +143,7 @@ function TimeInput24h({ value, onChange, className }: { value: string; onChange:
 
 export function TutorAvailabilityScheduler() {
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
+  const [occupiedClasses, setOccupiedClasses] = useState<OccupiedClassSlot[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [successMessage, setSuccessMessage] = useState("");
@@ -54,13 +151,17 @@ export function TutorAvailabilityScheduler() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  // Load from API / DB on mount
+  // Load availability & created classes from API
   useEffect(() => {
-    async function loadAvailability() {
+    async function loadData() {
       setLoading(true);
       setLoadError("");
       try {
-        const dbSlots = await classApi.getAvailability();
+        const [dbSlots, myClasses] = await Promise.all([
+          classApi.getAvailability().catch(() => []),
+          classApi.getMyClasses().catch(() => [])
+        ]);
+
         if (Array.isArray(dbSlots)) {
           setSlots(dbSlots.map((s: any) => ({
             id: String(s.id || Math.random()),
@@ -69,6 +170,29 @@ export function TutorAvailabilityScheduler() {
             endTime: s.endTime
           })));
         }
+
+        const occupied: OccupiedClassSlot[] = [];
+        if (Array.isArray(myClasses)) {
+          for (const cls of myClasses) {
+            if (BLOCKING_CLASS_STATUSES.has(cls.status)) {
+              if (Array.isArray(cls.schedules)) {
+                for (const sch of cls.schedules) {
+                  occupied.push({
+                    id: `occ-${cls.id}-${sch.id}`,
+                    dayOfWeek: sch.dayOfWeek,
+                    startTime: sch.startTime,
+                    endTime: sch.endTime,
+                    className: cls.name,
+                    status: cls.status,
+                    learningMode: cls.learningMode
+                  });
+                }
+              }
+            }
+          }
+        }
+        setOccupiedClasses(occupied);
+
       } catch (err: any) {
         console.error("Load availability error", err);
         setSlots([]);
@@ -77,8 +201,13 @@ export function TutorAvailabilityScheduler() {
         setLoading(false);
       }
     }
-    loadAvailability();
+    loadData();
   }, []);
+
+  // Compute net free intervals after excluding occupied class slots
+  const netFreeSegments = useMemo(() => {
+    return computeNetFreeIntervals(slots, occupiedClasses);
+  }, [slots, occupiedClasses]);
 
   // Helper: check duration is at least 90 minutes
   const getDurationInMinutes = (start: string, end: string): number => {
@@ -148,6 +277,16 @@ export function TutorAvailabilityScheduler() {
       currentErrors.push("Tối thiểu phải có 3 buổi rảnh mỗi tuần");
     }
 
+    const uncoveredClass = occupiedClasses.find(occupied => !currentSlots.some(slot =>
+      slot.dayOfWeek === occupied.dayOfWeek
+        && timeToMinutes(occupied.startTime) >= timeToMinutes(slot.startTime)
+        && timeToMinutes(occupied.endTime) <= timeToMinutes(slot.endTime)
+    ));
+    if (uncoveredClass) {
+      const dayLabel = VIETNAMESE_DAYS.find(day => day.value === uncoveredClass.dayOfWeek)?.label || `Thứ ${uncoveredClass.dayOfWeek}`;
+      currentErrors.push(`Lịch rảnh phải bao phủ lớp "${uncoveredClass.className}" (${dayLabel} ${uncoveredClass.startTime} - ${uncoveredClass.endTime})`);
+    }
+
     return currentErrors;
   };
 
@@ -206,7 +345,6 @@ export function TutorAvailabilityScheduler() {
     setSaving(true);
     setErrors([]);
     try {
-      // Save to Database via API
       const savedSlots = await classApi.saveAvailability(slots.map(s => ({
         dayOfWeek: s.dayOfWeek,
         startTime: s.startTime,
@@ -253,18 +391,21 @@ export function TutorAvailabilityScheduler() {
             <Calendar className="w-6 h-6" />
           </span>
           <div>
-            <h3 className="font-display font-black text-lg text-brand-text">Lịch trống giảng dạy</h3>
-            <p className="text-xs text-brand-text-variant mt-1">Thiết lập các buổi lặp lại hằng tuần để học viên có thể đặt lớp.</p>
+            <h3 className="font-display font-black text-lg text-brand-text">Lịch trống & Lịch dạy của gia sư</h3>
+            <p className="text-xs text-brand-text-variant mt-1">
+              Phân biệt rõ Lịch rảnh đã đăng ký và Khung giờ đã bị chiếm bởi các Lớp học đã tạo.
+            </p>
           </div>
         </div>
         <div>
           {isEditing ? (
             <button
               onClick={handleSave}
-              className="px-5 py-2.5 bg-brand-primary text-white hover:bg-brand-primary/95 text-xs font-display font-black tracking-widest rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-2 font-bold"
+              disabled={saving}
+              className="px-5 py-2.5 bg-brand-primary text-white hover:bg-brand-primary/95 text-xs font-display font-black tracking-widest rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-2 font-bold disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
-              LƯU LỊCH TRỐNG
+              {saving ? "ĐANG LƯU..." : "LƯU LỊCH TRỐNG"}
             </button>
           ) : (
             <button
@@ -275,23 +416,26 @@ export function TutorAvailabilityScheduler() {
               className="px-5 py-2.5 bg-brand-secondary text-white hover:bg-brand-secondary-hover text-xs font-display font-black tracking-widest rounded-xl transition-all cursor-pointer shadow-md flex items-center gap-2 font-bold"
             >
               <Edit3 className="w-4 h-4" />
-              CHỈNH SỬA
+              CHỈNH SỬA LỊCH RẢNH
             </button>
           )}
         </div>
       </div>
 
-      {/* Alert Rule Box */}
+      {/* Alert Rule & Stats Box */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="md:col-span-2 bg-[#f0f5ff] border border-blue-100 rounded-2xl p-4 flex items-center gap-3 text-blue-900 text-xs font-semibold leading-relaxed">
           <Clock className="w-5 h-5 text-blue-600 shrink-0" />
-          <p>
-            <span className="font-bold">Quy định:</span> tối thiểu 3 buổi/tuần (ở 3 thứ khác nhau); mỗi buổi tối thiểu 1 giờ 30 phút (có thể dài hơn); không được trùng giờ trong cùng ngày.
-          </p>
+          <div>
+            <p className="font-bold">Quy định cài đặt Lịch rảnh:</p>
+            <p className="text-[11px] text-blue-800 mt-0.5">
+              Tối thiểu 3 buổi/tuần (ở 3 thứ khác nhau); mỗi buổi tối thiểu 90 phút. Khi bạn tạo lớp học, khung giờ tương ứng sẽ tự động được đánh dấu là <strong>Đã bị chiếm</strong>.
+            </p>
+          </div>
         </div>
         <div className="bg-white border border-brand-border/30 rounded-2xl p-4 flex flex-col justify-center">
           <div className="flex justify-between items-center text-xs font-bold text-slate-700">
-            <span>ĐÃ TẠO</span>
+            <span>LỊCH ĐÃ KHAI BÁO</span>
             <span className={distinctDaysCount >= 3 && totalSessions >= 3 ? "text-emerald-600 font-extrabold" : "text-amber-600 font-extrabold"}>
               {distinctDaysCount}/3 buổi tối thiểu (ở {distinctDaysCount} thứ)
             </span>
@@ -305,28 +449,78 @@ export function TutorAvailabilityScheduler() {
         </div>
       </div>
 
-      {/* Weekday Grid */}
-      <div className={`grid grid-cols-2 md:grid-cols-7 gap-3 ${loading ? "opacity-50 pointer-events-none" : ""}`}>
+      {/* Legend Bar */}
+      <div className="flex items-center gap-4 bg-white p-3 border border-slate-200 rounded-2xl text-xs font-bold">
+        <span className="text-slate-500 uppercase tracking-wider text-[10px] font-black">Chú thích màu sắc:</span>
+        <span className="flex items-center gap-1.5 text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+          🟢 Khoảng rảnh khả dụng (Sẵn sàng mở lớp)
+        </span>
+        <span className="flex items-center gap-1.5 text-rose-800 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200">
+          <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+          🔴 Đã bị chiếm bởi Lớp học
+        </span>
+      </div>
+
+      {/* Weekday Grid with Occupied vs Free Slots */}
+      <div className={`grid grid-cols-1 md:grid-cols-7 gap-3 ${loading ? "opacity-50 pointer-events-none" : ""}`}>
         {VIETNAMESE_DAYS.map(day => {
-          const daySlots = slots.filter(s => s.dayOfWeek === day.value)
+          const dayRegistered = slots.filter(s => s.dayOfWeek === day.value)
             .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+          const dayOccupied = occupiedClasses.filter(o => o.dayOfWeek === day.value)
+            .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+          const dayNetFree = netFreeSegments.filter(n => n.dayOfWeek === day.value);
           
           return (
-            <div key={day.value} className="bg-white border border-brand-border/30 rounded-2xl p-4 min-h-[160px] flex flex-col gap-2">
-              <h4 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2 text-center">{day.label}</h4>
-              <div className="flex-1 flex flex-col gap-2 justify-start mt-2">
-                {daySlots.length > 0 ? (
-                  daySlots.map(slot => (
-                    <div 
-                      key={slot.id} 
-                      className="px-2 py-2 bg-brand-primary/5 text-brand-primary rounded-xl border border-brand-primary/10 flex flex-col items-center justify-center gap-1 text-[11px] font-bold"
-                    >
-                      <Clock className="w-3.5 h-3.5 text-brand-primary" />
-                      <span>{slot.startTime} - {slot.endTime}</span>
+            <div key={day.value} className="bg-white border border-brand-border/30 rounded-2xl p-4 min-h-[200px] flex flex-col gap-2 shadow-sm">
+              <h4 className="text-xs font-black text-slate-800 border-b border-slate-100 pb-2 text-center flex items-center justify-center gap-1">
+                <span>{day.label}</span>
+                {dayOccupied.length > 0 && (
+                  <span className="px-1.5 py-0.2 rounded bg-rose-100 text-rose-700 text-[9px] font-bold">
+                    {dayOccupied.length} lớp
+                  </span>
+                )}
+              </h4>
+
+              <div className="flex-1 flex flex-col gap-2 justify-start mt-1">
+                {/* Render Occupied Class Slots */}
+                {dayOccupied.map(occ => (
+                  <div 
+                    key={occ.id}
+                    className="p-2 bg-rose-50 text-rose-800 rounded-xl border border-rose-200 flex flex-col gap-0.5 text-[11px] font-bold"
+                    title={`Lớp: ${occ.className}`}
+                  >
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="font-black text-rose-900 truncate max-w-[80px]">{occ.className}</span>
+                      <span className="px-1 py-0.2 rounded bg-rose-200 text-rose-900 text-[8px]">
+                        {getClassStatusLabel(occ.status)}
+                      </span>
                     </div>
-                  ))
-                ) : (
-                  <span className="text-[10px] text-slate-400 font-semibold text-center italic mt-4">Trống</span>
+                    <div className="flex items-center gap-1 text-[10px] text-rose-700">
+                      <Clock className="w-3 h-3 text-rose-500 shrink-0" />
+                      <span>{occ.startTime} - {occ.endTime}</span>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Render Net Free Intervals */}
+                {dayNetFree.map(seg => (
+                  <div 
+                    key={seg.id}
+                    className="p-2 bg-emerald-50 text-emerald-800 rounded-xl border border-emerald-200 flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold"
+                  >
+                    <div className="flex items-center gap-1 text-[10px]">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                      <span>Rảnh: {seg.startTime} - {seg.endTime}</span>
+                    </div>
+                    <span className="text-[9px] text-emerald-600 font-semibold">({seg.durationMins} phút)</span>
+                  </div>
+                ))}
+
+                {dayRegistered.length === 0 && dayOccupied.length === 0 && (
+                  <span className="text-[10px] text-slate-400 font-semibold text-center italic mt-6">Chưa có lịch</span>
                 )}
               </div>
             </div>
@@ -336,9 +530,9 @@ export function TutorAvailabilityScheduler() {
 
       {/* List of Free Slots / Editor */}
       <div className="bg-white border border-brand-border/30 rounded-3xl p-6 shadow-sm space-y-6">
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center border-b border-slate-100 pb-4">
           <h3 className="font-display font-black text-sm text-brand-text uppercase tracking-wider">
-            {isEditing ? "Các buổi trống" : "Các buổi trống hằng tuần"}
+            {isEditing ? "Chỉnh sửa Khung Giờ Rảnh Đăng Ký" : "Danh sách Lịch Rảnh & Lớp Học Đã Tạo"}
           </h3>
           {isEditing && (
             <div className="flex gap-2">
@@ -360,7 +554,7 @@ export function TutorAvailabilityScheduler() {
 
         {isEditing ? (
           <div className="space-y-4">
-            {slots.map((slot, index) => (
+            {slots.map((slot) => (
               <div 
                 key={slot.id} 
                 className="grid grid-cols-1 sm:grid-cols-[1.5fr_1fr_1fr_auto] gap-4 items-end p-4 bg-slate-50 border border-slate-200 rounded-2xl hover:border-brand-primary/20 transition-all"
@@ -425,30 +619,66 @@ export function TutorAvailabilityScheduler() {
             )}
           </div>
         ) : (
-          <div className="space-y-3">
-            {slots.length > 0 ? (
-              [...slots].sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime))
-                .map((slot) => {
-                  const dayName = VIETNAMESE_DAYS.find(d => d.value === slot.dayOfWeek)?.label || "Thứ";
-                  return (
-                    <div key={slot.id} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-between hover:border-brand-secondary/20 transition-all">
-                      <div className="flex items-center gap-4">
-                        <div className="text-center font-display border-r border-slate-200 pr-4 min-w-[70px]">
-                          <p className="font-black text-brand-secondary text-sm leading-none">{dayName}</p>
+          <div className="space-y-4">
+            {/* Occupied slots by created classes */}
+            {occupiedClasses.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-black text-rose-800 uppercase tracking-wider">
+                  1. Khung giờ đã bị chiếm bởi Lớp học đã tạo ({occupiedClasses.length} buổi):
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {occupiedClasses.map((occ) => {
+                    const dayName = VIETNAMESE_DAYS.find(d => d.value === occ.dayOfWeek)?.label || "Thứ";
+                    return (
+                      <div key={occ.id} className="p-3.5 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between text-xs font-bold text-rose-900">
+                        <div className="flex items-center gap-3">
+                          <span className="px-2.5 py-1 rounded-lg bg-rose-200 text-rose-900 text-[11px] font-black">{dayName}</span>
+                          <div>
+                            <p className="font-extrabold">{occ.className}</p>
+                            <p className="text-[11px] text-rose-700 mt-0.5">{occ.startTime} - {occ.endTime}</p>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
-                          <Clock className="w-4 h-4 text-slate-400" />
-                          <span>{slot.startTime} - {slot.endTime}</span>
-                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-200 text-rose-900">
+                          {getClassStatusLabel(occ.status)}
+                        </span>
                       </div>
-                    </div>
-                  );
-                })
-            ) : (
-              <div className="text-center py-10 text-slate-400 font-semibold italic">
-                Chưa có lịch trống nào được thiết lập. Hãy bấm nút "Chỉnh sửa" để cài đặt.
+                    );
+                  })}
+                </div>
               </div>
             )}
+
+            {/* Registered Availability Slots */}
+            <div className="space-y-2 pt-2">
+              <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                2. Tổng khung giờ rảnh đã đăng ký ({slots.length} khung giờ):
+              </h4>
+              {slots.length > 0 ? (
+                <div className="space-y-2">
+                  {[...slots].sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime))
+                    .map((slot) => {
+                      const dayName = VIETNAMESE_DAYS.find(d => d.value === slot.dayOfWeek)?.label || "Thứ";
+                      return (
+                        <div key={slot.id} className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between hover:border-brand-secondary/20 transition-all">
+                          <div className="flex items-center gap-4">
+                            <div className="text-center font-display border-r border-slate-200 pr-4 min-w-[70px]">
+                              <p className="font-black text-brand-secondary text-sm leading-none">{dayName}</p>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                              <Clock className="w-4 h-4 text-slate-400" />
+                              <span>{slot.startTime} - {slot.endTime}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-slate-400 font-semibold italic border-2 border-dashed border-slate-200 rounded-2xl">
+                  Chưa có lịch trống nào được thiết lập. Hãy bấm nút "Chỉnh sửa lịch rảnh" để cài đặt.
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

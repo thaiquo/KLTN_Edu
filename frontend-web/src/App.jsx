@@ -13,6 +13,7 @@ import { TutorNextStepPage } from './pages/TutorNextStepPage';
 import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { PublicTutorProfilePage } from './pages/tutor/PublicTutorProfilePage';
 import { TutorMarketplacePage } from './pages/tutor/TutorMarketplacePage';
+import { ClassMarketplacePage } from './pages/class/ClassMarketplacePage';
 import { TutorProfilePage } from './pages/tutor/TutorProfilePage';
 import { TeachingRegistrationPage } from './pages/tutor/TeachingRegistrationPage';
 
@@ -149,6 +150,7 @@ export default function App() {
           <Route path="/reset-password" element={<Gate guest><ResetPasswordPage /></Gate>} />
           <Route path="/tutors" element={<TutorMarketplacePage />} />
           <Route path="/tutors/:id" element={<PublicTutorProfilePage />} />
+          <Route path="/classes" element={<ClassMarketplacePage />} />
           <Route path="/profile" element={<ProtectedProfile />} />
           <Route path="/profile/password" element={<ProtectedChangePassword />} />
           <Route path="/become-tutor" element={<ProtectedBecomeTutor />} />

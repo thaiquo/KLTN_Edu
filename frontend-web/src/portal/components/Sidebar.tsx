@@ -17,7 +17,8 @@ import {
   LogOut,
   PlayCircle,
   BarChart3,
-  ShieldAlert
+  ShieldAlert,
+  Globe
 } from "lucide-react";
 import { UserRole } from "../types";
 
@@ -158,6 +159,15 @@ export function Sidebar({
       )}
 
       <div className={`space-y-1 border-t px-3 pb-6 pt-4 select-none ${isStaff ? "border-white/10" : "border-brand-border/20"}`}>
+        <button
+          onClick={() => window.location.href = "/"}
+          className={`flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left font-display text-xs font-bold tracking-wider transition-all mb-1 ${
+            isStaff ? "text-white/80 hover:bg-white/10" : "text-brand-primary hover:bg-brand-primary/10 font-black"
+          }`}
+        >
+          <Globe className="h-4 w-4" />
+          <span>Trang chủ Tra cứu</span>
+        </button>
         <button
           onClick={() => onNavigate("help")}
           className={`flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left font-display text-xs font-bold tracking-wider transition-all ${

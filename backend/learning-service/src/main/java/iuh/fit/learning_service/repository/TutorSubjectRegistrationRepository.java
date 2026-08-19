@@ -12,6 +12,14 @@ import java.util.Optional;
 public interface TutorSubjectRegistrationRepository extends JpaRepository<TutorSubjectRegistration, Long> {
     List<TutorSubjectRegistration> findByTutorEmailIgnoreCaseOrderByCreatedAtDesc(String tutorEmail);
     List<TutorSubjectRegistration> findByStatusOrderBySubmittedAtAsc(TutorSubjectRegistrationStatus status);
+    List<TutorSubjectRegistration> findByTutorProfileIdInAndStatusOrderByCreatedAtAsc(
+            Collection<Long> tutorProfileIds,
+            TutorSubjectRegistrationStatus status
+    );
+    List<TutorSubjectRegistration> findByTutorProfileIdAndStatusOrderByCreatedAtAsc(
+            Long tutorProfileId,
+            TutorSubjectRegistrationStatus status
+    );
     List<TutorSubjectRegistration> findByStatusInOrderByReviewedAtDesc(Collection<TutorSubjectRegistrationStatus> statuses);
     Optional<TutorSubjectRegistration> findByIdAndTutorEmailIgnoreCase(Long id, String tutorEmail);
     @Query("""

@@ -12,6 +12,14 @@ export const classApi = {
     method: 'POST',
     body: JSON.stringify(payload)
   }),
+  updateClassDetails: (id, payload) => apiRequest(`/api/learning/tutor/classes/${id}/details`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  }),
+  updateVisibility: (id, payload) => apiRequest(`/api/learning/tutor/classes/${id}/visibility`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  }),
   deleteClass: (id) => apiRequest(`/api/learning/tutor/classes/${id}`, {
     method: 'DELETE'
   }),
@@ -39,5 +47,28 @@ export const classApi = {
   adminRejectClass: (id, reason) => apiRequest(`/api/learning/admin/classes/${id}/reject`, {
     method: 'POST',
     body: JSON.stringify({ reason })
+  }),
+
+  // Public / Student endpoints
+  getPublicClasses: (filterParams = {}) => {
+    const params = new URLSearchParams();
+    if (filterParams.programTypeId) params.set('programTypeId', String(filterParams.programTypeId));
+    if (filterParams.educationLevelId) params.set('educationLevelId', String(filterParams.educationLevelId));
+    if (filterParams.categoryId) params.set('categoryId', String(filterParams.categoryId));
+    if (filterParams.subjectId) params.set('subjectId', String(filterParams.subjectId));
+    if (filterParams.levelId) params.set('levelId', String(filterParams.levelId));
+    if (filterParams.keyword) params.set('keyword', filterParams.keyword);
+    if (filterParams.mode) params.set('mode', filterParams.mode);
+    if (filterParams.tutorEmail) params.set('tutorEmail', filterParams.tutorEmail);
+    if (filterParams.tutorProfileId) params.set('tutorProfileId', String(filterParams.tutorProfileId));
+    if (filterParams.minPrice) params.set('minPrice', String(filterParams.minPrice));
+    if (filterParams.maxPrice) params.set('maxPrice', String(filterParams.maxPrice));
+    const queryString = params.toString();
+    return apiRequest(`/api/learning/public/classes${queryString ? `?${queryString}` : ''}`);
+  },
+  getPublicClassById: (id) => apiRequest(`/api/learning/public/classes/${id}`),
+  verifyJoinKey: (id, joinKey) => apiRequest(`/api/learning/public/classes/${id}/verify-key`, {
+    method: 'POST',
+    body: JSON.stringify({ joinKey })
   })
 };

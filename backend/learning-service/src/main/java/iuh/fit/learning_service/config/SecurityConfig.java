@@ -16,6 +16,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.io.IOException;
 import java.util.List;
 
 @Configuration
@@ -48,6 +49,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/subjects/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/tutor-subjects/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/teaching-catalog/**").permitAll()
+                        .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/subject-requests/pending").hasAnyRole("STAFF", "ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/subject-requests/**").hasAnyRole("STAFF", "ADMIN")
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
@@ -64,22 +66,15 @@ public class SecurityConfig {
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
-        configuration.setExposedHeaders(List.of("Set-Cookie"));
-
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
 
-    private void writeSecurityError(HttpServletResponse response, int status, String message) throws java.io.IOException {
+    private void writeSecurityError(HttpServletResponse response, int status, String message) throws IOException {
         response.setStatus(status);
-        response.setContentType("application/json");
-        response.setCharacterEncoding("UTF-8");
-        response.getWriter().write("{\"message\":\"" + sanitize(message) + "\"}");
-    }
-
-    private String sanitize(String message) {
-        if (message == null || message.isBlank()) return "Request was rejected by security";
-        return message.replace("\\", "\\\\").replace("\"", "\\\"");
+        response.setContentType("application/json;charset=UTF-8");
+        String json = String.format("{\"status\":%d,\"message\":\"%s\"}", status, message.replace("\"", "\\\""));
+        response.getWriter().write(json);
     }
 }
