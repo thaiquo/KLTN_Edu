@@ -59,6 +59,9 @@ public class ClassRoom {
     @Column(nullable = false)
     private Integer maxStudents = 20;
 
+    @Column(nullable = false)
+    private Integer maxPendingRequests = 30;
+
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal pricePerSession;
 
@@ -126,6 +129,9 @@ public class ClassRoom {
         LocalDateTime now = LocalDateTime.now();
         createdAt = now;
         updatedAt = now;
+        if (maxPendingRequests == null && maxStudents != null) {
+            maxPendingRequests = (int) Math.ceil(maxStudents * 1.5);
+        }
     }
 
     @PreUpdate

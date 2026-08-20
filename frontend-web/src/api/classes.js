@@ -70,5 +70,24 @@ export const classApi = {
   verifyJoinKey: (id, joinKey) => apiRequest(`/api/learning/public/classes/${id}/verify-key`, {
     method: 'POST',
     body: JSON.stringify({ joinKey })
-  })
+  }),
+
+  // Enrollment Request & Buffer Pool endpoints
+  enrollClass: (classId, payload = {}) => apiRequest(`/api/learning/v1/classes/${classId}/enroll`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }),
+  cancelEnrollmentRequest: (requestId) => apiRequest(`/api/learning/v1/enrollment-requests/${requestId}/cancel`, {
+    method: 'POST'
+  }),
+  getMyEnrollmentRequests: () => apiRequest('/api/learning/v1/enrollment-requests/my-requests'),
+  getRequestsForClass: (classId) => apiRequest(`/api/learning/v1/tutor/classes/${classId}/requests`),
+  acceptEnrollmentRequest: (requestId) => apiRequest(`/api/learning/v1/enrollment-requests/${requestId}/accept`, {
+    method: 'POST'
+  }),
+  rejectEnrollmentRequest: (requestId, reason) => apiRequest(`/api/learning/v1/enrollment-requests/${requestId}/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason })
+  }),
+  getBufferPoolStatus: (classId) => apiRequest(`/api/learning/v1/classes/${classId}/buffer-pool`)
 };

@@ -55,6 +55,8 @@ public final class ClassRoomDtos {
             @Size(max = 500) String meetingLink,
             @Size(max = 500) String address,
             @NotNull @Min(1) @Max(100) Integer maxStudents,
+            @Min(1) @Max(300) Integer maxPendingRequests,
+            @Min(100) @Max(300) Integer bufferPoolRatioPercent,
             @NotNull @DecimalMin("1") BigDecimal pricePerSession,
             @NotNull @Min(1) @Max(7) Integer sessionsPerWeek,
             @NotNull @Min(30) @Max(300) Integer durationPerSessionMinutes,
@@ -98,7 +100,9 @@ public final class ClassRoomDtos {
     public record UpdateVisibilityRequest(
             @NotNull ClassRoomStatus status,
             @NotNull JoinMode joinMode,
-            @Size(max = 50) String joinKey
+            @Size(max = 50) String joinKey,
+            @Min(1) @Max(300) Integer maxPendingRequests,
+            @Min(100) @Max(300) Integer bufferPoolRatioPercent
     ) {}
 
     public record VerifyJoinKeyRequest(
@@ -145,6 +149,12 @@ public final class ClassRoomDtos {
             String meetingLink,
             String address,
             Integer maxStudents,
+            Integer maxPendingRequests,
+            Integer bufferPoolRatioPercent,
+            Long pendingCount,
+            Long acceptedCount,
+            Long availableSlots,
+            Boolean isBufferPoolFull,
             BigDecimal pricePerSession,
             BigDecimal totalPrice,
             Integer sessionsPerWeek,

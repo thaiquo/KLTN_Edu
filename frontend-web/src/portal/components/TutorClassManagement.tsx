@@ -85,8 +85,60 @@ export function TutorClassManagement() {
   const [targetStatus, setTargetStatus] = useState<"PRIVATE" | "PUBLISHED">("PUBLISHED");
   const [targetJoinMode, setTargetJoinMode] = useState<"OPEN_REQUEST" | "INVITE_KEY">("OPEN_REQUEST");
   const [targetJoinKey, setTargetJoinKey] = useState<string>("");
+  const [targetRatioPercent, setTargetRatioPercent] = useState<number>(150);
   const [visibilitySubmitting, setVisibilitySubmitting] = useState(false);
   const [copiedKey, setCopiedKey] = useState(false);
+
+  // Enrollment Requests tab state
+  const [enrollmentRequests, setEnrollmentRequests] = useState<any[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(false);
+  const [requestActionMsg, setRequestActionMsg] = useState("");
+
+  const loadRequestsForClass = async (classId: number) => {
+    setRequestsLoading(true);
+    setRequestActionMsg("");
+    try {
+      const data = await classApi.getRequestsForClass(classId);
+      setEnrollmentRequests(data || []);
+    } catch (err: any) {
+      console.error("Failed to load requests", err);
+      setEnrollmentRequests([]);
+    } finally {
+      setRequestsLoading(false);
+    }
+  };
+
+  const handleAcceptRequest = async (requestId: number, studentName?: string) => {
+    const name = studentName || "học viên này";
+    if (!window.confirm(`XÁC NHẬN CHẤP NHẬN:\nBạn có chắc chắn muốn nhận ${name} vào lớp học này không?`)) {
+      return;
+    }
+    setRequestActionMsg("");
+    try {
+      await classApi.acceptEnrollmentRequest(requestId);
+      setRequestActionMsg("Đã chấp nhận yêu cầu tham gia thành công!");
+      if (detailModalClass) loadRequestsForClass(detailModalClass.id);
+      loadClasses();
+    } catch (err: any) {
+      setRequestActionMsg(err?.message || "Không thể chấp nhận yêu cầu.");
+    }
+  };
+
+  const handleRejectRequest = async (requestId: number, studentName?: string) => {
+    const name = studentName || "học viên này";
+    if (!window.confirm(`XÁC NHẬN TỪ CHỐI:\nBạn có chắc chắn muốn từ chối yêu cầu tham gia của ${name} không?`)) {
+      return;
+    }
+    setRequestActionMsg("");
+    try {
+      await classApi.rejectEnrollmentRequest(requestId, undefined);
+      setRequestActionMsg("Đã từ chối yêu cầu tham gia!");
+      if (detailModalClass) loadRequestsForClass(detailModalClass.id);
+      loadClasses();
+    } catch (err: any) {
+      setRequestActionMsg(err?.message || "Không thể từ chối yêu cầu.");
+    }
+  };
 
   const loadClasses = async () => {
     setLoading(true);
@@ -118,9 +170,10 @@ export function TutorClassManagement() {
   };
 
   // Open Unified Detail Modal
-  const openDetailModal = (cls: ClassRoomItem, initialTab: "OVERVIEW" | "EDIT" | "SETTINGS" = "OVERVIEW") => {
+  const openDetailModal = (cls: ClassRoomItem, initialTab: "OVERVIEW" | "EDIT" | "SETTINGS" | "REQUESTS" = "OVERVIEW") => {
     setDetailModalClass(cls);
     setModalTab(initialTab);
+    loadRequestsForClass(cls.id);
 
     // Populate Edit details state
     setEditDescription(cls.description || "");
@@ -137,6 +190,7 @@ export function TutorClassManagement() {
     setTargetStatus(initialStatus as any);
     setTargetJoinMode(cls.joinMode || "OPEN_REQUEST");
     setTargetJoinKey(cls.joinKey || "");
+    setTargetRatioPercent((cls as any).bufferPoolRatioPercent || 150);
   };
 
   // Generate Random Key
@@ -170,7 +224,9 @@ export function TutorClassManagement() {
       await classApi.updateVisibility(detailModalClass.id, {
         status: targetStatus,
         joinMode: targetJoinMode,
-        joinKey: targetJoinMode === "INVITE_KEY" ? targetJoinKey.trim().toUpperCase() : null
+        joinKey: targetJoinMode === "INVITE_KEY" ? targetJoinKey.trim().toUpperCase() : null,
+        bufferPoolRatioPercent: targetRatioPercent,
+        maxPendingRequests: Math.ceil(detailModalClass.maxStudents * (targetRatioPercent / 100))
       });
       await loadClasses();
       setModalTab("OVERVIEW");
@@ -179,8 +235,10 @@ export function TutorClassManagement() {
         ...prev,
         status: targetStatus,
         joinMode: targetJoinMode,
-        joinKey: targetJoinMode === "INVITE_KEY" ? targetJoinKey.trim().toUpperCase() : undefined
-      } : null);
+        joinKey: targetJoinMode === "INVITE_KEY" ? targetJoinKey.trim().toUpperCase() : undefined,
+        maxPendingRequests: Math.ceil(detailModalClass.maxStudents * (targetRatioPercent / 100)),
+        bufferPoolRatioPercent: targetRatioPercent
+      } as any : null);
     } catch (err: any) {
       alert(err?.message || "Không thể cập nhật trạng thái mở bán.");
     } finally {
@@ -622,11 +680,11 @@ export function TutorClassManagement() {
             </div>
 
             {/* Modal Navigation Tabs */}
-            <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-2 overflow-x-auto">
               <button
                 type="button"
                 onClick={() => setModalTab("OVERVIEW")}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
                   modalTab === "OVERVIEW"
                     ? "bg-brand-primary text-white shadow-sm"
                     : "text-slate-600 hover:bg-slate-100"
@@ -636,18 +694,34 @@ export function TutorClassManagement() {
                 <span>👁️ 1. Tổng quan & Chi tiết</span>
               </button>
 
+              <button
+                type="button"
+                onClick={() => {
+                  setModalTab("REQUESTS" as any);
+                  loadRequestsForClass(detailModalClass.id);
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  modalTab === ("REQUESTS" as any)
+                    ? "bg-brand-primary text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>📋 2. Yêu cầu tham gia lớp</span>
+              </button>
+
               {(detailModalClass.status === "PRIVATE" || detailModalClass.status === "PUBLISHED" || detailModalClass.status === "PENDING_APPROVAL") && (
                 <button
                   type="button"
                   onClick={() => setModalTab("EDIT")}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
                     modalTab === "EDIT"
                       ? "bg-brand-primary text-white shadow-sm"
                       : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
                   <FileText className="w-3.5 h-3.5" />
-                  <span>✏️ 2. Chỉnh sửa mô tả & Lộ trình</span>
+                  <span>✏️ 3. Chỉnh sửa mô tả</span>
                 </button>
               )}
 
@@ -655,14 +729,14 @@ export function TutorClassManagement() {
                 <button
                   type="button"
                   onClick={() => setModalTab("SETTINGS")}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
                     modalTab === "SETTINGS"
                       ? "bg-brand-primary text-white shadow-sm"
                       : "text-slate-600 hover:bg-slate-100"
                   }`}
                 >
                   <Settings2 className="w-3.5 h-3.5" />
-                  <span>⚙️ 3. Cài đặt Mở bán & Key</span>
+                  <span>⚙️ 4. Cài đặt Mở bán</span>
                 </button>
               )}
             </div>
@@ -978,6 +1052,88 @@ export function TutorClassManagement() {
             )}
 
             {/* ========================================================= */}
+            {/* TAB 2: ENROLLMENT REQUESTS MANAGEMENT                    */}
+            {/* ========================================================= */}
+            {modalTab === ("REQUESTS" as any) && (
+              <div className="space-y-4 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                    <Users className="w-4 h-4 text-brand-primary" /> Danh sách yêu cầu tham gia ({enrollmentRequests.length}):
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => loadRequestsForClass(detailModalClass.id)}
+                    className="text-xs font-bold text-brand-primary hover:underline"
+                  >
+                    Làm mới
+                  </button>
+                </div>
+
+                {requestActionMsg && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800 rounded-xl font-bold">
+                    {requestActionMsg}
+                  </div>
+                )}
+
+                {requestsLoading ? (
+                  <div className="p-6 text-center text-slate-400 font-medium">Đang tải danh sách...</div>
+                ) : enrollmentRequests.length === 0 ? (
+                  <div className="p-8 border border-dashed border-slate-200 rounded-2xl text-center text-slate-400 font-medium">
+                    Chưa có học viên nào gửi yêu cầu tham gia lớp này.
+                  </div>
+                ) : (
+                  <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                    {enrollmentRequests.map((req) => {
+                      const displayName = req.studentName && req.studentName.toLowerCase() !== req.studentEmail?.toLowerCase()
+                        ? req.studentName
+                        : "Học viên";
+
+                      return (
+                        <div key={req.id} className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-black text-slate-900 text-xs font-display">{displayName}</span>
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase ${
+                                req.status === "PENDING" ? "bg-amber-100 text-amber-800" :
+                                req.status === "ACCEPTED" ? "bg-emerald-100 text-emerald-800" :
+                                req.status === "REJECTED" ? "bg-rose-100 text-rose-800" : "bg-slate-200 text-slate-700"
+                              }`}>
+                                {req.status}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                              <span>Email:</span>
+                              <strong className="text-slate-700 font-bold">{req.studentEmail}</strong>
+                            </div>
+                          </div>
+
+                          {req.status === "PENDING" && (
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleRejectRequest(req.id, displayName)}
+                                className="px-3.5 py-1.5 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold transition-all"
+                              >
+                                Từ chối
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleAcceptRequest(req.id, displayName)}
+                                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-black transition-all shadow-sm"
+                              >
+                                Chấp nhận
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ========================================================= */}
             {/* TAB 3: VISIBILITY & JOIN MODE SETTINGS                     */}
             {/* ========================================================= */}
             {modalTab === "SETTINGS" && (
@@ -1113,6 +1269,28 @@ export function TutorClassManagement() {
                     </p>
                   </div>
                 )}
+
+                {/* Step 3: Buffer Pool Ratio Percentage */}
+                <div className="space-y-2 pt-2 border-t border-slate-100">
+                  <label className="block text-xs font-black uppercase tracking-wider text-slate-700">
+                    3. Cấu hình Tỷ lệ trần danh sách chờ (Buffer Pool %):
+                  </label>
+                  <select
+                    value={targetRatioPercent}
+                    onChange={(e) => setTargetRatioPercent(Number(e.target.value))}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:border-brand-primary"
+                  >
+                    <option value={100}>100% (1.0x - {detailModalClass.maxStudents} hồ sơ)</option>
+                    <option value={150}>150% (1.5x - {Math.ceil(detailModalClass.maxStudents * 1.5)} hồ sơ)</option>
+                    <option value={160}>160% (1.6x - {Math.ceil(detailModalClass.maxStudents * 1.6)} hồ sơ)</option>
+                    <option value={200}>200% (2.0x - {detailModalClass.maxStudents * 2} hồ sơ)</option>
+                    <option value={250}>250% (2.5x - {Math.ceil(detailModalClass.maxStudents * 2.5)} hồ sơ)</option>
+                    <option value={300}>300% (3.0x - {detailModalClass.maxStudents * 3} hồ sơ)</option>
+                  </select>
+                  <span className="text-[11px] text-brand-primary font-bold block">
+                    ➡️ Giới hạn hồ sơ chờ cùng lúc: {Math.ceil(detailModalClass.maxStudents * (targetRatioPercent / 100))} hồ sơ
+                  </span>
+                </div>
 
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                   <button

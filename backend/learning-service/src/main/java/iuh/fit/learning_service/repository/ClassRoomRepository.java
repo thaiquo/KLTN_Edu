@@ -23,6 +23,10 @@ public interface ClassRoomRepository extends JpaRepository<ClassRoom, Long> {
            "WHERE c.id = :id")
     Optional<ClassRoom> findByIdWithDetails(@Param("id") Long id);
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM ClassRoom c WHERE c.id = :id")
+    Optional<ClassRoom> findByIdForUpdate(@Param("id") Long id);
+
     @Query("SELECT c FROM ClassRoom c " +
            "LEFT JOIN FETCH c.tutorSubjectRegistration r " +
            "LEFT JOIN FETCH r.subject " +

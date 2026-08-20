@@ -12,8 +12,10 @@ import iuh.fit.learning_service.exception.BadRequestException;
 import iuh.fit.learning_service.exception.ConflictException;
 import iuh.fit.learning_service.exception.ForbiddenException;
 import iuh.fit.learning_service.exception.ResourceNotFoundException;
+import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 import iuh.fit.learning_service.repository.CatalogLevelRepository;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
+import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
 import iuh.fit.learning_service.repository.TutorAvailabilityRepository;
 import iuh.fit.learning_service.repository.TutorSubjectRegistrationRepository;
 import org.springframework.stereotype.Service;
@@ -35,17 +37,20 @@ public class ClassRoomService {
     private final TutorSubjectRegistrationRepository registrationRepository;
     private final CatalogLevelRepository levelRepository;
     private final TutorAvailabilityRepository availabilityRepository;
+    private final EnrollmentRequestRepository enrollmentRequestRepository;
 
     public ClassRoomService(
             ClassRoomRepository classRoomRepository,
             TutorSubjectRegistrationRepository registrationRepository,
             CatalogLevelRepository levelRepository,
-            TutorAvailabilityRepository availabilityRepository
+            TutorAvailabilityRepository availabilityRepository,
+            EnrollmentRequestRepository enrollmentRequestRepository
     ) {
         this.classRoomRepository = classRoomRepository;
         this.registrationRepository = registrationRepository;
         this.levelRepository = levelRepository;
         this.availabilityRepository = availabilityRepository;
+        this.enrollmentRequestRepository = enrollmentRequestRepository;
     }
 
     @Transactional(readOnly = true)
@@ -142,6 +147,19 @@ public class ClassRoomService {
             classRoom.setJoinKey(null);
         }
 
+        if (request.bufferPoolRatioPercent() != null) {
+            if (request.bufferPoolRatioPercent() < 100 || request.bufferPoolRatioPercent() > 300) {
+                throw new BadRequestException("Tỷ lệ danh sách chờ phải từ 100% đến 300%");
+            }
+            int calcPending = (int) Math.ceil(classRoom.getMaxStudents() * (request.bufferPoolRatioPercent() / 100.0));
+            classRoom.setMaxPendingRequests(calcPending);
+        } else if (request.maxPendingRequests() != null) {
+            if (request.maxPendingRequests() < classRoom.getMaxStudents() || request.maxPendingRequests() > classRoom.getMaxStudents() * 3) {
+                throw new BadRequestException("Mức trần chờ phải từ " + classRoom.getMaxStudents() + " đến " + (classRoom.getMaxStudents() * 3) + " hồ sơ");
+            }
+            classRoom.setMaxPendingRequests(request.maxPendingRequests());
+        }
+
         ClassRoom saved = classRoomRepository.save(classRoom);
         return toResponse(saved);
     }
@@ -218,6 +236,25 @@ public class ClassRoomService {
         classRoom.setMeetingLink(meetingLink);
         classRoom.setAddress(address);
         classRoom.setMaxStudents(request.maxStudents());
+
+        // Validate & set maxPendingRequests / bufferPoolRatioPercent
+        if (request.bufferPoolRatioPercent() != null) {
+            if (request.bufferPoolRatioPercent() < 100 || request.bufferPoolRatioPercent() > 300) {
+                throw new BadRequestException("Tỷ lệ danh sách chờ phải từ 100% đến 300%");
+            }
+            int calcPending = (int) Math.ceil(request.maxStudents() * (request.bufferPoolRatioPercent() / 100.0));
+            classRoom.setMaxPendingRequests(calcPending);
+        } else if (request.maxPendingRequests() != null) {
+            if (request.maxPendingRequests() < request.maxStudents()) {
+                throw new BadRequestException(String.format("Mức trần hồ sơ chờ (%d) phải lớn hơn hoặc bằng sức chứa chính thức (%d)", request.maxPendingRequests(), request.maxStudents()));
+            }
+            if (request.maxPendingRequests() > request.maxStudents() * 3) {
+                throw new BadRequestException(String.format("Mức trần hồ sơ chờ (%d) không được vượt quá 3 lần sức chứa chính thức (%d)", request.maxPendingRequests(), request.maxStudents() * 3));
+            }
+            classRoom.setMaxPendingRequests(request.maxPendingRequests());
+        } else {
+            classRoom.setMaxPendingRequests((int) Math.ceil(request.maxStudents() * 1.5));
+        }
         classRoom.setPricePerSession(request.pricePerSession());
         classRoom.setTotalPrice(totalPrice);
         classRoom.setSessionsPerWeek(request.sessionsPerWeek());
@@ -640,6 +677,13 @@ public class ClassRoomService {
                 .map(ch -> new ClassRoomDtos.ChapterResponse(ch.getId(), ch.getTitle(), ch.getDescription(), ch.getExpectedSessions(), ch.getOrderIndex()))
                 .toList();
 
+        long pendingCount = enrollmentRequestRepository != null ? enrollmentRequestRepository.countByClassRoomIdAndStatus(c.getId(), EnrollmentRequestStatus.PENDING) : 0;
+        long acceptedCount = enrollmentRequestRepository != null ? enrollmentRequestRepository.countByClassRoomIdAndStatus(c.getId(), EnrollmentRequestStatus.ACCEPTED) : 0;
+        int maxPending = c.getMaxPendingRequests() != null ? c.getMaxPendingRequests() : (int) Math.ceil(c.getMaxStudents() * 1.5);
+        int ratioPercent = (int) Math.round((maxPending * 100.0) / c.getMaxStudents());
+        long availableSlots = Math.max(0, c.getMaxStudents() - acceptedCount);
+        boolean isBufferPoolFull = (pendingCount + acceptedCount) >= maxPending;
+
         return new ClassRoomDtos.ClassRoomResponse(
                 c.getId(),
                 c.getTutorSubjectRegistration() != null ? c.getTutorSubjectRegistration().getId() : null,
@@ -654,6 +698,12 @@ public class ClassRoomService {
                 c.getMeetingLink(),
                 c.getAddress(),
                 c.getMaxStudents(),
+                maxPending,
+                ratioPercent,
+                pendingCount,
+                acceptedCount,
+                availableSlots,
+                isBufferPoolFull,
                 c.getPricePerSession(),
                 c.getTotalPrice(),
                 c.getSessionsPerWeek(),

@@ -235,6 +235,8 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
   const [className, setClassName] = useState("");
   const [description, setDescription] = useState("");
   const [maxStudents, setMaxStudents] = useState<number>(20);
+  const [bufferPoolRatioPercent, setBufferPoolRatioPercent] = useState<number>(150);
+  const [maxPendingRequests, setMaxPendingRequests] = useState<number | "">(30);
   const [learningMode, setLearningMode] = useState<"ONLINE" | "OFFLINE">("ONLINE");
   const [meetingLink, setMeetingLink] = useState("");
   const [address, setAddress] = useState("");
@@ -680,6 +682,8 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
       meetingLink: learningMode === "ONLINE" ? meetingLink.trim() : null,
       address: learningMode === "OFFLINE" ? address.trim() : null,
       maxStudents: Number(maxStudents),
+      bufferPoolRatioPercent: Number(bufferPoolRatioPercent || 150),
+      maxPendingRequests: maxPendingRequests ? Number(maxPendingRequests) : Math.ceil(Number(maxStudents) * (Number(bufferPoolRatioPercent || 150) / 100)),
       pricePerSession: price,
       sessionsPerWeek: Number(sessionsPerWeek),
       durationPerSessionMinutes: Number(durationPerSession),
@@ -859,19 +863,50 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                Số lượng học viên tối đa <span className="text-rose-500">*</span>
+                Số học viên chính thức <span className="text-rose-500">*</span>
               </label>
               <input 
                 type="number"
                 min={1}
                 max={100}
                 value={maxStudents}
-                onChange={(e) => setMaxStudents(Number(e.target.value))}
+                onChange={(e) => {
+                  const val = Number(e.target.value);
+                  setMaxStudents(val);
+                  if (bufferPoolRatioPercent) {
+                    setMaxPendingRequests(Math.ceil(val * (bufferPoolRatioPercent / 100)));
+                  }
+                }}
                 className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:border-brand-primary transition-all"
               />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Tỷ lệ trần danh sách chờ (%) <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={bufferPoolRatioPercent}
+                onChange={(e) => {
+                  const ratio = Number(e.target.value);
+                  setBufferPoolRatioPercent(ratio);
+                  setMaxPendingRequests(Math.ceil(maxStudents * (ratio / 100)));
+                }}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:border-brand-primary"
+              >
+                <option value={100}>100% (1.0x - {maxStudents} hồ sơ)</option>
+                <option value={150}>150% (1.5x - {Math.ceil(maxStudents * 1.5)} hồ sơ)</option>
+                <option value={160}>160% (1.6x - {Math.ceil(maxStudents * 1.6)} hồ sơ)</option>
+                <option value={200}>200% (2.0x - {maxStudents * 2} hồ sơ)</option>
+                <option value={250}>250% (2.5x - {Math.ceil(maxStudents * 2.5)} hồ sơ)</option>
+                <option value={300}>300% (3.0x - {maxStudents * 3} hồ sơ)</option>
+              </select>
+              <span className="text-[10px] text-brand-primary font-bold block mt-1">
+                ➡️ Trần chờ: {maxPendingRequests ? maxPendingRequests : Math.ceil(maxStudents * (bufferPoolRatioPercent / 100))} hồ sơ cùng lúc
+              </span>
             </div>
 
             <div>
