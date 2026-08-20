@@ -192,8 +192,9 @@ public class StaffTutorApplicationDetailResponse {
         private LocalDate expiryDate;
         private String credentialNumber;
         private boolean expired;
+        private String url;
 
-        public DocumentItem(Long id, TutorDocumentType documentType, String originalFilename, String contentType, Long fileSize, TutorDocumentVerificationStatus verificationStatus, String title, String issuer, LocalDate issueDate, CredentialValidityType validityType, LocalDate expiryDate, String credentialNumber, boolean expired) {
+        public DocumentItem(Long id, TutorDocumentType documentType, String originalFilename, String contentType, Long fileSize, TutorDocumentVerificationStatus verificationStatus, String title, String issuer, LocalDate issueDate, CredentialValidityType validityType, LocalDate expiryDate, String credentialNumber, boolean expired, String url) {
             this.id = id;
             this.documentType = documentType;
             this.originalFilename = originalFilename;
@@ -207,6 +208,7 @@ public class StaffTutorApplicationDetailResponse {
             this.expiryDate = expiryDate;
             this.credentialNumber = credentialNumber;
             this.expired = expired;
+            this.url = url;
         }
 
         public Long getId() { return id; }
@@ -222,5 +224,7 @@ public class StaffTutorApplicationDetailResponse {
         public LocalDate getExpiryDate() { return expiryDate; }
         public String getCredentialNumber() { return credentialNumber; }
         public boolean isExpired() { return expired; }
+        public String getUrl() { return url; }
+        public String getDownloadUrl() { return url; }
     }
 }

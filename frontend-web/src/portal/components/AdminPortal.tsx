@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Users,
   ShieldCheck,
@@ -18,336 +18,450 @@ import {
   CheckCircle,
   Plus,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  Eye,
+  Phone,
+  Mail,
+  CalendarDays,
+  MapPin,
+  FileText,
+  ExternalLink,
+  Download,
+  CheckCircle2,
+  XCircle,
+  Lock,
+  Unlock,
+  GraduationCap
 } from "lucide-react";
-import { SystemUser } from "../types";
+import { adminUsersApi } from "../../api/adminUsers";
+import { staffTutorApi } from "../../api/staffTutors";
 
-interface AdminPortalProps {
-  users: SystemUser[];
-  onAddUser: (u: Omit<SystemUser, "id" | "joinedDate">) => void;
-  onUpdateUser: (u: SystemUser) => void;
-  onDeleteUser: (id: string) => void;
-}
+export function AdminPortal() {
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
-export function AdminPortal({
-  users,
-  onAddUser,
-  onUpdateUser,
-  onDeleteUser,
-}: AdminPortalProps) {
-  // Filters local states
+  // Filters
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
-  
-  // Modal states
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState<SystemUser | null>(null);
 
-  // New user form state
-  const [addForm, setAddForm] = useState({
-    name: "",
-    email: "",
-    role: "Student" as "Student" | "Tutor" | "Admin",
-    status: "Active" as "Active" | "Suspended" | "Pending",
-    avatarUrl:
-      "https://lh3.googleusercontent.com/aida-public/AB6AXuDorJ4qyZIREwslmenco5ww4h0VRgSSNFoXCmlbkX5YQV4zfkBU9R8uwO3h_zUzV3dQnwAwKnelgvSLtMmAu-wVqElbpvZBkcCY8emLnlFN___0WClwM-gopuij--L9ufoma_ZEl84CiEeaAt-I7B98SBpZ-AXMqn1fLROFbb-TkRDfhhagZpFmnJHOmE2IdK0atd1ziPmgUGcPDq1y387vZI34s2955gCXwPjvxE1GBVFtAp7TKNst8Bl0UGsE3OzdAkYPf6Jm4Ir4",
-  });
+  // Detail modal state
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [userDetail, setUserDetail] = useState<any>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
-  // Edit user form state
-  const [editForm, setEditForm] = useState<SystemUser | null>(null);
+  // Document preview modal state
+  const [previewDoc, setPreviewDoc] = useState<{ url: string; title: string; contentType: string } | null>(null);
 
-  // System statistics computations
+  // Rejection dialog
+  const [rejectingAppId, setRejectingAppId] = useState<number | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [actionBusy, setActionBusy] = useState(false);
+
+  const loadUsers = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await adminUsersApi.list({
+        search: searchQuery,
+        role: roleFilter,
+        status: statusFilter
+      });
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      setError(err?.message || "Không thể tải danh sách người dùng.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadUsers();
+  }, [roleFilter, statusFilter]);
+
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    loadUsers();
+  };
+
   const stats = useMemo(() => {
-    const students = users.filter((u) => u.role === "Student").length;
-    const tutors = users.filter((u) => u.role === "Tutor").length;
-    const suspended = users.filter((u) => u.status === "Suspended").length;
-    return { students, tutors, suspended, total: users.length };
+    const total = users.length;
+    const tutors = users.filter((u) => u.roles?.includes("TUTOR")).length;
+    const students = users.filter((u) => u.roles?.includes("STUDENT")).length;
+    const admins = users.filter((u) => u.roles?.includes("ADMIN") || u.roles?.includes("STAFF")).length;
+    const suspended = users.filter((u) => u.accountStatus === "LOCKED" || u.accountStatus === "DISABLED").length;
+    return { total, tutors, students, admins, suspended };
   }, [users]);
 
-  // Sorting / Filter logic
-  const filteredUsers = useMemo(() => {
-    return users.filter((u) => {
-      const matchSearch =
-        u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.email.toLowerCase().includes(searchQuery.toLowerCase());
-      
-      const matchRole = roleFilter === "ALL" || u.role.toUpperCase() === roleFilter.toUpperCase();
-      const matchStatus = statusFilter === "ALL" || u.status.toUpperCase() === statusFilter.toUpperCase();
-
-      return matchSearch && matchRole && matchStatus;
-    });
-  }, [users, searchQuery, roleFilter, statusFilter]);
-
-  const handleOpenEdit = (user: SystemUser) => {
-    setSelectedUser(user);
-    setEditForm({ ...user });
-    setIsEditModalOpen(true);
-  };
-
-  const handleSaveEdit = () => {
-    if (editForm) {
-      onUpdateUser(editForm);
-      setIsEditModalOpen(false);
-      setSelectedUser(null);
-      setEditForm(null);
+  const openDetail = async (userId: number) => {
+    setSelectedUserId(userId);
+    setDetailLoading(true);
+    try {
+      const data = await adminUsersApi.detail(userId);
+      setUserDetail(data);
+    } catch (err: any) {
+      setError(err?.message || "Không thể tải thông tin chi tiết người dùng.");
+      setSelectedUserId(null);
+    } finally {
+      setDetailLoading(false);
     }
   };
 
-  const handleSaveAdd = () => {
-    if (!addForm.name.trim() || !addForm.email.trim()) {
-      alert("Please fill out all user information fields!");
+  const handleToggleStatus = async (userId: number, currentStatus: string) => {
+    const nextStatus = currentStatus === "ACTIVE" ? "LOCKED" : "ACTIVE";
+    const confirmMsg = nextStatus === "LOCKED"
+      ? "Bạn có chắc chắn muốn khóa tài khoản này?"
+      : "Bạn có chắc chắn muốn mở khóa tài khoản này?";
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      await adminUsersApi.updateStatus(userId, nextStatus);
+      setNotice(`Đã cập nhật trạng thái tài khoản thành ${nextStatus}!`);
+      loadUsers();
+      if (selectedUserId === userId && userDetail) {
+        openDetail(userId);
+      }
+    } catch (err: any) {
+      setError(err?.message || "Không thể cập nhật trạng thái.");
+    }
+  };
+
+  const handleApproveTutor = async (applicationId: number) => {
+    if (!window.confirm("Xác nhận phê duyệt hồ sơ cá nhân và CCCD của gia sư này?")) return;
+    setActionBusy(true);
+    try {
+      await staffTutorApi.approve(applicationId, "Phê duyệt bởi Admin User Control");
+      setNotice("Đã phê duyệt hồ sơ gia sư thành công!");
+      if (selectedUserId) openDetail(selectedUserId);
+      loadUsers();
+    } catch (err: any) {
+      setError(err?.message || "Không thể phê duyệt gia sư.");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleRejectTutorSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectingAppId) return;
+    if (!rejectReason.trim()) {
+      alert("Vui lòng nhập lý do từ chối.");
       return;
     }
-    // Set matching placeholders for avatar
-    let placeholderAvatar = addForm.avatarUrl;
-    if (addForm.role === "Student") {
-      placeholderAvatar = "https://lh3.googleusercontent.com/aida-public/AB6AXuBYfodNBlGcqTaAKMNzNGEaAOg2AUygYGk8XYUF-_NxGI0SZ75MJgFNJvnmJOrkWem-SdVi53mp7A_Wnz4MmsG2XPHrfEQDt4ZmgHzGQFPvWonX1v39Fb71Q5zdulTudkDaMij4Xw9Q4Y57T8jqjnkI-7mohDZBerRX-WeA0xJNdv_gXWnBJu5hwIMtOWgoxSaYkJWwoQhgaRZss0L-r-SwS2c2dlRlQPWBtoeTCIDIR_sv_jgEgBVf97PjoOk6KVZHKS6VAf0II9GY";
-    } else if (addForm.role === "Tutor") {
-      placeholderAvatar = "https://lh3.googleusercontent.com/aida-public/AB6AXuBhwW3n6U0eBWTDne_iulj_Auj40EVPpMpQb_Ty2AmFqUqnCNtOtcugJcmoz3Wqy5667xVuLljO9Q7wnie5Nlxc0xfVQ4EW-BkKrLtK7ulPXjCY2tNCUPRksiYJkTTOuRQi4l12qR7vruVIbGkokyxG2U5HamxYV8xTj2EAiBram-_YsKG4hlqzbt1VQGJIZcsEI-_LymkavkzmdrrbDSNe1lBDVhtMVZJxmhimVQREO5_faCg4la-rGcz9tzLq9zH_bWjSEgA-qwnm";
+    setActionBusy(true);
+    try {
+      await staffTutorApi.reject(rejectingAppId, rejectReason.trim(), undefined);
+      setNotice("Đã từ chối hồ sơ gia sư và gửi phản hồi!");
+      setRejectingAppId(null);
+      setRejectReason("");
+      if (selectedUserId) openDetail(selectedUserId);
+      loadUsers();
+    } catch (err: any) {
+      setError(err?.message || "Không thể từ chối hồ sơ.");
+    } finally {
+      setActionBusy(false);
     }
+  };
 
-    onAddUser({
-      name: addForm.name,
-      email: addForm.email,
-      role: addForm.role,
-      status: addForm.status,
-      avatarUrl: placeholderAvatar,
-    });
-
-    setIsAddModalOpen(false);
-    setAddForm({
-      name: "",
-      email: "",
-      role: "Student",
-      status: "Active",
-      avatarUrl: placeholderAvatar,
-    });
+  const handleViewDoc = async (applicationId: number, doc: any) => {
+    try {
+      const res = await staffTutorApi.documentDownload(applicationId, doc.id);
+      if (res?.downloadUrl) {
+        setPreviewDoc({
+          url: res.downloadUrl,
+          title: doc.title || doc.originalFilename || "Tài liệu xác minh",
+          contentType: doc.contentType || ""
+        });
+      }
+    } catch (err: any) {
+      setError(err?.message || "Không thể mở tài liệu.");
+    }
   };
 
   return (
-    <div className="font-sans select-none max-w-7xl mx-auto pb-10 space-y-8">
-      
+    <div className="font-sans select-none max-w-7xl mx-auto pb-10 space-y-6">
+      {/* Notice / Error banners */}
+      {notice && (
+        <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={16} />
+            <span>{notice}</span>
+          </div>
+          <button onClick={() => setNotice("")} className="text-emerald-900 font-extrabold text-sm">✕</button>
+        </div>
+      )}
+
+      {error && (
+        <div className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-800">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={16} />
+            <span>{error}</span>
+          </div>
+          <button onClick={() => setError("")} className="text-red-900 font-extrabold text-sm">✕</button>
+        </div>
+      )}
+
       {/* Platform security administration banner */}
       <section className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="font-display font-black text-2xl lg:text-3xl text-brand-text tracking-tight flex items-center gap-2">
             Platform User Control
           </h2>
-          <p className="text-brand-text-variant/80 text-sm">
-            Control platform administrative policies, manage verified tutor certifications, and handle users.
+          <p className="text-brand-text-variant/80 text-xs font-semibold mt-1">
+            Quản lý toàn diện người dùng thực tế từ Cơ sở dữ liệu, kiểm tra chi tiết hồ sơ cá nhân và xét duyệt CCCD/Hộ chiếu Gia sư.
           </p>
         </div>
-        <div>
+        <div className="flex items-center gap-3">
           <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="px-5 py-2.5 bg-brand-primary text-white hover:bg-brand-primary/95 rounded-xl font-display font-black text-xs tracking-widest flex items-center gap-2 transition-all hover:shadow-lg hover:shadow-brand-primary/10 active:scale-98 cursor-pointer shadow-md shrink-0"
+            onClick={loadUsers}
+            className="px-4 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-2xs cursor-pointer"
           >
-            <UserPlus className="w-4 h-4 shrink-0" />
-            ADD NEW USER
+            <RefreshCw className="w-3.5 h-3.5" />
+            LÀM MỚI
           </button>
         </div>
       </section>
 
       {/* Top Bento statistics card grid */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 select-none leading-none">
-        
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 select-none leading-none">
         {/* Stat 1 */}
-        <div className="bg-white border border-brand-border/30 p-6 rounded-2xl shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-brand-primary/10 text-brand-primary flex items-center justify-center shrink-0">
-            <Users className="w-6 h-6" />
+        <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-xs flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-xl bg-brand-primary/10 text-brand-primary flex items-center justify-center shrink-0">
+            <Users className="w-5 h-5" />
           </div>
           <div>
-            <p className="font-display font-black text-2xl text-brand-text">{stats.total}</p>
-            <p className="text-[10px] uppercase font-bold text-brand-text-variant/50 tracking-wider mt-1 font-display">
-              Registered Users
+            <p className="font-display font-black text-xl text-brand-text">{stats.total}</p>
+            <p className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider mt-1 font-display">
+              Tổng số người dùng
             </p>
           </div>
         </div>
 
         {/* Stat 2 */}
-        <div className="bg-white border border-brand-border/30 p-6 rounded-2xl shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-brand-secondary/10 text-brand-secondary flex items-center justify-center shrink-0">
-            <ShieldCheck className="w-6 h-6" />
+        <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-xs flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <p className="font-display font-black text-2xl text-brand-text">{stats.tutors}</p>
-            <p className="text-[10px] uppercase font-bold text-brand-text-variant/50 tracking-wider mt-1 font-display">
-              Verified Tutors
+            <p className="font-display font-black text-xl text-brand-text">{stats.admins}</p>
+            <p className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider mt-1 font-display">
+              Admin & Staff
             </p>
           </div>
         </div>
 
         {/* Stat 3 */}
-        <div className="bg-white border border-brand-border/30 p-6 rounded-2xl shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
-            <Activity className="w-6 h-6" />
+        <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-xs flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <GraduationCap className="w-5 h-5" />
           </div>
           <div>
-            <p className="font-display font-black text-2xl text-brand-text">99.98%</p>
-            <p className="text-[10px] uppercase font-bold text-brand-text-variant/50 tracking-wider mt-1 font-display">
-              System Live Uptime
+            <p className="font-display font-black text-xl text-brand-text">{stats.tutors}</p>
+            <p className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider mt-1 font-display">
+              Tài khoản Gia sư
             </p>
           </div>
         </div>
 
         {/* Stat 4 */}
-        <div className="bg-white border border-brand-border/30 p-6 rounded-2xl shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-brand-error/10 text-brand-error flex items-center justify-center shrink-0 animate-pulse">
-            <AlertTriangle className="w-6 h-6" />
+        <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-xs flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+            <Users className="w-5 h-5" />
           </div>
           <div>
-            <p className="font-display font-black text-2xl text-brand-text">
-              {stats.suspended}
-            </p>
-            <p className="text-[10px] uppercase font-bold text-brand-text-variant/50 tracking-wider mt-1 font-display">
-              Suspended Accounts
+            <p className="font-display font-black text-xl text-brand-text">{stats.students}</p>
+            <p className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider mt-1 font-display">
+              Tài khoản Học viên
             </p>
           </div>
         </div>
 
+        {/* Stat 5 */}
+        <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-xs flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+            <Lock className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="font-display font-black text-xl text-brand-text">{stats.suspended}</p>
+            <p className="text-[10px] uppercase font-extrabold text-slate-400 tracking-wider mt-1 font-display">
+              Tài khoản bị khóa
+            </p>
+          </div>
+        </div>
       </section>
 
-      {/* Database core container card */}
-      <section className="bg-white border border-brand-border/30 rounded-3xl overflow-hidden shadow-sm">
-        
-        {/* Table Filters header */}
-        <header className="p-6 border-b border-brand-border/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4 select-none">
-          
-          <div className="relative w-full sm:w-72">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-brand-text-variant/40 w-4.5 h-4.5 shrink-0" />
+      {/* Main Table Card */}
+      <section className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
+        {/* Search & Filters toolbar */}
+        <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
+          <form onSubmit={handleSearchSubmit} className="relative w-full md:w-96">
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search by name or email..."
-              className="w-full bg-brand-low border border-brand-border/20 rounded-xl py-2 pl-10 pr-4 text-xs font-semibold focus:ring-1 focus:ring-brand-primary focus:bg-white outline-none transition-colors"
+              placeholder="Tìm theo họ tên, email, SĐT..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:border-brand-primary focus:outline-hidden"
             />
-          </div>
+          </form>
 
-          <div className="flex flex-wrap items-center gap-3">
-            
-            <div className="flex items-center gap-1.5 text-xs text-brand-text-variant font-semibold">
-              <Filter className="w-4 h-4 shrink-0 text-brand-text-variant/60" />
-              <span>Role:</span>
+          <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-400">Vai trò:</span>
               <select
-                className="bg-brand-low border border-brand-border/20 px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer outline-none"
                 value={roleFilter}
                 onChange={(e) => setRoleFilter(e.target.value)}
+                className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white"
               >
-                <option value="ALL">ALL ROLES</option>
-                <option value="Student">STUDENT</option>
-                <option value="Tutor">TUTOR</option>
-                <option value="Admin">ADMIN</option>
+                <option value="ALL">Tất cả vai trò</option>
+                <option value="TUTOR">Gia sư (TUTOR)</option>
+                <option value="STUDENT">Học viên (STUDENT)</option>
+                <option value="ADMIN">Quản trị viên (ADMIN)</option>
+                <option value="STAFF">Nhân viên (STAFF)</option>
               </select>
             </div>
 
-            <div className="flex items-center gap-1.5 text-xs text-brand-text-variant font-semibold">
-              <span>Status:</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-400">Trạng thái:</span>
               <select
-                className="bg-brand-low border border-brand-border/20 px-2.5 py-1.5 rounded-lg text-xs font-semibold cursor-pointer outline-none"
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white"
               >
-                <option value="ALL">ALL STATUS</option>
-                <option value="Active">ACTIVE</option>
-                <option value="Suspended">SUSPENDED</option>
-                <option value="Pending">PENDING</option>
+                <option value="ALL">Tất cả trạng thái</option>
+                <option value="ACTIVE">Hoạt động (ACTIVE)</option>
+                <option value="LOCKED">Đã khóa (LOCKED)</option>
               </select>
             </div>
-
-            <button
-              onClick={() => {
-                setRoleFilter("ALL");
-                setStatusFilter("ALL");
-                setSearchQuery("");
-              }}
-              title="Reset Filters"
-              className="p-2 border border-brand-border/30 hover:bg-brand-low rounded-xl text-brand-text transition-colors cursor-pointer"
-            >
-              <RefreshCw className="w-4.5 h-4.5 shrink-0" />
-            </button>
           </div>
-        </header>
+        </div>
 
-        {/* Database table core list */}
-        <div className="overflow-x-auto">
-          {filteredUsers.length === 0 ? (
-            <div className="p-16 text-center text-brand-text-variant/60 flex flex-col items-center justify-center gap-2">
-              <Sparkles className="w-10 h-10 text-yellow-400" />
-              <p className="text-base font-bold">No users match criteria</p>
-              <p className="text-xs">Adjust filters or try creating some new users to interact with our dataset.</p>
-            </div>
-          ) : (
-            <table className="w-full text-left font-sans">
-              <thead className="bg-brand-low text-brand-text-variant/60 font-display text-[10px] font-bold uppercase tracking-wider select-none">
-                <tr>
-                  <th className="px-6 py-4.5">Platform User</th>
-                  <th className="px-6 py-4.5">Account Role</th>
-                  <th className="px-6 py-4.5">Joined Date</th>
-                  <th className="px-6 py-4.5">Status</th>
-                  <th className="px-6 py-4.5 text-right">Actions</th>
+        {/* User table */}
+        {loading ? (
+          <div className="p-8 space-y-4">
+            <div className="h-12 animate-pulse rounded-xl bg-slate-100" />
+            <div className="h-12 animate-pulse rounded-xl bg-slate-100" />
+            <div className="h-12 animate-pulse rounded-xl bg-slate-100" />
+          </div>
+        ) : users.length === 0 ? (
+          <div className="p-12 text-center text-xs font-semibold text-slate-400">
+            Không tìm thấy người dùng nào phù hợp với bộ lọc.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse text-left text-xs font-semibold text-slate-600">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50/50 text-slate-400 font-black uppercase text-[10px] tracking-wider">
+                  <th className="py-3.5 px-5">Người dùng</th>
+                  <th className="py-3.5 px-4">Vai trò</th>
+                  <th className="py-3.5 px-4">Ngày tham gia</th>
+                  <th className="py-3.5 px-4">Trạng thái tài khoản</th>
+                  <th className="py-3.5 px-4">Duyệt hồ sơ Gia sư</th>
+                  <th className="py-3.5 px-5 text-right">Hành động</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-brand-border/10 font-sans text-xs">
-                {filteredUsers.map((user) => {
-                  let roleBadge = "bg-brand-primary/10 text-brand-primary";
-                  if (user.role === "Tutor") roleBadge = "bg-brand-secondary/10 text-brand-secondary";
-                  if (user.role === "Admin") roleBadge = "bg-brand-text/10 text-brand-text";
-
-                  let statusBadge = "bg-emerald-50 text-emerald-700 border border-emerald-100";
-                  if (user.status === "Suspended") statusBadge = "bg-brand-error/5 text-brand-error border border-brand-error/10";
-                  if (user.status === "Pending") statusBadge = "bg-amber-50 text-amber-700 border border-amber-100";
-
+              <tbody className="divide-y divide-slate-100">
+                {users.map((u) => {
+                  const isTutor = u.roles?.includes("TUTOR");
                   return (
-                    <tr key={user.id} className="hover:bg-brand-low/30 transition-colors">
-                      <td className="px-6 py-4">
+                    <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3.5 px-5">
                         <div className="flex items-center gap-3">
-                          <img
-                            className="w-9 h-9 rounded-full object-cover shadow-sm select-none"
-                            src={user.avatarUrl}
-                            alt={user.name}
-                            referrerPolicy="no-referrer"
-                          />
-                          <div className="select-none min-w-0">
-                            <p className="font-bold text-brand-text text-sm truncate">{user.name}</p>
-                            <p className="text-xs text-brand-text-variant/70 truncate">{user.email}</p>
+                          <div className="h-9 w-9 rounded-full bg-slate-900 text-white font-black flex items-center justify-center text-xs overflow-hidden shrink-0">
+                            {u.avatarUrl ? (
+                              <img src={u.avatarUrl} alt="" className="h-full w-full object-cover" />
+                            ) : (
+                              u.fullName?.charAt(0) || "U"
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-extrabold text-slate-900 text-sm">{u.fullName || "Chưa cập nhật tên"}</p>
+                            <p className="text-[11px] text-slate-400 font-semibold">{u.email}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2.5 py-1 rounded-lg text-[10px] font-display font-black uppercase tracking-wider border border-transparent ${roleBadge}`}>
-                          {user.role}
+                      <td className="py-3.5 px-4">
+                        <div className="flex flex-wrap gap-1">
+                          {u.roles?.map((r: string) => (
+                            <span
+                              key={r}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-black tracking-wider ${
+                                r === "TUTOR"
+                                  ? "bg-purple-50 text-purple-700 border border-purple-200"
+                                  : r === "ADMIN"
+                                  ? "bg-slate-900 text-white"
+                                  : r === "STAFF"
+                                  ? "bg-blue-900 text-white"
+                                  : "bg-blue-50 text-primary border border-blue-200"
+                              }`}
+                            >
+                              {r}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-500 whitespace-nowrap">
+                        {u.createdAt ? new Date(u.createdAt).toLocaleDateString("vi-VN") : "--"}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold ${
+                            u.accountStatus === "ACTIVE"
+                              ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : "bg-rose-50 text-rose-700 border border-rose-200"
+                          }`}
+                        >
+                          {u.accountStatus === "ACTIVE" ? "ACTIVE" : "LOCKED"}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-brand-text-variant/80 font-bold font-sans">
-                        {user.joinedDate}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${statusBadge}`}>
-                          {user.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2.5">
-                          <button
-                            onClick={() => handleOpenEdit(user)}
-                            className="p-1.5 text-brand-primary hover:bg-brand-primary/5 rounded-xl transition-colors shrink-0"
-                            title="Edit User"
+                      <td className="py-3.5 px-4">
+                        {isTutor ? (
+                          <span
+                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
+                              u.tutorApplicationStatus === "APPROVED"
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                : u.tutorApplicationStatus === "PENDING"
+                                ? "bg-amber-50 text-amber-700 border border-amber-200 animate-pulse"
+                                : u.tutorApplicationStatus === "REJECTED"
+                                ? "bg-red-50 text-red-700 border border-red-200"
+                                : "bg-slate-100 text-slate-500"
+                            }`}
                           >
-                            <SquarePen className="w-4 h-4 shrink-0" />
+                            {u.tutorApplicationStatus === "APPROVED"
+                              ? "✓ ĐÃ DUYỆT"
+                              : u.tutorApplicationStatus === "PENDING"
+                              ? "⏳ CHỜ DUYỆT"
+                              : u.tutorApplicationStatus === "REJECTED"
+                              ? "✕ TỪ CHỐI"
+                              : "DRAFT"}
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">--</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-5 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openDetail(u.id)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#073554] text-white text-xs font-bold hover:bg-[#147b77] transition-colors"
+                          >
+                            <Eye size={13} />
+                            <span>Chi tiết {isTutor ? "& CCCD" : ""}</span>
                           </button>
                           <button
-                            onClick={() => {
-                              if (confirm(`Are you sure you want to delete ${user.name}? This cannot be undone.`)) {
-                                onDeleteUser(user.id);
-                              }
-                            }}
-                            className="p-1.5 text-brand-error hover:bg-brand-error/5 rounded-xl transition-colors shrink-0"
-                            title="Delete User"
+                            type="button"
+                            onClick={() => handleToggleStatus(u.id, u.accountStatus)}
+                            title={u.accountStatus === "ACTIVE" ? "Khóa tài khoản" : "Mở khóa tài khoản"}
+                            className={`p-1.5 rounded-lg border transition-colors ${
+                              u.accountStatus === "ACTIVE"
+                                ? "border-slate-200 text-slate-500 hover:text-red-600 hover:bg-red-50"
+                                : "border-emerald-200 text-emerald-600 bg-emerald-50 hover:bg-emerald-100"
+                            }`}
                           >
-                            <Trash2 className="w-4 h-4 shrink-0" />
+                            {u.accountStatus === "ACTIVE" ? <Lock size={14} /> : <Unlock size={14} />}
                           </button>
                         </div>
                       </td>
@@ -356,222 +470,244 @@ export function AdminPortal({
                 })}
               </tbody>
             </table>
-          )}
-        </div>
+          </div>
+        )}
       </section>
 
-      {/* CRUD Modal dialog: ADD NEW USER */}
-      {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden border border-brand-border/30 shadow-2xl flex flex-col p-6 space-y-6">
-            
-            <header className="flex justify-between items-center pb-2 border-b border-brand-border/15 select-none">
-              <h3 className="font-display font-black text-base text-brand-text">
-                Add Premium Platform User
-              </h3>
+      {/* Comprehensive User Detail & Tutor Review Modal */}
+      {selectedUserId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl space-y-6">
+            <header className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-[#147b77]">Chi tiết tài khoản</p>
+                <h3 className="text-xl font-black text-slate-900">Hồ sơ người dùng & Xác minh danh tính</h3>
+              </div>
               <button
-                onClick={() => setIsAddModalOpen(false)}
-                className="text-brand-text-variant hover:text-brand-text p-1 cursor-pointer"
+                type="button"
+                onClick={() => { setSelectedUserId(null); setUserDetail(null); }}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               >
-                <X className="w-5 h-5" />
+                <X size={20} />
               </button>
             </header>
 
-            <form className="space-y-4 font-sans" onSubmit={(e) => e.preventDefault()}>
-              
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-brand-text-variant/60 font-display uppercase tracking-widest block">
-                  User Full Name
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Liam Sterling"
-                  className="w-full px-4 py-2.5 rounded-xl border border-brand-border/40 focus:border-brand-primary text-xs font-semibold outline-none transition-colors"
-                  value={addForm.name}
-                  onChange={(e) => setAddForm((prev) => ({ ...prev, name: e.target.value }))}
-                />
+            {detailLoading || !userDetail ? (
+              <div className="h-64 animate-pulse rounded-xl bg-slate-100" />
+            ) : (
+              <div className="space-y-6">
+                {/* Header card with avatar & quick roles */}
+                <div className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                  <div className="h-16 w-16 rounded-2xl bg-slate-900 text-white font-black flex items-center justify-center text-xl overflow-hidden shrink-0 border-2 border-white shadow-sm">
+                    {userDetail.user?.avatarUrl ? (
+                      <img src={userDetail.user.avatarUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      userDetail.user?.fullName?.charAt(0) || "U"
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-lg font-black text-slate-900">{userDetail.user?.fullName || "Chưa đặt tên"}</h4>
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        {userDetail.user?.accountStatus}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-semibold mt-0.5">{userDetail.user?.email}</p>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {userDetail.user?.roles?.map((r: string) => (
+                        <span key={r} className="px-2 py-0.5 rounded-md text-[10px] font-black bg-slate-900 text-white">
+                          {r}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Personal Information Grid */}
+                <div>
+                  <h5 className="font-extrabold text-sm text-slate-900 mb-3 flex items-center gap-2">
+                    <Users className="text-[#147b77]" size={17} /> Thông tin cá nhân
+                  </h5>
+                  <div className="grid gap-3 sm:grid-cols-2 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                    <div className="flex items-center gap-3">
+                      <Phone className="text-[#147b77]" size={16} />
+                      <div>
+                        <p className="text-[10px] font-black uppercase text-slate-400">Số điện thoại</p>
+                        <p className="text-xs font-extrabold text-slate-900">{userDetail.user?.phone || "--"}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <CalendarDays className="text-[#147b77]" size={16} />
+                      <div>
+                        <p className="text-[10px] font-black uppercase text-slate-400">Ngày sinh</p>
+                        <p className="text-xs font-extrabold text-slate-900">{userDetail.user?.dateOfBirth || "--"}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 sm:col-span-2">
+                      <MapPin className="text-[#147b77]" size={16} />
+                      <div>
+                        <p className="text-[10px] font-black uppercase text-slate-400">Địa chỉ</p>
+                        <p className="text-xs font-extrabold text-slate-900">
+                          {[userDetail.user?.addressDetail, userDetail.user?.commune, userDetail.user?.province].filter(Boolean).join(", ") || "--"}
+                        </p>
+                      </div>
+                    </div>
+                    {userDetail.user?.bio && (
+                      <div className="sm:col-span-2 pt-2 border-t border-slate-200/60">
+                        <p className="text-[10px] font-black uppercase text-slate-400">Giới thiệu ngắn (Bio)</p>
+                        <p className="text-xs font-semibold text-slate-700 mt-1">{userDetail.user.bio}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Tutor Verification Documents (If user is a Tutor) */}
+                {userDetail.user?.roles?.includes("TUTOR") && (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h5 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                        <ShieldCheck className="text-[#147b77]" size={17} /> Xác minh danh tính Gia sư (CCCD / Hộ chiếu)
+                      </h5>
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-black ${
+                          userDetail.user?.tutorApplicationStatus === "APPROVED"
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            : userDetail.user?.tutorApplicationStatus === "PENDING"
+                            ? "bg-amber-50 text-amber-700 border border-amber-200 animate-pulse"
+                            : userDetail.user?.tutorApplicationStatus === "REJECTED"
+                            ? "bg-red-50 text-red-700 border border-red-200"
+                            : "bg-slate-100 text-slate-600 border border-slate-200"
+                        }`}
+                      >
+                        Trạng thái duyệt: {
+                          userDetail.user?.tutorApplicationStatus === "APPROVED" ? "✓ Đã duyệt" :
+                          userDetail.user?.tutorApplicationStatus === "PENDING" ? "⏳ Đang chờ duyệt" :
+                          userDetail.user?.tutorApplicationStatus === "REJECTED" ? "✕ Bị từ chối" : "📝 Bản nháp (Chưa nộp)"
+                        }
+                      </span>
+                    </div>
+
+                    {userDetail.user?.tutorApplicationStatus === "DRAFT" && (
+                      <div className="mb-3 p-3.5 rounded-xl border border-blue-200 bg-blue-50 text-xs font-semibold text-blue-900 leading-5">
+                        <p className="font-extrabold text-blue-950">ℹ️ Hồ sơ Gia sư đang ở dạng Bản nháp (Chưa nộp)</p>
+                        <p className="mt-0.5 text-blue-800">
+                          Gia sư này đã tải lên một số giấy tờ nhưng <strong>chưa bấm "Gửi duyệt hồ sơ cho Ban quản trị"</strong> trên trang cá nhân. Hồ sơ chỉ xuất hiện ở danh sách Chờ duyệt sau khi Gia sư bấm nộp.
+                        </p>
+                      </div>
+                    )}
+
+                    {(!userDetail.tutorDetail?.documents || userDetail.tutorDetail.documents.filter((doc: any) => ['IDENTITY_FRONT', 'IDENTITY_BACK', 'PASSPORT'].includes(doc.documentType)).length === 0) ? (
+                      <div className="p-4 rounded-2xl border border-dashed border-slate-300 text-xs font-semibold text-slate-400 text-center">
+                        Gia sư chưa tải lên ảnh CCCD hoặc Giấy tờ xác minh danh tính.
+                      </div>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {userDetail.tutorDetail.documents
+                          .filter((doc: any) => ['IDENTITY_FRONT', 'IDENTITY_BACK', 'PASSPORT'].includes(doc.documentType))
+                          .map((doc: any) => (
+                          <div key={doc.id} className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 shadow-2xs">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <FileText className="text-primary shrink-0" size={20} />
+                              <div className="min-w-0">
+                                <p className="text-xs font-extrabold text-slate-900 truncate">
+                                  {doc.documentType === 'IDENTITY_FRONT' ? 'CCCD Mặt trước' :
+                                   doc.documentType === 'IDENTITY_BACK' ? 'CCCD Mặt sau' :
+                                   doc.documentType === 'PASSPORT' ? 'Trang Hộ chiếu' :
+                                   doc.title || doc.documentType}
+                                </p>
+                                <p className="text-[10px] font-semibold text-slate-400 truncate">{doc.originalFilename}</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleViewDoc(userDetail.user.tutorApplicationId, doc)}
+                              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 shrink-0"
+                            >
+                              <ExternalLink size={13} />
+                              Xem ảnh
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-brand-text-variant/60 font-display uppercase tracking-widest block">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  placeholder="e.g. liam.sterling@university.edu"
-                  className="w-full px-4 py-2.5 rounded-xl border border-brand-border/40 focus:border-brand-primary text-xs font-semibold outline-none transition-colors"
-                  value={addForm.email}
-                  onChange={(e) => setAddForm((prev) => ({ ...prev, email: e.target.value }))}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-brand-text-variant/60 font-display uppercase tracking-widest block">
-                  Assigned Workspace Role
-                </label>
-                <select
-                  className="w-full px-4 py-2.5 rounded-xl border border-brand-border/40 text-xs font-semibold outline-none cursor-pointer"
-                  value={addForm.role}
-                  onChange={(e) =>
-                    setAddForm((prev) => ({
-                      ...prev,
-                      role: e.target.value as "Student" | "Tutor" | "Admin",
-                    }))
-                  }
-                >
-                  <option value="Student">Student (Learning Portal)</option>
-                  <option value="Tutor">Tutor (Schedule Marketplace)</option>
-                  <option value="Admin">Admin (Control Center)</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-brand-text-variant/60 font-display uppercase tracking-widest block">
-                  Account Access Status
-                </label>
-                <select
-                  className="w-full px-4 py-2.5 rounded-xl border border-brand-border/40 text-xs font-semibold outline-none cursor-pointer"
-                  value={addForm.status}
-                  onChange={(e) =>
-                    setAddForm((prev) => ({
-                      ...prev,
-                      status: e.target.value as "Active" | "Suspended" | "Pending",
-                    }))
-                  }
-                >
-                  <option value="Active">Active status</option>
-                  <option value="Pending">Pending status</option>
-                  <option value="Suspended">Suspended / Read-only</option>
-                </select>
-              </div>
-
-            </form>
-
-            <footer className="flex justify-end gap-3 pt-4 border-t border-brand-border/15 font-display select-none">
-              <button
-                type="button"
-                onClick={() => setIsAddModalOpen(false)}
-                className="px-5 py-2.5 border border-brand-border/30 rounded-xl text-xs font-bold text-brand-text-variant hover:bg-brand-low active:scale-95 transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveAdd}
-                className="px-5 py-2.5 bg-brand-primary text-white rounded-xl text-xs font-black tracking-widest hover:bg-brand-primary/95 shadow-md shadow-brand-primary/10 active:scale-95 transition-all cursor-pointer"
-              >
-                SAVE USER
-              </button>
-            </footer>
-
+            )}
           </div>
         </div>
       )}
 
-      {/* CRUD Modal dialog: EDIT EXISTING USER CUSTOM */}
-      {isEditModalOpen && editForm && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden border border-brand-border/30 shadow-2xl flex flex-col p-6 space-y-6">
-            
-            <header className="flex justify-between items-center pb-2 border-b border-brand-border/15 select-none">
-              <h3 className="font-display font-black text-base text-brand-text">
-                Modify Platform User Detail
-              </h3>
-              <button
-                onClick={() => setIsEditModalOpen(false)}
-                className="text-brand-text-variant hover:text-brand-text p-1 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </header>
-
-            <form className="space-y-4 font-sans" onSubmit={(e) => e.preventDefault()}>
-              
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-brand-text-variant/60 font-display uppercase tracking-widest block">
-                  Modify Full Name
-                </label>
-                <input
-                  type="text"
-                  className="w-full px-4 py-2.5 rounded-xl border border-brand-border/40 focus:border-brand-primary text-xs font-semibold outline-none transition-colors"
-                  value={editForm.name}
-                  onChange={(e) => setEditForm((prev) => prev && { ...prev, name: e.target.value })}
-                />
-              </div>
-
-              <div className="space-y-1 opacity-60">
-                <label className="text-[10px] font-bold text-brand-text-variant/60 font-display uppercase tracking-widest block">
-                  Email Address (Unmodifiable)
-                </label>
-                <input
-                  type="email"
-                  disabled
-                  className="w-full px-4 py-2.5 rounded-xl border border-brand-border/35 bg-brand-low text-xs font-semibold outline-none"
-                  value={editForm.email}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-brand-text-variant/60 font-display uppercase tracking-widest block">
-                  Change Workspace Role
-                </label>
-                <select
-                  className="w-full px-4 py-2.5 rounded-xl border border-brand-border/40 text-xs font-semibold outline-none cursor-pointer"
-                  value={editForm.role}
-                  onChange={(e) =>
-                    setEditForm((prev) =>
-                      prev && { ...prev, role: e.target.value as "Student" | "Tutor" | "Admin" }
-                    )
-                  }
-                >
-                  <option value="Student">Student (Learning Portal)</option>
-                  <option value="Tutor">Tutor (Schedule Marketplace)</option>
-                  <option value="Admin">Admin (Control Center)</option>
-                </select>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-brand-text-variant/60 font-display uppercase tracking-widest block">
-                  Adjust Status Badge
-                </label>
-                <select
-                  className="w-full px-4 py-2.5 rounded-xl border border-brand-border/40 text-xs font-semibold outline-none cursor-pointer"
-                  value={editForm.status}
-                  onChange={(e) =>
-                    setEditForm((prev) =>
-                      prev && { ...prev, status: e.target.value as "Active" | "Suspended" | "Pending" }
-                    )
-                  }
-                >
-                  <option value="Active">Active status</option>
-                  <option value="Pending">Pending status</option>
-                  <option value="Suspended">Suspended / Read-only</option>
-                </select>
-              </div>
-
-            </form>
-
-            <footer className="flex justify-end gap-3 pt-4 border-t border-brand-border/15 font-display select-none">
+      {/* Reject Reason Dialog */}
+      {rejectingAppId && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs">
+          <form onSubmit={handleRejectTutorSubmit} className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl space-y-4">
+            <h4 className="font-extrabold text-base text-slate-900">Lý do từ chối hồ sơ Gia sư</h4>
+            <p className="text-xs font-semibold text-slate-500 leading-5">
+              Vui lòng nhập lý do từ chối để thông báo cho Gia sư điều chỉnh lại thông tin hoặc ảnh CCCD/Hộ chiếu.
+            </p>
+            <textarea
+              required
+              rows={3}
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="Ví dụ: Ảnh CCCD mặt sau bị mờ, vui lòng tải lại ảnh nét..."
+              className="w-full rounded-xl border border-slate-300 p-3 text-xs font-medium focus:border-[#147b77] focus:outline-hidden"
+            />
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setIsEditModalOpen(false)}
-                className="px-5 py-2.5 border border-brand-border/30 rounded-xl text-xs font-bold text-brand-text-variant hover:bg-brand-low active:scale-95 transition-all cursor-pointer"
+                onClick={() => { setRejectingAppId(null); setRejectReason(""); }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
               >
-                Cancel
+                Hủy bỏ
               </button>
               <button
-                type="button"
-                onClick={handleSaveEdit}
-                className="px-5 py-2.5 bg-brand-primary text-white rounded-xl text-xs font-black tracking-widest hover:bg-brand-primary/95 shadow-md shadow-brand-primary/10 active:scale-95 transition-all cursor-pointer"
+                type="submit"
+                disabled={actionBusy || !rejectReason.trim()}
+                className="px-4 py-2 rounded-xl bg-red-600 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50"
               >
-                SAVE EDITS
+                {actionBusy ? "Đang xử lý..." : "Xác nhận từ chối"}
               </button>
-            </footer>
-
-          </div>
+            </div>
+          </form>
         </div>
       )}
 
+      {/* Document Image Lightbox / Modal */}
+      {previewDoc && (
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-xs">
+          <div className="relative max-h-[90vh] max-w-3xl overflow-hidden rounded-2xl bg-white p-4 shadow-2xl flex flex-col items-center">
+            <div className="w-full flex items-center justify-between pb-3 border-b border-slate-100">
+              <span className="text-xs font-extrabold text-slate-800">{previewDoc.title}</span>
+              <button
+                type="button"
+                onClick={() => setPreviewDoc(null)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mt-4 max-h-[70vh] overflow-auto flex items-center justify-center">
+              {previewDoc.contentType?.includes("pdf") ? (
+                <iframe src={previewDoc.url} className="w-[600px] h-[500px]" title="PDF Preview" />
+              ) : (
+                <img src={previewDoc.url} alt="Document" className="max-h-[70vh] object-contain rounded-lg" />
+              )}
+            </div>
+            <div className="mt-4 w-full flex justify-end">
+              <a
+                href={previewDoc.url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-[#147b77]"
+              >
+                <Download size={14} /> Tải về tệp gốc
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

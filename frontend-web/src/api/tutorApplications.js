@@ -1,7 +1,10 @@
 import { apiRequest } from './client';
 
 export const tutorApplicationApi = {
-  getMyTutorApplication: () => apiRequest('/api/tutor-applications/me'),
+  getMyTutorApplication: () => apiRequest('/api/tutor-applications/me').catch((err) => {
+    if (err?.status === 404) return null;
+    throw err;
+  }),
   createTutorApplication: () => apiRequest('/api/tutor-applications', {
     method: 'POST'
   }),
@@ -10,6 +13,9 @@ export const tutorApplicationApi = {
     body: JSON.stringify(payload)
   }),
   submitMyTutorApplication: () => apiRequest('/api/tutor-applications/me/submit', {
+    method: 'POST'
+  }),
+  submitProfileForReview: () => apiRequest('/api/tutor-applications/me/submit-profile', {
     method: 'POST'
   }),
   getMyTutorApplicationSubjects: () => apiRequest('/api/tutor-applications/me/subjects'),

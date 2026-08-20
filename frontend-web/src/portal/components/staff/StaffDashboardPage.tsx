@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { AlertCircle, CheckCircle2, RefreshCw, Eye, FileText, X, BookOpen, GraduationCap } from "lucide-react";
+import { AlertCircle, CheckCircle2, RefreshCw, Eye, FileText, X, BookOpen, GraduationCap, UserCheck } from "lucide-react";
 import { useAuth } from "../../../hooks/useAuth";
 import { DashboardStats } from "./DashboardStats";
 import { TeachingRegistrationReview } from "./TeachingRegistrationReview";
 import { ClassApprovalReview } from "./ClassApprovalReview";
+import { TutorProfileApprovalReview } from "./TutorProfileApprovalReview";
 import { teachingRegistrationApi } from "../../../api/teachingRegistrations";
 
 export function StaffDashboardPage() {
@@ -12,8 +13,9 @@ export function StaffDashboardPage() {
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [teachingPendingCount, setTeachingPendingCount] = useState(0);
+  const [tutorProfilePendingCount, setTutorProfilePendingCount] = useState(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [activeTab, setActiveTab] = useState<"TEACHING_REGISTRATION" | "CLASS_ROOMS">("CLASS_ROOMS");
+  const [activeTab, setActiveTab] = useState<"TUTOR_PROFILES" | "TEACHING_REGISTRATION" | "CLASS_ROOMS">("CLASS_ROOMS");
 
   const [historyItems, setHistoryItems] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -80,7 +82,7 @@ export function StaffDashboardPage() {
       </header>
 
       {/* Main Mode Navigation Tabs */}
-      <div className="mb-5 flex items-center gap-2 border-b border-slate-200 pb-2">
+      <div className="mb-5 flex items-center gap-2 border-b border-slate-200 pb-2 flex-wrap">
         <button
           onClick={() => setActiveTab("CLASS_ROOMS")}
           className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all ${
@@ -91,6 +93,23 @@ export function StaffDashboardPage() {
         >
           <GraduationCap className="w-4 h-4" />
           <span>Quản lý & Duyệt Lớp học</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("TUTOR_PROFILES")}
+          className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black transition-all ${
+            activeTab === "TUTOR_PROFILES"
+              ? "bg-[#073554] text-white shadow-sm"
+              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+          }`}
+        >
+          <UserCheck className="w-4 h-4" />
+          <span>Duyệt Hồ sơ & CCCD Gia sư</span>
+          {tutorProfilePendingCount > 0 && (
+            <span className="px-2 py-0.5 rounded-full bg-amber-400 text-amber-950 text-[10px] font-black">
+              {tutorProfilePendingCount}
+            </span>
+          )}
         </button>
 
         <button
@@ -128,6 +147,14 @@ export function StaffDashboardPage() {
 
       {activeTab === "CLASS_ROOMS" ? (
         <ClassApprovalReview key={`classes-${refreshTrigger}`} />
+      ) : activeTab === "TUTOR_PROFILES" ? (
+        <TutorProfileApprovalReview
+          key={`tutor-profiles-${refreshTrigger}`}
+          onNotice={setToast}
+          onError={setError}
+          onPendingCountChange={setTutorProfilePendingCount}
+          onActionSuccess={loadHistory}
+        />
       ) : (
         <>
           <DashboardStats 

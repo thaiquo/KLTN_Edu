@@ -22,7 +22,9 @@ public interface TutorRepository extends JpaRepository<Tutor, Long> {
             select tutor
             from Tutor tutor
             join fetch tutor.user user
+            join TutorApplication app on app.user.id = user.id
             where user.emailVerified = true
+              and app.status = iuh.fit.account_service.enums.TutorApplicationStatus.APPROVED
             order by user.fullName asc
             """)
     List<Tutor> findPublicTutors(Pageable pageable);
@@ -31,7 +33,9 @@ public interface TutorRepository extends JpaRepository<Tutor, Long> {
             select tutor
             from Tutor tutor
             join fetch tutor.user user
+            join TutorApplication app on app.user.id = user.id
             where user.emailVerified = true
+              and app.status = iuh.fit.account_service.enums.TutorApplicationStatus.APPROVED
               and lower(user.fullName) like lower(concat('%', :keyword, '%'))
             order by user.fullName asc
             """)

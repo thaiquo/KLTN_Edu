@@ -20,6 +20,10 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import iuh.fit.account_service.entity.TutorApplication;
+import iuh.fit.account_service.enums.TutorApplicationStatus;
+import iuh.fit.account_service.repository.TutorApplicationRepository;
+
 @Service
 public class PublicTutorService {
 
@@ -27,13 +31,16 @@ public class PublicTutorService {
     private static final int MAX_LIMIT = 50;
 
     private final TutorRepository tutorRepository;
+    private final TutorApplicationRepository tutorApplicationRepository;
     private final LearningTutorSubjectClient learningTutorSubjectClient;
 
     public PublicTutorService(
             TutorRepository tutorRepository,
+            TutorApplicationRepository tutorApplicationRepository,
             LearningTutorSubjectClient learningTutorSubjectClient
     ) {
         this.tutorRepository = tutorRepository;
+        this.tutorApplicationRepository = tutorApplicationRepository;
         this.learningTutorSubjectClient = learningTutorSubjectClient;
     }
 
@@ -76,6 +83,11 @@ public class PublicTutorService {
     public PublicTutorResponse getTutor(Long tutorProfileId) {
         Tutor profile = tutorRepository.findById(tutorProfileId)
                 .orElseThrow(() -> new ResourceNotFoundException("Tutor profile not found"));
+
+        TutorApplication app = tutorApplicationRepository.findByUserId(profile.getUser().getId()).orElse(null);
+        if (app == null || app.getStatus() != TutorApplicationStatus.APPROVED) {
+            throw new ResourceNotFoundException("Hồ sơ gia sư chưa được Ban quản trị phê duyệt");
+        }
 
         List<LearningTutorSubjectResponse> subjects = learningTutorSubjectClient.getTutorSubjects(profile.getId());
         return toResponse(profile, subjects);

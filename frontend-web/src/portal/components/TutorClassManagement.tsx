@@ -140,13 +140,19 @@ export function TutorClassManagement() {
     }
   };
 
+  const [tutorApp, setTutorApp] = useState<any>(null);
+
   const loadClasses = async () => {
     setLoading(true);
     try {
       const data = await classApi.getMyClasses();
       setClasses(data || []);
-    } catch (err) {
-      console.error("Failed to load classes", err);
+    } catch (err: any) {
+      if (err?.status === 403 || err?.status === 401) {
+        setClasses([]);
+      } else {
+        console.error("Failed to load classes", err);
+      }
     } finally {
       setLoading(false);
     }
@@ -154,7 +160,20 @@ export function TutorClassManagement() {
 
   useEffect(() => {
     loadClasses();
+    import("../../api/tutorApplications").then(({ tutorApplicationApi }) => {
+      tutorApplicationApi.getMyTutorApplication()
+        .then(data => setTutorApp(data))
+        .catch(() => setTutorApp(null));
+    });
   }, []);
+
+  const handleCreateClick = () => {
+    if (tutorApp && tutorApp.status !== "APPROVED") {
+      alert("Hồ sơ cá nhân và xác minh danh tính của bạn đang trong trạng thái " + (tutorApp.status === "PENDING" ? "CHỜ BAN QUẢN TRỊ DUYỆT" : "CHƯA ĐƯỢC PHÊ DUYỆT") + ".\n\nBạn tạm thời chưa thể tạo lớp học mới lúc này. Các lớp học đã tạo trước đó vẫn hoạt động và giảng dạy bình thường.");
+      return;
+    }
+    setViewMode("create");
+  };
 
   const handleDeleteClass = async (classRoom: ClassRoomItem) => {
     const confirmation = classRoom.status === "PENDING_APPROVAL"
@@ -405,13 +424,26 @@ export function TutorClassManagement() {
         </div>
 
         <button
-          onClick={() => setViewMode("create")}
+          onClick={handleCreateClick}
           className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-brand-primary text-white font-black text-xs hover:bg-brand-primary/90 transition-all shadow-md shadow-brand-primary/20 flex-shrink-0"
         >
           <Plus className="w-4 h-4" />
           <span>Tạo Lớp Học Mới</span>
         </button>
       </div>
+
+      {/* Pending Re-Approval Warning Banner */}
+      {tutorApp?.status === "PENDING" && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 text-amber-900 flex items-start gap-3 shadow-xs">
+          <span className="text-xl">⏳</span>
+          <div className="text-xs leading-5">
+            <p className="font-extrabold text-sm text-amber-950">Hồ sơ cá nhân & xác minh của bạn đang chờ Ban quản trị xét duyệt</p>
+            <p className="mt-0.5 font-semibold text-amber-800">
+              Bạn tạm thời không thể tạo thêm lớp học mới lúc này. Tất cả các lớp học hiện tại đã tạo của bạn vẫn hoạt động, tuyển sinh và giảng dạy bình thường.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Summary Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5">

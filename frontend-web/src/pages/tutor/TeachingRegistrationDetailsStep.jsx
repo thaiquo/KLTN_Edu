@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ArrowLeft, FileText, LoaderCircle, Send, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { ArrowLeft, FileText, LoaderCircle, Send, Trash2, Upload } from 'lucide-react';
 
 const EVIDENCE_TYPES = ['DEGREE', 'CERTIFICATE', 'WORK_EXPERIENCE', 'PORTFOLIO', 'OTHER'];
 const ACCEPTED_EVIDENCE = '.doc,.docx,.xls,.xlsx,.pdf,.jpg,.jpeg,.png,.gif,.webp';
@@ -7,7 +7,6 @@ const ACCEPTED_EVIDENCE = '.doc,.docx,.xls,.xlsx,.pdf,.jpg,.jpeg,.png,.gif,.webp
 export function TeachingRegistrationDetailsStep({
   form,
   selected,
-  documents,
   stagedDocuments,
   busy,
   onChange,
@@ -16,13 +15,10 @@ export function TeachingRegistrationDetailsStep({
   onBack,
   onSubmit
 }) {
-  const [identityMode, setIdentityMode] = useState('CCCD');
   const evidenceDrafts = stagedDocuments.filter((item) => EVIDENCE_TYPES.includes(item.documentType));
   const readyEvidenceCount = evidenceDrafts.filter((item) => item.file).length;
-  const availableTypes = new Set([...documents, ...stagedDocuments.filter((item) => item.file)].map((item) => item.documentType));
-  const identityReady = availableTypes.has('PASSPORT') || (availableTypes.has('IDENTITY_FRONT') && availableTypes.has('IDENTITY_BACK'));
   const allDraftsReady = evidenceDrafts.every((item) => item.file);
-  const canSubmit = identityReady && allDraftsReady && readyEvidenceCount >= 1 && readyEvidenceCount <= 5;
+  const canSubmit = allDraftsReady && readyEvidenceCount >= 1 && readyEvidenceCount <= 5;
 
   function addEvidence() {
     if (evidenceDrafts.length >= 5) return;
@@ -32,14 +28,6 @@ export function TeachingRegistrationDetailsStep({
 
   return (
     <form onSubmit={onSubmit}>
-      <IdentitySection
-        mode={identityMode}
-        setMode={setIdentityMode}
-        documents={documents}
-        stagedDocuments={stagedDocuments}
-        onUpsertStaged={onUpsertStaged}
-      />
-
       <section className="mt-5 rounded-[8px] border border-emerald-100 bg-emerald-50 p-5">
         <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#147b77]">Quyền dạy đang đăng ký</p>
         <p className="mt-2 font-display text-xl font-extrabold text-slate-950">
@@ -87,18 +75,6 @@ export function TeachingRegistrationDetailsStep({
       </div>
     </form>
   );
-}
-
-function IdentitySection({ mode, setMode, documents, stagedDocuments, onUpsertStaged }) {
-  const types = mode === 'CCCD' ? ['IDENTITY_FRONT', 'IDENTITY_BACK'] : ['PASSPORT'];
-  const labels = { IDENTITY_FRONT: 'CCCD / CMND mặt trước', IDENTITY_BACK: 'CCCD / CMND mặt sau', PASSPORT: 'Trang thông tin hộ chiếu' };
-  return <section className="rounded-[8px] border border-slate-200 p-4"><h3 className="flex items-center gap-2 font-display text-xl font-extrabold text-slate-950"><ShieldCheck size={20} className="text-primary" /> Xác minh danh tính dùng chung</h3><p className="mt-2 text-sm font-semibold text-slate-500">CCCD/CMND cần hai mặt; hộ chiếu chỉ cần một trang thông tin. File mới chỉ được giữ tạm.</p><div className="mt-4 grid gap-3 sm:grid-cols-2"><button type="button" onClick={() => setMode('CCCD')} className={`rounded-[8px] border p-3 text-left text-sm font-extrabold ${mode === 'CCCD' ? 'border-[#147b77] bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>CCCD / CMND<span className="mt-1 block text-xs font-semibold text-slate-500">Mặt trước và mặt sau</span></button><button type="button" onClick={() => setMode('PASSPORT')} className={`rounded-[8px] border p-3 text-left text-sm font-extrabold ${mode === 'PASSPORT' ? 'border-[#147b77] bg-emerald-50' : 'border-slate-200 bg-slate-50'}`}>Hộ chiếu<span className="mt-1 block text-xs font-semibold text-slate-500">Một trang thông tin</span></button></div><div className="mt-3 grid gap-3">{types.map((type) => <IdentityFileRow key={type} type={type} label={labels[type]} saved={documents.find((item) => item.documentType === type)} staged={stagedDocuments.find((item) => item.documentType === type)} onStage={(file) => onUpsertStaged({ id: `local-${type}`, documentType: type, file, title: file.name, originalFilename: file.name })} />)}</div></section>;
-}
-
-function IdentityFileRow({ label, saved, staged, onStage }) {
-  const inputRef = useRef(null);
-  const document = staged || saved;
-  return <div className="flex flex-col gap-3 rounded-[8px] border border-slate-200 bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-extrabold text-slate-950">{label}</p><p className={`mt-1 text-xs font-bold ${staged ? 'text-emerald-700' : 'text-slate-500'}`}>{staged ? `Đã chọn file · ${staged.file.name} · Chưa tải lên` : saved ? `Đã lưu · ${saved.originalFilename}` : 'Chưa chọn file'}</p></div><input ref={inputRef} type="file" accept="image/jpeg,image/png" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) onStage(file); event.target.value = ''; }} /><button type="button" onClick={() => inputRef.current?.click()} className="inline-flex items-center gap-2 rounded-[8px] border border-slate-200 bg-white px-3 py-2 text-sm font-extrabold text-slate-700"><Upload size={15} /> {document ? 'Thay file' : 'Chọn file'}</button></div>;
 }
 
 function EvidenceDraftForm({ index, draft, onChange, onRemove }) {

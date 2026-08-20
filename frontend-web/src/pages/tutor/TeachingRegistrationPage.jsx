@@ -66,18 +66,22 @@ export function TeachingRegistrationPage({ embedded = false }) {
   const hasIdentity = hasIdentityDocuments(documents);
   const visibleDocuments = [...documents, ...stagedDocuments];
 
+  const [tutorApp, setTutorApp] = useState(null);
+
   useEffect(() => {
     let active = true;
     Promise.all([
       teachingCatalogApi.programTypes(), teachingCatalogApi.educationLevels(),
       teachingRegistrationApi.mine(), catalogSuggestionApi.mine().catch(() => []),
-      tutorApplicationApi.getMyApplicationDocuments().catch(() => [])
-    ]).then(([programs, educationLevels, items, requested, savedDocuments]) => {
+      tutorApplicationApi.getMyApplicationDocuments().catch(() => []),
+      tutorApplicationApi.getMyTutorApplication().catch(() => null)
+    ]).then(([programs, educationLevels, items, requested, savedDocuments, app]) => {
       if (!active) return;
       setCatalog((current) => ({ ...current, programs, educationLevels }));
       setRegistrations(Array.isArray(items) ? items : []);
       setSuggestions(Array.isArray(requested) ? requested : []);
       setDocuments(Array.isArray(savedDocuments) ? savedDocuments : []);
+      if (app) setTutorApp(app);
     }).catch((loadError) => {
       if (active) setError(loadError.message || 'Không thể tải dữ liệu đăng ký dạy.');
     }).finally(() => {
@@ -195,7 +199,10 @@ export function TeachingRegistrationPage({ embedded = false }) {
     if (!form.description.trim()) return setError('Vui lòng mô tả ngắn về năng lực giảng dạy.');
     if (!form.tuitionMin || !form.tuitionMax) return setError('Vui lòng nhập khoảng học phí dự kiến.');
     if (Number(form.tuitionMin) > Number(form.tuitionMax)) return setError('Học phí tối thiểu không được lớn hơn học phí tối đa.');
-    if (!identityReadyAtSubmit) return setError('Vui lòng chọn đủ hai mặt CCCD/CMND hoặc một trang thông tin hộ chiếu.');
+    if (tutorApp && tutorApp.status !== 'APPROVED') {
+      return setError('Hồ sơ cá nhân và xác minh danh tính của bạn đang trong trạng thái ' + (tutorApp.status === 'PENDING' ? 'chờ Ban quản trị duyệt' : 'chưa được phê duyệt') + '. Vui lòng đợi phê duyệt trước khi đăng ký thêm môn dạy mới.');
+    }
+    if (!identityReadyAtSubmit) return setError('Vui lòng hoàn thành xác minh danh tính (CCCD/CMND hoặc Hộ chiếu) trong trang Hồ sơ cá nhân trước khi đăng ký dạy.');
     if (stagedEvidence.length + selectedSavedEvidence.length < 1) return setError('Vui lòng thêm ít nhất 1 minh chứng cho đăng ký dạy này.');
     if (stagedEvidence.length + selectedSavedEvidence.length > MAX_EVIDENCE_PER_REGISTRATION) return setError(`Mỗi đăng ký dạy chỉ được chọn tối đa ${MAX_EVIDENCE_PER_REGISTRATION} minh chứng.`);
 
@@ -430,7 +437,40 @@ export function TeachingRegistrationPage({ embedded = false }) {
 
           <div className="min-w-0 space-y-6">
             <section className="rounded-[8px] border border-slate-200 bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,.06)] sm:p-8">
-              {loading ? <LoadingState /> : <>
+              {loading ? <LoadingState /> : tutorApp && tutorApp.status !== 'APPROVED' ? (
+                <div className="py-8 text-center space-y-5">
+                  <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-amber-50 text-amber-600 border border-amber-200">
+                    <ShieldCheck size={32} />
+                  </div>
+                  <span className="inline-block px-3 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-900 border border-amber-300">
+                    CHƯA ĐỦ ĐIỀU KIỆN ĐĂNG KÝ MÔN DẠY
+                  </span>
+                  <h2 className="text-xl font-extrabold text-slate-900">
+                    Hồ sơ cá nhân & CCCD của bạn chưa được Ban quản trị phê duyệt
+                  </h2>
+                  <p className="text-xs font-semibold text-slate-600 max-w-lg mx-auto leading-6">
+                    Theo quy định: Bạn cần tải lên 2 mặt CCCD (hoặc Hộ chiếu) và được Ban quản trị phê duyệt Hồ sơ cá nhân trước khi mở tính năng Đăng ký môn dạy và Tạo lớp học mới.
+                  </p>
+
+                  <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-xs text-left max-w-md mx-auto space-y-1">
+                    <p className="font-bold text-slate-700">Trạng thái hồ sơ cá nhân hiện tại:</p>
+                    <p className="font-black text-amber-700">
+                      {!tutorApp || tutorApp.status === 'DRAFT' ? '📝 Bản nháp (Chưa nộp gửi duyệt)' :
+                       tutorApp.status === 'PENDING' ? '⏳ Đang chờ Ban quản trị duyệt' :
+                       tutorApp.status === 'REJECTED' ? `✕ Bị từ chối (Lý do: ${tutorApp.rejectionReason || 'Thông tin chưa đạt yêu cầu'})` : tutorApp.status}
+                    </p>
+                  </div>
+
+                  <div className="pt-2">
+                    <Link
+                      to="/profile"
+                      className="inline-flex items-center gap-2 rounded-xl bg-[#073554] px-5 py-3 text-xs font-bold text-white hover:bg-[#147b77] transition-all shadow-sm"
+                    >
+                      Về trang Hồ sơ cá nhân để nộp & theo dõi duyệt
+                    </Link>
+                  </div>
+                </div>
+              ) : <>
                 <StepHeading step={step + 1} title={currentStep.title} description={currentStep.description} icon={currentStep.icon} />
                 <div className="mt-7">
                   {currentStep.id === 'program' && <ProgramStep items={catalog.programs} onChoose={chooseProgram} />}

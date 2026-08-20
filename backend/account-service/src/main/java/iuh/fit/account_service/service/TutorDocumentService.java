@@ -11,6 +11,8 @@ import iuh.fit.account_service.enums.TutorApplicationStatus;
 import iuh.fit.account_service.enums.TutorDocumentType;
 import iuh.fit.account_service.enums.TutorDocumentVerificationStatus;
 import iuh.fit.account_service.util.HashUtils;
+import iuh.fit.account_service.dto.tutorapplication.TutorApplicationResponse;
+import iuh.fit.account_service.exception.BadRequestException;
 import iuh.fit.account_service.exception.ConflictException;
 import iuh.fit.account_service.exception.FileValidationException;
 import iuh.fit.account_service.exception.ResourceNotFoundException;
@@ -28,11 +30,13 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class TutorDocumentService {
@@ -122,20 +126,28 @@ public class TutorDocumentService {
         String sha256 = HashUtils.calculateSha256(content);
         String contentType = resolveContentType(file.getContentType(), extension, content);
 
-        // Duplicate detection scoped to this application (same bytes = skip upload, reuse record)
-        if (sha256 != null) {
-            var existing = tutorDocumentRepository.findFirstByTutorApplication_IdAndSha256Hash(
-                    application.getId(), sha256);
-            if (existing.isPresent()) {
-                return toResponse(existing.get());
-            }
+        // Delete old identity document of the same type and remove its old file from S3
+        if (IDENTITY_TYPES.contains(documentType)) {
+            tutorDocumentRepository.findFirstByTutorApplication_IdAndDocumentType(application.getId(), documentType)
+                    .ifPresent(oldDoc -> {
+                        if (StringUtils.hasText(oldDoc.getFileKey())) {
+                            try {
+                                fileStorageService.delete(oldDoc.getFileKey());
+                            } catch (RuntimeException ignored) {}
+                        }
+                        tutorDocumentRepository.delete(oldDoc);
+                        tutorDocumentRepository.flush();
+                    });
         }
 
-        String fileKey = "tutor-applications/%d/documents/%s.%s".formatted(
-                application.getId(),
-                UUID.randomUUID(),
-                extension
-        );
+        // Standardized S3 directory paths
+        Long targetUserId = application.getUser() != null ? application.getUser().getId() : application.getId();
+        String fileKey;
+        if (IDENTITY_TYPES.contains(documentType)) {
+            fileKey = "users/%d/identity/%s.%s".formatted(targetUserId, UUID.randomUUID(), extension);
+        } else {
+            fileKey = "tutors/%d/certificates/%s.%s".formatted(targetUserId, UUID.randomUUID(), extension);
+        }
 
         fileStorageService.store(fileKey, content, contentType);
 
@@ -156,7 +168,18 @@ public class TutorDocumentService {
             document.setValidityType(metadata.validityType());
             document.setExpiryDate(metadata.expiryDate());
             document.setCredentialNumber(metadata.credentialNumber());
-            return toResponse(tutorDocumentRepository.save(document));
+            TutorDocument saved = tutorDocumentRepository.save(document);
+
+            // If an approved tutor updates their identity documents, move application to PENDING for re-approval
+            if (application.getStatus() == TutorApplicationStatus.APPROVED && IDENTITY_TYPES.contains(documentType)) {
+                application.setStatus(TutorApplicationStatus.PENDING);
+                application.setSubmittedAt(LocalDateTime.now());
+                application.setReviewedAt(null);
+                application.setReviewedBy(null);
+                tutorApplicationRepository.save(application);
+            }
+
+            return toResponse(saved);
         } catch (RuntimeException ex) {
             try {
                 fileStorageService.delete(fileKey);
@@ -165,6 +188,53 @@ public class TutorDocumentService {
             }
             throw ex;
         }
+    }
+
+    @Transactional
+    public TutorApplicationResponse submitProfileForReview(String email) {
+        TutorApplication application = getApplication(email);
+        User user = application.getUser();
+        List<TutorDocument> docs = tutorDocumentRepository.findByTutorApplication_IdOrderByUploadedAtDesc(application.getId());
+
+        List<String> missing = new ArrayList<>();
+        if (!StringUtils.hasText(user.getFullName())) missing.add("Họ và tên");
+        if (!StringUtils.hasText(user.getPhone())) missing.add("Số điện thoại");
+        if (user.getDateOfBirth() == null) missing.add("Ngày sinh");
+        if (!StringUtils.hasText(user.getProvince()) && !StringUtils.hasText(user.getProvinceCode())) missing.add("Địa chỉ");
+
+        Set<TutorDocumentType> types = docs.stream().map(TutorDocument::getDocumentType).collect(Collectors.toSet());
+        boolean hasIdentity = types.contains(TutorDocumentType.PASSPORT) || (types.contains(TutorDocumentType.IDENTITY_FRONT) && types.contains(TutorDocumentType.IDENTITY_BACK));
+        if (!hasIdentity) {
+            missing.add("Xác minh danh tính (CCCD/Hộ chiếu)");
+        }
+
+        if (!missing.isEmpty()) {
+            throw new BadRequestException("Hồ sơ chưa đầy đủ: " + String.join(", ", missing));
+        }
+
+        application.setStatus(TutorApplicationStatus.PENDING);
+        application.setSubmittedAt(LocalDateTime.now());
+        application.setReviewedAt(null);
+        application.setReviewedBy(null);
+        application.setRejectionReason(null);
+        application.setReviewNote(null);
+        TutorApplication saved = tutorApplicationRepository.save(application);
+
+        return new TutorApplicationResponse(
+                saved.getId(),
+                saved.getStatus(),
+                saved.getBio(),
+                saved.getEducationLevel(),
+                saved.getInstitution(),
+                saved.getMajor(),
+                saved.getExperienceSummary(),
+                saved.getSubmittedAt(),
+                saved.getReviewedAt(),
+                saved.getRejectionReason(),
+                saved.getReviewNote(),
+                saved.getCreatedAt(),
+                saved.getUpdatedAt()
+        );
     }
 
     @Transactional(readOnly = true)
@@ -182,7 +252,11 @@ public class TutorDocumentService {
         TutorDocument document = tutorDocumentRepository.findByIdAndTutorApplication_Id(documentId, application.getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Tutor document not found"));
 
-        fileStorageService.delete(document.getFileKey());
+        if (StringUtils.hasText(document.getFileKey())) {
+            try {
+                fileStorageService.delete(document.getFileKey());
+            } catch (RuntimeException ignored) {}
+        }
         tutorDocumentRepository.delete(document);
     }
 
@@ -307,10 +381,18 @@ public class TutorDocumentService {
         User user = userRepository.findByEmailIgnoreCase(EmailNormalizer.normalize(email))
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         return tutorApplicationRepository.findByUserId(user.getId())
-                .orElseThrow(() -> new ResourceNotFoundException("Tutor application not found"));
+                .orElseGet(() -> {
+                    TutorApplication application = new TutorApplication();
+                    application.setUser(user);
+                    application.setStatus(TutorApplicationStatus.DRAFT);
+                    return tutorApplicationRepository.save(application);
+                });
     }
 
     private void ensureEditable(TutorApplication application) {
+        if (application.getStatus() == TutorApplicationStatus.APPROVED) {
+            return;
+        }
         if (application.getStatus() != TutorApplicationStatus.DRAFT
                 && application.getStatus() != TutorApplicationStatus.REJECTED) {
             throw new ConflictException("Tutor application is not editable in current status");

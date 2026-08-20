@@ -35,6 +35,11 @@ public class StaffTutorApplicationController {
         return tutorApprovalService.listPendingApplications();
     }
 
+    @GetMapping("/history")
+    public List<StaffTutorApplicationSummaryResponse> historyApplications(Authentication authentication) {
+        return tutorApprovalService.listHistory(authentication.getName());
+    }
+
     @GetMapping("/{applicationId}")
     public StaffTutorApplicationDetailResponse applicationDetail(@PathVariable Long applicationId) {
         return tutorApprovalService.getApplicationDetail(applicationId);

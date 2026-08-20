@@ -1,5 +1,7 @@
 package iuh.fit.account_service.service;
 
+import iuh.fit.account_service.messaging.event.TutorApprovedEvent;
+import iuh.fit.account_service.messaging.event.TutorRejectedEvent;
 import iuh.fit.account_service.dto.staff.StaffRejectTutorApplicationRequest;
 import iuh.fit.account_service.dto.staff.StaffReviewNoteRequest;
 import iuh.fit.account_service.dto.staff.StaffTutorApplicationDetailResponse;
@@ -20,8 +22,6 @@ import iuh.fit.account_service.exception.ConflictException;
 import iuh.fit.account_service.exception.IncompleteTutorApplicationException;
 import iuh.fit.account_service.exception.ResourceNotFoundException;
 import iuh.fit.account_service.messaging.AccountEventPublisher;
-import iuh.fit.account_service.messaging.event.TutorApprovedEvent;
-import iuh.fit.account_service.messaging.event.TutorRejectedEvent;
 import iuh.fit.account_service.repository.TutorApplicationRepository;
 import iuh.fit.account_service.repository.TutorApplicationSubjectRepository;
 import iuh.fit.account_service.repository.TutorDocumentRepository;
@@ -135,7 +135,9 @@ public class TutorApprovalService {
         ensureTutorRole(applicant);
         TutorProfile profile = getOrCreateProfile(applicant);
         profile.setActive(true);
-        profile.setBio(application.getBio());
+        if (StringUtils.hasText(application.getBio())) {
+            profile.setBio(application.getBio());
+        }
         profile = tutorProfileRepository.save(profile);
         publishTutorApproved(application, profile, applicationSubjects);
         markDocumentsVerified(documents);
@@ -162,14 +164,33 @@ public class TutorApprovalService {
         application.setRejectionReason(normalize(request.getReason()));
         application.setReviewNote(normalize(request.getNote()));
 
+        // Delete rejected files from S3 to free up storage, while recording rejection status
+        List<TutorDocument> documents = tutorDocumentRepository
+                .findByTutorApplication_IdOrderByUploadedAtDesc(application.getId());
+        for (TutorDocument doc : documents) {
+            if (doc.getVerificationStatus() == TutorDocumentVerificationStatus.PENDING) {
+                if (StringUtils.hasText(doc.getFileKey())) {
+                    try {
+                        fileStorageService.delete(doc.getFileKey());
+                    } catch (RuntimeException ignored) {}
+                }
+                doc.setVerificationStatus(TutorDocumentVerificationStatus.REJECTED);
+            }
+        }
+        tutorDocumentRepository.saveAll(documents);
+
         tutorApplicationRepository.save(application);
-        eventPublisher.publishTutorRejected(new TutorRejectedEvent(
-                UUID.randomUUID().toString(),
-                application.getId(),
-                application.getUser().getId(),
-                application.getRejectionReason(),
-                LocalDateTime.now()
-        ));
+        try {
+            eventPublisher.publishTutorRejected(new TutorRejectedEvent(
+                    UUID.randomUUID().toString(),
+                    application.getId(),
+                    application.getUser().getId(),
+                    application.getRejectionReason(),
+                    LocalDateTime.now()
+            ));
+        } catch (Exception ex) {
+            System.err.println("Warning: failed to publish TutorRejectedEvent: " + ex.getMessage());
+        }
         return toDetail(application);
     }
 
@@ -201,14 +222,54 @@ public class TutorApprovalService {
         tutorDocumentRepository.saveAll(documents);
     }
 
+    @Transactional(readOnly = true)
+    public List<StaffTutorApplicationSummaryResponse> listHistory(String currentUserEmail) {
+        User currentUser = getReviewer(currentUserEmail);
+        List<TutorApplicationStatus> reviewedStatuses = List.of(TutorApplicationStatus.APPROVED, TutorApplicationStatus.REJECTED);
+
+        List<TutorApplication> list;
+        if (currentUser != null && userRoleRepository.existsByUserIdAndRole(currentUser.getId(), Role.ADMIN)) {
+            // Admin sees all history reviewed across all staff/admins
+            list = tutorApplicationRepository.findByStatusInOrderByReviewedAtDesc(reviewedStatuses);
+        } else if (currentUser != null) {
+            // Staff sees history reviewed by themselves
+            list = tutorApplicationRepository.findByReviewedByIdAndStatusInOrderByReviewedAtDesc(currentUser.getId(), reviewedStatuses);
+        } else {
+            list = List.of();
+        }
+        return list.stream().map(this::toSummary).toList();
+    }
+
     private StaffTutorApplicationSummaryResponse toSummary(TutorApplication application) {
         User user = application.getUser();
+        String fullName = firstText(application.getApplicantFullName(), user.getFullName());
+        String email = firstText(application.getApplicantEmail(), user.getEmail());
+        String phone = firstText(application.getApplicantPhone(), user.getPhone());
+        LocalDate dob = application.getApplicantDateOfBirth() != null ? application.getApplicantDateOfBirth() : user.getDateOfBirth();
+        String province = firstText(application.getApplicantProvinceName(), user.getProvince());
+        String commune = firstText(application.getApplicantCommuneName(), firstText(user.getCommune(), user.getWard()));
+        String avatarUrl = resolveAvatarUrl(firstText(application.getApplicantAvatarKey(), user.getAvatarKey()));
+
+        User reviewer = application.getReviewedBy();
+        String reviewedByName = reviewer != null ? reviewer.getFullName() : null;
+        String reviewedByEmail = reviewer != null ? reviewer.getEmail() : null;
+
         return new StaffTutorApplicationSummaryResponse(
                 application.getId(),
                 user.getId(),
-                firstText(application.getApplicantFullName(), user.getFullName()),
-                firstText(application.getApplicantEmail(), user.getEmail()),
+                fullName,
+                email,
+                phone,
+                dob,
+                province,
+                commune,
+                avatarUrl,
                 application.getSubmittedAt(),
+                application.getReviewedAt(),
+                reviewedByName,
+                reviewedByEmail,
+                application.getRejectionReason(),
+                application.getReviewNote(),
                 application.getStatus(),
                 tutorApplicationSubjectRepository.countByTutorApplication_Id(application.getId()),
                 tutorDocumentRepository.countByTutorApplication_Id(application.getId()),
@@ -278,6 +339,12 @@ public class TutorApprovalService {
     }
 
     private StaffTutorApplicationDetailResponse.DocumentItem toDocumentItem(TutorDocument document) {
+        String url = null;
+        if (StringUtils.hasText(document.getFileKey())) {
+            try {
+                url = fileStorageService.createPresignedGetUrl(document.getFileKey());
+            } catch (RuntimeException ignored) {}
+        }
         return new StaffTutorApplicationDetailResponse.DocumentItem(
                 document.getId(),
                 document.getDocumentType(),
@@ -291,7 +358,8 @@ public class TutorApprovalService {
                 document.getValidityType(),
                 document.getExpiryDate(),
                 document.getCredentialNumber(),
-                document.getExpiryDate() != null && document.getExpiryDate().isBefore(LocalDate.now())
+                document.getExpiryDate() != null && document.getExpiryDate().isBefore(LocalDate.now()),
+                url
         );
     }
 
@@ -306,70 +374,46 @@ public class TutorApprovalService {
         }
     }
 
+    private void publishTutorApproved(TutorApplication application, TutorProfile profile, List<TutorApplicationSubject> subjects) {
+        try {
+            Set<TutorApprovedEvent.SubjectItem> items = Set.of();
+            if (subjects != null && !subjects.isEmpty()) {
+                items = subjects.stream()
+                        .filter(s -> s != null && s.getSubjectId() != null)
+                        .map(subject -> new TutorApprovedEvent.SubjectItem(
+                                subject.getSubjectId(),
+                                subject.getLevels() != null ? new java.util.LinkedHashSet<>(subject.getLevels()) : Set.of(),
+                                subject.getOneToOneHourlyRate() != null ? subject.getOneToOneHourlyRate() : BigDecimal.ZERO,
+                                subject.getExperienceYears() != null ? subject.getExperienceYears() : 0,
+                                subject.getDescription()
+                        ))
+                        .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+            }
+            eventPublisher.publishTutorApproved(new TutorApprovedEvent(
+                    UUID.randomUUID().toString(),
+                    application.getId(),
+                    profile.getId(),
+                    application.getUser().getId(),
+                    items,
+                    LocalDateTime.now()
+            ));
+        } catch (Exception ex) {
+            System.err.println("Warning: failed to publish TutorApprovedEvent: " + ex.getMessage());
+        }
+    }
+
     private List<String> validateCompleteness(User user, TutorApplication application, List<TutorApplicationSubject> subjects, List<TutorDocument> documents) {
         List<String> missingItems = new ArrayList<>();
         if (!StringUtils.hasText(firstText(application.getApplicantFullName(), user.getFullName()))) missingItems.add("accountFullName");
         if (!StringUtils.hasText(firstText(application.getApplicantEmail(), user.getEmail()))) missingItems.add("accountEmail");
-        if (!user.isEmailVerified()) missingItems.add("emailVerified");
-        if (!StringUtils.hasText(firstText(application.getApplicantAvatarKey(), user.getAvatarKey()))) missingItems.add("profilePhoto");
-        if (!StringUtils.hasText(application.getEducationLevel())) missingItems.add("educationLevel");
-        if (!StringUtils.hasText(application.getInstitution())) missingItems.add("institution");
-        if (!StringUtils.hasText(application.getExperienceSummary())) missingItems.add("experienceSummary");
-        if (!StringUtils.hasText(application.getBio())) missingItems.add("bio");
-        if (subjects == null || subjects.isEmpty()) {
-            missingItems.add("teachingSubjects");
-        } else if (subjects.stream().anyMatch(this::invalidSubject)) {
-            missingItems.add("validTeachingSubjects");
-        }
         if (!hasIdentityDocument(documents)) missingItems.add("identityDocument");
-        if (!hasCertificateOrDegree(documents)) missingItems.add("degreeOrCertificate");
         return missingItems;
-    }
-
-    private boolean invalidSubject(TutorApplicationSubject subject) {
-        return subject.getSubjectId() == null
-                || !StringUtils.hasText(subject.getSubjectName())
-                || subject.getOneToOneHourlyRate() == null
-                || subject.getOneToOneHourlyRate().compareTo(BigDecimal.ZERO) <= 0
-                || subject.getExperienceYears() == null
-                || subject.getExperienceYears() < 0
-                || subject.getLevels() == null
-                || subject.getLevels().isEmpty();
-    }
-
-    private void publishTutorApproved(TutorApplication application, TutorProfile profile, List<TutorApplicationSubject> subjects) {
-        eventPublisher.publishTutorApproved(new TutorApprovedEvent(
-                UUID.randomUUID().toString(),
-                application.getId(),
-                profile.getId(),
-                application.getUser().getId(),
-                subjects.stream()
-                        .map(subject -> new TutorApprovedEvent.SubjectItem(
-                                subject.getSubjectId(),
-                                new java.util.LinkedHashSet<>(subject.getLevels()),
-                                subject.getOneToOneHourlyRate(),
-                                subject.getExperienceYears(),
-                                subject.getDescription()
-                        ))
-                        .collect(Collectors.toCollection(java.util.LinkedHashSet::new)),
-                LocalDateTime.now()
-        ));
     }
 
     private boolean hasIdentityDocument(List<TutorDocument> documents) {
         Set<TutorDocumentType> types = documentTypes(documents);
         return types.contains(TutorDocumentType.PASSPORT)
                 || (types.contains(TutorDocumentType.IDENTITY_FRONT) && types.contains(TutorDocumentType.IDENTITY_BACK));
-    }
-
-    private boolean hasCertificateOrDegree(List<TutorDocument> documents) {
-        if (documents == null) return false;
-        return documents.stream()
-                .filter(document -> document.getDocumentType() == TutorDocumentType.DEGREE
-                        || document.getDocumentType() == TutorDocumentType.CERTIFICATE)
-                .anyMatch(document -> document.getDocumentType() == TutorDocumentType.DEGREE
-                        || document.getExpiryDate() == null
-                        || !document.getExpiryDate().isBefore(LocalDate.now()));
     }
 
     private Set<TutorDocumentType> documentTypes(List<TutorDocument> documents) {
@@ -383,8 +427,9 @@ public class TutorApprovalService {
     }
 
     private User getReviewer(String email) {
+        if (!StringUtils.hasText(email)) return null;
         return userRepository.findByEmailIgnoreCase(EmailNormalizer.normalize(email))
-                .orElseThrow(() -> new ResourceNotFoundException("Reviewer not found"));
+                .orElse(null);
     }
 
     private void ensurePending(TutorApplication application) {

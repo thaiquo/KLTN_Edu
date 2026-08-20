@@ -487,7 +487,7 @@ export default function App({ user, onLogout }: AppProps) {
                     Dynamic Enrollment Distribution
                   </h3>
                   <div className="h-64 select-none w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={100}>
                       <BarChart data={ENROLLMENTS_DATA}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
@@ -505,7 +505,7 @@ export default function App({ user, onLogout }: AppProps) {
                     Account Breakdown Status
                   </h3>
                   <div className="h-48 w-full select-none justify-center flex relative">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={100}>
                       <PieChart>
                         <Pie
                           data={userStatusSummary}
@@ -598,7 +598,7 @@ export default function App({ user, onLogout }: AppProps) {
                     Weekly Study Time Tracker
                   </h3>
                   <div className="h-64 select-none w-full">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={100}>
                       <LineChart data={WEEKLY_HOURS_DATA}>
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                         <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
@@ -719,14 +719,7 @@ export default function App({ user, onLogout }: AppProps) {
         );
 
       case "user-management":
-        return (
-          <AdminPortal
-            users={users}
-            onAddUser={handleAddUser}
-            onUpdateUser={handleUpdateUser}
-            onDeleteUser={handleDeleteUser}
-          />
-        );
+        return <AdminPortal />;
 
       case "my-classes":
       case "class-management":

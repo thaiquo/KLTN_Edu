@@ -12,6 +12,8 @@ import iuh.fit.account_service.exception.BadRequestException;
 import iuh.fit.account_service.exception.FileValidationException;
 import iuh.fit.account_service.exception.ResourceNotFoundException;
 import iuh.fit.account_service.exception.StorageException;
+import iuh.fit.account_service.enums.TutorApplicationStatus;
+import iuh.fit.account_service.repository.TutorApplicationRepository;
 import iuh.fit.account_service.repository.StudentRepository;
 import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.AdministrativeCommuneRepository;
@@ -29,6 +31,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.List;
 import java.util.UUID;
@@ -45,13 +48,14 @@ public class UserService {
     private final FilePolicyProperties filePolicyProperties;
     private final AdministrativeProvinceRepository provinceRepository;
     private final AdministrativeCommuneRepository communeRepository;
+    private final TutorApplicationRepository tutorApplicationRepository;
 
     public UserService(
             UserRepository userRepository,
             UserRoleRepository userRoleRepository,
             PasswordEncoder passwordEncoder
     ) {
-        this(userRepository, userRoleRepository, null, null, passwordEncoder, null, null, null, null);
+        this(userRepository, userRoleRepository, null, null, passwordEncoder, null, null, null, null, null);
     }
 
     public UserService(
@@ -61,7 +65,7 @@ public class UserService {
             FileStorageService fileStorageService,
             FilePolicyProperties filePolicyProperties
     ) {
-        this(userRepository, userRoleRepository, null, null, passwordEncoder, fileStorageService, filePolicyProperties, null, null);
+        this(userRepository, userRoleRepository, null, null, passwordEncoder, fileStorageService, filePolicyProperties, null, null, null);
     }
 
     @Autowired
@@ -74,7 +78,8 @@ public class UserService {
             FileStorageService fileStorageService,
             FilePolicyProperties filePolicyProperties,
             @Autowired(required = false) AdministrativeProvinceRepository provinceRepository,
-            @Autowired(required = false) AdministrativeCommuneRepository communeRepository
+            @Autowired(required = false) AdministrativeCommuneRepository communeRepository,
+            @Autowired(required = false) TutorApplicationRepository tutorApplicationRepository
     ) {
         this.userRepository = userRepository;
         this.userRoleRepository = userRoleRepository;
@@ -85,6 +90,7 @@ public class UserService {
         this.filePolicyProperties = filePolicyProperties;
         this.provinceRepository = provinceRepository;
         this.communeRepository = communeRepository;
+        this.tutorApplicationRepository = tutorApplicationRepository;
     }
 
     @Transactional(readOnly = true)
@@ -107,7 +113,22 @@ public class UserService {
         user.setAddressDetail(normalizeOptional(request.getAddressDetail()));
         user.setBio(normalizeOptional(request.getBio()));
 
-        return toProfileResponse(userRepository.save(user));
+        User saved = userRepository.save(user);
+
+        // If tutor updates core profile, set application to PENDING for re-approval
+        if (tutorApplicationRepository != null) {
+            tutorApplicationRepository.findByUserId(saved.getId()).ifPresent(app -> {
+                if (app.getStatus() == TutorApplicationStatus.APPROVED) {
+                    app.setStatus(TutorApplicationStatus.PENDING);
+                    app.setSubmittedAt(LocalDateTime.now());
+                    app.setReviewedAt(null);
+                    app.setReviewedBy(null);
+                    tutorApplicationRepository.save(app);
+                }
+            });
+        }
+
+        return toProfileResponse(saved);
     }
 
     @Transactional
@@ -122,7 +143,7 @@ public class UserService {
         }
 
         String extension = getExtension(file.getOriginalFilename());
-        String fileKey = "avatars/" + user.getId() + "/" + java.util.UUID.randomUUID() + "." + extension;
+        String fileKey = "users/" + user.getId() + "/avatar/" + java.util.UUID.randomUUID() + "." + extension;
         String oldKey = user.getAvatarKey();
 
         // 1. Upload new object

@@ -67,6 +67,11 @@ public class TutorApplicationController {
         return tutorApplicationService.submitMyApplication(authentication.getName());
     }
 
+    @PostMapping("/me/submit-profile")
+    public TutorApplicationResponse submitProfileForReview(Authentication authentication) {
+        return tutorDocumentService.submitProfileForReview(authentication.getName());
+    }
+
     @PutMapping("/me")
     public TutorApplicationResponse updateMyApplication(
             Authentication authentication,
