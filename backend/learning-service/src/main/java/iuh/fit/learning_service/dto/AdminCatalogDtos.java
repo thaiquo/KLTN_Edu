@@ -27,5 +27,29 @@ public final class AdminCatalogDtos {
                                      @NotNull LevelType type,
                                      @Size(max=500) String description,
                                      Integer orderIndex, boolean active) {}
+    public record CreateCategoryRequest(@NotNull Long programTypeId,
+                                        Long educationLevelId,
+                                        @NotBlank @Size(max=60) String code,
+                                        @NotBlank @Size(max=160) String name,
+                                        @Size(max=500) String description,
+                                        Integer orderIndex) {}
+    public record UpdateCategoryRequest(@NotBlank @Size(max=60) String code,
+                                        @NotBlank @Size(max=160) String name,
+                                        @Size(max=500) String description,
+                                        Integer orderIndex,
+                                        boolean active) {}
+    public record ReferenceOption(Long id, String code, String name, String description,
+                                  boolean active, Integer orderIndex) {}
+    public record ManagedLevel(Long id, String code, String name, LevelType type,
+                               String description, boolean active, Integer orderIndex) {}
+    public record ManagedSubject(Long id, String code, String name, String description,
+                                 boolean active, Integer orderIndex, List<ManagedLevel> levels) {}
+    public record ManagedCategory(Long id, String code, String name, String description,
+                                  boolean active, Integer orderIndex,
+                                  ReferenceOption programType, ReferenceOption educationLevel,
+                                  List<ManagedSubject> subjects) {}
+    public record CatalogSnapshot(List<ReferenceOption> programTypes,
+                                  List<ReferenceOption> educationLevels,
+                                  List<ManagedCategory> categories) {}
     public record ImportResponse(Long jobId, int totalRows, int successRows, int failedRows, List<String> errors) {}
 }

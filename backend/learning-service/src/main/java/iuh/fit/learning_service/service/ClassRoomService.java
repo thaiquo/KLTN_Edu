@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.Duration;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -176,8 +177,17 @@ public class ClassRoomService {
             throw new BadRequestException("You can only create classes from APPROVED teaching registrations");
         }
 
+        if (registration.getSubject() == null || !registration.getSubject().isActive()
+                || !registration.getCategory().isActive()) {
+            throw new BadRequestException("This teaching subject is no longer active in the catalog");
+        }
+
         CatalogLevel level = levelRepository.findById(request.levelId())
                 .orElseThrow(() -> new ResourceNotFoundException("Level not found: " + request.levelId()));
+
+        if (!level.isActive()) {
+            throw new BadRequestException("This teaching level is no longer active in the catalog");
+        }
 
         boolean levelBelongsToRegistration = registration.getLevels().stream()
                 .anyMatch(l -> l.getId().equals(level.getId()));
@@ -323,11 +333,14 @@ public class ClassRoomService {
             ClassRoomStatus status,
             String tutorEmail,
             Long subjectId,
-            String keyword
+            String keyword,
+            String reviewedByEmail
     ) {
         List<ClassRoom> list = classRoomRepository.findAllWithDetails();
         return list.stream()
                 .filter(c -> status == null || c.getStatus() == status)
+                .filter(c -> reviewedByEmail == null || reviewedByEmail.isBlank()
+                        || (c.getReviewedByEmail() != null && c.getReviewedByEmail().equalsIgnoreCase(reviewedByEmail.trim())))
                 .filter(c -> tutorEmail == null || tutorEmail.isBlank() || c.getTutorEmail().equalsIgnoreCase(tutorEmail.trim()))
                 .filter(c -> {
                     if (subjectId == null) return true;
@@ -364,6 +377,8 @@ public class ClassRoomService {
         }
         classRoom.setStatus(ClassRoomStatus.PRIVATE);
         classRoom.setRejectReason(null);
+        classRoom.setReviewedByEmail(reviewerEmail);
+        classRoom.setReviewedAt(LocalDateTime.now());
         ClassRoom saved = classRoomRepository.save(classRoom);
         return toResponse(saved);
     }
@@ -379,6 +394,8 @@ public class ClassRoomService {
         }
         classRoom.setStatus(ClassRoomStatus.REJECTED);
         classRoom.setRejectReason(reason.trim());
+        classRoom.setReviewedByEmail(reviewerEmail);
+        classRoom.setReviewedAt(LocalDateTime.now());
         ClassRoom saved = classRoomRepository.save(classRoom);
         return toResponse(saved);
     }
@@ -719,6 +736,8 @@ public class ClassRoomService {
                 c.getJoinKey(),
                 c.getStatus(),
                 c.getRejectReason(),
+                c.getReviewedByEmail(),
+                c.getReviewedAt(),
                 schedules,
                 chapters,
                 c.getCreatedAt(),

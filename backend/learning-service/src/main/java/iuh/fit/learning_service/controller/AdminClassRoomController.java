@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -26,9 +27,13 @@ public class AdminClassRoomController {
             @RequestParam(required = false) ClassRoomStatus status,
             @RequestParam(required = false) String tutorEmail,
             @RequestParam(required = false) Long subjectId,
-            @RequestParam(required = false) String keyword
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "false") boolean reviewedByMe,
+            Authentication authentication
     ) {
-        return service.getAllClassesForAdmin(status, tutorEmail, subjectId, keyword);
+        boolean admin = hasRole(authentication, "ROLE_ADMIN");
+        String reviewerEmail = reviewedByMe && !admin ? authentication.getName() : null;
+        return service.getAllClassesForAdmin(status, tutorEmail, subjectId, keyword, reviewerEmail);
     }
 
     @GetMapping("/stats")
@@ -58,5 +63,11 @@ public class AdminClassRoomController {
     ) {
         ClassRoomDtos.ClassRoomResponse response = service.rejectClass(id, authentication.getName(), request.reason());
         return ResponseEntity.ok(response);
+    }
+
+    private boolean hasRole(Authentication authentication, String role) {
+        return authentication != null && authentication.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(role::equals);
     }
 }

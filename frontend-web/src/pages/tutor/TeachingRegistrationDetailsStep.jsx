@@ -35,7 +35,9 @@ export function TeachingRegistrationDetailsStep({
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           {form.isProposal ? (
-            <span className="rounded-full bg-white px-3 py-1 text-xs font-extrabold text-[#147b77]">{form.proposedLevelName}</span>
+            (form.proposedLevels?.length ? form.proposedLevels.map((level) => level.name) : form.proposedLevelNames?.length ? form.proposedLevelNames : String(form.proposedLevelName || '').split(',').map((name) => name.trim()).filter(Boolean)).map((name) => (
+              <span key={name} className="rounded-full bg-white px-3 py-1 text-xs font-extrabold text-[#147b77]">{name}</span>
+            ))
           ) : (
             selected.levels.map((level) => <span key={level.id} className="rounded-full bg-white px-3 py-1 text-xs font-extrabold text-[#147b77]">{level.name}</span>)
           )}
@@ -70,7 +72,7 @@ export function TeachingRegistrationDetailsStep({
       <div className="mt-6 flex flex-col-reverse gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-between">
         <button type="button" onClick={onBack} className="inline-flex items-center gap-2 text-sm font-extrabold text-slate-500"><ArrowLeft size={16} /> Quay lại</button>
         <button disabled={busy || !canSubmit} className="inline-flex items-center justify-center gap-2 rounded-[8px] bg-[#147b77] px-6 py-3 text-sm font-extrabold text-white disabled:opacity-50">
-          {busy ? <LoaderCircle size={17} className="animate-spin" /> : <Send size={17} />} Gửi {form.isProposal ? 1 : form.levelIds.length} quyền dạy
+          {busy ? <LoaderCircle size={17} className="animate-spin" /> : <Send size={17} />} Gửi {form.isProposal ? (form.proposedLevels?.length || form.proposedLevelNames?.length || 1) : form.levelIds.length} quyền dạy
         </button>
       </div>
     </form>

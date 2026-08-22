@@ -170,6 +170,8 @@ public final class ClassRoomDtos {
             String joinKey,
             ClassRoomStatus status,
             String rejectReason,
+            String reviewedByEmail,
+            LocalDateTime reviewedAt,
             List<ScheduleResponse> schedules,
             List<ChapterResponse> chapters,
             LocalDateTime createdAt,

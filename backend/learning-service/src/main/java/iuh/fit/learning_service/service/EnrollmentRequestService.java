@@ -79,7 +79,7 @@ public class EnrollmentRequestService {
         int maxPending = classRoom.getMaxPendingRequests() != null ? classRoom.getMaxPendingRequests() : (int) Math.ceil(classRoom.getMaxStudents() * 1.5);
 
         if (totalInPool >= maxPending) {
-            throw new BadRequestException("Danh sách chờ của lớp học đã đạt giới hạn.");
+            throw new BadRequestException("Lớp học đang tạm đủ số lượng yêu cầu. Vui lòng quay lại sau nếu gia sư mở thêm lượt đăng ký.");
         }
 
         // Create enrollment request
@@ -217,9 +217,12 @@ public class EnrollmentRequestService {
      * Get buffer pool status for a classroom
      */
     @Transactional(readOnly = true)
-    public BufferPoolStatusResponse getBufferPoolStatus(Long classRoomId) {
+    public BufferPoolStatusResponse getBufferPoolStatus(Long classRoomId, String tutorEmail) {
         ClassRoom classRoom = classRoomRepository.findById(classRoomId)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + classRoomId));
+        if (!classRoom.getTutorEmail().equalsIgnoreCase(tutorEmail)) {
+            throw new ForbiddenException("Bạn không có quyền xem danh sách chờ của lớp học này");
+        }
 
         long pendingCount = enrollmentRequestRepository.countByClassRoomIdAndStatus(classRoomId, EnrollmentRequestStatus.PENDING);
         long acceptedCount = enrollmentRequestRepository.countByClassRoomIdAndStatus(classRoomId, EnrollmentRequestStatus.ACCEPTED);

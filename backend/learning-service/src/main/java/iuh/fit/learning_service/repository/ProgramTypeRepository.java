@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface ProgramTypeRepository extends JpaRepository<ProgramType, Long> {
     List<ProgramType> findByActiveTrueOrderByOrderIndexAscNameAsc();
+    List<ProgramType> findAllByOrderByOrderIndexAscNameAsc();
 }

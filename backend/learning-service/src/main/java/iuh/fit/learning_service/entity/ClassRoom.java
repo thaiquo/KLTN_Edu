@@ -111,6 +111,11 @@ public class ClassRoom {
     @Column(columnDefinition = "TEXT")
     private String rejectReason;
 
+    @Column(length = 255)
+    private String reviewedByEmail;
+
+    private LocalDateTime reviewedAt;
+
     @OneToMany(mappedBy = "classRoom", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("dayOfWeek ASC, startTime ASC")
     private List<ClassSchedule> schedules = new ArrayList<>();

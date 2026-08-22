@@ -60,6 +60,8 @@ import { AdminPortal } from "./components/AdminPortal";
 import { TutorApprovalPanel } from "./components/TutorApprovalPanel";
 import { TutorAvailabilityScheduler } from "./components/TutorAvailabilityScheduler";
 import { TutorClassManagement } from "./components/TutorClassManagement";
+import { AdminClassManagement } from "./components/staff/AdminClassManagement";
+import { TeachingCatalogManagement } from "./components/staff/TeachingCatalogManagement";
 
 // High Resolution course and avatar placeholders
 const studentAvatar =
@@ -721,8 +723,13 @@ export default function App({ user, onLogout }: AppProps) {
       case "user-management":
         return <AdminPortal />;
 
-      case "my-classes":
+      case "subject-catalog":
+        return <TeachingCatalogManagement />;
+
       case "class-management":
+        return activeRole === "tutor" ? <TutorClassManagement /> : <AdminClassManagement activeRole={activeRole} />;
+
+      case "my-classes":
         return <TutorClassManagement />;
 
       case "requests":

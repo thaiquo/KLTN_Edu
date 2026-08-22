@@ -27,17 +27,17 @@ public class CatalogSubjectSuggestionController {
     public List<CatalogSuggestionDtos.Response> mine(Authentication authentication) { return service.mine(authentication.getName()); }
 
     @GetMapping("/pending")
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public List<CatalogSuggestionDtos.Response> pending() { return service.pending(); }
 
     @PostMapping("/{id}/approve")
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public CatalogSuggestionDtos.Response approve(Authentication authentication, @PathVariable Long id) {
         return service.approve(id, authentication.getName());
     }
 
     @PostMapping("/{id}/reject")
-    @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+    @PreAuthorize("hasRole('ADMIN')")
     public CatalogSuggestionDtos.Response reject(Authentication authentication, @PathVariable Long id,
             @Valid @RequestBody CatalogSuggestionDtos.RejectRequest request) {
         return service.reject(id, authentication.getName(), request);

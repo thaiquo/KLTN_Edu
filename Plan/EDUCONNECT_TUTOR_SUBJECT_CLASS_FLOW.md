@@ -1258,3 +1258,41 @@ Admin duyệt quyền dạy
   ↓
 Gia sư tạo lớp dựa trên quyền dạy đã duyệt
 ```
+
+---
+
+## 20. Trạng thái triển khai catalog chuẩn
+
+Nguồn dữ liệu chuẩn cho mọi tính năng mới là:
+
+```text
+program_types
+education_levels
+catalog_categories
+catalog_subjects
+catalog_levels
+tutor_subject_registrations
+tutor_subject_registration_levels
+registration_evidence
+```
+
+Các bảng `subjects`, `subject_categories`, `subject_groups`, `subject_requests`,
+`tutor_subjects` và `teaching_levels` thuộc catalog V1. Chúng chỉ được giữ tạm để
+tương thích dữ liệu/chức năng cũ, không được dùng để phát triển luồng đăng ký dạy
+hoặc tạo lớp mới.
+
+Quy ước quản trị:
+
+- Chỉ `ADMIN` được sửa catalog; `STAFF` chỉ duyệt nghiệp vụ được phân công.
+- Xóa category, subject hoặc level là soft-delete (`active = false`).
+- Dữ liệu inactive không xuất hiện trong bộ chọn mới nhưng lịch sử vẫn được giữ.
+- Không cho tạo lớp mới từ subject/category/level đã inactive.
+- `ACADEMIC` bắt buộc có `EducationLevel`; `SKILL` bắt buộc không có `EducationLevel`.
+- Mọi level của registration phải thuộc đúng subject của registration.
+- Một tutor không được có hai registration active trùng subject + level.
+
+Đề xuất môn mới được lưu ngay trong `TutorSubjectRegistration`. Danh sách level
+đề xuất là value object có cấu trúc trong
+`tutor_subject_registration_proposed_levels`; đây không phải bằng cấp/chứng chỉ
+của gia sư. Bằng cấp, bảng điểm, chứng chỉ và portfolio vẫn phải lưu ở
+`registration_evidence`.

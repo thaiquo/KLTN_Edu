@@ -41,15 +41,16 @@ public class TutorSubjectRegistration {
     @Column(length = 160)
     private String proposedSubjectName;
 
-    @Column(length = 160)
-    private String proposedLevelName;
-
-    @Enumerated(EnumType.STRING)
-    @Column(length = 40)
-    private iuh.fit.learning_service.enums.LevelType proposedLevelType;
-
     @Column(length = 1000)
     private String proposedNote;
+
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(
+            name = "tutor_subject_registration_proposed_levels",
+            joinColumns = @JoinColumn(name = "registration_id")
+    )
+    @OrderColumn(name = "order_index")
+    private List<ProposedRegistrationLevel> proposedLevels = new ArrayList<>();
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(

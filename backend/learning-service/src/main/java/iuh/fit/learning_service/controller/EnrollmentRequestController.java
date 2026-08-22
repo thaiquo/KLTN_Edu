@@ -85,11 +85,12 @@ public class EnrollmentRequestController {
     }
 
     // -------------------------------------------------------------
-    // Buffer Pool Public Info
+    // Buffer Pool Tutor Info
     // -------------------------------------------------------------
 
     @GetMapping({"/api/v1/classes/{classId}/buffer-pool", "/api/classes/{classId}/buffer-pool"})
-    public BufferPoolStatusResponse getBufferPoolStatus(@PathVariable Long classId) {
-        return service.getBufferPoolStatus(classId);
+    @PreAuthorize("hasRole('TUTOR')")
+    public BufferPoolStatusResponse getBufferPoolStatus(Authentication authentication, @PathVariable Long classId) {
+        return service.getBufferPoolStatus(classId, authentication.getName());
     }
 }

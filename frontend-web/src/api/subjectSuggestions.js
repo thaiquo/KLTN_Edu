@@ -26,7 +26,7 @@ export const subjectSuggestionApi = {
     })
   })),
   mine: async (userId) => normalizeList(await apiRequest(`/api/learning/subject-requests/me?userId=${encodeURIComponent(userId)}`)),
-  staffPending: async () => normalizeList(await apiRequest('/api/learning/subject-requests/pending')),
+  adminPending: async () => normalizeList(await apiRequest('/api/learning/subject-requests/pending')),
   approveAsNew: (id, reviewedByUserId) => apiRequest(`/api/learning/subject-requests/${id}/approve${reviewedByUserId ? `?reviewedByUserId=${encodeURIComponent(reviewedByUserId)}` : ''}`, {
     method: 'PATCH'
   }),

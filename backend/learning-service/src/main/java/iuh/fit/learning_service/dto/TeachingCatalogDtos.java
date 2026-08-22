@@ -22,6 +22,12 @@ public final class TeachingCatalogDtos {
             @Size(max = 1000) String fileUrl
     ) {}
 
+    public record ProposedLevelRequest(
+            @Size(max = 80) @Pattern(regexp = "[A-Z0-9_]*") String code,
+            @NotBlank @Size(max = 160) String name,
+            @NotNull LevelType type
+    ) {}
+
     public record CreateRegistrationRequest(
             @NotNull Long subjectId,
             @NotNull Long levelId,
@@ -45,16 +51,19 @@ public final class TeachingCatalogDtos {
             @Size(max = 160) String proposedSubjectName,
             @Size(max = 160) String proposedLevelName,
             LevelType proposedLevelType,
-            @Size(max = 1000) String proposedNote
+            @Size(max = 1000) String proposedNote,
+            @Size(max = 12) List<@Valid ProposedLevelRequest> proposedLevels
     ) {}
 
     public record ReviewRequest(@Size(max = 1000) String note) {}
     public record RejectRequest(@NotBlank @Size(max = 1000) String reason, @Size(max = 1000) String note) {}
 
     public record EvidenceResponse(Long id, iuh.fit.learning_service.enums.EvidenceType evidenceType, String title, Long accountDocumentId, String fileUrl) {}
+    public record ProposedLevelResponse(String code, String name, LevelType type) {}
     public record RegistrationResponse(
             Long id,
             String tutorEmail,
+            String tutorFullName,
             Long tutorProfileId,
             Option programType,
             Option educationLevel,
@@ -76,6 +85,7 @@ public final class TeachingCatalogDtos {
             String proposedSubjectName,
             String proposedLevelName,
             LevelType proposedLevelType,
-            String proposedNote
+            String proposedNote,
+            List<ProposedLevelResponse> proposedLevels
     ) {}
 }

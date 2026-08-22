@@ -8,6 +8,8 @@ import iuh.fit.learning_service.repository.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -20,12 +22,67 @@ public class AdminCatalogService {
     private final CatalogCategoryRepository categories;
     private final CatalogSubjectRepository subjects;
     private final CatalogLevelRepository levels;
+    private final ProgramTypeRepository programTypes;
+    private final EducationLevelRepository educationLevels;
     private final TeachingCatalogService mapper;
     private final JdbcTemplate jdbc;
+    private final TransactionTemplate transactions;
 
     public AdminCatalogService(CatalogCategoryRepository categories, CatalogSubjectRepository subjects,
-                               CatalogLevelRepository levels, TeachingCatalogService mapper, JdbcTemplate jdbc) {
-        this.categories=categories; this.subjects=subjects; this.levels=levels; this.mapper=mapper; this.jdbc=jdbc;
+                               CatalogLevelRepository levels, ProgramTypeRepository programTypes,
+                               EducationLevelRepository educationLevels, TeachingCatalogService mapper,
+                               JdbcTemplate jdbc, PlatformTransactionManager transactionManager) {
+        this.categories=categories; this.subjects=subjects; this.levels=levels;
+        this.programTypes=programTypes; this.educationLevels=educationLevels;
+        this.mapper=mapper; this.jdbc=jdbc; this.transactions = new TransactionTemplate(transactionManager);
+    }
+
+    @Transactional(readOnly = true)
+    public AdminCatalogDtos.CatalogSnapshot snapshot() {
+        return new AdminCatalogDtos.CatalogSnapshot(
+                programTypes.findAllByOrderByOrderIndexAscNameAsc().stream().map(this::reference).toList(),
+                educationLevels.findAllByOrderByOrderIndexAscNameAsc().stream().map(this::reference).toList(),
+                categories.findAllByOrderByOrderIndexAscNameAsc().stream().map(this::managedCategory).toList()
+        );
+    }
+
+    @Transactional
+    public AdminCatalogDtos.ManagedCategory createCategory(AdminCatalogDtos.CreateCategoryRequest request) {
+        ProgramType programType = programTypes.findById(request.programTypeId())
+                .filter(ProgramType::isActive)
+                .orElseThrow(() -> new ResourceNotFoundException("Program type not found or inactive"));
+        EducationLevel educationLevel = request.educationLevelId() == null ? null
+                : educationLevels.findById(request.educationLevelId()).filter(EducationLevel::isActive)
+                .orElseThrow(() -> new ResourceNotFoundException("Education level not found or inactive"));
+        validateCategoryBranch(programType, educationLevel);
+        String code = normalizeCode(request.code());
+        ensureUniqueCategory(null, programType.getId(), educationLevel == null ? null : educationLevel.getId(), code, request.name());
+        CatalogCategory category = new CatalogCategory();
+        category.setProgramType(programType); category.setEducationLevel(educationLevel); category.setCode(code);
+        category.setName(request.name().trim()); category.setDescription(text(request.description()));
+        category.setOrderIndex(request.orderIndex() == null ? 999 : request.orderIndex());
+        return managedCategory(categories.save(category));
+    }
+
+    @Transactional
+    public AdminCatalogDtos.ManagedCategory updateCategory(Long id, AdminCatalogDtos.UpdateCategoryRequest request) {
+        CatalogCategory category = categories.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Catalog category not found"));
+        String code = normalizeCode(request.code());
+        ensureUniqueCategory(id, category.getProgramType().getId(),
+                category.getEducationLevel() == null ? null : category.getEducationLevel().getId(), code, request.name());
+        category.setCode(code); category.setName(request.name().trim()); category.setDescription(text(request.description()));
+        category.setOrderIndex(request.orderIndex() == null ? category.getOrderIndex() : request.orderIndex());
+        category.setActive(request.active());
+        return managedCategory(categories.save(category));
+    }
+
+    @Transactional
+    public void deactivateCategory(Long id) {
+        CatalogCategory category = categories.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Catalog category not found"));
+        category.setActive(false);
+        categories.save(category);
     }
 
     @Transactional
@@ -77,6 +134,7 @@ public class AdminCatalogService {
     @Transactional
     public TeachingCatalogDtos.LevelOption createLevel(AdminCatalogDtos.CreateLevelRequest request) {
         CatalogSubject subject = subjects.findById(request.subjectId())
+                .filter(CatalogSubject::isActive)
                 .orElseThrow(() -> new ResourceNotFoundException("Catalog subject not found"));
         String code = normalizeCode(request.code());
         boolean duplicate = levels.findBySubjectIdOrderByOrderIndexAscNameAsc(subject.getId()).stream()
@@ -126,7 +184,11 @@ public class AdminCatalogService {
             String line;
             while ((line=reader.readLine()) != null) {
                 if (line.isBlank()) continue; total++;
-                try { importRow(parseCsv(line)); success++; }
+                try {
+                    List<String> cells = parseCsv(line);
+                    transactions.executeWithoutResult(status -> importRow(cells));
+                    success++;
+                }
                 catch (RuntimeException ex) { errors.add("Dòng " + (total+1) + ": " + ex.getMessage()); }
             }
             int failed=total-success; String status=failed==0?"COMPLETED":success==0?"FAILED":"PARTIAL";
@@ -139,7 +201,6 @@ public class AdminCatalogService {
         }
     }
 
-    @Transactional
     protected void importRow(List<String> cells) {
         if (cells.size()<6) throw new BadRequestException("Cần 6 cột: categoryCode,subjectCode,subjectName,levelCode,levelName,levelType");
         CatalogCategory category=categories.findFirstByCodeIgnoreCaseAndActiveTrue(cells.get(0).trim())
@@ -162,6 +223,56 @@ public class AdminCatalogService {
         List<String> result=new ArrayList<>(); StringBuilder cell=new StringBuilder(); boolean quoted=false;
         for (int i=0;i<line.length();i++) { char ch=line.charAt(i); if (ch=='"') { if (quoted&&i+1<line.length()&&line.charAt(i+1)=='"') { cell.append('"'); i++; } else quoted=!quoted; } else if (ch==','&&!quoted) { result.add(cell.toString()); cell.setLength(0); } else cell.append(ch); }
         result.add(cell.toString()); return result;
+    }
+
+    private void ensureUniqueCategory(Long currentId, Long programTypeId, Long educationLevelId,
+                                      String code, String name) {
+        String normalizedName = name.trim();
+        boolean duplicate = categories.findAll().stream()
+                .filter(item -> currentId == null || !item.getId().equals(currentId))
+                .filter(item -> item.getProgramType().getId().equals(programTypeId))
+                .filter(item -> Objects.equals(item.getEducationLevel() == null ? null : item.getEducationLevel().getId(), educationLevelId))
+                .anyMatch(item -> item.getCode().equalsIgnoreCase(code) || item.getName().equalsIgnoreCase(normalizedName));
+        if (duplicate) throw new ConflictException("Category name or code already exists in this catalog scope");
+    }
+
+    private void validateCategoryBranch(ProgramType programType, EducationLevel educationLevel) {
+        if ("ACADEMIC".equals(programType.getCode()) && educationLevel == null) {
+            throw new BadRequestException("Academic category requires an education level");
+        }
+        if ("SKILL".equals(programType.getCode()) && educationLevel != null) {
+            throw new BadRequestException("Skill category must not have an education level");
+        }
+    }
+
+    private AdminCatalogDtos.ReferenceOption reference(ProgramType value) {
+        return new AdminCatalogDtos.ReferenceOption(value.getId(), value.getCode(), value.getName(),
+                value.getDescription(), value.isActive(), value.getOrderIndex());
+    }
+
+    private AdminCatalogDtos.ReferenceOption reference(EducationLevel value) {
+        return value == null ? null : new AdminCatalogDtos.ReferenceOption(value.getId(), value.getCode(), value.getName(),
+                value.getDescription(), value.isActive(), value.getOrderIndex());
+    }
+
+    private AdminCatalogDtos.ManagedCategory managedCategory(CatalogCategory value) {
+        List<AdminCatalogDtos.ManagedSubject> managedSubjects = subjects
+                .findByCategoryIdOrderByOrderIndexAscNameAsc(value.getId()).stream().map(this::managedSubject).toList();
+        return new AdminCatalogDtos.ManagedCategory(value.getId(), value.getCode(), value.getName(), value.getDescription(),
+                value.isActive(), value.getOrderIndex(), reference(value.getProgramType()),
+                reference(value.getEducationLevel()), managedSubjects);
+    }
+
+    private AdminCatalogDtos.ManagedSubject managedSubject(CatalogSubject value) {
+        List<AdminCatalogDtos.ManagedLevel> managedLevels = levels
+                .findBySubjectIdOrderByOrderIndexAscNameAsc(value.getId()).stream().map(this::managedLevel).toList();
+        return new AdminCatalogDtos.ManagedSubject(value.getId(), value.getCode(), value.getName(), value.getDescription(),
+                value.isActive(), value.getOrderIndex(), managedLevels);
+    }
+
+    private AdminCatalogDtos.ManagedLevel managedLevel(CatalogLevel value) {
+        return new AdminCatalogDtos.ManagedLevel(value.getId(), value.getCode(), value.getName(), value.getType(),
+                value.getDescription(), value.isActive(), value.getOrderIndex());
     }
     private String normalizeCode(String value) { String code=value==null?"":value.trim().toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9_]+","_"); if(code.isBlank())throw new BadRequestException("Code is required"); return code; }
     private String text(String value) { if(value==null)return null; String result=value.trim(); return result.isEmpty()?null:result; }

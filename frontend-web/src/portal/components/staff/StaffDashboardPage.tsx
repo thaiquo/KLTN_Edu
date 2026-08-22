@@ -9,7 +9,7 @@ import { teachingRegistrationApi } from "../../../api/teachingRegistrations";
 
 export function StaffDashboardPage() {
   const { user } = useAuth();
-  const isAdmin = user?.roles?.includes("ADMIN");
+  const isAdmin = user?.activeRole === "ADMIN";
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [teachingPendingCount, setTeachingPendingCount] = useState(0);
@@ -215,12 +215,16 @@ function TeachingRegistrationHistorySection({ items, loading, onReload }: { item
             </thead>
             <tbody className="divide-y divide-[#edf0f4]">
               {items.map((item) => {
-                const isProposal = !item.subject;
+                const isProposal = Boolean(item.proposedSubjectName);
                 const isApproved = item.status === "APPROVED";
+                const tutorName = tutorDisplayName(item);
                 return (
                   <tr key={item.id} className="hover:bg-slate-50/50">
                     <td className="py-3 px-2 min-w-[150px]">
-                      <p className="font-bold text-[#073554]">{item.tutorEmail}</p>
+                      <p className="font-bold text-[#073554]" title={tutorName}>{tutorName}</p>
+                      {item.tutorEmail && item.tutorEmail !== tutorName && (
+                        <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-400" title={item.tutorEmail}>{item.tutorEmail}</p>
+                      )}
                     </td>
                     <td className="py-3 px-2">
                       <p className="font-bold text-[#073554]">
@@ -263,14 +267,15 @@ function TeachingRegistrationHistorySection({ items, loading, onReload }: { item
 
 function HistoryDetailModal({ item, onClose }: any) {
   const isApproved = item.status === "APPROVED";
-  const isProposal = !item.subject;
+  const isProposal = Boolean(item.proposedSubjectName);
+  const tutorName = tutorDisplayName(item);
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#061827]/65 p-4 sm:p-8" onClick={onClose}>
       <div className="my-auto w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <header className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3">
           <div>
             <h2 className="font-display text-lg font-black text-[#073554]">Chi tiết lịch sử phê duyệt</h2>
-            <p className="mt-0.5 text-xs font-semibold text-slate-500">{item.tutorEmail}</p>
+            <p className="mt-0.5 text-xs font-semibold text-slate-500">{identityLabel(item)}</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
             <X className="h-5 w-5" />
@@ -279,6 +284,7 @@ function HistoryDetailModal({ item, onClose }: any) {
 
         <div className="mt-4 space-y-3 text-xs">
           <p className="text-xs font-semibold leading-5 text-slate-600"><strong className="text-[#073554]">Trạng thái:</strong> <span className={`font-black uppercase px-2 py-0.5 rounded ${isApproved ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}>{isApproved ? "Đã duyệt" : "Bị từ chối"}</span></p>
+          <p className="text-xs font-semibold leading-5 text-slate-600"><strong className="text-[#073554]">Gia sư:</strong> {tutorName}{item.tutorEmail && item.tutorEmail !== tutorName ? ` · ${item.tutorEmail}` : ""}</p>
           <p className="text-xs font-semibold leading-5 text-slate-600"><strong className="text-[#073554]">Môn học:</strong> {isProposal ? `${item.proposedSubjectName} (Đề xuất)` : item.subject?.name}</p>
           <p className="text-xs font-semibold leading-5 text-slate-600"><strong className="text-[#073554]">Nhóm môn:</strong> {item.category?.name || "--"}</p>
           <p className="text-xs font-semibold leading-5 text-slate-600"><strong className="text-[#073554]">Lớp / Trình độ:</strong> {isProposal ? item.proposedLevelName : (item.levels || []).map((l: any) => l.name).join(", ")}</p>
@@ -325,4 +331,20 @@ function HistoryDetailModal({ item, onClose }: any) {
       </div>
     </div>
   );
+}
+
+function tutorDisplayName(item: any) {
+  return item?.tutorFullName?.trim()
+    || item?.applicantFullName?.trim()
+    || item?.fullName?.trim()
+    || item?.tutorName?.trim()
+    || item?.requestedByFullName?.trim()
+    || item?.tutorEmail
+    || (item?.requestedByUserId ? `Gia sư #${item.requestedByUserId}` : "Gia sư");
+}
+
+function identityLabel(item: any) {
+  const name = tutorDisplayName(item);
+  const email = item?.tutorEmail || item?.requestedByEmail;
+  return email && email !== name ? `${name} · ${email}` : name;
 }

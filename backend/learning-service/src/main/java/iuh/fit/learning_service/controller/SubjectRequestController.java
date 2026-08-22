@@ -5,6 +5,7 @@ import iuh.fit.learning_service.service.SubjectRequestService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -36,11 +37,13 @@ public class SubjectRequestController {
     }
 
     @GetMapping("/pending")
+    @PreAuthorize("hasRole('ADMIN')")
     public List<SubjectRequestDtos.Response> pending() {
         return subjectRequestService.pending();
     }
 
     @PatchMapping("/{requestId}/approve")
+    @PreAuthorize("hasRole('ADMIN')")
     public SubjectRequestDtos.Response approve(
             @PathVariable Long requestId,
             @RequestParam(required = false) Long reviewedByUserId
@@ -49,6 +52,7 @@ public class SubjectRequestController {
     }
 
     @PatchMapping("/{requestId}/reject")
+    @PreAuthorize("hasRole('ADMIN')")
     public SubjectRequestDtos.Response reject(
             @PathVariable Long requestId,
             @Valid @RequestBody SubjectRequestDtos.RejectRequest request

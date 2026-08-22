@@ -17,6 +17,8 @@ const EMPTY_FORM = {
   isProposal: false,
   proposedSubjectName: '',
   proposedLevelName: '',
+  proposedLevelNames: [],
+  proposedLevels: [],
   proposedLevelType: 'SKILL_LEVEL',
   proposedNote: ''
 };
@@ -28,6 +30,25 @@ const LEVEL_TYPE_LABELS = {
 };
 const TEACHING_EVIDENCE_TYPES = ['DEGREE', 'CERTIFICATE', 'WORK_EXPERIENCE', 'PORTFOLIO', 'OTHER'];
 const MAX_EVIDENCE_PER_REGISTRATION = 5;
+const SCHOOL_GRADE_OPTIONS = {
+  PRIMARY: ['Lớp 1', 'Lớp 2', 'Lớp 3', 'Lớp 4', 'Lớp 5'],
+  SECONDARY: ['Lớp 6', 'Lớp 7', 'Lớp 8', 'Lớp 9'],
+  HIGH_SCHOOL: ['Lớp 10', 'Lớp 11', 'Lớp 12']
+};
+const SCHOOL_GRADE_CODES = Object.fromEntries(
+  Array.from({ length: 12 }, (_, index) => [`Lớp ${index + 1}`, `GRADE_${index + 1}`])
+);
+const UNIVERSITY_TARGETS = [
+  { code: 'YEAR_1', name: 'Sinh viên năm 1' },
+  { code: 'YEAR_2', name: 'Sinh viên năm 2' },
+  { code: 'YEAR_3', name: 'Sinh viên năm 3' },
+  { code: 'YEAR_4_PLUS', name: 'Sinh viên năm 4+' }
+];
+const SKILL_TARGETS = [
+  { code: 'BEGINNER', name: 'Cơ bản' },
+  { code: 'INTERMEDIATE', name: 'Trung cấp' },
+  { code: 'ADVANCED', name: 'Nâng cao' }
+];
 
 export function TeachingRegistrationPage({ embedded = false }) {
   const [form, setForm] = useState(EMPTY_FORM);
@@ -43,7 +64,7 @@ export function TeachingRegistrationPage({ embedded = false }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [showSuggestion, setShowSuggestion] = useState(false);
-  const [suggestion, setSuggestion] = useState({ subjectName: '', levelName: '', levelType: 'SKILL_LEVEL', note: '' });
+  const [suggestion, setSuggestion] = useState({ subjectName: '', levelCode: '', levelName: '', levelNames: [], levelType: 'SKILL_LEVEL', note: '' });
   const [uploadingDocument, setUploadingDocument] = useState('');
   const [documentErrors, setDocumentErrors] = useState({});
   const documentInputRef = useRef(null);
@@ -61,6 +82,8 @@ export function TeachingRegistrationPage({ embedded = false }) {
     subject: findById(catalog.subjects, form.subjectId),
     levels: catalog.levels.filter((item) => form.levelIds.includes(item.id))
   };
+  const schoolGrades = SCHOOL_GRADE_OPTIONS[selected.education?.code] || [];
+  const schoolGradeProposal = academic && schoolGrades.length > 0 && !String(selected.category?.code || '').includes('EXAM');
   const reusableEvidence = documents.filter((item) => TEACHING_EVIDENCE_TYPES.includes(item.documentType));
   const identityDocuments = ['IDENTITY_FRONT', 'IDENTITY_BACK', 'PASSPORT'];
   const hasIdentity = hasIdentityDocuments(documents);
@@ -95,7 +118,7 @@ export function TeachingRegistrationPage({ embedded = false }) {
     clearNotice();
     setForm({ ...EMPTY_FORM, programTypeId: String(program.id) });
     setCatalog((current) => ({ ...current, categories: [], subjects: [], levels: [] }));
-    setSuggestion((current) => ({ ...current, levelType: nextAcademic ? 'GRADE' : 'SKILL_LEVEL' }));
+    setSuggestion({ subjectName: '', levelCode: '', levelName: '', levelNames: [], levelType: nextAcademic ? 'GRADE' : 'SKILL_LEVEL', note: '' });
     if (!nextAcademic) await loadCategories(program.id, '');
     setStep(1);
   }
@@ -230,7 +253,8 @@ export function TeachingRegistrationPage({ embedded = false }) {
         proposedSubjectName: form.isProposal ? form.proposedSubjectName : null,
         proposedLevelName: form.isProposal ? form.proposedLevelName : null,
         proposedLevelType: form.isProposal ? form.proposedLevelType : null,
-        proposedNote: form.isProposal ? form.proposedNote : null
+        proposedNote: form.isProposal ? form.proposedNote : null,
+        proposedLevels: form.isProposal ? form.proposedLevels : null
       };
 
       const saved = await teachingRegistrationApi.createBatch(payload);
@@ -251,8 +275,11 @@ export function TeachingRegistrationPage({ embedded = false }) {
   function submitSuggestion(event) {
     event.preventDefault();
     if (!form.categoryId) return setError('Vui lòng chọn nhóm môn trước khi đề xuất môn mới.');
-    if (!suggestion.subjectName.trim() || !suggestion.levelName.trim()) {
-      return setError('Vui lòng nhập đầy đủ tên môn học và trình độ đề xuất.');
+    const proposedLevels = schoolGradeProposal ? suggestion.levelNames : [suggestion.levelName.trim()].filter(Boolean);
+    if (!suggestion.subjectName.trim() || proposedLevels.length === 0) {
+      return setError(schoolGradeProposal
+        ? `Vui lòng nhập tên môn và chọn ít nhất một lớp thuộc cấp ${selected.education?.name}.`
+        : 'Vui lòng nhập đầy đủ tên môn học và trình độ hoặc mục tiêu đề xuất.');
     }
 
     setForm((current) => ({
@@ -261,13 +288,19 @@ export function TeachingRegistrationPage({ embedded = false }) {
       subjectId: '',
       levelIds: [],
       proposedSubjectName: suggestion.subjectName.trim(),
-      proposedLevelName: suggestion.levelName.trim(),
-      proposedLevelType: suggestion.levelType,
+      proposedLevelName: proposedLevels.join(', '),
+      proposedLevelNames: proposedLevels,
+      proposedLevelType: schoolGradeProposal ? 'GRADE' : suggestion.levelType,
+      proposedLevels: proposedLevels.map((name) => ({
+        code: schoolGradeProposal ? SCHOOL_GRADE_CODES[name] : suggestion.levelCode || null,
+        name,
+        type: schoolGradeProposal ? 'GRADE' : suggestion.levelType
+      })),
       proposedNote: suggestion.note.trim()
     }));
 
     setShowSuggestion(false);
-    setSuggestion({ subjectName: '', levelName: '', levelType: academic ? 'GRADE' : 'SKILL_LEVEL', note: '' });
+    setSuggestion({ subjectName: '', levelCode: '', levelName: '', levelNames: [], levelType: academic ? 'GRADE' : 'SKILL_LEVEL', note: '' });
     clearNotice();
     setStep(academic ? 5 : 4);
   }
@@ -476,7 +509,22 @@ export function TeachingRegistrationPage({ embedded = false }) {
                   {currentStep.id === 'program' && <ProgramStep items={catalog.programs} onChoose={chooseProgram} />}
                   {currentStep.id === 'education' && <ChoiceGrid items={catalog.educationLevels} selectedId={form.educationLevelId} onChoose={chooseEducation} loading={catalogLoading} />}
                   {currentStep.id === 'category' && <ChoiceGrid items={catalog.categories} selectedId={form.categoryId} onChoose={chooseCategory} loading={catalogLoading} empty="Chưa có nhóm môn phù hợp trong danh mục." />}
-                  {currentStep.id === 'subject' && <SubjectStep items={catalog.subjects} selectedId={form.subjectId} onChoose={chooseSubject} onSuggest={() => setShowSuggestion(true)} loading={catalogLoading} />}
+                  {currentStep.id === 'subject' && <SubjectStep items={catalog.subjects} selectedId={form.subjectId} onChoose={chooseSubject} onSuggest={() => {
+                    const examCategory = String(selected.category?.code || '').includes('EXAM');
+                    const examTarget = examCategory
+                      ? selected.education?.code === 'SECONDARY'
+                        ? { code: 'GRADE_10_ENTRANCE_EXAM', name: 'Ôn thi vào lớp 10' }
+                        : selected.education?.code === 'HIGH_SCHOOL'
+                          ? { code: 'NATIONAL_EXAM', name: 'Ôn thi THPT Quốc gia' }
+                          : { code: '', name: '' }
+                      : { code: '', name: '' };
+                    setSuggestion({
+                      subjectName: '', levelCode: examTarget.code, levelName: examTarget.name, levelNames: [],
+                      levelType: academic ? (examCategory ? 'EXAM_PREPARATION' : selected.education?.code === 'UNIVERSITY' ? 'UNIVERSITY_LEVEL' : 'GRADE') : 'SKILL_LEVEL',
+                      note: ''
+                    });
+                    setShowSuggestion(true);
+                  }} loading={catalogLoading} />}
                   {currentStep.id === 'level' && <LevelStep items={catalog.levels} selectedIds={form.levelIds} onToggle={toggleLevel} onContinue={() => setStep(academic ? 5 : 4)} loading={catalogLoading} />}
               {currentStep.id === 'details' && <TeachingRegistrationDetailsStep form={form} selected={selected} documents={documents} stagedDocuments={stagedDocuments} busy={busy} onChange={updateField} onUpsertStaged={upsertStagedDocument} onRemoveStaged={removeStagedDocument} onBack={() => setStep((current) => Math.max(0, current - 1))} onSubmit={submit} />}
             </div>
@@ -490,7 +538,7 @@ export function TeachingRegistrationPage({ embedded = false }) {
 
       <input ref={documentInputRef} type="file" className="hidden" onChange={uploadDocument} />
 
-      {showSuggestion && <SuggestionModal value={suggestion} setValue={setSuggestion} academic={academic} category={selected.category} busy={busy} onClose={() => setShowSuggestion(false)} onSubmit={submitSuggestion} />}
+      {showSuggestion && <SuggestionModal value={suggestion} setValue={setSuggestion} academic={academic} education={selected.education} category={selected.category} schoolGrades={schoolGrades} schoolGradeProposal={schoolGradeProposal} busy={busy} onClose={() => setShowSuggestion(false)} onSubmit={submitSuggestion} />}
     </div>
   );
 }
@@ -706,13 +754,62 @@ function SuggestionCard({ item }) {
   return <article className="rounded-[8px] border border-slate-200 bg-slate-50 p-4"><p className="font-extrabold text-slate-950">{item.subjectName} · {item.levelName}</p><p className="mt-2 text-xs font-bold text-slate-500">{label}</p>{item.rejectReason && <p className="mt-2 text-xs font-semibold text-red-700">{item.rejectReason}</p>}</article>;
 }
 
-function SuggestionModal({ value, setValue, academic, category, busy, onClose, onSubmit }) {
-  const types = academic ? ['GRADE', 'EXAM_PREPARATION', 'UNIVERSITY_LEVEL'] : ['CERTIFICATE_TARGET', 'SKILL_LEVEL', 'COACHING_LEVEL'];
-  return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-4" role="dialog" aria-modal="true"><form onSubmit={onSubmit} className="w-full max-w-xl rounded-[8px] bg-white p-6 shadow-2xl sm:p-8">
+function SuggestionModal({ value, setValue, academic, education, category, schoolGrades, schoolGradeProposal, busy, onClose, onSubmit }) {
+  const examCategory = academic && String(category?.code || '').includes('EXAM');
+  const university = academic && education?.code === 'UNIVERSITY';
+  const types = university
+    ? ['UNIVERSITY_LEVEL', 'EXAM_PREPARATION', 'COACHING_LEVEL']
+    : academic
+      ? ['EXAM_PREPARATION']
+      : ['SKILL_LEVEL', 'CERTIFICATE_TARGET', 'COACHING_LEVEL'];
+  const levelLabel = university
+    ? 'Đối tượng / trình độ đại học'
+    : examCategory
+      ? 'Mục tiêu ôn thi'
+      : value.levelType === 'CERTIFICATE_TARGET'
+        ? 'Chứng chỉ / mục tiêu đầu ra'
+        : value.levelType === 'COACHING_LEVEL'
+          ? 'Mục tiêu hướng dẫn'
+          : 'Trình độ kỹ năng';
+  const levelPlaceholder = university
+    ? 'Ví dụ: Sinh viên năm 1, Hỗ trợ khóa luận...'
+    : examCategory
+      ? 'Ví dụ: Ôn thi vào lớp 10, Ôn thi THPT Quốc gia...'
+      : value.levelType === 'CERTIFICATE_TARGET'
+        ? 'Ví dụ: IELTS 6.5, MOS Associate...'
+        : 'Ví dụ: Cơ bản, Trung cấp, Nâng cao...';
+  const standardTargets = university && value.levelType === 'UNIVERSITY_LEVEL'
+    ? UNIVERSITY_TARGETS
+    : !academic && value.levelType === 'SKILL_LEVEL'
+      ? SKILL_TARGETS
+      : [];
+  const canSubmit = value.subjectName.trim() && (schoolGradeProposal ? value.levelNames.length > 0 : value.levelName.trim());
+  return <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-slate-950/60 p-4 sm:py-8" role="dialog" aria-modal="true"><form onSubmit={onSubmit} className="my-auto w-full max-w-xl rounded-[8px] bg-white p-6 shadow-2xl sm:p-8">
     <div className="flex items-start justify-between gap-4"><div><p className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-[#ff695f]">Đề xuất danh mục</p><h2 className="mt-1 font-display text-2xl font-extrabold">Môn học chưa có</h2></div><button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-600"><X size={18} /></button></div>
-    <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">Nhóm đã chọn: <strong className="text-slate-800">{category?.name}</strong>. Admin sẽ kiểm tra và tạo Subject + Level chính thức trong danh mục.</p>
-    <div className="mt-6 grid gap-4 sm:grid-cols-2"><Field label="Tên môn muốn dạy" value={value.subjectName} onChange={(event) => setValue((current) => ({ ...current, subjectName: event.target.value }))} /><Field label="Lớp / trình độ / mục tiêu" value={value.levelName} onChange={(event) => setValue((current) => ({ ...current, levelName: event.target.value }))} /><label className="field sm:col-span-2"><span>Loại trình độ</span><div><select value={value.levelType} onChange={(event) => setValue((current) => ({ ...current, levelType: event.target.value }))}>{types.map((type) => <option key={type} value={type}>{LEVEL_TYPE_LABELS[type]}</option>)}</select></div></label><label className="field sm:col-span-2"><span>Ghi chú cho Admin</span><div><textarea rows={3} maxLength={1000} value={value.note} onChange={(event) => setValue((current) => ({ ...current, note: event.target.value }))} placeholder="Mô tả ngắn nội dung môn hoặc lý do cần bổ sung..." /></div></label></div>
-    <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={onClose} className="rounded-[8px] border border-slate-200 px-4 py-3 text-sm font-extrabold text-slate-700">Hủy</button><button disabled={busy || !value.subjectName.trim() || !value.levelName.trim()} className="inline-flex items-center gap-2 rounded-[8px] bg-[#147b77] px-5 py-3 text-sm font-extrabold text-white disabled:opacity-60">{busy && <LoaderCircle size={16} className="animate-spin" />} Gửi đề xuất</button></div>
+    <p className="mt-3 text-sm font-semibold leading-6 text-slate-500">Đã chọn: <strong className="text-slate-800">{[education?.name, category?.name].filter(Boolean).join(' / ')}</strong>. Admin sẽ kiểm tra và tạo môn cùng các lớp/trình độ tương ứng.</p>
+    <div className="mt-6 grid gap-4">
+      <Field label={schoolGradeProposal ? `Tên môn học trong cấp ${education?.name}` : 'Tên môn / nội dung muốn dạy'} value={value.subjectName} onChange={(event) => setValue((current) => ({ ...current, subjectName: event.target.value }))} placeholder={schoolGradeProposal ? 'Ví dụ: Khoa học máy tính' : 'Ví dụ: Kỹ năng sống, Luyện thi IELTS...'} />
+      {schoolGradeProposal ? (
+        <fieldset>
+          <legend className="text-sm font-extrabold text-slate-800">Chọn lớp muốn dạy trong cấp {education?.name}</legend>
+          <p className="mt-1 text-xs font-semibold text-slate-500">Có thể chọn nhiều lớp. Hệ thống chỉ cho chọn các lớp thuộc đúng cấp học đã chọn.</p>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {schoolGrades.map((grade) => {
+              const checked = value.levelNames.includes(grade);
+              return <button key={grade} type="button" onClick={() => setValue((current) => ({ ...current, levelNames: checked ? current.levelNames.filter((name) => name !== grade) : [...current.levelNames, grade] }))} className={`flex items-center justify-between rounded-[8px] border px-3 py-3 text-sm font-extrabold ${checked ? 'border-[#147b77] bg-emerald-50 text-[#147b77]' : 'border-slate-200 bg-white text-slate-600'}`}><span>{grade}</span>{checked && <Check size={16} />}</button>;
+            })}
+          </div>
+        </fieldset>
+      ) : (
+        <>
+          {!examCategory && <label className="field"><span>Phân loại trình độ / mục tiêu</span><div><select value={value.levelType} onChange={(event) => setValue((current) => ({ ...current, levelType: event.target.value, levelCode: '', levelName: '' }))}>{types.map((type) => <option key={type} value={type}>{LEVEL_TYPE_LABELS[type]}</option>)}</select></div></label>}
+          {standardTargets.length > 0 && <fieldset><legend className="text-sm font-extrabold text-slate-800">Chọn mức chuẩn</legend><div className="mt-3 grid grid-cols-2 gap-2">{standardTargets.map((target) => <button key={target.code} type="button" onClick={() => setValue((current) => ({ ...current, levelCode: target.code, levelName: target.name }))} className={`rounded-[8px] border px-3 py-3 text-left text-sm font-extrabold ${value.levelCode === target.code ? 'border-[#147b77] bg-emerald-50 text-[#147b77]' : 'border-slate-200 bg-white text-slate-600'}`}>{target.name}</button>)}</div></fieldset>}
+          <Field label={standardTargets.length ? `${levelLabel} đã chọn hoặc nhập mức khác` : levelLabel} value={value.levelName} onChange={(event) => setValue((current) => ({ ...current, levelCode: '', levelName: event.target.value }))} placeholder={levelPlaceholder} readOnly={examCategory && Boolean(value.levelCode)} />
+        </>
+      )}
+      <label className="field"><span>Ghi chú cho Admin</span><div><textarea rows={3} maxLength={1000} value={value.note} onChange={(event) => setValue((current) => ({ ...current, note: event.target.value }))} placeholder="Mô tả ngắn nội dung môn, giáo trình hoặc lý do cần bổ sung..." /></div></label>
+    </div>
+    <div className="mt-6 flex justify-end gap-3"><button type="button" onClick={onClose} className="rounded-[8px] border border-slate-200 px-4 py-3 text-sm font-extrabold text-slate-700">Hủy</button><button disabled={busy || !canSubmit} className="inline-flex items-center gap-2 rounded-[8px] bg-[#147b77] px-5 py-3 text-sm font-extrabold text-white disabled:opacity-60">{busy && <LoaderCircle size={16} className="animate-spin" />} Tiếp tục hồ sơ dạy</button></div>
   </form></div>;
 }
 

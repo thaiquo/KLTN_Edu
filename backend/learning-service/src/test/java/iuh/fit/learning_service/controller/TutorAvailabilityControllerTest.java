@@ -1,6 +1,7 @@
 package iuh.fit.learning_service.controller;
 
 import iuh.fit.learning_service.exception.BadRequestException;
+import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.TutorAvailabilityRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -25,6 +26,9 @@ class TutorAvailabilityControllerTest {
     private TutorAvailabilityRepository repository;
 
     @Mock
+    private ClassRoomRepository classRoomRepository;
+
+    @Mock
     private Authentication authentication;
 
     @InjectMocks
@@ -33,6 +37,7 @@ class TutorAvailabilityControllerTest {
     @Test
     void saveReplacesTutorSlotsInDatabase() {
         when(authentication.getName()).thenReturn("tutor@example.com");
+        when(classRoomRepository.findByTutorEmailWithDetails("tutor@example.com")).thenReturn(List.of());
         when(repository.saveAllAndFlush(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
         var request = new TutorAvailabilityController.SaveAvailabilityRequest(List.of(

@@ -1,21 +1,21 @@
 import React, { useEffect, useState } from "react";
 import {
-  AlertTriangle,
   CheckCircle2,
   Clock3,
   Download,
   Eye,
   FileText,
   LoaderCircle,
-  PlusCircle,
   X,
 } from "lucide-react";
+import { useAuth } from "../../../hooks/useAuth";
 import { staffTutorsApi } from "../../../api/staffTutors";
-import { catalogSuggestionApi, teachingRegistrationApi } from "../../../api/teachingRegistrations";
+import { subjectSuggestionApi } from "../../../api/subjectSuggestions";
+import { teachingRegistrationApi } from "../../../api/teachingRegistrations";
 
 const PREVIEW_SIZE_LIMIT = 15 * 1024 * 1024;
 
-type ReviewKind = "registration" | "suggestion";
+type ReviewKind = "registration" | "subjectRequest";
 
 export function TeachingRegistrationReview({
   onNotice,
@@ -28,9 +28,12 @@ export function TeachingRegistrationReview({
   onPendingCountChange?: (count: number) => void;
   onActionSuccess?: () => void;
 }) {
+  const { user } = useAuth();
+  const isAdmin = user?.activeRole === "ADMIN";
   const [activeTab, setActiveTab] = useState<ReviewKind>("registration");
   const [registrations, setRegistrations] = useState<any[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [subjectRequests, setSubjectRequests] = useState<any[]>([]);
   const [selected, setSelected] = useState<{ kind: ReviewKind; item: any }>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -38,15 +41,20 @@ export function TeachingRegistrationReview({
   async function load() {
     setLoading(true);
     try {
-      const items = await teachingRegistrationApi.adminPending();
+      const [items, pendingSubjectRequests] = await Promise.all([
+        teachingRegistrationApi.adminPending(),
+        isAdmin ? subjectSuggestionApi.adminPending() : Promise.resolve([]),
+      ]);
       const list = Array.isArray(items) ? items : [];
+      const requestList = Array.isArray(pendingSubjectRequests) ? pendingSubjectRequests : [];
 
       const standard = list.filter((item: any) => item.subject !== null);
-      const proposed = list.filter((item: any) => item.subject === null);
+      const proposed = isAdmin ? list.filter((item: any) => item.subject === null) : [];
 
       setRegistrations(standard);
       setSuggestions(proposed);
-      onPendingCountChange?.(list.length);
+      setSubjectRequests(requestList);
+      onPendingCountChange?.(standard.length + proposed.length + requestList.length);
     } catch (error: any) {
       onError(error?.message || "Không thể tải hàng chờ duyệt quyền dạy.");
     } finally {
@@ -56,7 +64,7 @@ export function TeachingRegistrationReview({
 
   useEffect(() => {
     load();
-  }, []);
+  }, [isAdmin]);
 
   async function approveRegistration(item: any, note: string) {
     setBusy(true);
@@ -108,20 +116,62 @@ export function TeachingRegistrationReview({
     }
   }
 
+  async function approveSubjectRequest(item: any) {
+    setBusy(true);
+    try {
+      await subjectSuggestionApi.approveAsNew(item.id, user?.id);
+      setSubjectRequests((current) => current.filter((value) => value.id !== item.id));
+      onPendingCountChange?.(registrations.length + suggestions.length + subjectRequests.length - 1);
+      setSelected(undefined);
+      onNotice("Đã duyệt và thêm môn học mới vào danh mục.");
+      onActionSuccess?.();
+    } catch (error: any) {
+      onError(error?.message || "Không thể duyệt đề xuất môn học.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rejectSubjectRequest(item: any, reason: string) {
+    if (!reason.trim()) {
+      onError("Vui lòng nhập lý do từ chối.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await subjectSuggestionApi.reject(item.id, reason.trim(), user?.id);
+      setSubjectRequests((current) => current.filter((value) => value.id !== item.id));
+      onPendingCountChange?.(registrations.length + suggestions.length + subjectRequests.length - 1);
+      setSelected(undefined);
+      onNotice("Đã từ chối đề xuất môn học.");
+      onActionSuccess?.();
+    } catch (error: any) {
+      onError(error?.message || "Không thể từ chối đề xuất môn học.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="mt-5 border border-[#d7dde6] bg-white shadow-sm">
       <header className="flex flex-col gap-4 border-b border-[#e4e8ee] p-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#ff695f]">Teaching approval queue</p>
           <h2 className="mt-1 font-display text-xl font-black text-[#073554]">Hàng chờ duyệt quyền dạy</h2>
-          <p className="mt-1 text-xs font-semibold text-slate-500">Môn có sẵn được duyệt trực tiếp. Môn nhập tay phải được bổ sung vào danh mục trước.</p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            {isAdmin
+              ? "Môn có sẵn được duyệt trực tiếp. Đề xuất môn mới chỉ được gửi đến Admin để xem xét."
+              : "Staff chỉ duyệt đăng ký đối với các môn đã có trong danh mục."}
+          </p>
         </div>
         <button type="button" onClick={load} className="w-fit border border-[#d7dde6] px-3 py-2 text-xs font-black text-slate-600 hover:border-[#147b77]">Tải lại</button>
       </header>
 
       <div className="flex gap-2 border-b border-[#e4e8ee] px-5 pt-4">
         <QueueTab active={activeTab === "registration"} onClick={() => setActiveTab("registration")} label="Hồ sơ quyền dạy" count={registrations.length} />
-        <QueueTab active={activeTab === "suggestion"} onClick={() => setActiveTab("suggestion")} label="Đề xuất môn mới" count={suggestions.length} warning />
+        {isAdmin && (
+          <QueueTab active={activeTab === "subjectRequest"} onClick={() => setActiveTab("subjectRequest")} label="Đề xuất môn mới" count={suggestions.length + subjectRequests.length} warning />
+        )}
       </div>
 
       {loading ? (
@@ -129,7 +179,12 @@ export function TeachingRegistrationReview({
       ) : activeTab === "registration" ? (
         <RegistrationQueue items={registrations} onSelect={(item) => setSelected({ kind: "registration", item })} />
       ) : (
-        <RegistrationQueue items={suggestions} onSelect={(item) => setSelected({ kind: "registration", item })} />
+        suggestions.length + subjectRequests.length === 0
+          ? <EmptyQueue text="Không có đề xuất môn mới đang chờ Admin duyệt." />
+          : <div>
+              {suggestions.length > 0 && <RegistrationQueue items={suggestions} onSelect={(item) => setSelected({ kind: "registration", item })} />}
+              {subjectRequests.length > 0 && <SubjectRequestQueue items={subjectRequests} onSelect={(item) => setSelected({ kind: "subjectRequest", item })} />}
+            </div>
       )}
 
       {selected?.kind === "registration" && (
@@ -140,6 +195,15 @@ export function TeachingRegistrationReview({
           onApprove={(note) => approveRegistration(selected.item, note)}
           onReject={(reason) => rejectRegistration(selected.item, reason)}
           onError={onError}
+        />
+      )}
+      {selected?.kind === "subjectRequest" && (
+        <SubjectRequestDetailModal
+          item={selected.item}
+          busy={busy}
+          onClose={() => setSelected(undefined)}
+          onApprove={() => approveSubjectRequest(selected.item)}
+          onReject={(reason: string) => rejectSubjectRequest(selected.item, reason)}
         />
       )}
     </section>
@@ -160,6 +224,7 @@ function RegistrationQueue({ items, onSelect }: { items: any[]; onSelect: (item:
     <div className="divide-y divide-[#edf0f4]">
       {items.map((item) => {
         const isProposal = !item.subject;
+        const tutorName = tutorDisplayName(item);
         return (
           <article key={item.id} className={`grid gap-4 p-5 hover:bg-[#f9fbfd] md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] md:items-center ${isProposal ? "bg-amber-50/10" : ""}`}>
             <div className="min-w-0">
@@ -173,9 +238,12 @@ function RegistrationQueue({ items, onSelect }: { items: any[]; onSelect: (item:
                   <StatusBadge />
                 )}
               </div>
-              <p className="mt-1 truncate text-xs font-bold text-slate-500">{item.tutorEmail}</p>
+              <p className="mt-1 truncate text-xs font-black text-[#073554]" title={tutorName}>{tutorName}</p>
+              {item.tutorEmail && item.tutorEmail !== tutorName && (
+                <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500" title={item.tutorEmail}>{item.tutorEmail}</p>
+              )}
               <p className="mt-2 text-xs font-semibold text-slate-600">
-                {item.category?.name} · {isProposal ? item.proposedLevelName : (item.levels || []).map((level: any) => level.name).join(", ")}
+                {item.category?.name} · {isProposal ? proposedLevelNames(item) : (item.levels || []).map((level: any) => level.name).join(", ")}
               </p>
             </div>
             <div className="text-xs font-semibold text-slate-500">
@@ -193,14 +261,80 @@ function RegistrationQueue({ items, onSelect }: { items: any[]; onSelect: (item:
   );
 }
 
+function SubjectRequestQueue({ items, onSelect }: { items: any[]; onSelect: (item: any) => void }) {
+  return (
+    <div className="divide-y divide-[#edf0f4] border-t border-[#e4e8ee]">
+      {items.map((item) => {
+        const requester = tutorDisplayName(item);
+        return (
+          <article key={`subject-request-${item.id}`} className="grid gap-4 bg-amber-50/10 p-5 hover:bg-[#f9fbfd] md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] md:items-center">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="font-display text-base font-black text-[#073554]">{item.suggestedName}</h3>
+                <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[9px] font-black uppercase text-amber-700">Đề xuất từ hồ sơ gia sư</span>
+              </div>
+              <p className="mt-1 truncate text-xs font-black text-[#073554]" title={requester}>{requester}</p>
+              {item.tutorEmail && item.tutorEmail !== requester && (
+                <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500" title={item.tutorEmail}>{item.tutorEmail}</p>
+              )}
+              <p className="mt-2 text-xs font-semibold text-slate-600">{item.category?.name || "Chưa có nhóm môn"}{item.group?.name ? ` · ${item.group.name}` : ""}</p>
+            </div>
+            <div className="text-xs font-semibold text-slate-500">
+              <p className="font-black text-[#073554]">{(item.levels || []).join(", ") || "Chưa chọn trình độ"}</p>
+              <p className="mt-1">Gửi {formatDateTime(item.createdAt)}</p>
+            </div>
+            <button type="button" onClick={() => onSelect(item)} className="inline-flex w-fit items-center gap-2 border border-[#073554] px-3 py-2 text-[10px] font-black uppercase tracking-[0.1em] text-[#073554] hover:bg-[#073554] hover:text-white">
+              <Eye className="h-3.5 w-3.5" /> Xem chi tiết
+            </button>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function SubjectRequestDetailModal({ item, busy, onClose, onApprove, onReject }: any) {
+  const [reason, setReason] = useState("");
+  const [rejectMode, setRejectMode] = useState(false);
+  const requester = tutorDisplayName(item);
+  return (
+    <Modal title="Chi tiết đề xuất môn mới" subtitle={identityLabel(item)} onClose={onClose}>
+      <div className="rounded-xl border border-amber-300 bg-amber-50/40 p-4 text-xs font-semibold leading-5 text-amber-800">
+        Đề xuất này được gửi thẳng đến Admin. Khi duyệt, môn học mới sẽ được thêm vào danh mục.
+      </div>
+      <section className="mt-4 rounded-xl border border-[#073554] p-4">
+        <h3 className="font-display text-base font-black text-[#073554]">{item.suggestedName}</h3>
+        <DetailRow label="Danh mục" value={[item.category?.name, item.group?.name].filter(Boolean).join(" / ")} />
+        <DetailRow label="Gia sư" value={requester} />
+        {item.tutorEmail && <DetailRow label="Email gia sư" value={item.tutorEmail} />}
+        <DetailRow label="Trình độ giảng dạy" value={(item.levels || []).join(", ")} />
+        <DetailRow label="Thời gian gửi" value={formatDateTime(item.createdAt)} />
+        <DetailRow label="Ghi chú của gia sư" value={item.note || "--"} />
+      </section>
+      {rejectMode && (
+        <label className="mt-5 block border-t border-slate-200 pt-4">
+          <span className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Lý do từ chối (bắt buộc)</span>
+          <textarea value={reason} onChange={(event) => setReason(event.target.value)} rows={3} className="mt-2 w-full resize-none rounded-lg border border-slate-200 p-3 text-sm outline-none focus:border-[#147b77]" />
+        </label>
+      )}
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        {rejectMode && <button type="button" disabled={busy} onClick={() => setRejectMode(false)} className="px-4 py-2.5 text-xs font-black text-slate-500">Hủy</button>}
+        <button type="button" disabled={busy} onClick={() => rejectMode ? onReject(reason) : setRejectMode(true)} className="border border-rose-300 bg-rose-50 px-4 py-2.5 text-xs font-black text-rose-700 disabled:opacity-50">{rejectMode ? "Xác nhận từ chối" : "Từ chối"}</button>
+        {!rejectMode && <button type="button" disabled={busy} onClick={onApprove} className="bg-[#147b77] px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">{busy ? "Đang xử lý..." : "Duyệt & Tạo môn"}</button>}
+      </div>
+    </Modal>
+  );
+}
+
 function RegistrationDetailModal({ item, busy, onClose, onApprove, onReject, onError }: any) {
   const [note, setNote] = useState("");
   const [rejectMode, setRejectMode] = useState(false);
   const isProposal = !item.subject;
+  const tutorName = tutorDisplayName(item);
   return (
-    <Modal title={isProposal ? "Chi tiết đề xuất môn và hồ sơ dạy" : "Chi tiết hồ sơ quyền dạy"} subtitle={item.tutorEmail} onClose={onClose}>
+    <Modal title={isProposal ? "Chi tiết đề xuất môn và hồ sơ dạy" : "Chi tiết hồ sơ quyền dạy"} subtitle={identityLabel(item)} onClose={onClose}>
       <div className="flex items-center justify-between bg-[#f7f9fc] p-3 text-xs font-bold text-[#073554]">
-        <span>Nộp lúc {formatDateTime(item.submittedAt)}</span>
+        <span>{tutorName} · Nộp lúc {formatDateTime(item.submittedAt)}</span>
         {isProposal ? (
           <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-black uppercase text-amber-700">Môn đề xuất</span>
         ) : (
@@ -210,7 +344,7 @@ function RegistrationDetailModal({ item, busy, onClose, onApprove, onReject, onE
 
       {isProposal && (
         <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50/40 p-4 text-xs font-semibold text-amber-800 leading-5">
-          👉 **Môn học này do gia sư đề xuất thêm mới.** Khi bạn bấm **Duyệt**, hệ thống sẽ tự động tạo môn học <strong>{item.proposedSubjectName}</strong> và trình độ <strong>{item.proposedLevelName}</strong> trong danh mục, đồng thời phê duyệt luôn quyền giảng dạy môn học này cho gia sư.
+          👉 <strong>Môn học này do gia sư đề xuất thêm mới.</strong> Khi duyệt, hệ thống sẽ tạo môn <strong>{item.proposedSubjectName}</strong> cùng {item.proposedLevelType === "GRADE" ? "các lớp" : "trình độ / mục tiêu"} <strong>{proposedLevelNames(item)}</strong>, đồng thời phê duyệt quyền dạy tương ứng cho gia sư.
         </div>
       )}
 
@@ -219,7 +353,7 @@ function RegistrationDetailModal({ item, busy, onClose, onApprove, onReject, onE
           {isProposal ? item.proposedSubjectName : item.subject?.name}
         </h3>
         <DetailRow label="Chương trình" value={[item.programType?.name, item.educationLevel?.name, item.category?.name].filter(Boolean).join(" / ")} />
-        <DetailRow label="Lớp / trình độ" value={isProposal ? item.proposedLevelName : (item.levels || []).map((level: any) => level.name).join(", ")} />
+        <DetailRow label={isProposal && item.proposedLevelType === "GRADE" ? "Các lớp đề xuất" : "Trình độ / mục tiêu"} value={isProposal ? proposedLevelNames(item) : (item.levels || []).map((level: any) => level.name).join(", ")} />
         {isProposal && <DetailRow label="Loại trình độ đề xuất" value={item.proposedLevelType || "--"} />}
         {isProposal && item.proposedNote && <DetailRow label="Ghi chú đề xuất của gia sư" value={item.proposedNote} />}
         <DetailRow label="Học phí" value={`${formatCurrency(item.tuitionMin)} - ${formatCurrency(item.tuitionMax)}/buổi`} />
@@ -345,4 +479,25 @@ function evidenceTypeLabel(type: string) {
     OTHER: "Minh chứng khác",
   };
   return labels[type] || type;
+}
+
+function tutorDisplayName(item: any) {
+  return item?.tutorFullName?.trim()
+    || item?.applicantFullName?.trim()
+    || item?.fullName?.trim()
+    || item?.tutorName?.trim()
+    || item?.requestedByFullName?.trim()
+    || item?.tutorEmail
+    || (item?.requestedByUserId ? `Gia sư #${item.requestedByUserId}` : "Gia sư");
+}
+
+function identityLabel(item: any) {
+  const name = tutorDisplayName(item);
+  const email = item?.tutorEmail || item?.requestedByEmail;
+  return email && email !== name ? `${name} · ${email}` : name;
+}
+
+function proposedLevelNames(item: any) {
+  const names = (item.proposedLevels || []).map((level: any) => level.name).filter(Boolean);
+  return names.length ? names.join(", ") : item.proposedLevelName || "--";
 }

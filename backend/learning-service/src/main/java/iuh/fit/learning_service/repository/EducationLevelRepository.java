@@ -6,4 +6,5 @@ import java.util.List;
 
 public interface EducationLevelRepository extends JpaRepository<EducationLevel, Long> {
     List<EducationLevel> findByActiveTrueOrderByOrderIndexAscNameAsc();
+    List<EducationLevel> findAllByOrderByOrderIndexAscNameAsc();
 }

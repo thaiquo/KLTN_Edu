@@ -322,7 +322,7 @@ export function TeachingSubjectsStep({ application, readOnly, onSubjectsChanged 
                     await subjectSuggestionApi.create(payload);
                     await refreshSuggestions();
                     setSuggestingName('');
-                    setSuccessMessage('Đề xuất môn học đã được gửi cho Staff duyệt.');
+                    setSuccessMessage('Đề xuất môn học đã được gửi thẳng đến Admin duyệt.');
                   } catch (error) {
                     setActionError(toFriendlyMessage(error));
                   } finally {
@@ -534,7 +534,7 @@ function PendingSuggestionsSection({ suggestions }) {
                 </p>
               </div>
               <span className="w-fit rounded-full bg-amber-100 px-3 py-2 text-xs font-extrabold text-amber-800">
-                Đang chờ Staff duyệt
+                Đang chờ Admin duyệt
               </span>
             </div>
           </article>
@@ -668,7 +668,7 @@ function EmptyState({ editable }) {
       <p className="font-display text-xl font-extrabold text-slate-950">Bạn chưa thêm môn học nào.</p>
       <p className="mx-auto mt-2 max-w-md text-sm font-semibold leading-6 text-slate-500">
         {editable
-          ? 'Hãy tìm và thêm ít nhất một môn chính thức bạn muốn dạy. Đề xuất môn mới sẽ được Staff duyệt riêng.'
+          ? 'Hãy tìm và thêm ít nhất một môn chính thức bạn muốn dạy. Đề xuất môn mới sẽ được gửi riêng đến Admin duyệt.'
           : 'Danh sách môn học sẽ hiển thị tại đây khi hồ sơ có dữ liệu.'}
       </p>
     </div>

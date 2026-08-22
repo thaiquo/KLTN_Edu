@@ -36,6 +36,7 @@ export const classApi = {
     if (filterParams.tutorEmail) params.set('tutorEmail', filterParams.tutorEmail);
     if (filterParams.subjectId) params.set('subjectId', String(filterParams.subjectId));
     if (filterParams.keyword) params.set('keyword', filterParams.keyword);
+    if (filterParams.reviewedByMe) params.set('reviewedByMe', 'true');
     const queryString = params.toString();
     return apiRequest(`/api/learning/admin/classes${queryString ? `?${queryString}` : ''}`);
   },

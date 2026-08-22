@@ -122,8 +122,10 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
     }
   };
 
-  const isFull = classRoom.acceptedCount >= classRoom.maxStudents || classRoom.status === 'LOCKED' || classRoom.status === 'CLOSED';
-  const isBufferFull = classRoom.isBufferPoolFull;
+  const acceptedCount = classRoom.acceptedCount != null ? classRoom.acceptedCount : 0;
+  const availableSlots = classRoom.availableSlots != null ? classRoom.availableSlots : Math.max(0, classRoom.maxStudents - acceptedCount);
+  const isFull = acceptedCount >= classRoom.maxStudents || classRoom.status === 'LOCKED' || classRoom.status === 'CLOSED';
+  const isTemporarilyFull = !isFull && classRoom.isBufferPoolFull;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -304,13 +306,7 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
             <div>
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Sĩ số & Chỗ trống</span>
               <strong className="text-slate-900 font-bold text-xs">
-                {classRoom.acceptedCount != null ? classRoom.acceptedCount : 0} / {classRoom.maxStudents} HV (Còn {classRoom.availableSlots != null ? classRoom.availableSlots : classRoom.maxStudents} chỗ)
-              </strong>
-            </div>
-            <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-bold">Danh sách chờ (Buffer Pool)</span>
-              <strong className="text-slate-900 font-bold text-xs">
-                {classRoom.pendingCount != null ? classRoom.pendingCount : 0} / {classRoom.maxPendingRequests || Math.ceil(classRoom.maxStudents * 1.5)} hồ sơ
+                {acceptedCount} / {classRoom.maxStudents} HV (Còn {availableSlots} chỗ)
               </strong>
             </div>
             <div>
@@ -419,7 +415,7 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
                 required
                 value={joinKey}
                 onChange={(e) => setJoinKey(e.target.value.toUpperCase())}
-                placeholder="VD: KEY1234..."
+                placeholder="Vui lòng nhập mã mời"
                 className="w-full px-3 py-2 text-xs font-bold border border-sky-300 rounded-xl bg-white focus:border-sky-500 outline-none uppercase tracking-wider"
               />
             </div>
@@ -457,7 +453,7 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
               !showInviteKeyForm && (
                 <button
                   type="button"
-                  disabled={isFull || isBufferFull || submitting}
+                  disabled={isFull || isTemporarilyFull || submitting}
                   onClick={() => {
                     if (!profileCheck.isComplete) {
                       setProfileWarning(profileCheck.missingFields);
@@ -471,8 +467,8 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
                   <span>
                     {isFull
                       ? 'Lớp đã đủ sĩ số'
-                      : isBufferFull
-                      ? 'Danh sách chờ đã đầy'
+                      : isTemporarilyFull
+                      ? 'Tạm đủ số lượng'
                       : 'Nhập Mã mời & Tham gia lớp'}
                   </span>
                 </button>
@@ -480,15 +476,15 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
             ) : (
               <button
                 type="button"
-                disabled={isFull || isBufferFull || submitting}
+                disabled={isFull || isTemporarilyFull || submitting}
                 onClick={() => handleEnrollSubmit()}
                 className="px-6 py-2.5 rounded-xl bg-brand-primary text-white text-xs font-black hover:bg-brand-primary/90 transition-all shadow-md flex items-center gap-2 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
               >
                 <span>
                   {isFull
                     ? 'Lớp đã đủ sĩ số'
-                    : isBufferFull
-                    ? 'Danh sách chờ đã đầy'
+                    : isTemporarilyFull
+                    ? 'Tạm đủ số lượng'
                     : submitting
                     ? 'Đang gửi yêu cầu...'
                     : 'Gửi yêu cầu tham gia lớp'}

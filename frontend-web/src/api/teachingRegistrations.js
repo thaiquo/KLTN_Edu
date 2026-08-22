@@ -43,6 +43,16 @@ export const catalogSuggestionApi = {
 };
 
 export const adminTeachingCatalogApi = {
+  snapshot: () => apiRequest('/api/learning/admin/teaching-catalog'),
+  createCategory: (payload) => apiRequest('/api/learning/admin/teaching-catalog/categories', {
+    method: 'POST', body: JSON.stringify(payload)
+  }),
+  updateCategory: (id, payload) => apiRequest(`/api/learning/admin/teaching-catalog/categories/${id}`, {
+    method: 'PUT', body: JSON.stringify(payload)
+  }),
+  deactivateCategory: (id) => apiRequest(`/api/learning/admin/teaching-catalog/categories/${id}`, {
+    method: 'DELETE'
+  }),
   createSubject: (payload) => apiRequest('/api/learning/admin/teaching-catalog/subjects', {
     method: 'POST', body: JSON.stringify(payload)
   }),

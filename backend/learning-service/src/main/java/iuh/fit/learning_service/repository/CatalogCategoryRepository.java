@@ -9,4 +9,5 @@ public interface CatalogCategoryRepository extends JpaRepository<CatalogCategory
     List<CatalogCategory> findByProgramTypeIdAndEducationLevelIdAndActiveTrueOrderByOrderIndexAscNameAsc(Long programTypeId, Long educationLevelId);
     List<CatalogCategory> findByProgramTypeIdAndEducationLevelIsNullAndActiveTrueOrderByOrderIndexAscNameAsc(Long programTypeId);
     Optional<CatalogCategory> findFirstByCodeIgnoreCaseAndActiveTrue(String code);
+    List<CatalogCategory> findAllByOrderByOrderIndexAscNameAsc();
 }

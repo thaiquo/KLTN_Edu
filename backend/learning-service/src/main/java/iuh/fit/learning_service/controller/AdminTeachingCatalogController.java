@@ -11,10 +11,29 @@ import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/admin/teaching-catalog")
-@PreAuthorize("hasAnyRole('STAFF','ADMIN')")
+@PreAuthorize("hasRole('ADMIN')")
 public class AdminTeachingCatalogController {
     private final AdminCatalogService service;
     public AdminTeachingCatalogController(AdminCatalogService service) { this.service=service; }
+
+    @GetMapping
+    public AdminCatalogDtos.CatalogSnapshot snapshot() { return service.snapshot(); }
+
+    @PostMapping("/categories")
+    public ResponseEntity<AdminCatalogDtos.ManagedCategory> createCategory(
+            @Valid @RequestBody AdminCatalogDtos.CreateCategoryRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.createCategory(request));
+    }
+
+    @PutMapping("/categories/{id}")
+    public AdminCatalogDtos.ManagedCategory updateCategory(@PathVariable Long id,
+            @Valid @RequestBody AdminCatalogDtos.UpdateCategoryRequest request) {
+        return service.updateCategory(id, request);
+    }
+
+    @DeleteMapping("/categories/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deactivateCategory(@PathVariable Long id) { service.deactivateCategory(id); }
 
     @PostMapping("/subjects")
     public ResponseEntity<TeachingCatalogDtos.SubjectOption> create(@Valid @RequestBody AdminCatalogDtos.CreateSubjectRequest request) {

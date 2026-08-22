@@ -18,7 +18,8 @@ import {
   PlayCircle,
   BarChart3,
   ShieldAlert,
-  Globe
+  Globe,
+  Layers3
 } from "lucide-react";
 import { UserRole } from "../types";
 
@@ -56,6 +57,7 @@ export function Sidebar({
           { id: "tutor-approval", label: "Tutor Approval", icon: CheckCircle2 },
           { id: "user-management", label: "User Management", icon: Users },
           { id: "class-management", label: "Class Management", icon: BookOpen },
+          { id: "subject-catalog", label: "Quản lý môn học", icon: Layers3 },
           { id: "settings", label: "Settings", icon: Settings },
         ];
       case "staff":

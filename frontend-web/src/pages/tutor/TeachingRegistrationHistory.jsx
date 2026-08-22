@@ -44,7 +44,7 @@ export function TeachingRegistrationHistory({ registrations, suggestions = [] })
                 <div className="flex justify-between items-start gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="font-extrabold text-slate-950 truncate">{item.proposedSubjectName}</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-500 truncate">Trình độ: {item.proposedLevelName}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500 truncate">{item.proposedLevelType === 'GRADE' ? 'Các lớp' : 'Trình độ / mục tiêu'}: {item.proposedLevelName}</p>
                     <p className="mt-0.5 text-[11px] font-medium text-slate-400">
                       Kinh nghiệm: {item.experienceYears} năm · Học phí: {money(item.tuitionMin)} - {money(item.tuitionMax)}đ
                     </p>
@@ -95,6 +95,8 @@ function RegistrationDetailModal({ item, onClose }) {
 }
 
 function levelNames(item) {
+  const proposedNames = (item.proposedLevels || []).map((level) => level.name).filter(Boolean);
+  if (proposedNames.length) return proposedNames.join(', ');
   if (item.proposedLevelName) return item.proposedLevelName;
   const names = (item.levels || []).map((level) => level.name).filter(Boolean);
   return names.length ? names.join(', ') : 'Chưa có lớp / trình độ';
