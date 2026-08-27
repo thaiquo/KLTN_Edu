@@ -18,6 +18,7 @@ import {
   PlayCircle,
   BarChart3,
   ShieldAlert,
+  ShieldCheck,
   Globe,
   Layers3
 } from "lucide-react";
@@ -46,6 +47,7 @@ export function Sidebar({
         return [
           { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
           { id: "my-classes", label: "My Classes", icon: GraduationCap },
+          { id: "contracts", label: "Hợp đồng & Ký quỹ", icon: ShieldCheck },
           { id: "requests", label: "Student Requests", icon: CheckCircle2 },
           { id: "messages", label: "Messages", icon: MessageSquare },
           { id: "schedule", label: "Schedule", icon: Calendar },
@@ -55,6 +57,8 @@ export function Sidebar({
         return [
           { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
           { id: "tutor-approval", label: "Tutor Approval", icon: CheckCircle2 },
+          { id: "contracts", label: "Hợp đồng Escrow", icon: ShieldCheck },
+          { id: "complaints", label: "Phân xử Khiếu nại", icon: ShieldAlert },
           { id: "user-management", label: "User Management", icon: Users },
           { id: "class-management", label: "Class Management", icon: BookOpen },
           { id: "subject-catalog", label: "Quản lý môn học", icon: Layers3 },
@@ -73,6 +77,7 @@ export function Sidebar({
         return [
           { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
           { id: "courses", label: "Courses", icon: BookOpen },
+          { id: "contracts", label: "Hợp đồng & Ký quỹ", icon: ShieldCheck },
           { id: "messages", label: "Messages", icon: MessageSquare },
           { id: "schedule", label: "Schedule", icon: Calendar },
           { id: "settings", label: "Settings", icon: Settings },

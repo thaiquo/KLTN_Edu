@@ -62,6 +62,8 @@ import { TutorAvailabilityScheduler } from "./components/TutorAvailabilitySchedu
 import { TutorClassManagement } from "./components/TutorClassManagement";
 import { AdminClassManagement } from "./components/staff/AdminClassManagement";
 import { TeachingCatalogManagement } from "./components/staff/TeachingCatalogManagement";
+import { EscrowContractsView } from "../components/contract/EscrowContractsView";
+import { DisputeManagementPanel } from "../components/contract/DisputeManagementPanel";
 
 // High Resolution course and avatar placeholders
 const studentAvatar =
@@ -705,17 +707,22 @@ export default function App({ user, onLogout }: AppProps) {
       case "settings":
         return <ProfileSettings settings={profileSettings} onSaveSettings={setProfileSettings} activeRole={activeRole} />;
 
+      case "contracts":
+        return <EscrowContractsView activeRole={activeRole} userEmail={user.email} />;
+
       case "tutor-approval":
         return <TutorApprovalPanel />;
 
       case "complaints":
+        return <DisputeManagementPanel activeRole={activeRole} userEmail={user.email} />;
+
       case "reports":
         return (
           <div className="mx-auto max-w-3xl border border-brand-border/30 bg-white p-10 text-center shadow-sm">
             <HelpCircle className="mx-auto mb-4 h-10 w-10 text-[#ff695f]" />
             <h3 className="font-display text-lg font-black text-brand-text">Module nghiệp vụ đang được chuẩn bị</h3>
             <p className="mx-auto mt-2 max-w-md text-sm font-semibold leading-6 text-brand-text-variant/70">
-              Staff hiện tập trung vào duyệt hồ sơ gia sư. Chức năng này sẽ được kết nối API ở bước sau.
+              Staff hiện tập trung vào duyệt hồ sơ gia sư và xử lý khiếu nại Smart Contract.
             </p>
           </div>
         );

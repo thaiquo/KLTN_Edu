@@ -1,0 +1,11 @@
+# Foundry build/runtime output
+cache/
+out/
+broadcast/
+
+# Local secrets
+.env
+
+# Local editor/system files
+.DS_Store
+

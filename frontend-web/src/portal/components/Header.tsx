@@ -7,6 +7,8 @@ import React from "react";
 import { Search, Bell, HelpCircle } from "lucide-react";
 import { UserRole } from "../types";
 
+import { WalletConnectButton } from "../../components/common/WalletConnectButton";
+
 interface HeaderProps {
   activeRole: UserRole;
   user: {
@@ -81,6 +83,9 @@ export function Header({
             {statusMap[activeRole]}
           </span>
         </div>
+
+        {/* Web3 Wallet Connect Button */}
+        <WalletConnectButton />
 
         {/* Notifications and Help Buttons */}
         <div className="flex items-center gap-1.5 border-r border-brand-border/30 pr-3">

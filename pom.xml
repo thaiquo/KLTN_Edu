@@ -15,7 +15,7 @@
         <module>backend/api-gateway</module>
         <module>backend/account-service</module>
         <module>backend/learning-service</module>
-        <module>backend/contact-service</module>
+        <module>backend/contract-service</module>
         <module>backend/notification-service</module>
         <module>backend/eureka-server</module>
     </modules>

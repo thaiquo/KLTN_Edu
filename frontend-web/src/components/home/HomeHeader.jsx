@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { homeNavLinks, studentNavLinks } from './homeData';
+import { WalletConnectButton } from '../common/WalletConnectButton';
 
 export function HomeHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -124,7 +125,8 @@ export function HomeHeader() {
           ))}
         </nav>
 
-        <div className="hidden md:flex items-center gap-4">
+        <div className="hidden md:flex items-center gap-3">
+          <WalletConnectButton />
           {isAuthenticated ? (
             <>
               <button
