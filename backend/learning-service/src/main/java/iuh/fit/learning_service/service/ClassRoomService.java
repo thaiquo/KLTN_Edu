@@ -18,6 +18,7 @@ import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
 import iuh.fit.learning_service.repository.TutorAvailabilityRepository;
 import iuh.fit.learning_service.repository.TutorSubjectRegistrationRepository;
+import iuh.fit.learning_service.realtime.RealtimeEventHub;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +30,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -39,19 +41,22 @@ public class ClassRoomService {
     private final CatalogLevelRepository levelRepository;
     private final TutorAvailabilityRepository availabilityRepository;
     private final EnrollmentRequestRepository enrollmentRequestRepository;
+    private final RealtimeEventHub realtimeEventHub;
 
     public ClassRoomService(
             ClassRoomRepository classRoomRepository,
             TutorSubjectRegistrationRepository registrationRepository,
             CatalogLevelRepository levelRepository,
             TutorAvailabilityRepository availabilityRepository,
-            EnrollmentRequestRepository enrollmentRequestRepository
+            EnrollmentRequestRepository enrollmentRequestRepository,
+            RealtimeEventHub realtimeEventHub
     ) {
         this.classRoomRepository = classRoomRepository;
         this.registrationRepository = registrationRepository;
         this.levelRepository = levelRepository;
         this.availabilityRepository = availabilityRepository;
         this.enrollmentRequestRepository = enrollmentRequestRepository;
+        this.realtimeEventHub = realtimeEventHub;
     }
 
     @Transactional(readOnly = true)
@@ -307,6 +312,11 @@ public class ClassRoomService {
         classRoom.setChapters(chapters);
 
         ClassRoom saved = classRoomRepository.save(classRoom);
+        realtimeEventHub.publishToReviewers("CLASS_SUBMITTED", saved.getId(), Map.of(
+                "tutorEmail", saved.getTutorEmail(),
+                "className", saved.getName(),
+                "status", saved.getStatus().name()
+        ));
         return toResponse(saved);
     }
 
@@ -380,6 +390,7 @@ public class ClassRoomService {
         classRoom.setReviewedByEmail(reviewerEmail);
         classRoom.setReviewedAt(LocalDateTime.now());
         ClassRoom saved = classRoomRepository.save(classRoom);
+        publishClassReviewRealtime(saved, "APPROVED");
         return toResponse(saved);
     }
 
@@ -397,7 +408,18 @@ public class ClassRoomService {
         classRoom.setReviewedByEmail(reviewerEmail);
         classRoom.setReviewedAt(LocalDateTime.now());
         ClassRoom saved = classRoomRepository.save(classRoom);
+        publishClassReviewRealtime(saved, "REJECTED");
         return toResponse(saved);
+    }
+
+    private void publishClassReviewRealtime(ClassRoom classRoom, String action) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("tutorEmail", classRoom.getTutorEmail());
+        payload.put("className", classRoom.getName());
+        payload.put("status", classRoom.getStatus().name());
+        payload.put("action", action);
+        payload.put("reason", classRoom.getRejectReason());
+        realtimeEventHub.publishToAll("CLASS_REVIEWED", classRoom.getId(), payload);
     }
 
     @Transactional(readOnly = true)

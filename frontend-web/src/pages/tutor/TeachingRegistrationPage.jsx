@@ -10,6 +10,7 @@ import { tutorApplicationApi } from '../../api/tutorApplications';
 import { catalogSuggestionApi, teachingCatalogApi, teachingRegistrationApi } from '../../api/teachingRegistrations';
 import { TeachingRegistrationDetailsStep } from './TeachingRegistrationDetailsStep';
 import { TeachingRegistrationHistory } from './TeachingRegistrationHistory';
+import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 
 const EMPTY_FORM = {
   programTypeId: '', educationLevelId: '', categoryId: '', subjectId: '', levelIds: [],
@@ -112,6 +113,15 @@ export function TeachingRegistrationPage({ embedded = false }) {
     });
     return () => { active = false; };
   }, []);
+
+  useRealtimeRefresh(['TEACHING_REGISTRATION_REVIEWED', 'SUBJECT_REQUEST_REVIEWED'], async () => {
+    const [items, requested] = await Promise.all([
+      teachingRegistrationApi.mine(),
+      catalogSuggestionApi.mine().catch(() => [])
+    ]);
+    setRegistrations(Array.isArray(items) ? items : []);
+    setSuggestions(Array.isArray(requested) ? requested : []);
+  });
 
   async function chooseProgram(program) {
     const nextAcademic = program.code === 'ACADEMIC';

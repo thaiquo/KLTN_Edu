@@ -8,6 +8,7 @@ import iuh.fit.learning_service.exception.BadRequestException;
 import iuh.fit.learning_service.exception.ConflictException;
 import iuh.fit.learning_service.exception.ResourceNotFoundException;
 import iuh.fit.learning_service.repository.*;
+import iuh.fit.learning_service.realtime.RealtimeEventHub;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -40,19 +42,22 @@ public class TutorSubjectRegistrationService {
     private final CatalogCategoryRepository categories;
     private final TeachingCatalogService catalogMapper;
     private final TutorIdentityLookup tutorIdentityLookup;
+    private final RealtimeEventHub realtimeEventHub;
 
     public TutorSubjectRegistrationService(TutorSubjectRegistrationRepository registrations,
                                            CatalogSubjectRepository subjects,
                                            CatalogLevelRepository levels,
                                            CatalogCategoryRepository categories,
                                            TeachingCatalogService catalogMapper,
-                                           TutorIdentityLookup tutorIdentityLookup) {
+                                           TutorIdentityLookup tutorIdentityLookup,
+                                           RealtimeEventHub realtimeEventHub) {
         this.registrations = registrations;
         this.subjects = subjects;
         this.levels = levels;
         this.categories = categories;
         this.catalogMapper = catalogMapper;
         this.tutorIdentityLookup = tutorIdentityLookup;
+        this.realtimeEventHub = realtimeEventHub;
     }
 
     @Transactional(readOnly = true)
@@ -187,7 +192,12 @@ public class TutorSubjectRegistrationService {
         }
 
         try {
-            return response(registrations.save(registration));
+            TutorSubjectRegistration saved = registrations.save(registration);
+            realtimeEventHub.publishToReviewers("TEACHING_REGISTRATION_SUBMITTED", saved.getId(), Map.of(
+                    "tutorEmail", saved.getTutorEmail(),
+                    "status", saved.getStatus().name()
+            ));
+            return response(saved);
         } catch (DataIntegrityViolationException ex) {
             throw new ConflictException("Could not create the teaching registration");
         }
@@ -243,7 +253,9 @@ public class TutorSubjectRegistrationService {
         registration.setReviewedByEmail(reviewerEmail);
         registration.setReviewNote(request == null ? null : normalize(request.note()));
         registration.setRejectReason(null);
-        return response(registrations.save(registration));
+        TutorSubjectRegistration saved = registrations.save(registration);
+        publishReviewRealtime(saved, "APPROVED");
+        return response(saved);
     }
 
     @Transactional
@@ -257,7 +269,17 @@ public class TutorSubjectRegistrationService {
         registration.setReviewedByEmail(reviewerEmail);
         registration.setRejectReason(request.reason().trim());
         registration.setReviewNote(normalize(request.note()));
-        return response(registrations.save(registration));
+        TutorSubjectRegistration saved = registrations.save(registration);
+        publishReviewRealtime(saved, "REJECTED");
+        return response(saved);
+    }
+
+    private void publishReviewRealtime(TutorSubjectRegistration registration, String status) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("tutorEmail", registration.getTutorEmail());
+        payload.put("status", status);
+        payload.put("reason", registration.getRejectReason());
+        realtimeEventHub.publishToAll("TEACHING_REGISTRATION_REVIEWED", registration.getId(), payload);
     }
 
     private TutorSubjectRegistration pending(Long id) {

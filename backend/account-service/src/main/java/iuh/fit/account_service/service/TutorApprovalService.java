@@ -39,9 +39,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import iuh.fit.account_service.realtime.RealtimeEventHub;
 
 @Service
 public class TutorApprovalService {
@@ -54,6 +56,7 @@ public class TutorApprovalService {
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
     private final AccountEventPublisher eventPublisher;
+    private final RealtimeEventHub realtimeEventHub;
 
     public TutorApprovalService(
             TutorApplicationRepository tutorApplicationRepository,
@@ -63,7 +66,8 @@ public class TutorApprovalService {
             UserRoleRepository userRoleRepository,
             UserRepository userRepository,
             FileStorageService fileStorageService,
-            AccountEventPublisher eventPublisher
+            AccountEventPublisher eventPublisher,
+            RealtimeEventHub realtimeEventHub
     ) {
         this.tutorApplicationRepository = tutorApplicationRepository;
         this.tutorApplicationSubjectRepository = tutorApplicationSubjectRepository;
@@ -73,6 +77,7 @@ public class TutorApprovalService {
         this.userRepository = userRepository;
         this.fileStorageService = fileStorageService;
         this.eventPublisher = eventPublisher;
+        this.realtimeEventHub = realtimeEventHub;
     }
 
     @Transactional(readOnly = true)
@@ -149,6 +154,7 @@ public class TutorApprovalService {
         application.setReviewNote(normalize(request == null ? null : request.getNote()));
 
         tutorApplicationRepository.save(application);
+        publishReviewRealtime(application, "APPROVED");
         return toDetail(application);
     }
 
@@ -191,7 +197,18 @@ public class TutorApprovalService {
         } catch (Exception ex) {
             System.err.println("Warning: failed to publish TutorRejectedEvent: " + ex.getMessage());
         }
+        publishReviewRealtime(application, "REJECTED");
         return toDetail(application);
+    }
+
+    private void publishReviewRealtime(TutorApplication application, String status) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("userId", application.getUser().getId());
+        payload.put("email", application.getUser().getEmail());
+        payload.put("status", status);
+        payload.put("reason", application.getRejectionReason());
+        realtimeEventHub.publishToReviewers("TUTOR_APPLICATION_REVIEWED", application.getId(), payload);
+        realtimeEventHub.publishToUser(application.getUser().getEmail(), "TUTOR_APPLICATION_REVIEWED", application.getId(), payload);
     }
 
     private void ensureTutorRole(User applicant) {

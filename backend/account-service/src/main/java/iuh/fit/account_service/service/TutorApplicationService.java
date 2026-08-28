@@ -17,6 +17,7 @@ import iuh.fit.account_service.repository.TutorDocumentRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.messaging.AccountEventPublisher;
 import iuh.fit.account_service.messaging.event.TutorApplicationSubmittedEvent;
+import iuh.fit.account_service.realtime.RealtimeEventHub;
 import iuh.fit.account_service.util.EmailNormalizer;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +28,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -38,19 +40,22 @@ public class TutorApplicationService {
     private final TutorDocumentRepository tutorDocumentRepository;
     private final UserRepository userRepository;
     private final AccountEventPublisher eventPublisher;
+    private final RealtimeEventHub realtimeEventHub;
 
     public TutorApplicationService(
             TutorApplicationRepository tutorApplicationRepository,
             TutorApplicationSubjectRepository tutorApplicationSubjectRepository,
             TutorDocumentRepository tutorDocumentRepository,
             UserRepository userRepository,
-            AccountEventPublisher eventPublisher
+            AccountEventPublisher eventPublisher,
+            RealtimeEventHub realtimeEventHub
     ) {
         this.tutorApplicationRepository = tutorApplicationRepository;
         this.tutorApplicationSubjectRepository = tutorApplicationSubjectRepository;
         this.tutorDocumentRepository = tutorDocumentRepository;
         this.userRepository = userRepository;
         this.eventPublisher = eventPublisher;
+        this.realtimeEventHub = realtimeEventHub;
     }
 
     @Transactional(readOnly = true)
@@ -110,6 +115,11 @@ public class TutorApplicationService {
                 submitted.getId(),
                 user.getId(),
                 LocalDateTime.now()
+        ));
+        realtimeEventHub.publishToReviewers("TUTOR_APPLICATION_SUBMITTED", submitted.getId(), Map.of(
+                "userId", user.getId(),
+                "email", user.getEmail(),
+                "status", submitted.getStatus().name()
         ));
         return toResponse(submitted);
     }

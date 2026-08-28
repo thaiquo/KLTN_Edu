@@ -14,6 +14,7 @@ import { IntroductionStep } from './steps/IntroductionStep';
 import { VerificationDocumentsStep } from './steps/VerificationDocumentsStep';
 import { ReviewSubmitStep } from './steps/ReviewSubmitStep';
 import { useAuth } from '../../hooks/useAuth';
+import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 
 const STEPS = [
   { id: 'basic', title: 'Thông tin cá nhân' },
@@ -133,6 +134,12 @@ export function TutorApplicationWizard({ mode = 'INITIAL_TUTOR_REGISTRATION', on
       throw subjectError;
     }
   }
+
+  useRealtimeRefresh(['TUTOR_APPLICATION_REVIEWED'], async () => {
+    const currentApplication = await tutorApplicationApi.getMyTutorApplication();
+    setApplication(currentApplication);
+    await refreshUser().catch(() => null);
+  });
 
   async function retry() {
     setLoading(true);

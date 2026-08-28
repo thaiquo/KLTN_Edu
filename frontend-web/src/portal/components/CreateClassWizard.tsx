@@ -9,6 +9,7 @@ import { classApi } from "../../api/classes";
 import { tutorApplicationApi } from "../../api/tutorApplications";
 import { tutorApi } from "../../api/tutors";
 import { useAuth } from "../../hooks/useAuth";
+import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
 
 interface CreateClassWizardProps {
   onBack: () => void;
@@ -359,6 +360,38 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
     }
     loadData();
   }, []);
+
+  useRealtimeRefresh(["TEACHING_REGISTRATION_REVIEWED", "CLASS_REVIEWED"], async () => {
+    const [regs, myClasses] = await Promise.all([
+      teachingRegistrationApi.mine().catch(() => []),
+      classApi.getMyClasses().catch(() => [])
+    ]);
+    const approved = (regs || []).filter((r: any) => r.status === "APPROVED");
+    setRegistrations(approved);
+    if (approved.length > 0) {
+      setSelectedRegId(current => current || approved[0].id);
+      setSelectedLevelId(current => current || approved[0].levels?.[0]?.id || "");
+      setPricePerSession(current => current || approved[0].tuitionMin || 150000);
+    }
+
+    const occupied: OccupiedSlot[] = [];
+    if (Array.isArray(myClasses)) {
+      for (const cls of myClasses) {
+        if (BLOCKING_CLASS_STATUSES.has(cls.status) && Array.isArray(cls.schedules)) {
+          for (const sch of cls.schedules) {
+            occupied.push({
+              dayOfWeek: sch.dayOfWeek,
+              startTime: sch.startTime,
+              endTime: sch.endTime,
+              className: cls.name,
+              status: cls.status
+            });
+          }
+        }
+      }
+    }
+    setOccupiedSlots(occupied);
+  });
 
   // Compute net free intervals dynamically
   const netFreeIntervals = useMemo(() => {

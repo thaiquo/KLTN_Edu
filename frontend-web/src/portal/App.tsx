@@ -64,6 +64,7 @@ import { AdminClassManagement } from "./components/staff/AdminClassManagement";
 import { TeachingCatalogManagement } from "./components/staff/TeachingCatalogManagement";
 import { EscrowContractsView } from "../components/contract/EscrowContractsView";
 import { DisputeManagementPanel } from "../components/contract/DisputeManagementPanel";
+import { MyWalletView } from "./components/MyWalletView";
 
 // High Resolution course and avatar placeholders
 const studentAvatar =
@@ -709,6 +710,11 @@ export default function App({ user, onLogout }: AppProps) {
 
       case "contracts":
         return <EscrowContractsView activeRole={activeRole} userEmail={user.email} />;
+
+      case "wallet":
+        return activeRole === "student" || activeRole === "tutor"
+          ? <MyWalletView />
+          : null;
 
       case "tutor-approval":
         return <TutorApprovalPanel />;

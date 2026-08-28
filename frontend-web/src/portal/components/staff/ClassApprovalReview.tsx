@@ -6,6 +6,7 @@ import {
   ChevronRight, Calendar, UserCheck, X 
 } from "lucide-react";
 import { classApi } from "../../../api/classes";
+import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
 
 interface ClassItem {
   id: number;
@@ -82,6 +83,8 @@ export function ClassApprovalReview() {
       setLoading(false);
     }
   };
+
+  useRealtimeRefresh(["CLASS_SUBMITTED", "CLASS_REVIEWED"], loadClasses);
 
   useEffect(() => {
     loadClasses();

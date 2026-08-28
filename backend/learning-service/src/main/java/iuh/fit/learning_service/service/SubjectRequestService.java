@@ -11,6 +11,7 @@ import iuh.fit.learning_service.exception.BadRequestException;
 import iuh.fit.learning_service.exception.ConflictException;
 import iuh.fit.learning_service.exception.ResourceNotFoundException;
 import iuh.fit.learning_service.messaging.LearningEventPublisher;
+import iuh.fit.learning_service.realtime.RealtimeEventHub;
 import iuh.fit.learning_service.repository.SubjectCategoryRepository;
 import iuh.fit.learning_service.repository.SubjectGroupRepository;
 import iuh.fit.learning_service.repository.SubjectRepository;
@@ -22,6 +23,7 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class SubjectRequestService {
@@ -31,14 +33,16 @@ public class SubjectRequestService {
     private final SubjectGroupRepository groupRepository;
     private final SubjectService subjectService;
     private final LearningEventPublisher eventPublisher;
+    private final RealtimeEventHub realtimeEventHub;
 
-    public SubjectRequestService(SubjectRequestRepository requestRepository, SubjectRepository subjectRepository, SubjectCategoryRepository categoryRepository, SubjectGroupRepository groupRepository, SubjectService subjectService, LearningEventPublisher eventPublisher) {
+    public SubjectRequestService(SubjectRequestRepository requestRepository, SubjectRepository subjectRepository, SubjectCategoryRepository categoryRepository, SubjectGroupRepository groupRepository, SubjectService subjectService, LearningEventPublisher eventPublisher, RealtimeEventHub realtimeEventHub) {
         this.requestRepository = requestRepository;
         this.subjectRepository = subjectRepository;
         this.categoryRepository = categoryRepository;
         this.groupRepository = groupRepository;
         this.subjectService = subjectService;
         this.eventPublisher = eventPublisher;
+        this.realtimeEventHub = realtimeEventHub;
     }
 
     @Transactional
@@ -61,7 +65,12 @@ public class SubjectRequestService {
         subjectRequest.setRequestedByUserId(request.getRequestedByUserId());
         subjectRequest.setNote(normalize(request.getNote()));
         subjectRequest.setLevels(new LinkedHashSet<>(request.getLevels()));
-        return toResponse(requestRepository.save(subjectRequest));
+        SubjectRequest saved = requestRepository.save(subjectRequest);
+        realtimeEventHub.publishToReviewers("SUBJECT_REQUEST_SUBMITTED", saved.getId(), Map.of(
+                "userId", saved.getRequestedByUserId(),
+                "status", saved.getStatus().name()
+        ));
+        return toResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -95,6 +104,7 @@ public class SubjectRequestService {
         request.setRejectReason(null);
         SubjectRequest saved = requestRepository.save(request);
         eventPublisher.publishSubjectRequestApproved(saved.getId(), saved.getRequestedByUserId(), subject.getId());
+        publishSubjectReviewRealtime(saved);
         return toResponse(saved);
     }
 
@@ -107,7 +117,16 @@ public class SubjectRequestService {
         request.setRejectReason(requiredText(rejectRequest.getReason(), "Rejection reason is required"));
         SubjectRequest saved = requestRepository.save(request);
         eventPublisher.publishSubjectRequestRejected(saved.getId(), saved.getRequestedByUserId(), saved.getRejectReason());
+        publishSubjectReviewRealtime(saved);
         return toResponse(saved);
+    }
+
+    private void publishSubjectReviewRealtime(SubjectRequest request) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("userId", request.getRequestedByUserId());
+        payload.put("status", request.getStatus().name());
+        payload.put("reason", request.getRejectReason());
+        realtimeEventHub.publishToAll("SUBJECT_REQUEST_REVIEWED", request.getId(), payload);
     }
 
     private SubjectRequest getPending(Long id) {

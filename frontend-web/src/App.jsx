@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider } from './store/AuthContext';
+import { RealtimeProvider } from './realtime/RealtimeProvider';
 import { useAuth } from './hooks/useAuth';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
@@ -141,7 +142,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
+        <RealtimeProvider><Routes>
           <Route path="/" element={<HomeEntry />} />
           <Route path="/login" element={<Gate guest><LoginPage /></Gate>} />
           <Route path="/register" element={<Gate guest><RegisterPage /></Gate>} />
@@ -161,7 +162,7 @@ export default function App() {
           <Route path="/staff/tutors" element={<ProtectedStaffDashboard />} />
           <Route path="/dashboard" element={<ProtectedDashboard />} />
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        </Routes></RealtimeProvider>
       </AuthProvider>
     </BrowserRouter>
   );

@@ -18,6 +18,7 @@ import {
   X
 } from "lucide-react";
 import { staffTutorApi } from "../../../api/staffTutors";
+import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
 
 interface TutorProfileApprovalReviewProps {
   onNotice: (msg: string) => void;
@@ -79,6 +80,11 @@ export function TutorProfileApprovalReview({
       setHistoryLoading(false);
     }
   };
+
+  useRealtimeRefresh(
+    ["TUTOR_APPLICATION_SUBMITTED", "TUTOR_APPLICATION_REVIEWED"],
+    () => { loadPending(); loadHistory(); }
+  );
 
   useEffect(() => {
     loadPending();

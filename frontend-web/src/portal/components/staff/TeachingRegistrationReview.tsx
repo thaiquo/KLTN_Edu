@@ -12,6 +12,7 @@ import { useAuth } from "../../../hooks/useAuth";
 import { staffTutorsApi } from "../../../api/staffTutors";
 import { subjectSuggestionApi } from "../../../api/subjectSuggestions";
 import { teachingRegistrationApi } from "../../../api/teachingRegistrations";
+import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
 
 const PREVIEW_SIZE_LIMIT = 15 * 1024 * 1024;
 
@@ -61,6 +62,13 @@ export function TeachingRegistrationReview({
       setLoading(false);
     }
   }
+
+  useRealtimeRefresh([
+    "TEACHING_REGISTRATION_SUBMITTED",
+    "TEACHING_REGISTRATION_REVIEWED",
+    "SUBJECT_REQUEST_SUBMITTED",
+    "SUBJECT_REQUEST_REVIEWED",
+  ], load);
 
   useEffect(() => {
     load();

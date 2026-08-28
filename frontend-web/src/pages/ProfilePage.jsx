@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -30,6 +30,7 @@ import {
   validateProfileForm
 } from '../components/profile/ProfileEditForm';
 import { validateAvatarFile } from '../components/profile/AvatarUploader';
+import { useRealtimeRefresh } from '../realtime/useRealtimeRefresh';
 
 const ROLE_LABELS = {
   STUDENT: 'Học viên',
@@ -90,6 +91,27 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
   const initials = getInitials(displayName);
   const completion = getCompletion(profile, roles.includes('TUTOR'), documents, tutorApp);
 
+  const loadTutorIdentityState = useCallback(async ({ active = true, showLoading = true } = {}) => {
+    if (!roles.includes('TUTOR')) return;
+    if (showLoading) setLoadingDocs(true);
+    try {
+      const { tutorApplicationApi } = await import('../api/tutorApplications');
+      const [docs, app] = await Promise.all([
+        tutorApplicationApi.getMyApplicationDocuments().catch(() => []),
+        tutorApplicationApi.getMyTutorApplication().catch(() => null)
+      ]);
+      if (!active) return;
+      setDocuments(Array.isArray(docs) ? docs : []);
+      if (app) setTutorApp(app);
+      const hasPassport = Array.isArray(docs) && docs.some((d) => d.documentType === 'PASSPORT');
+      if (hasPassport) setIdentityMode('PASSPORT');
+    } catch (err) {
+      console.error('Failed to load identity documents', err);
+    } finally {
+      if (active && showLoading) setLoadingDocs(false);
+    }
+  }, [roles]);
+
   useEffect(() => {
     let active = true;
 
@@ -129,32 +151,26 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
     if (!roles.includes('TUTOR')) return;
     let active = true;
 
-    async function fetchDocs() {
-      setLoadingDocs(true);
-      try {
-        const { tutorApplicationApi } = await import('../api/tutorApplications');
-        const [docs, app] = await Promise.all([
-          tutorApplicationApi.getMyApplicationDocuments().catch(() => []),
-          tutorApplicationApi.getMyTutorApplication().catch(() => null)
-        ]);
-        if (active) {
-          setDocuments(Array.isArray(docs) ? docs : []);
-          if (app) setTutorApp(app);
-          const hasPassport = docs.some(d => d.documentType === 'PASSPORT');
-          if (hasPassport) setIdentityMode('PASSPORT');
-        }
-      } catch (err) {
-        console.error('Failed to load identity documents', err);
-      } finally {
-        if (active) setLoadingDocs(false);
-      }
-    }
-
-    fetchDocs();
+    loadTutorIdentityState({ active });
     return () => {
       active = false;
     };
-  }, [roles]);
+  }, [loadTutorIdentityState, roles]);
+
+  useRealtimeRefresh(['TUTOR_APPLICATION_REVIEWED'], async (event) => {
+    if (!roles.includes('TUTOR')) return;
+    const payload = event?.payload || {};
+    const currentUserId = profile?.id ?? user?.id;
+    const currentEmail = profile?.email || user?.email;
+    if (payload.userId && currentUserId && String(payload.userId) !== String(currentUserId)) return;
+    if (payload.email && currentEmail && payload.email.toLowerCase() !== currentEmail.toLowerCase()) return;
+    await loadTutorIdentityState({ showLoading: false });
+    const syncedProfile = await refreshUser().catch(() => null);
+    if (syncedProfile) {
+      setProfile(syncedProfile);
+      setForm(toFormState(syncedProfile));
+    }
+  });
 
   useEffect(() => {
     let active = true;
@@ -461,6 +477,7 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
                   <AboutSection profile={profile} />
                   {roles.includes('TUTOR') && (
                     <TutorIdentityVerificationSection
+                      profile={profile}
                       documents={documents}
                       identityMode={identityMode}
                       setIdentityMode={setIdentityMode}
@@ -616,6 +633,7 @@ function AboutSection({ profile }) {
 }
 
 function TutorIdentityVerificationSection({
+  profile,
   documents,
   identityMode,
   setIdentityMode,
@@ -635,6 +653,36 @@ function TutorIdentityVerificationSection({
   };
 
   const status = tutorApp?.status || 'DRAFT';
+  const hasIdentityFront = documents.some((item) => item.documentType === 'IDENTITY_FRONT');
+  const hasIdentityBack = documents.some((item) => item.documentType === 'IDENTITY_BACK');
+  const hasPassport = documents.some((item) => item.documentType === 'PASSPORT');
+  const hasSelectedIdentityDocs = identityMode === 'CCCD'
+    ? hasIdentityFront && hasIdentityBack
+    : hasPassport;
+  const missingIdentityItems = identityMode === 'CCCD'
+    ? [
+        !hasIdentityFront ? 'CCCD / CMND mặt trước' : '',
+        !hasIdentityBack ? 'CCCD / CMND mặt sau' : ''
+      ].filter(Boolean)
+    : (!hasPassport ? ['Trang thông tin hộ chiếu'] : []);
+  const missingProfileItems = [
+    !profile?.fullName ? 'Họ và tên' : '',
+    !profile?.phone ? 'Số điện thoại' : '',
+    !profile?.dateOfBirth ? 'Ngày sinh' : '',
+    !(profile?.province || profile?.provinceCode) ? 'Địa chỉ' : ''
+  ].filter(Boolean);
+  const canSubmitForReview = status !== 'PENDING'
+    && hasSelectedIdentityDocs
+    && missingProfileItems.length === 0;
+  const submitHint = status === 'PENDING'
+    ? 'Hồ sơ đã gửi duyệt tới Ban quản trị'
+    : missingProfileItems.length > 0
+      ? `Cần bổ sung: ${missingProfileItems.join(', ')}`
+      : missingIdentityItems.length > 0
+        ? `Cần tải lên: ${missingIdentityItems.join(', ')}`
+        : status === 'APPROVED'
+          ? 'Bạn vừa có thay đổi thông tin/CCCD mới cần gửi duyệt lại'
+          : 'Đã đủ thông tin cá nhân & giấy tờ để gửi duyệt';
 
   return (
     <section className="rounded-[8px] border border-slate-200 bg-white p-6 shadow-[0_18px_45px_rgba(15,23,42,.06)] space-y-4">
@@ -774,17 +822,14 @@ function TutorIdentityVerificationSection({
         ) : (
           <>
             <span className="text-xs font-bold text-slate-500">
-              {status === 'PENDING'
-                ? 'Hồ sơ đã gửi duyệt tới Ban quản trị'
-                : status === 'APPROVED'
-                  ? 'Bạn vừa có thay đổi thông tin/CCCD mới cần gửi duyệt lại'
-                  : 'Điền đầy đủ thông tin cá nhân & tải ảnh để gửi duyệt'}
+              {submitHint}
             </span>
             <button
               type="button"
               onClick={onSubmitForReview}
-              disabled={submittingReview || status === 'PENDING'}
-              className="inline-flex items-center gap-2 rounded-[8px] bg-[#147b77] px-5 py-2.5 text-xs font-black text-white hover:bg-slate-900 transition-all disabled:opacity-50"
+              disabled={submittingReview || !canSubmitForReview}
+              title={!canSubmitForReview ? submitHint : undefined}
+              className="inline-flex items-center gap-2 rounded-[8px] bg-[#147b77] px-5 py-2.5 text-xs font-black text-white hover:bg-slate-900 transition-all disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Send size={14} />
               <span>

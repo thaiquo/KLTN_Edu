@@ -20,7 +20,8 @@ import {
   ShieldAlert,
   ShieldCheck,
   Globe,
-  Layers3
+  Layers3,
+  WalletCards
 } from "lucide-react";
 import { UserRole } from "../types";
 
@@ -48,6 +49,7 @@ export function Sidebar({
           { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
           { id: "my-classes", label: "My Classes", icon: GraduationCap },
           { id: "contracts", label: "Hợp đồng & Ký quỹ", icon: ShieldCheck },
+          { id: "wallet", label: "Ví của tôi", icon: WalletCards },
           { id: "requests", label: "Student Requests", icon: CheckCircle2 },
           { id: "messages", label: "Messages", icon: MessageSquare },
           { id: "schedule", label: "Schedule", icon: Calendar },
@@ -78,6 +80,7 @@ export function Sidebar({
           { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
           { id: "courses", label: "Courses", icon: BookOpen },
           { id: "contracts", label: "Hợp đồng & Ký quỹ", icon: ShieldCheck },
+          { id: "wallet", label: "Ví của tôi", icon: WalletCards },
           { id: "messages", label: "Messages", icon: MessageSquare },
           { id: "schedule", label: "Schedule", icon: Calendar },
           { id: "settings", label: "Settings", icon: Settings },

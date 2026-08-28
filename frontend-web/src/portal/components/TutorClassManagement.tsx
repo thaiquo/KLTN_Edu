@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { classApi } from "../../api/classes";
 import { CreateClassWizard } from "./CreateClassWizard";
+import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
 
 interface ChapterItem {
   id?: number | string;
@@ -146,7 +147,12 @@ export function TutorClassManagement() {
     setLoading(true);
     try {
       const data = await classApi.getMyClasses();
-      setClasses(data || []);
+      const nextClasses = data || [];
+      setClasses(nextClasses);
+      setDetailModalClass(prev => {
+        if (!prev) return prev;
+        return nextClasses.find((item: ClassRoomItem) => item.id === prev.id) || prev;
+      });
     } catch (err: any) {
       if (err?.status === 403 || err?.status === 401) {
         setClasses([]);
@@ -157,6 +163,8 @@ export function TutorClassManagement() {
       setLoading(false);
     }
   };
+
+  useRealtimeRefresh(["CLASS_REVIEWED"], loadClasses);
 
   useEffect(() => {
     loadClasses();
