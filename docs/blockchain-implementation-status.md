@@ -1,16 +1,56 @@
 # EDUCONNECT Blockchain Implementation Status
 
-## Current phase
+## Status Interpretation
+
+This file preserves Blockchain implementation history and technical evidence.
+
+Historical phase results are recorded as they were reported at the time. A
+historical `PASS` does not automatically mean the current application
+end-to-end flow is complete. For current implementation status, the source of
+truth priority is:
+
+1. current Solidity source;
+2. current Contract Service source;
+3. current frontend Web3 source;
+4. current deployment/config evidence;
+5. `docs/BLOCKCHAIN.md` baseline;
+6. historical evidence in this file.
+
+Solidity is the current source of truth for Smart Contract ABI/interface.
+
+## Current Executive Status
+
+| Area | Current Status | Evidence |
+| --- | --- | --- |
+| Smart Contract | IMPLEMENTED | `blockchain/src/EduConnectEscrow.sol` and `blockchain/src/interfaces/IEduConnectEscrow.sol` use Solidity `0.8.36`, ERC-20 escrow, `bytes32` agreement/session identifiers, settlement, refund, dispute, roles, and pause logic. |
+| Backend Web3 integration | PARTIAL | `backend/contract-service` contains Web3j RPC, calldata encoding, transaction dispatch, receipt watcher, event polling/decoding/ingestion, and workflow persistence. |
+| Public Contract REST API | NOT_IMPLEMENTED | Re-check found no `*Controller.java` / Spring mapping in `backend/contract-service/src/main/java`. Backend workflow logic exists, but no public REST API is proven. |
+| Frontend Web3 | KNOWN_CONFLICT | `frontend-web/src/web3/web3Config.ts` still declares older `uint256`/BigInt escrow ABI while Solidity uses `bytes32` IDs and different function/event signatures. |
+| Local Anvil evidence | IMPLEMENTED | `blockchain/deployments/anvil-31337.json` and `blockchain/deployments/anvil-p3-evidence.md` record local deployment and transaction evidence. |
+| Local frontend address config | KNOWN_CONFLICT | Anvil artifact records token `0x5fbdb...` and escrow `0xe7f172...`; frontend defaults set escrow `0x5FbDB...` and USDC `0xe7f172...`. |
+| Sepolia deployment | PLANNED | Sepolia config/target exists, but no actual Sepolia deployment evidence was found in `blockchain/deployments`. |
+| Application end-to-end Web3 flow | KNOWN_CONFLICT | Solidity/backend pieces exist, but frontend ABI/address mismatch and missing public Contract REST API prevent treating the current E2E application flow as complete. |
+
+Terminology remains:
+
+- Sepolia ETH = gas asset.
+- ERC-20 / USDC-style test token = escrow asset.
+
+## Historical Phase History
 
 ```text
-P0 — Business rules and state machine: PASS
-P1 — Foundry skeleton: PASS
-P2 — Solidity escrow logic and tests: PASS
-P3 — Anvil local integration: PASS
-P4 — Contract Service integration: PASS (P4.1-P4.9 PASS)
-P5 — Frontend/local E2E: PASS (React/Vite, TypeScript, Tailwind CSS, Ethers v6, AppKit, Lucide ExternalLink)
+P0 — Business rules and state machine: HISTORICAL_PASS
+P1 — Foundry skeleton: HISTORICAL_PASS
+P2 — Solidity escrow logic and tests: HISTORICAL_PASS
+P3 — Anvil local integration: HISTORICAL_PASS
+P4 — Contract Service integration: HISTORICAL_PASS (P4.1-P4.9 HISTORICAL_PASS)
+P5 — Frontend/local E2E: HISTORICAL_PASS at the time of the handoff; CURRENT: KNOWN_CONFLICT
 P6 — Sepolia Testnet Deployment: NEXT
 ```
+
+Current reconciliation note: P5 history is preserved below, but current source
+shows frontend ABI/address conflicts. Treat P5 as historical evidence, not as a
+current proof that the Web3 application flow is complete.
 
 Business-rule addendum (2026-08-25): `ADMIN` may resolve every dispute;
 `STAFF` may resolve only disputes for classrooms they personally approved,
@@ -281,7 +321,12 @@ resolve transaction per disputed student agreement.
 - Build & Verification:
   - Frontend production build: `npm run build` exited with code 0 (`✓ built in 1.67s`).
   - Backend integration test suite: 67 tests executed and passed (`BUILD SUCCESS`).
-- **Phase P5 is 100% PASS.** Next phase is **P6: Sepolia Testnet Deployment**.
+- Historical result: **Phase P5 was reported 100% PASS** for the handoff evidence above.
+- Current status: **KNOWN_CONFLICT**. Current frontend Web3 ABI/address configuration
+  must be reconciled with current Solidity/deployment evidence before the Web3
+  application flow is treated as complete.
+- Next target phase remains **P6: Sepolia Testnet Deployment**, but it is gated by
+  current local/API/ABI/address verification.
 
 ## P3 handoff
 
@@ -455,12 +500,16 @@ passed under coverage.
 
 ## Next phase gate
 
-Phase P4 (Contract Service integration) is 100% PASS.
-Phase P5 will implement Frontend Web3 integration:
-- React/Vite migration with Reown AppKit and Ethers v6.
-- Wallet connection (MetaMask) and user transaction signing for student funding (`approve` USDC + `fundAgreement`).
-- Staff/Admin and Student dashboard integration with backend APIs.
-- Full local E2E simulation against local Anvil node.
+Historical result: Phase P4 Contract Service integration was reported
+`HISTORICAL_PASS`, and Phase P5 frontend/local evidence is preserved above.
+
+Current gate before Sepolia:
+
+- reconcile frontend escrow ABI with current Solidity `bytes32` signatures;
+- reconcile local Anvil default addresses with `blockchain/deployments/anvil-31337.json`;
+- add or verify public Contract REST API before claiming application E2E;
+- rerun local Web3/API flow against current source;
+- only then proceed to Sepolia deployment/verification evidence.
 
 ## User action required for the next phase
 
