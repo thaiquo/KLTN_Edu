@@ -45,6 +45,15 @@ public class UserController {
         return ResponseEntity.ok(userService.updateCurrentUserProfile(authentication.getName(), request));
     }
 
+    @PutMapping("/me/wallet")
+    public ResponseEntity<UserProfileResponse> updateCurrentUserWallet(
+            Authentication authentication,
+            @RequestBody java.util.Map<String, String> request
+    ) {
+        String walletAddress = request.get("walletAddress");
+        return ResponseEntity.ok(userService.updateCurrentUserWallet(authentication.getName(), walletAddress));
+    }
+
     @PostMapping(value = "/me/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<UserProfileResponse> updateCurrentUserAvatar(
             Authentication authentication,

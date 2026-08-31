@@ -9,9 +9,11 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
-import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -19,9 +21,12 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Getter
+@Setter
+@Builder
+@AllArgsConstructor
 @Entity
 @Table(name = "contract_agreement")
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@NoArgsConstructor
 public class ContractAgreement {
     @Id
     private UUID id;

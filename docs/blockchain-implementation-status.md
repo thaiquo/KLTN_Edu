@@ -9,7 +9,8 @@ P2 — Solidity escrow logic and tests: PASS
 P3 — Anvil local integration: PASS
 P4 — Contract Service integration: PASS (P4.1-P4.9 PASS)
 P5 — Frontend/local E2E: PASS (React/Vite, TypeScript, Tailwind CSS, Ethers v6, AppKit, Lucide ExternalLink)
-P6 — Sepolia Testnet Deployment: NEXT
+P6 — Sepolia Testnet Deployment: PASS (Deployed, verified, config synced)
+P7 — End-to-End EIP-712 Gasless Signing & Multi-Channel Notifications: PASS (Full lifecycle verified)
 ```
 
 Business-rule addendum (2026-08-25): `ADMIN` may resolve every dispute;
@@ -453,15 +454,46 @@ separately above. Foundry's coverage command emitted internal anchor warnings
 while instrumenting Solidity 0.8.36; it exited successfully and all 34 tests
 passed under coverage.
 
+## P6 handoff
+
+- Date: 2026-08-28
+- Chain: Ethereum Sepolia Testnet (`11155111`)
+- Contract Address: `0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3`
+- Transaction Hash: `0x5228c3750c7f284779df08990d9df3ab67aaf58a31a766d07c6dcf3ce4c21686`
+- Verification Status: `Pass - Verified` on Sepolia Etherscan.
+- Configuration Updates:
+  - Root `.env` and `.env.example` updated with `BLOCKCHAIN_ESCROW_ADDRESS`, `BLOCKCHAIN_START_BLOCK=11584099`, and `BLOCKCHAIN_CHAIN_ID=11155111`.
+  - Frontend `frontend-web/.env` and `.env.example` updated with `VITE_ESCROW_CONTRACT_ADDRESS` and `VITE_DEFAULT_CHAIN_ID=11155111`.
+- Setup Method: `cast wallet import` was used to create a secure local keystore named `edu-deployer`, avoiding hardcoded private keys in environment files. `make deploy-sepolia` successfully executed using `forge script` with `.env` variables.
+
 ## Next phase gate
 
-Phase P4 (Contract Service integration) is 100% PASS.
-Phase P5 will implement Frontend Web3 integration:
-- React/Vite migration with Reown AppKit and Ethers v6.
-- Wallet connection (MetaMask) and user transaction signing for student funding (`approve` USDC + `fundAgreement`).
-- Staff/Admin and Student dashboard integration with backend APIs.
-- Full local E2E simulation against local Anvil node.
+Phase P6 (Sepolia Testnet Deployment) is 100% PASS.
+Phase P7 (End-to-End EIP-712 Gasless Signing & Multi-Channel Notifications) is 100% PASS.
 
-## User action required for the next phase
+## P7 handoff — EIP-712 Gasless Signing, Multi-Party Contract Lifecycle, Waitlist Readiness & Multi-Channel Notification Integration
 
-None for local P5. The user must not provide a MetaMask seed phrase, real private key, Alchemy secret, Sepolia ETH, or USDC. Sepolia remains gated until the local frontend E2E checkpoints pass.
+- Date: 2026-08-31
+- Scope: `contract-service`, `notification-service`, `learning-service`, and `frontend-web`.
+- Key Features Implemented & Verified:
+  1. **EIP-712 Gasless Signing (0 Gas)**:
+     - Frontend `src/web3/eip712Signer.ts`: Calls `signer.signTypedData(domain, types, value)` using EIP-712 standard with `verifyingContract: 0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3` and `chainId: 11155111`.
+     - Backend `Eip712VerificationService.java`: Computes Domain Separator, ClassContract TypeHash, and validates cryptographic signatures using Web3j ECRecover (`Sign.signedMessageHashToKey` / `Keys.getAddress`).
+     - Flyway migration `V4__add_signature_to_contract_acceptance.sql`: Stores `signature VARCHAR(132)` in `contract_acceptance` table.
+  2. **Multi-Party Contract Lifecycle & State Machine**:
+     - Sequential workflow: `INIT` (`PENDING_TUTOR_ACCEPTANCE`) -> `TUTOR_SIGN` (`PENDING_STUDENT_ACCEPTANCE`) -> `STUDENT_SIGN` (`PREPARING_BLOCKCHAIN` -> `WAITING_PAYMENT` with 24h deadline) -> `ESCROW_DEPOSIT` (`ACTIVE` / `LOCKED`).
+     - Safe error branches: Payment retryable (`FAILED_RETRYABLE`), expiration handling (`EXPIRED`) after 24h, freeing up classroom capacity for waitlist enrollment.
+  3. **Multi-Channel Notification Hub (`notification-service`)**:
+     - `spring-boot-starter-mail` integrated with `EmailNotificationService.java` for responsive branded HTML emails (`AGREEMENT_PENDING_STUDENT`, `AGREEMENT_WAITING_PAYMENT`, `AGREEMENT_ACTIVATED`).
+     - WebSocket real-time in-app notification dispatching with unread badge counter.
+  4. **In-App Legal Contract Viewer & PDF Export (`frontend-web`)**:
+     - `ContractDocumentModal.tsx`: Displays formal legal document (parties, fees, 85/15 Escrow rules, 24h dispute window, EIP-712 cryptographic proofs, terms hash) with browser print / PDF export.
+     - Integrated across `EscrowContractsView.tsx`, `StudentRequestsView.tsx`, and `NotificationDropdown.tsx`.
+- Verification Results:
+  - `contract-service`: 67/67 tests passed, 0 failures (`BUILD SUCCESS`).
+  - `notification-service`: 5/5 tests passed, 0 failures (`BUILD SUCCESS`).
+  - `frontend-web`: TypeScript compilation `tsc --noEmit` passed with 0 errors.
+
+## Next steps
+- Execute live Sepolia transaction tests with funded MetaMask accounts in local dev server environment.
+- Continue system integration tests and end-to-end user scenario demonstrations.

@@ -46,6 +46,7 @@ public class SecurityConfig {
                                 writeSecurityError(response, HttpServletResponse.SC_FORBIDDEN, accessDeniedException.getMessage()))
                 )
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/ws/learning").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/subjects/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/tutor-subjects/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/teaching-catalog/**").permitAll()

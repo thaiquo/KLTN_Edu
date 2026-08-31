@@ -4,8 +4,9 @@
  */
 
 import React from "react";
-import { Search, Bell, HelpCircle } from "lucide-react";
+import { Search, HelpCircle } from "lucide-react";
 import { UserRole } from "../types";
+import { NotificationDropdown } from "../../components/notification/NotificationDropdown";
 
 interface HeaderProps {
   activeRole: UserRole;
@@ -84,13 +85,7 @@ export function Header({
 
         {/* Notifications and Help Buttons */}
         <div className="flex items-center gap-1.5 border-r border-brand-border/30 pr-3">
-          <button
-            title="Notifications"
-            className="p-2 text-brand-text-variant hover:bg-brand-low rounded-full transition-colors relative"
-          >
-            <Bell className="w-5 h-5" />
-            <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-brand-error rounded-full border-2 border-white animate-pulse"></span>
-          </button>
+          <NotificationDropdown userEmail={user.email} />
           <button
             title="Help Desk"
             className="p-2 text-brand-text-variant hover:bg-brand-low rounded-full transition-colors"

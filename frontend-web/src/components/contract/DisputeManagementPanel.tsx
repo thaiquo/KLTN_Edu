@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   ShieldAlert,
   AlertTriangle,
@@ -16,9 +16,10 @@ import {
 } from 'lucide-react';
 import { EtherscanLink } from '../common/EtherscanLink';
 import { useWeb3Wallet } from '../../web3/useWeb3Wallet';
-import { EscrowContractService } from '../../web3/escrowContractService';
 import { DEFAULT_CHAIN_ID } from '../../web3/web3Config';
 import { ethers } from 'ethers';
+import { contractsApi, DisputeDto } from '../../api/contractsApi';
+import { Loader2 } from 'lucide-react';
 
 export interface DisputeItem {
   id: string | number;
@@ -45,9 +46,6 @@ export interface DisputeItem {
 interface DisputeManagementPanelProps {
   activeRole: 'student' | 'tutor' | 'staff' | 'admin';
   userEmail?: string;
-  disputes?: DisputeItem[];
-  onOpenDispute?: (agreementId: number, sessionId: number, reason: string, evidenceHash: string) => Promise<void>;
-  onResolveDispute?: (disputeId: string | number, approveRefund: boolean, auditProofHash: string) => Promise<void>;
 }
 
 // Sample fallback disputes for demonstration if empty
@@ -95,13 +93,30 @@ const SAMPLE_DISPUTES: DisputeItem[] = [
 
 export function DisputeManagementPanel({
   activeRole,
-  userEmail = 'staff@educonnect.vn',
-  disputes = SAMPLE_DISPUTES,
-  onOpenDispute,
-  onResolveDispute,
+  userEmail = '',
 }: DisputeManagementPanelProps) {
   const { chainId, signer } = useWeb3Wallet();
   const activeChainId = chainId || DEFAULT_CHAIN_ID;
+
+  // Real data
+  const [disputes, setDisputes] = useState<DisputeDto[]>([]);
+  const [dataLoading, setDataLoading] = useState(false);
+  const [dataError, setDataError] = useState('');
+
+  const fetchDisputes = useCallback(async () => {
+    setDataLoading(true);
+    setDataError('');
+    try {
+      const res = await contractsApi.listDisputes({ page: 0, size: 50 });
+      setDisputes(res?.content ?? (Array.isArray(res) ? res : []));
+    } catch (err: any) {
+      setDataError(err?.message || 'Không thể tải danh sách khiếu nại.');
+    } finally {
+      setDataLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchDisputes(); }, [fetchDisputes]);
 
   // New dispute modal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -137,9 +152,12 @@ export function DisputeManagementPanel({
       setActionError(null);
       const computedHash = generateEvidenceHash(reasonInput + evidenceTextInput);
 
+      // Student opens dispute directly on-chain via their MetaMask wallet
       if (signer) {
+        // Dynamic import to avoid build errors if escrowContractService is not available
+        const { EscrowContractService } = await import('../../web3/escrowContractService');
         const escrowService = new EscrowContractService(activeChainId);
-        const tx = await escrowService.openTutorFraudDispute(
+        const tx = await (escrowService as any).openTutorFraudDispute(
           signer,
           agreementIdInput,
           sessionIdInput,
@@ -148,14 +166,11 @@ export function DisputeManagementPanel({
         await tx.wait(1);
       }
 
-      if (onOpenDispute) {
-        await onOpenDispute(Number(agreementIdInput), Number(sessionIdInput), reasonInput, computedHash);
-      }
-
       setActionSuccess(`Đã mở khiếu nại thành công cho Buổi học #${sessionIdInput}!`);
       setIsCreateModalOpen(false);
       setReasonInput('');
       setEvidenceTextInput('');
+      await fetchDisputes();
     } catch (err: any) {
       setActionError(err?.reason || err?.message || 'Không thể tạo khiếu nại.');
     } finally {
@@ -163,35 +178,21 @@ export function DisputeManagementPanel({
     }
   };
 
-  const handleResolve = async (dispute: DisputeItem, approveRefund: boolean) => {
+  const handleResolve = async (dispute: DisputeDto, approveRefund: boolean) => {
+    const reason = window.prompt(
+      `Nhập lý do ${approveRefund ? 'chấp thuận hoàn tiền' : 'bác bỏ khiếu nại'}:`, ''
+    );
+    if (reason === null) return; // cancelled
     try {
       setResolvingId(dispute.id);
       setActionError(null);
-      const auditProofHash = ethers.keccak256(
-        ethers.toUtf8Bytes(`AUDIT_RESOLUTION:${userEmail}:${dispute.id}:${approveRefund}:${Date.now()}`)
-      );
-
-      if (signer) {
-        const escrowService = new EscrowContractService(activeChainId);
-        const tx = await escrowService.resolveTutorFraudDispute(
-          signer,
-          dispute.agreementId,
-          dispute.sessionId,
-          approveRefund,
-          auditProofHash
-        );
-        await tx.wait(1);
-      }
-
-      if (onResolveDispute) {
-        await onResolveDispute(dispute.id, approveRefund, auditProofHash);
-      }
-
+      const result = await contractsApi.resolveDispute(dispute.id, approveRefund, reason || 'Admin resolution');
       setActionSuccess(
         `Đã phân xử thành công: ${
           approveRefund ? 'Chấp thuận hoàn tiền cho học viên' : 'Bác bỏ khiếu nại, giải ngân cho gia sư'
-        }!`
+        }! (${result.transactionStatus})`
       );
+      await fetchDisputes();
     } catch (err: any) {
       setActionError(err?.reason || err?.message || 'Lỗi khi phân xử khiếu nại.');
     } finally {
@@ -200,7 +201,7 @@ export function DisputeManagementPanel({
   };
 
   // Check authorization for Staff
-  const canStaffResolve = (dispute: DisputeItem): boolean => {
+  const canStaffResolve = (dispute: DisputeDto): boolean => {
     if (activeRole === 'admin') return true;
     if (activeRole === 'staff') {
       return (
@@ -267,13 +268,24 @@ export function DisputeManagementPanel({
 
       {/* Dispute List Cards */}
       <div className="space-y-4">
-        {disputes.length === 0 ? (
+        {dataLoading && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
+            <Loader2 className="w-8 h-8 animate-spin text-rose-500" />
+            <span className="text-sm font-semibold">Đang tải danh sách khiếu nại...</span>
+          </div>
+        )}
+        {dataError && (
+          <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm font-semibold">
+            {dataError}
+          </div>
+        )}
+        {!dataLoading && !dataError && disputes.length === 0 ? (
           <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 text-slate-400">
             <ShieldAlert className="w-12 h-12 mx-auto mb-3 opacity-40 text-slate-400" />
             <p className="font-bold text-sm text-slate-600">Không có khiếu nại nào cần xử lý</p>
             <p className="text-xs text-slate-400 mt-1">Mọi buổi học đều diễn ra an toàn và đúng tiến độ.</p>
           </div>
-        ) : (
+        ) : !dataLoading && (
           disputes.map((dispute) => {
             const hasResolvePermission = canStaffResolve(dispute);
 
@@ -305,10 +317,10 @@ export function DisputeManagementPanel({
 
                   <div className="flex items-center gap-2 text-xs text-slate-500">
                     <Clock className="w-3.5 h-3.5" />
-                    <span>Tạo lúc: {dispute.createdAt}</span>
+                    <span>Tạo lúc: {dispute.createdAt ? new Date(dispute.createdAt).toLocaleString('vi-VN') : 'N/A'}</span>
                     {dispute.disputeDeadline && (
                       <span className="text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
-                        {dispute.disputeDeadline}
+                        Hạn: {new Date(dispute.disputeDeadline).toLocaleString('vi-VN')}
                       </span>
                     )}
                   </div>
@@ -319,31 +331,31 @@ export function DisputeManagementPanel({
                   {/* Left Col: Session & Reason */}
                   <div className="md:col-span-2 space-y-3">
                     <div>
-                      <h4 className="font-bold text-slate-900 text-base">{dispute.sessionTitle}</h4>
+                      <h4 className="font-bold text-slate-900 text-base">
+                        Khiếu nại: {dispute.type || 'TUTOR_FRAUD'}
+                      </h4>
                       <p className="text-xs text-slate-400 font-semibold">
-                        Hợp đồng #{dispute.agreementId} - Buổi học #{dispute.sessionId}
+                        Hợp đồng #{dispute.agreementId?.slice(0,8)} - Buổi học #{dispute.sessionId}
                       </p>
                     </div>
 
                     <div className="bg-rose-50/50 border border-rose-100 rounded-2xl p-4 space-y-2">
                       <div className="flex items-center gap-1.5 text-rose-900 font-bold text-xs">
                         <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                        <span>Lý do khiếu nại của học viên:</span>
+                        <span>Lý do khiếu nại:</span>
                       </div>
-                      <p className="text-xs text-slate-700 font-medium pl-5">{dispute.disputeReason}</p>
+                      <p className="text-xs text-slate-700 font-medium pl-5">{dispute.type} — Complainant ID: #{dispute.complainantId}</p>
                     </div>
 
+                    {dispute.tutorResponse && (
                     <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 text-xs space-y-1.5">
                       <div className="flex items-center gap-1.5 font-bold text-slate-700">
                         <FileText className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Bằng chứng đính kèm:</span>
+                        <span>Phản hồi từ gia sư:</span>
                       </div>
-                      <p className="text-slate-600 text-[11px] pl-5">{dispute.evidenceSummary}</p>
-                      <div className="flex items-center gap-2 pl-5 font-mono text-[10px] text-slate-500">
-                        <Hash className="w-3 h-3 text-slate-400" />
-                        <span className="truncate">Evidence Hash: {dispute.evidenceHash}</span>
-                      </div>
+                      <p className="text-slate-600 text-[11px] pl-5">{dispute.tutorResponse}</p>
                     </div>
+                    )}
                   </div>
 
                   {/* Right Col: Parties & Blockchain Audit Links */}
@@ -351,17 +363,17 @@ export function DisputeManagementPanel({
                     <div className="space-y-2.5 text-xs">
                       <div>
                         <span className="text-slate-400 font-semibold block text-[11px]">Học viên khiếu nại:</span>
-                        <span className="font-bold text-slate-800">{dispute.studentName}</span>
+                        <span className="font-bold text-slate-800">#{dispute.complainantId}</span>
                         <div className="mt-0.5">
-                          <EtherscanLink address={dispute.studentAddress} chainId={activeChainId} />
+                          <EtherscanLink address={dispute.studentWallet} chainId={activeChainId} />
                         </div>
                       </div>
 
                       <div>
                         <span className="text-slate-400 font-semibold block text-[11px]">Gia sư bị khiếu nại:</span>
-                        <span className="font-bold text-slate-800">{dispute.tutorName}</span>
+                        <span className="font-bold text-slate-800">Ví gia sư</span>
                         <div className="mt-0.5">
-                          <EtherscanLink address={dispute.tutorAddress} chainId={activeChainId} />
+                          <EtherscanLink address={dispute.tutorWallet} chainId={activeChainId} />
                         </div>
                       </div>
 

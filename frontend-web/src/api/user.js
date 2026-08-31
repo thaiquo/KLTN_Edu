@@ -21,5 +21,9 @@ export const userApi = {
   changePassword: (payload) => apiRequest('/api/users/me/password', {
     method: 'PUT',
     body: JSON.stringify(payload)
+  }),
+  updateWallet: (walletAddress) => apiRequest('/api/users/me/wallet', {
+    method: 'PUT',
+    body: JSON.stringify({ walletAddress })
   })
 };

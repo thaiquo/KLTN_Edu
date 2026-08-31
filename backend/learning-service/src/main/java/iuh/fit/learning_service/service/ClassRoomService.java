@@ -125,6 +125,7 @@ public class ClassRoomService {
         }
 
         ClassRoom saved = classRoomRepository.save(classRoom);
+        publishClassMutationRealtime(saved, "DETAILS_UPDATED");
         return toResponse(saved);
     }
 
@@ -167,6 +168,7 @@ public class ClassRoomService {
         }
 
         ClassRoom saved = classRoomRepository.save(classRoom);
+        publishClassMutationRealtime(saved, "VISIBILITY_UPDATED");
         return toResponse(saved);
     }
 
@@ -420,6 +422,15 @@ public class ClassRoomService {
         payload.put("action", action);
         payload.put("reason", classRoom.getRejectReason());
         realtimeEventHub.publishToAll("CLASS_REVIEWED", classRoom.getId(), payload);
+    }
+
+    private void publishClassMutationRealtime(ClassRoom classRoom, String action) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("tutorEmail", classRoom.getTutorEmail());
+        payload.put("className", classRoom.getName());
+        payload.put("status", classRoom.getStatus().name());
+        payload.put("action", action);
+        realtimeEventHub.publishToAll("CLASS_MUTATED", classRoom.getId(), payload);
     }
 
     @Transactional(readOnly = true)

@@ -71,7 +71,7 @@ export function TutorClassManagement() {
 
   // Unified Class Detail & Settings Modal State
   const [detailModalClass, setDetailModalClass] = useState<ClassRoomItem | null>(null);
-  const [modalTab, setModalTab] = useState<"OVERVIEW" | "EDIT" | "SETTINGS">("OVERVIEW");
+  const [modalTab, setModalTab] = useState<"OVERVIEW" | "EDIT" | "SETTINGS" | "REQUESTS">("OVERVIEW");
 
   // Edit details form state
   const [editDescription, setEditDescription] = useState("");
@@ -164,7 +164,7 @@ export function TutorClassManagement() {
     }
   };
 
-  useRealtimeRefresh(["CLASS_REVIEWED"], loadClasses);
+  useRealtimeRefresh(["CLASS_REVIEWED", "CLASS_MUTATED"], loadClasses);
 
   useEffect(() => {
     loadClasses();

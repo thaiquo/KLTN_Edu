@@ -65,6 +65,7 @@ import { TeachingCatalogManagement } from "./components/staff/TeachingCatalogMan
 import { EscrowContractsView } from "../components/contract/EscrowContractsView";
 import { DisputeManagementPanel } from "../components/contract/DisputeManagementPanel";
 import { MyWalletView } from "./components/MyWalletView";
+import { StudentRequestsView } from "./components/StudentRequestsView";
 
 // High Resolution course and avatar placeholders
 const studentAvatar =
@@ -713,7 +714,7 @@ export default function App({ user, onLogout }: AppProps) {
 
       case "wallet":
         return activeRole === "student" || activeRole === "tutor"
-          ? <MyWalletView />
+          ? <MyWalletView activeRole={activeRole} userEmail={user?.email} />
           : null;
 
       case "tutor-approval":
@@ -746,36 +747,7 @@ export default function App({ user, onLogout }: AppProps) {
         return <TutorClassManagement />;
 
       case "requests":
-        return (
-          <div className="space-y-6 select-none font-sans max-w-5xl mx-auto pb-10">
-            <h2 className="font-display font-black text-xl lg:text-2xl text-brand-text">
-              Active Student Lecture Requests
-            </h2>
-            <div className="bg-white border border-brand-border/30 rounded-3xl overflow-hidden shadow-sm">
-              <table className="w-full text-left">
-                <tbody className="divide-y divide-brand-border/10 font-semibold text-xs">
-                  {requests.map((r) => (
-                    <tr key={r.id} className="hover:bg-brand-low/40">
-                      <td className="px-6 py-4 font-bold">{r.studentName}</td>
-                      <td className="px-6 py-4 text-brand-text-variant">{r.subject}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          r.status === "approved"
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                            : r.status === "rejected"
-                            ? "bg-brand-error/5 text-brand-error border-brand-error/10"
-                            : "bg-amber-50 text-amber-700 border border-amber-100"
-                        }`}>
-                          {r.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
+        return <StudentRequestsView onNavigate={setCurrentPage} />;
 
       case "schedule":
         return <TutorAvailabilityScheduler />;

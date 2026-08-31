@@ -194,13 +194,19 @@ public class EnrollmentRequestService {
     @Transactional(readOnly = true)
     public List<EnrollmentRequestResponse> getRequestsForClass(Long classRoomId, String tutorEmail) {
         ClassRoom classRoom = classRoomRepository.findById(classRoomId)
-                .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + classRoomId));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy lớp học: " + classRoomId));
 
         if (!classRoom.getTutorEmail().equalsIgnoreCase(tutorEmail)) {
             throw new ForbiddenException("Bạn không có quyền xem yêu cầu của lớp học này");
         }
 
         List<EnrollmentRequest> list = enrollmentRequestRepository.findByClassRoomIdWithDetails(classRoomId);
+        return list.stream().map(this::toResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<EnrollmentRequestResponse> getAllRequestsForTutor(String tutorEmail) {
+        List<EnrollmentRequest> list = enrollmentRequestRepository.findByTutorEmailWithDetails(tutorEmail);
         return list.stream().map(this::toResponse).toList();
     }
 

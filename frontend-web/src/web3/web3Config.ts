@@ -1,7 +1,6 @@
-/**
- * Web3 Configuration for EduConnect Platform
- * Supports Localhost (Anvil: 31337) and Ethereum Sepolia Testnet (11155111)
- */
+import { createAppKit } from '@reown/appkit/react';
+import { EthersAdapter } from '@reown/appkit-adapter-ethers';
+import { sepolia } from '@reown/appkit/networks';
 
 export interface ChainConfig {
   id: number;
@@ -28,7 +27,57 @@ export const SUPPORTED_CHAINS: Record<number, ChainConfig> = {
   },
 };
 
-export const DEFAULT_CHAIN_ID = Number(import.meta.env.VITE_DEFAULT_CHAIN_ID || 31337);
+export const DEFAULT_CHAIN_ID = Number(import.meta.env.VITE_DEFAULT_CHAIN_ID || 11155111);
+
+export const WALLETCONNECT_PROJECT_ID =
+  import.meta.env.VITE_PROJECT_ID_WALLETCONNECT || '8cb9e1ffa64671cc0e67dec78579cc61';
+
+let appKitModalInstance: any = null;
+
+export function initReownAppKit() {
+  if (typeof window === 'undefined') return null;
+  if (appKitModalInstance) return appKitModalInstance;
+
+  try {
+    appKitModalInstance = createAppKit({
+      adapters: [new EthersAdapter()],
+      networks: [sepolia],
+      metadata: {
+        name: 'EduConnect Platform',
+        description: 'Nền tảng Hợp đồng Escrow Blockchain EduConnect',
+        url: window.location.origin,
+        icons: ['https://assets.reown.com/reown-profile-pic.png'],
+      },
+      projectId: WALLETCONNECT_PROJECT_ID,
+      features: {
+        analytics: true,
+        email: false,
+        socials: [],
+      },
+      themeMode: 'light',
+      themeVariables: {
+        '--w3m-accent': '#0284c7',
+        '--w3m-border-radius-master': '16px',
+      },
+    });
+    return appKitModalInstance;
+  } catch (err) {
+    console.warn('Reown AppKit initialization warning:', err);
+    return null;
+  }
+}
+
+export function openWeb3Modal() {
+  try {
+    const modal = initReownAppKit();
+    if (modal && typeof modal.open === 'function') {
+      modal.open();
+      return;
+    }
+  } catch (err) {
+    console.warn('Failed to open Web3Modal via Reown API:', err);
+  }
+}
 
 export const CONTRACT_ADDRESSES: Record<number, { escrow: string; usdc: string }> = {
   31337: {

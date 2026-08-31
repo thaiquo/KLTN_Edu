@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import {
   BookOpen, Calendar, Clock, DollarSign, Eye, Filter, Globe, Key, MapPin,
   Search, SlidersHorizontal, Users, Video, ShieldCheck, ArrowRight
@@ -94,39 +95,36 @@ export function ClassMarketplacePage() {
   }, [filters.subjectId]);
 
   // 5. Load Published Classes from DB
-  useEffect(() => {
-    let active = true;
-    async function loadClasses() {
-      setLoading(true);
-      setError('');
-      try {
-        const data = await classApi.getPublicClasses({
-          keyword: filters.keyword.trim(),
-          programTypeId: filters.programTypeId ? Number(filters.programTypeId) : undefined,
-          educationLevelId: filters.educationLevelId ? Number(filters.educationLevelId) : undefined,
-          categoryId: filters.categoryId ? Number(filters.categoryId) : undefined,
-          subjectId: filters.subjectId ? Number(filters.subjectId) : undefined,
-          levelId: filters.levelId ? Number(filters.levelId) : undefined,
-          mode: filters.mode || undefined,
-          tutorEmail: filters.tutorEmail.trim() || undefined
-        });
+  const loadClasses = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await classApi.getPublicClasses({
+        keyword: filters.keyword.trim(),
+        programTypeId: filters.programTypeId ? Number(filters.programTypeId) : undefined,
+        educationLevelId: filters.educationLevelId ? Number(filters.educationLevelId) : undefined,
+        categoryId: filters.categoryId ? Number(filters.categoryId) : undefined,
+        subjectId: filters.subjectId ? Number(filters.subjectId) : undefined,
+        levelId: filters.levelId ? Number(filters.levelId) : undefined,
+        mode: filters.mode || undefined,
+        tutorEmail: filters.tutorEmail.trim() || undefined
+      });
 
-        const filtered = data || [];
-
-        if (active) setClassList(filtered);
-      } catch (err) {
-        if (active) setError(err.message || 'Không thể tải danh sách lớp học.');
-      } finally {
-        if (active) setLoading(false);
-      }
+      setClassList(data || []);
+    } catch (err) {
+      setError(err.message || 'Không thể tải danh sách lớp học.');
+    } finally {
+      setLoading(false);
     }
-
-    const timer = window.setTimeout(loadClasses, 280);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
   }, [filters]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(loadClasses, 280);
+    return () => window.clearTimeout(timer);
+  }, [loadClasses]);
+
+  // Real-time refresh when a class is reviewed (approved/rejected) or mutated (visibility/details changed)
+  useRealtimeRefresh(['CLASS_REVIEWED', 'CLASS_MUTATED'], loadClasses);
 
   const selectedProgram = programTypes.find((p) => String(p.id) === String(filters.programTypeId));
   const isAcademic = selectedProgram?.code === 'ACADEMIC';

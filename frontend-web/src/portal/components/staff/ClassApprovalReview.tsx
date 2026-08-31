@@ -40,7 +40,7 @@ interface ClassItem {
   totalSessions: number;
   syllabusMode: "FORM" | "FILE" | "BOTH";
   syllabusFileUrl?: string;
-  status: "DRAFT" | "PENDING_APPROVAL" | "ACTIVE" | "REJECTED" | "CLOSED" | "CANCELLED";
+  status: "DRAFT" | "PENDING_APPROVAL" | "ACTIVE" | "REJECTED" | "CLOSED" | "CANCELLED" | "PRIVATE" | "PUBLISHED" | string;
   rejectReason?: string;
   schedules: Array<{ id: number; dayOfWeek: number; startTime: string; endTime: string }>;
   chapters: Array<{ id: number; title: string; description: string; expectedSessions: number; orderIndex: number }>;
@@ -84,7 +84,7 @@ export function ClassApprovalReview() {
     }
   };
 
-  useRealtimeRefresh(["CLASS_SUBMITTED", "CLASS_REVIEWED"], loadClasses);
+  useRealtimeRefresh(["CLASS_SUBMITTED", "CLASS_REVIEWED", "CLASS_MUTATED"], loadClasses);
 
   useEffect(() => {
     loadClasses();
@@ -110,7 +110,11 @@ export function ClassApprovalReview() {
   // Filtered list
   const filteredClasses = useMemo(() => {
     return classes.filter(c => {
-      if (statusFilter !== "ALL" && c.status !== statusFilter) return false;
+      if (statusFilter === "ACTIVE") {
+        if (c.status !== "ACTIVE" && c.status !== "PRIVATE" && c.status !== "PUBLISHED") return false;
+      } else if (statusFilter !== "ALL" && c.status !== statusFilter) {
+        return false;
+      }
       if (selectedTutor !== "ALL" && c.tutorEmail.toLowerCase() !== selectedTutor.toLowerCase()) return false;
       if (selectedSubject !== "ALL" && c.registration?.subjectName !== selectedSubject) return false;
       if (searchKeyword.trim()) {
@@ -131,7 +135,7 @@ export function ClassApprovalReview() {
     return {
       total: classes.length,
       pending: classes.filter(c => c.status === "PENDING_APPROVAL").length,
-      active: classes.filter(c => c.status === "ACTIVE").length,
+      active: classes.filter(c => c.status === "ACTIVE" || c.status === "PRIVATE" || c.status === "PUBLISHED").length,
       rejected: classes.filter(c => c.status === "REJECTED").length
     };
   }, [classes]);

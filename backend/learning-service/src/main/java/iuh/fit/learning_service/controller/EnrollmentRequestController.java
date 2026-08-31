@@ -84,6 +84,12 @@ public class EnrollmentRequestController {
         return service.getRequestsForClass(classId, authentication.getName());
     }
 
+    @GetMapping({"/api/v1/tutor/enrollment-requests", "/api/tutor/enrollment-requests"})
+    @PreAuthorize("hasRole('TUTOR')")
+    public List<EnrollmentRequestResponse> getAllRequestsForTutor(Authentication authentication) {
+        return service.getAllRequestsForTutor(authentication.getName());
+    }
+
     // -------------------------------------------------------------
     // Buffer Pool Tutor Info
     // -------------------------------------------------------------

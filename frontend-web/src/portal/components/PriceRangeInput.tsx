@@ -43,7 +43,7 @@ export function PriceRangeInput({ value, onChange, disabled }: Props) {
       </div>
       {value.minPrice > 0 && value.maxPrice >= value.minPrice && (
         <p className="text-xs font-bold text-brand-secondary">
-          {value.minPrice.toLocaleString("vi-VN")}₫ - {value.maxPrice.toLocaleString("vi-VN")}₫ / {value.priceUnit.replaceAll("_", " ")}
+          {value.minPrice.toLocaleString("vi-VN")}₫ - {value.maxPrice.toLocaleString("vi-VN")}₫ / {String(value.priceUnit).replace(/_/g, " ")}
           {" · "}{value.sessionsPerPeriod} sessions, {value.minutesPerSession} minutes/session
         </p>
       )}

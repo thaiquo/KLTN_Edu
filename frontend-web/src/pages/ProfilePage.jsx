@@ -16,6 +16,7 @@ import {
   Sparkles,
   Upload,
   UserRound,
+  Wallet,
   X
 } from 'lucide-react';
 import { userApi } from '../api/user';
@@ -585,6 +586,7 @@ function PersonalInfoSection({ profile }) {
         <ProfileRow icon={<Phone size={18} />} label="Số điện thoại" value={profile?.phone} empty="Chưa cập nhật số điện thoại" />
         <ProfileRow icon={<CalendarDays size={18} />} label="Ngày sinh" value={formatDate(profile?.dateOfBirth)} empty="Chưa cập nhật ngày sinh" />
         <ProfileRow icon={<UserRound size={18} />} label="Giới tính" value={genderLabel(profile?.gender)} empty="Chưa cập nhật giới tính" />
+        <ProfileRow icon={<Wallet size={18} />} label="Ví mặc định" value={profile?.walletAddress} empty="Chưa liên kết (Vào mục 'Ví của tôi' để liên kết)" />
       </div>
     </section>
   );

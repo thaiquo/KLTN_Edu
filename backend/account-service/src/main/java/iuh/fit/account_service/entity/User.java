@@ -80,6 +80,9 @@ public class User {
     @Column(length = 300)
     private String bio;
 
+    @Column(name = "wallet_address", length = 42)
+    private String walletAddress;
+
     @Column(nullable = false)
     @Builder.Default
     private boolean emailVerified = false;
@@ -171,6 +174,14 @@ public class User {
 
     public String getBio() {
         return bio;
+    }
+
+    public String getWalletAddress() {
+        return walletAddress;
+    }
+
+    public void setWalletAddress(String walletAddress) {
+        this.walletAddress = walletAddress;
     }
 
     public LocalDateTime getCreatedAt() {
