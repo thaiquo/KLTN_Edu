@@ -49,6 +49,29 @@ function buildHeaders(options, needsCsrf, isFormData) {
   };
 }
 
+function shouldAttemptRefresh(path) {
+  return !path.startsWith('/api/auth/');
+}
+
+async function refreshAccessToken() {
+  await ensureCsrfToken();
+
+  const response = await fetch(buildUrl('/api/auth/refresh'), {
+    method: 'POST',
+    credentials: 'include',
+    headers: buildHeaders({ headers: {} }, true, false)
+  });
+
+  if (!response.ok) {
+    throw new ApiError({
+      status: response.status,
+      message: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
+    });
+  }
+
+  await parseResponseBody(response);
+}
+
 async function parseResponseBody(response) {
   const contentType = response.headers.get('content-type') || '';
 
@@ -121,8 +144,9 @@ function normalizeValidationErrors(data) {
 }
 
 export async function apiRequest(path, options = {}) {
-  const isFormData = options.body instanceof FormData;
-  const method = (options.method || 'GET').toUpperCase();
+  const { skipAuthRefresh = false, ...requestOptions } = options;
+  const isFormData = requestOptions.body instanceof FormData;
+  const method = (requestOptions.method || 'GET').toUpperCase();
   const needsCsrf = isMutation(method);
 
   if (needsCsrf) {
@@ -133,9 +157,9 @@ export async function apiRequest(path, options = {}) {
 
   try {
     response = await fetch(buildUrl(path), {
-      ...options,
+      ...requestOptions,
       credentials: 'include',
-      headers: buildHeaders(options, needsCsrf, isFormData)
+      headers: buildHeaders(requestOptions, needsCsrf, isFormData)
     });
   } catch {
     throw new ApiError({
@@ -147,6 +171,15 @@ export async function apiRequest(path, options = {}) {
   const data = await parseResponseBody(response);
 
   if (!response.ok) {
+    if (response.status === 401 && !skipAuthRefresh && shouldAttemptRefresh(path)) {
+      try {
+        await refreshAccessToken();
+        return apiRequest(path, { ...requestOptions, skipAuthRefresh: true });
+      } catch {
+        window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      }
+    }
+
     const { code, message } = parseErrorPayload(data, response.status);
     if (response.status === 401 && !path.startsWith('/api/auth/')) {
       window.dispatchEvent(new CustomEvent('auth:unauthorized'));

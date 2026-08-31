@@ -179,7 +179,7 @@ export function TutorDashboard({
                     >
                       <div className="flex items-center gap-4">
                         <div
-                          className={\`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm \${req.avatarColor}\`}
+                          className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm ${req.avatarColor}`}
                         >
                           {req.avatarChar}
                         </div>
@@ -244,10 +244,10 @@ export function TutorDashboard({
                     return (
                       <div
                         key={item.id}
-                        className={\`flex gap-3 p-3.5 rounded-xl transition-all \${cardBg}\`}
+                        className={`flex gap-3 p-3.5 rounded-xl transition-all ${cardBg}`}
                       >
                         <div className="text-center min-w-[48px] border-r border-slate-200/60 pr-3 flex flex-col justify-center">
-                          <p className={\`text-sm font-bold \${timeColor}\`}>
+                          <p className={`text-sm font-bold ${timeColor}`}>
                             {item.time}
                           </p>
                           {item.period && (
