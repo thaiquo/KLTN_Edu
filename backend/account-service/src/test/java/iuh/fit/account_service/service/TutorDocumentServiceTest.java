@@ -13,6 +13,7 @@ import iuh.fit.account_service.exception.ResourceNotFoundException;
 import iuh.fit.account_service.exception.StorageException;
 import iuh.fit.account_service.repository.TutorApplicationRepository;
 import iuh.fit.account_service.repository.TutorDocumentRepository;
+import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.service.storage.FileStorageService;
 import iuh.fit.account_service.service.storage.StoredFile;
@@ -38,6 +39,7 @@ class TutorDocumentServiceTest {
 
     private final TutorApplicationRepository tutorApplicationRepository = mock(TutorApplicationRepository.class);
     private final TutorDocumentRepository tutorDocumentRepository = mock(TutorDocumentRepository.class);
+    private final TutorRepository tutorRepository = mock(TutorRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
     private final FileStorageService fileStorageService = mock(FileStorageService.class);
     private TutorDocumentService service;
@@ -49,6 +51,7 @@ class TutorDocumentServiceTest {
         service = new TutorDocumentService(
                 tutorApplicationRepository,
                 tutorDocumentRepository,
+                tutorRepository,
                 userRepository,
                 fileStorageService,
                 filePolicy()
@@ -85,7 +88,7 @@ class TutorDocumentServiceTest {
         assertThat(response.getOriginalFilename()).isEqualTo("front.png");
         assertThat(response.getContentType()).isEqualTo("image/png");
         verify(fileStorageService).store(
-                org.mockito.ArgumentMatchers.startsWith("tutor-applications/20/documents/"),
+                org.mockito.ArgumentMatchers.startsWith("users/7/identity/"),
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.eq("image/png")
         );
@@ -101,7 +104,7 @@ class TutorDocumentServiceTest {
         assertThat(response.getDocumentType()).isEqualTo(TutorDocumentType.IDENTITY_BACK);
         assertThat(response.getContentType()).isEqualTo("image/jpeg");
         verify(fileStorageService).store(
-                org.mockito.ArgumentMatchers.startsWith("tutor-applications/20/documents/"),
+                org.mockito.ArgumentMatchers.startsWith("users/7/identity/"),
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.eq("image/jpeg")
         );
@@ -155,7 +158,7 @@ class TutorDocumentServiceTest {
 
         assertThat(response.getContentType()).isEqualTo("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         verify(fileStorageService).store(
-                org.mockito.ArgumentMatchers.startsWith("tutor-applications/20/documents/"),
+                org.mockito.ArgumentMatchers.startsWith("tutors/7/certificates/"),
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.eq("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         );
@@ -186,7 +189,7 @@ class TutorDocumentServiceTest {
 
         assertThat(response.getContentType()).isEqualTo("image/jpeg");
         verify(fileStorageService).store(
-                org.mockito.ArgumentMatchers.startsWith("tutor-applications/20/documents/"),
+                org.mockito.ArgumentMatchers.startsWith("tutors/7/certificates/"),
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.eq("image/jpeg")
         );

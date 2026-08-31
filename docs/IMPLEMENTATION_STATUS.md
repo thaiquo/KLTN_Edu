@@ -14,7 +14,7 @@
 | Service | Responsibility | Status | Notes |
 |---|---|---|---|
 | `api-gateway` | Spring Cloud Gateway route account-service, learning-service, and WebSocket paths. | IMPLEMENTED | Routes are configured in `backend/api-gateway/src/main/resources/application.properties`. No gateway JWT verification filter found. |
-| `account-service` | Auth, JWT cookie, OTP, users, roles, student/tutor profile, tutor application, staff approval, admin user operations, S3 avatar/documents, RabbitMQ events. | IMPLEMENTED | Main source under `backend/account-service/src/main/java`. |
+| `account-service` | Auth, short-lived JWT cookie, refresh token rotation/session revocation, OTP, users, roles, student/tutor profile, tutor application, staff approval, admin user operations, S3 avatar/documents, RabbitMQ events. | IMPLEMENTED | Main source under `backend/account-service/src/main/java`. |
 | `learning-service` | Subject/catalog, tutor subject registrations, availability, classes, schedules/chapters, enrollment requests, RabbitMQ integration. | PARTIAL | Core class/join/catalog flows exist; session/attendance/homework are not implemented. |
 | `contract-service` | Contract agreement, escrow payment, settlement, dispute, blockchain transaction dispatch, Web3j read/write/event ingestion. | PARTIAL | Entities/workflows exist; REST controllers and inter-service business API were not found. |
 | `notification-service` | Notification service shell. | PLANNED | Spring Boot app exists, but no domain/API/messaging/persistence found. |
@@ -26,7 +26,7 @@
 | UC | Use Case | Backend | Web | Mobile | Overall | Notes |
 |---|---|---|---|---|---|---|
 | UC001 | Đăng ký | IMPLEMENTED | IMPLEMENTED | PARTIAL | PARTIAL | Backend/Web include OTP verification; mobile has basic register call but no full OTP flow. |
-| UC002 | Đăng nhập | IMPLEMENTED | IMPLEMENTED | PARTIAL | IMPLEMENTED | Account login sets `access_token` cookie; mobile login is basic. |
+| UC002 | Đăng nhập | IMPLEMENTED | IMPLEMENTED | PARTIAL | IMPLEMENTED | Account login sets `access_token` and `refresh_token` cookies; Web refresh retry exists; mobile login is basic. |
 | UC003 | Tra cứu | PARTIAL | IMPLEMENTED | NOT_IMPLEMENTED | PARTIAL | Tutor/class public search exists; student post search not found. |
 | UC004 | Quản lý yêu cầu tham gia lớp | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Enrollment request send/cancel/list exists. |
 | UC005 | Quản lý thông tin cá nhân | IMPLEMENTED | IMPLEMENTED | PARTIAL | IMPLEMENTED | Profile/password/avatar exist on Web/backend; mobile only restores user basic state. |
@@ -58,11 +58,11 @@
 
 | Feature | Status | Notes |
 |---|---|---|
-| Authentication | IMPLEMENTED | Account service login/register/OTP/password reset/logout; web CSRF-aware API client. |
+| Authentication | IMPLEMENTED | Account service login/register/OTP/password reset/logout plus refresh token rotation/revocation; Web CSRF-aware API client retries refresh once on 401. |
 | Student Profile | IMPLEMENTED | User profile and activate-student flows exist. |
 | Tutor Profile | IMPLEMENTED | Tutor profile and public tutor APIs exist. |
-| Tutor Registration | IMPLEMENTED | Tutor application, subjects and documents exist. |
-| Tutor Approval | IMPLEMENTED | Staff tutor application approval/rejection exists. |
+| Tutor Registration | IMPLEMENTED | Tutor registration creates a `DRAFT` tutor application; current review submission requires identity documents only. |
+| Tutor Approval | IMPLEMENTED | Staff tutor application approval/rejection exists; `DRAFT`/`PENDING`/`REJECTED` Tutors can use restricted Tutor context, while APPROVED is required for full Tutor operations such as class/teaching registration. |
 | Search | PARTIAL | Tutor/class search exists; AI ranking and student post search are missing. |
 | Tutor Availability | IMPLEMENTED | API/UI exist. |
 | Class | PARTIAL | Class recruitment and review exist; full learning lifecycle incomplete. |
@@ -125,11 +125,26 @@ Current frontend defaults in `frontend-web/src/web3/web3Config.ts` set Anvil `es
 
 Status: `KNOWN_CONFLICT`. Verify current deployment artifact before using Web3 UI.
 
-### Security inconsistency
+### Security JWT extraction
 
-Account service `JwtAuthenticationFilter` reads JWT from HttpOnly cookie `access_token`. Learning service `CookieJwtAuthenticationFilter` checks `Authorization: Bearer` first, then cookies `access_token` or `token`.
+Account service `JwtAuthenticationFilter` and Learning service `CookieJwtAuthenticationFilter` both read browser JWT from HttpOnly cookie `access_token`.
 
-Status: `KNOWN_CONFLICT`. Browser architecture should remain cookie-first; do not document the whole platform as Bearer-only.
+Status: resolved for Account/Learning browser token extraction. Browser architecture remains cookie-based and must not be documented as Bearer-only.
+
+### Tutor application lifecycle and restricted mode
+
+Tutor application lifecycle now distinguishes account existence from Staff review submission:
+
+- New Tutor registration creates a `TutorApplication` in `DRAFT`.
+- `DRAFT` means the Tutor account/application exists but has not been submitted for Staff review.
+- Current submit/resubmit completeness requires identity evidence only: CCCD/CMND front + back, or passport.
+- Submit/resubmit changes the application to `PENDING`.
+- Staff approval changes application/Tutor status to `APPROVED`.
+- Staff rejection changes application/Tutor status to `REJECTED` and preserves the rejection reason.
+
+Tutor `DRAFT`, `PENDING`, and `REJECTED` can authenticate/switch with `activeRole=TUTOR` for restricted onboarding/profile correction. Account Service withholds `ROLE_TUTOR` unless Tutor status is `APPROVED`; Learning Service uses a local approval projection from Account events as the priority source for full Tutor authority, with a signed JWT `tutorStatus=APPROVED` fallback when projection has not arrived yet.
+
+Status: IMPLEMENTED for backend auth/authorization and Web restricted routing. Mobile is out of scope for this status.
 
 ## 7. Planned Major Work
 

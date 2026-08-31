@@ -3,7 +3,9 @@ package iuh.fit.account_service.controller;
 import iuh.fit.account_service.dto.user.ChangePasswordRequest;
 import iuh.fit.account_service.dto.user.UpdateUserProfileRequest;
 import iuh.fit.account_service.dto.user.UserProfileResponse;
+import iuh.fit.account_service.service.AuthCookieService;
 import iuh.fit.account_service.service.UserService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -22,9 +24,11 @@ import org.springframework.web.multipart.MultipartFile;
 public class UserController {
 
     private final UserService userService;
+    private final AuthCookieService authCookieService;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, AuthCookieService authCookieService) {
         this.userService = userService;
+        this.authCookieService = authCookieService;
     }
 
     @GetMapping("/me")
@@ -56,9 +60,11 @@ public class UserController {
     @PutMapping("/me/password")
     public ResponseEntity<Void> changePassword(
             Authentication authentication,
-            @Valid @RequestBody ChangePasswordRequest request
+            @Valid @RequestBody ChangePasswordRequest request,
+            HttpServletResponse response
     ) {
         userService.changePassword(authentication.getName(), request);
+        authCookieService.clearAuthCookies(response);
         return ResponseEntity.noContent().build();
     }
 }

@@ -4,8 +4,10 @@ import iuh.fit.account_service.dto.user.ChangePasswordRequest;
 import iuh.fit.account_service.dto.user.UpdateUserProfileRequest;
 import iuh.fit.account_service.dto.user.UserProfileResponse;
 import iuh.fit.account_service.enums.AccountStatus;
+import iuh.fit.account_service.service.AuthCookieService;
 import iuh.fit.account_service.service.UserService;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.TestingAuthenticationToken;
 
@@ -20,7 +22,8 @@ import static org.mockito.Mockito.when;
 class UserControllerTest {
 
     private final UserService userService = mock(UserService.class);
-    private final UserController controller = new UserController(userService);
+    private final AuthCookieService authCookieService = mock(AuthCookieService.class);
+    private final UserController controller = new UserController(userService, authCookieService);
 
     @Test
     void getCurrentUserUsesAuthenticatedPrincipalEmail() {
@@ -49,11 +52,13 @@ class UserControllerTest {
     void changePasswordUsesAuthenticatedPrincipalEmail() {
         var authentication = new TestingAuthenticationToken("test@example.com", null);
         var request = new ChangePasswordRequest();
+        var servletResponse = new MockHttpServletResponse();
 
-        var response = controller.changePassword(authentication, request);
+        var response = controller.changePassword(authentication, request, servletResponse);
 
         assertThat(response.getStatusCode().value()).isEqualTo(204);
         verify(userService).changePassword("test@example.com", request);
+        verify(authCookieService).clearAuthCookies(servletResponse);
     }
 
     @Test

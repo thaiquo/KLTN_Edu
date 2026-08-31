@@ -3,6 +3,7 @@ package iuh.fit.account_service.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import iuh.fit.account_service.dto.auth.RegisterRequest;
 import iuh.fit.account_service.exception.GlobalExceptionHandler;
+import iuh.fit.account_service.service.AuthCookieService;
 import iuh.fit.account_service.service.AuthService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,13 +21,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AuthControllerRegisterValidationTest {
 
     private final AuthService authService = mock(AuthService.class);
+    private final AuthCookieService authCookieService = mock(AuthCookieService.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new AuthController(authService))
+                .standaloneSetup(new AuthController(authService, authCookieService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }

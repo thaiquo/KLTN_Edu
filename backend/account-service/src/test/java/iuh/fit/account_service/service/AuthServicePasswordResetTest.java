@@ -10,6 +10,7 @@ import iuh.fit.account_service.enums.Role;
 import iuh.fit.account_service.exception.BadRequestException;
 import iuh.fit.account_service.repository.OtpVerificationRepository;
 import iuh.fit.account_service.repository.StudentRepository;
+import iuh.fit.account_service.repository.TutorApplicationRepository;
 import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.repository.UserRoleRepository;
@@ -34,6 +35,7 @@ class AuthServicePasswordResetTest {
     private final UserRepository userRepository = mock(UserRepository.class);
     private final UserRoleRepository userRoleRepository = mock(UserRoleRepository.class);
     private final OtpService otpService = mock(OtpService.class);
+    private final RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     private AuthService authService;
     private User user;
@@ -45,11 +47,13 @@ class AuthServicePasswordResetTest {
                 userRoleRepository,
                 mock(StudentRepository.class),
                 mock(TutorRepository.class),
+                mock(TutorApplicationRepository.class),
                 mock(OtpVerificationRepository.class),
                 passwordEncoder,
                 otpService,
                 mock(AuthenticationManager.class),
-                mock(JwtService.class)
+                mock(JwtService.class),
+                refreshTokenService
         );
 
         user = new User();
@@ -101,6 +105,7 @@ class AuthServicePasswordResetTest {
 
         verify(otpService).verifyPasswordResetOtp(user, "123456");
         verify(userRepository).save(user);
+        verify(refreshTokenService).revokeAllForUser(user);
         assertThat(passwordEncoder.matches("newPassword123", user.getPassword())).isTrue();
         assertThat(passwordEncoder.matches("oldPassword123", user.getPassword())).isFalse();
     }

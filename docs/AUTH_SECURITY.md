@@ -4,18 +4,34 @@
 
 EduConnect uses JWT authentication with role-based authorization.
 
-Current Account Service evidence shows login creates a JWT containing user identity, roles, and `activeRole`. The browser access token is stored in an `access_token` cookie. The active role is part of the authentication model and must not be changed casually.
+Current Account Service evidence shows login creates a short-lived JWT containing user identity, roles, and `activeRole`. The browser access token is stored in an `access_token` cookie. A separate refresh token is stored in a `refresh_token` HttpOnly cookie and persisted server-side as a hash-backed refresh session. The active role is part of the authentication model and must not be changed casually.
 
 ## 2. Browser Token Handling
 
 Current Web authentication is cookie-oriented:
 
-- Account Service sets an `access_token` cookie on login and switch-role.
-- The cookie is configured as `HttpOnly`.
+- Account Service sets an `access_token` cookie on login, refresh, and switch-role.
+- Account Service sets a `refresh_token` cookie on login and refresh.
+- Both auth cookies are configured as `HttpOnly`.
+- Access token lifetime defaults to 15 minutes.
+- Refresh token lifetime defaults to 7 days.
+- Refresh token rotation revokes the previous refresh session and issues a replacement.
 - Web API calls use credentialed requests.
-- Frontend code should not need to read the access token directly.
+- Frontend code should not read the access or refresh token directly.
 
 Do not migrate browser auth to `localStorage`, `sessionStorage`, or Bearer-only token handling unless the user explicitly confirms a new security design.
+
+## 2.1 Refresh Session Model
+
+Refresh tokens are random high-entropy secrets. The raw refresh token only exists when generated and inside the browser cookie/request. The database stores a deterministic SHA-256 hash for lookup, not the raw token.
+
+Current refresh behavior:
+
+- `POST /api/auth/refresh` reads `refresh_token`.
+- A valid refresh session must exist, be unexpired, not revoked, and belong to an active verified user.
+- Successful refresh revokes the old refresh session, creates a replacement, sets new `access_token` and `refresh_token` cookies, and returns a safe user response without token values.
+- Logout revokes the current refresh session if present and clears both auth cookies.
+- Reset password and change password revoke all refresh sessions for the user.
 
 ## 3. CSRF
 
@@ -65,16 +81,24 @@ Current examples include:
 - admin/staff learning APIs for catalog and class moderation;
 - public read/search APIs for selected catalog, tutor, and class resources.
 
+Tutor authorization baseline:
+
+- Tutor application `DRAFT`, `PENDING`, and `REJECTED` states may authenticate with `activeRole=TUTOR`, but they must not receive full teaching authority.
+- `TutorApplication.status=DRAFT` means the Tutor account/application exists but has not been submitted for Staff review. `PENDING` means the application has been submitted and is awaiting Staff review.
+- Account Service grants `ROLE_TUTOR` only when the current Tutor status is `APPROVED`.
+- Account Service self profile/application endpoints remain available to authenticated Tutor users for identity-document submission/correction without granting full `ROLE_TUTOR`.
+- Learning Service uses its local tutor authorization projection from Account approval/rejection events as the priority source for full Tutor APIs. If no projection exists yet, it may fall back to the signed JWT `tutorStatus=APPROVED` claim after token refresh/switch-role.
+- Full Tutor APIs remain `APPROVED`-only even when the browser has a valid `access_token` cookie and `activeRole=TUTOR`.
+
 Before changing authorization, audit both backend security rules and frontend route/UI assumptions.
 
 ## 7. Known Security Inconsistencies
 
-Current known inconsistency:
+Current JWT extraction policy:
 
 - Account Service JWT filter reads JWT from cookie `access_token`.
-- Learning Service JWT filter checks `Authorization: Bearer` first, then cookie `access_token` or `token`.
-
-This is a KNOWN_CONFLICT/technical inconsistency. Do not normalize it silently inside an unrelated task; report impact or ask for confirmation if the task touches auth architecture.
+- Learning Service JWT filter reads JWT from cookie `access_token`.
+- Browser requests must not depend on `Authorization: Bearer` or legacy cookie `token`.
 
 Mobile currently uses credentialed API requests, but the CSRF flow is not as complete as Web and should be audited before expanding mobile mutating APIs.
 

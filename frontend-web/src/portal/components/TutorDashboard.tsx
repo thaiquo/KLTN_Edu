@@ -1,8 +1,3 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useState } from "react";
 import {
   Download,
@@ -17,7 +12,8 @@ import {
   Video,
   MapPin,
   Sparkles,
-  HelpCircle
+  HelpCircle,
+  ChevronRight
 } from "lucide-react";
 import { StudentRequest, ScheduleItem } from "../types";
 
@@ -38,17 +34,21 @@ export function TutorDashboard({
   schedule,
   onNavigate,
 }: TutorDashboardProps) {
-  const pendingRequests = requests.filter((r) => r.status === "pending");
   const [showNotification, setShowNotification] = useState<string | null>(null);
 
-  const handleAction = (id: string, action: "approve" | "reject", name: string) => {
-    if (action === "approve") {
-      onAcceptRequest(id);
-      setShowNotification(`Approved request from ${name}!`);
-    } else {
-      onRejectRequest(id);
-      setShowNotification(`Rejected request from ${name}.`);
-    }
+  const pendingRequests = requests.filter((r) => r.status === "pending");
+
+  const handleAccept = (id: string) => {
+    onAcceptRequest(id);
+    setShowNotification("Đã chấp nhận yêu cầu học");
+    setTimeout(() => {
+      setShowNotification(null);
+    }, 3000);
+  };
+
+  const handleReject = (id: string) => {
+    onRejectRequest(id);
+    setShowNotification("Đã từ chối yêu cầu học");
     setTimeout(() => {
       setShowNotification(null);
     }, 3000);
@@ -58,337 +58,251 @@ export function TutorDashboard({
     <div className="space-y-8 select-none font-sans max-w-7xl mx-auto pb-10">
       {/* Toast Alert popups for interactive states */}
       {showNotification && (
-        <div className="fixed top-20 right-4 z-50 bg-brand-text text-white px-5 py-3 rounded-xl shadow-2xl flex items-center gap-3 border border-white/10 animate-slide-in">
-          <Sparkles className="w-5 h-5 text-yellow-400 animate-bounce" />
-          <p className="text-xs font-semibold">{showNotification}</p>
+        <div className="fixed top-20 right-4 z-50 bg-[#0F172A] text-white px-5 py-3 rounded-lg shadow-xl flex items-center gap-3 border border-white/10 animate-slide-in">
+          <Sparkles className="w-5 h-5 text-yellow-400" />
+          <p className="text-sm font-semibold">{showNotification}</p>
         </div>
       )}
 
       {/* Welcome Header */}
       <section className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <h2 className="font-display font-black text-2xl md:text-3xl lg:text-4xl text-brand-text tracking-tight">
-            Welcome back, {userName}!
+          <h2 className="text-2xl md:text-3xl font-bold text-[#0F172A] tracking-tight">
+            Chào mừng trở lại, {userName}!
           </h2>
-          <p className="text-brand-text-variant/80 text-sm mt-1">
-            You have{" "}
-            <span className="text-brand-secondary font-bold">
+          <p className="text-slate-500 text-[15px] mt-1 font-medium">
+            Bạn có{" "}
+            <span className="text-blue-600 font-bold">
               {pendingRequests.length}
             </span>{" "}
-            pending student requests to review today.
+            yêu cầu học mới và{" "}
+            <span className="text-blue-600 font-bold">
+              {schedule.length}
+            </span>{" "}
+            lịch dạy trong hôm nay.
           </p>
         </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <button
-            onClick={() => alert("Downloading CSV of weekly analytics summary...")}
-            className="px-4 py-2 bg-white border border-brand-border/45 hover:bg-brand-low rounded-xl text-brand-text font-bold text-xs flex items-center gap-2 hover:-translate-y-0.5 active:translate-y-0 transition-all shadow-sm"
-          >
-            <Download className="w-4 h-4 text-brand-text-variant" />
-            Export Report
-          </button>
-          <button
-            onClick={() => onNavigate("schedule")}
-            className="px-4 py-2 bg-brand-secondary text-white hover:bg-brand-secondary-hover rounded-xl font-bold text-xs flex items-center gap-2 hover:shadow-lg hover:shadow-brand-secondary/15 hover:-translate-y-0.5 active:translate-y-0 transition-all shadow-md"
-          >
-            <Calendar className="w-4 h-4" />
-            Manage Schedule
-          </button>
-        </div>
+        <button
+          onClick={() => onNavigate("class-management")}
+          className="px-6 py-2.5 bg-blue-600 text-white rounded-lg text-[14px] font-bold hover:bg-blue-700 transition-colors shadow-sm shrink-0 inline-flex items-center gap-2"
+        >
+          Quản lý lớp học <ChevronRight size={16} />
+        </button>
       </section>
 
-      {/* Stats Cards Section */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        {/* Stat Card 1: Total Students */}
-        <div className="glass-card p-6 rounded-2xl flex flex-col justify-between shadow-sm relative group hover:border-brand-primary/50 transition-colors duration-300">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 rounded-2xl bg-brand-primary/10 flex items-center justify-center text-brand-primary">
-              <Users className="w-6 h-6" />
-            </div>
-            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full flex items-center gap-1">
-              <TrendingUp className="w-3.5 h-3.5" />
-              +12%
-            </span>
-          </div>
-          <div>
-            <p className="text-4xl font-display font-black text-brand-text">24</p>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-brand-text-variant/50 mt-1">
-              Total Students
-            </p>
-          </div>
-        </div>
-
-        {/* Stat Card 2: Active Classes */}
-        <div className="glass-card p-6 rounded-2xl flex flex-col justify-between shadow-sm relative hover:border-brand-secondary/50 transition-colors duration-300">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 rounded-2xl bg-brand-secondary/10 flex items-center justify-center text-brand-secondary">
-              <BookOpen className="w-6 h-6" />
-            </div>
-            <span className="text-[10px] font-bold text-brand-primary bg-brand-primary/5 px-2.5 py-1 rounded-full">
-              Steady
-            </span>
-          </div>
-          <div>
-            <p className="text-4xl font-display font-black text-brand-text">5</p>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-brand-text-variant/50 mt-1">
-              Active Classes
-            </p>
-          </div>
-        </div>
-
-        {/* Stat Card 3: Pending Requests with blink notification style */}
-        <div className="glass-card p-6 rounded-2xl border-brand-secondary/30 ring-4 ring-brand-secondary/5 ring-inset flex flex-col justify-between shadow-sm relative hover:border-brand-secondary/60 transition-colors duration-300">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 rounded-2xl bg-brand-error/10 flex items-center justify-center text-brand-error">
-              <AlertCircle className="w-6 h-6" />
-            </div>
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-error opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-brand-error"></span>
-            </span>
-          </div>
-          <div>
-            <p className="text-4xl font-display font-black text-brand-text">
-              {pendingRequests.length}
-            </p>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-brand-text-variant/50 mt-1">
-              Pending Requests
-            </p>
-          </div>
-        </div>
-
-        {/* Stat Card 4: Total Earnings */}
-        <div className="glass-card p-6 rounded-2xl flex flex-col justify-between shadow-sm relative hover:border-brand-tertiary/50 transition-colors duration-300">
-          <div className="flex items-center justify-between mb-4">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-600 font-bold text-xl">
-              $
-            </div>
-            <span className="text-[10px] font-bold text-brand-primary bg-brand-primary/5 px-2.5 py-1 rounded-full">
-              +$450 this week
-            </span>
-          </div>
-          <div>
-            <p className="text-4xl font-display font-black text-brand-text">$1,200</p>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-brand-text-variant/50 mt-1">
-              Total Earnings
-            </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Bento Layout content columns */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Recent Student Requests Table Panel */}
-        <div className="lg:col-span-2 bg-white rounded-3xl border border-brand-border/30 overflow-hidden flex flex-col shadow-sm">
-          <div className="p-6 border-b border-brand-border/20 flex items-center justify-between">
-            <h3 className="font-display font-black text-base text-brand-text">
-              Recent Student Requests
-            </h3>
-            <button
-              onClick={() => onNavigate("requests")}
-              className="text-brand-primary hover:text-brand-primary/80 text-xs font-bold font-display"
-            >
-              View All
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            {pendingRequests.length === 0 ? (
-              <div className="p-12 text-center text-brand-text-variant/60 flex flex-col items-center justify-center gap-2">
-                <Sparkles className="w-8 h-8 text-yellow-400" />
-                <p className="text-sm font-bold">All student requests processed!</p>
-                <p className="text-xs">Take a well-deserved breaks or check schedule updates.</p>
+      {/* KPI Stats */}
+      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {[
+          {
+            title: "Lớp học đang dạy",
+            value: "03",
+            trend: "+1",
+            icon: BookOpen,
+            color: "text-blue-600",
+            bg: "bg-blue-50",
+          },
+          {
+            title: "Học viên",
+            value: "14",
+            trend: "+2",
+            icon: Users,
+            color: "text-emerald-600",
+            bg: "bg-emerald-50",
+          },
+          {
+            title: "Giờ dạy tuần này",
+            value: "28.5",
+            trend: "+5.0",
+            icon: Calendar,
+            color: "text-purple-600",
+            bg: "bg-purple-50",
+          },
+          {
+            title: "Thu nhập dự kiến",
+            value: "15M",
+            trend: "+12%",
+            icon: TrendingUp,
+            color: "text-amber-600",
+            bg: "bg-amber-50",
+          },
+        ].map((stat, idx) => (
+          <div
+            key={idx}
+            className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between hover:border-slate-300 transition-colors cursor-default"
+          >
+            <div className="flex justify-between items-start mb-4">
+              <div className={`p-3 rounded-lg \${stat.bg} \${stat.color}`}>
+                <stat.icon className="w-6 h-6" />
               </div>
-            ) : (
-              <table className="w-full text-left">
-                <thead className="bg-brand-low text-brand-text-variant/60 font-display text-[10px] font-bold uppercase tracking-wider">
-                  <tr>
-                    <th className="px-6 py-4">Student Name</th>
-                    <th className="px-6 py-4">Subject</th>
-                    <th className="px-6 py-4">Requested Date</th>
-                    <th className="px-6 py-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-brand-border/10 font-sans">
-                  {pendingRequests.map((request) => (
-                    <tr
-                      key={request.id}
-                      className="hover:bg-brand-low/40 transition-colors animate-fade-in"
-                    >
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className={`w-8 h-8 rounded-full ${request.avatarColor} flex items-center justify-center text-xs font-bold font-display text-white shadow-sm shrink-0`}
-                          >
-                            {request.avatarChar}
-                          </div>
-                          <span className="font-semibold text-brand-text text-sm">
-                            {request.studentName}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-brand-text-variant">
-                        {request.subject}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-brand-text-variant/80">
-                        {request.requestedDate}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex items-center justify-end gap-2.5">
-                          <button
-                            onClick={() =>
-                              handleAction(request.id, "reject", request.studentName)
-                            }
-                            className="p-1.5 text-brand-error hover:bg-brand-error/10 rounded-xl transition-colors shrink-0"
-                            title="Reject"
-                          >
-                            <X className="w-4 h-4 shrink-0" />
-                          </button>
-                          <button
-                            onClick={() =>
-                              handleAction(request.id, "approve", request.studentName)
-                            }
-                            className="p-1.5 text-brand-primary hover:bg-brand-primary/10 rounded-xl transition-colors shrink-0"
-                            title="Approve"
-                          >
-                            <Check className="w-4 h-4 shrink-0 font-black" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </div>
-
-        {/* Right Column: Today's Schedule Card */}
-        <div className="bg-white rounded-3xl border border-brand-border/30 overflow-hidden flex flex-col shadow-sm">
-          <div className="p-6 border-b border-brand-border/20 flex items-center justify-between">
-            <h3 className="font-display font-black text-base text-brand-text">
-              Today's Schedule
-            </h3>
-            <span className="text-[11px] font-black font-display tracking-widest text-brand-text-variant/60 uppercase">
-              Oct 23
-            </span>
-          </div>
-
-          <div className="p-4 space-y-4 flex-1 overflow-y-auto">
-            {schedule.map((item) => {
-              const isActive = item.status === "active";
-              const isVirtual = item.detailType === "virtual";
-
-              let cardBg = "bg-brand-low border-l-4 border-brand-text-variant/50 opacity-60";
-              let timeColor = "text-brand-text-variant/60";
-              
-              if (isActive) {
-                if (isVirtual) {
-                  cardBg = "bg-brand-secondary/5 border-l-4 border-brand-secondary shadow-sm shadow-brand-secondary/5";
-                  timeColor = "text-brand-secondary";
-                } else {
-                  cardBg = "bg-brand-primary/5 border-l-4 border-brand-primary shadow-sm shadow-brand-primary/5";
-                  timeColor = "text-brand-primary";
-                }
-              }
-
-              return (
-                <div
-                  key={item.id}
-                  className={`flex gap-4 p-4 rounded-2xl transition-all duration-300 hover:scale-[1.01] ${cardBg}`}
-                >
-                  <div className="text-center min-w-[50px] border-r border-brand-border/10 pr-2">
-                    <p className={`font-display text-sm font-black ${timeColor}`}>
-                      {item.time}
-                    </p>
-                    <p className="text-[9px] font-black text-brand-text-variant/60 uppercase select-none font-display">
-                      {item.period}
-                    </p>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-brand-text text-sm truncate">
-                      {item.title}
-                    </p>
-                    <p className="text-xs text-brand-text-variant/75 flex items-center gap-1 mt-1 font-semibold truncate">
-                      {item.detailType === "students" && (
-                        <User className="w-3.5 h-3.5 text-brand-text-variant/60" />
-                      )}
-                      {item.detailType === "virtual" && (
-                        <Video className="w-3.5 h-3.5 text-brand-text-variant/60" />
-                      )}
-                      {item.detailType === "location" && (
-                        <MapPin className="w-3.5 h-3.5 text-brand-text-variant/60" />
-                      )}
-                      {item.detailValue}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="p-4 bg-brand-low border-t border-brand-border/20 rounded-b-3xl">
-            <button
-              onClick={() => onNavigate("schedule")}
-              className="w-full py-2.5 bg-white border border-brand-border/40 hover:bg-brand-primary/5 text-brand-primary font-bold text-xs tracking-wider rounded-xl transition-all active:scale-98 relative shadow-sm"
-            >
-              OPEN FULL CALENDAR
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Hero Quick Ad Action Blocks */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        
-        {/* Grow Student base banner */}
-        <div className="bg-brand-low/50 p-8 rounded-3xl border border-brand-border/20 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden group hover:shadow-md transition-shadow">
-          <div className="z-10 flex-1">
-            <h4 className="text-lg font-display font-black text-brand-text mb-2">
-              Grow your student base
-            </h4>
-            <p className="text-brand-text-variant text-sm mb-4">
-              Complete your advanced profile to show up in the top 5% of searches. Set up flexible hourly rates.
-            </p>
-            <button
-              onClick={() => onNavigate("settings")}
-              className="px-6 py-2 bg-brand-text text-white text-xs font-bold rounded-xl hover:bg-brand-text/95 transition-all cursor-pointer shadow-md"
-            >
-              Update Profile
-            </button>
-          </div>
-          <div className="absolute right-4 bottom-4 w-32 h-32 bg-brand-primary/10 rounded-full blur-3xl group-hover:scale-125 transition-transform duration-700"></div>
-          <Sparkles className="w-20 h-20 absolute -right-3 text-brand-primary/5 rotate-12 group-hover:rotate-0 transition-transform duration-500 shrink-0 pointer-events-none" />
-        </div>
-
-        {/* Assistance Help center block */}
-        <div className="p-8 rounded-3xl bg-brand-secondary text-white relative overflow-hidden group hover:shadow-lg hover:shadow-brand-secondary/15 transition-all">
-          <div className="relative z-10 flex flex-col h-full justify-between">
+              <span className="inline-flex items-center text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md text-[11px] font-bold">
+                {stat.trend}
+              </span>
+            </div>
             <div>
-              <h4 className="text-lg font-display font-black mb-2 flex items-center gap-2">
-                Need assistance?
-              </h4>
-              <p className="opacity-80 text-sm mb-6">
-                Our tutor support team is available 24/7 to help with platform navigation, scheduling details, or student billing issues.
-              </p>
-            </div>
-            <div className="flex gap-4">
-              <button
-                onClick={() => alert("Connecting to live chat agent...")}
-                className="px-5 py-2.5 bg-white text-brand-secondary rounded-xl text-xs font-bold hover:bg-opacity-95 active:scale-95 transition-all shadow-md cursor-pointer"
-              >
-                Live Chat
-              </button>
-              <button
-                onClick={() => alert("Opening developer and tutor guides...")}
-                className="px-5 py-2.5 border border-white/40 text-white rounded-xl text-xs font-bold hover:bg-white/10 active:scale-95 transition-all cursor-pointer"
-              >
-                Documentation
-              </button>
+              <p className="text-slate-500 text-sm font-medium">{stat.title}</p>
+              <h3 className="text-2xl font-bold text-[#0F172A] mt-1">{stat.value}</h3>
             </div>
           </div>
-        </div>
+        ))}
       </section>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Main Content Area */}
+        <div className="lg:col-span-2 space-y-8">
+          {/* Pending Requests Section */}
+          <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="font-bold text-[#0F172A] text-lg flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-blue-600" /> Yêu cầu học mới
+              </h3>
+              <button
+                onClick={() => onNavigate("requests")}
+                className="text-sm font-bold text-blue-600 hover:text-blue-700 transition-colors"
+              >
+                Xem tất cả
+              </button>
+            </div>
+            <div className="p-6">
+              {pendingRequests.length === 0 ? (
+                <div className="text-center py-12 px-4">
+                  <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Check className="w-8 h-8 text-slate-400" />
+                  </div>
+                  <p className="text-slate-600 font-medium">Không có yêu cầu học nào đang chờ duyệt.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {pendingRequests.map((req) => (
+                    <div
+                      key={req.id}
+                      className="group flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-5 border border-slate-100 rounded-xl hover:border-blue-100 hover:shadow-sm transition-all"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div
+                          className={\`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg shadow-sm \${req.avatarColor}\`}
+                        >
+                          {req.avatarChar}
+                        </div>
+                        <div>
+                          <p className="font-bold text-[#0F172A] text-[15px]">
+                            {req.studentName}
+                          </p>
+                          <p className="text-sm text-slate-500 font-medium mt-0.5">
+                            {req.subject}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <button
+                          onClick={() => handleAccept(req.id)}
+                          className="flex-1 sm:flex-none inline-flex justify-center items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold transition-colors"
+                        >
+                          <Check className="w-4 h-4" /> Chấp nhận
+                        </button>
+                        <button
+                          onClick={() => handleReject(req.id)}
+                          className="flex-1 sm:flex-none inline-flex justify-center items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-colors"
+                        >
+                          <X className="w-4 h-4" /> Từ chối
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+
+        {/* Sidebar Widgets */}
+        <div className="space-y-8">
+          {/* Today's Schedule */}
+          <section className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="font-bold text-[#0F172A] text-[16px] flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-blue-600" /> Lịch dạy hôm nay
+              </h3>
+            </div>
+            <div className="p-5">
+              {schedule.length === 0 ? (
+                <p className="text-slate-500 text-sm text-center py-6 font-medium">
+                  Bạn không có lịch dạy nào hôm nay.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {schedule.map((item) => {
+                    let cardBg = "bg-white border border-slate-100";
+                    let timeColor = "text-[#0F172A]";
+                    if (item.status === "past") {
+                      cardBg = "bg-slate-50 border-transparent opacity-60 grayscale";
+                      timeColor = "text-slate-400";
+                    } else if (item.status === "active") {
+                      cardBg = "bg-blue-50/50 border border-blue-100 shadow-sm";
+                      timeColor = "text-blue-600";
+                    }
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={\`flex gap-3 p-3.5 rounded-xl transition-all \${cardBg}\`}
+                      >
+                        <div className="text-center min-w-[48px] border-r border-slate-200/60 pr-3 flex flex-col justify-center">
+                          <p className={\`text-sm font-bold \${timeColor}\`}>
+                            {item.time}
+                          </p>
+                          {item.period && (
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              {item.period}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0 pl-1">
+                          <p className="font-bold text-[#0F172A] text-[13px] truncate">
+                            {item.title}
+                          </p>
+                          <p className="text-xs text-slate-500 flex items-center gap-1.5 mt-1 font-medium truncate">
+                            {item.detailType === "students" && (
+                              <User className="w-3.5 h-3.5 text-slate-400" />
+                            )}
+                            {item.detailType === "virtual" && (
+                              <Video className="w-3.5 h-3.5 text-blue-400" />
+                            )}
+                            {item.detailType === "location" && (
+                              <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                            )}
+                            {item.detailValue}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Helper Card */}
+          <section className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-xl p-6 text-white shadow-md relative overflow-hidden">
+            <div className="relative z-10">
+              <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-blue-200" /> Cần trợ giúp?
+              </h3>
+              <p className="text-blue-100 text-sm mb-5 leading-relaxed font-medium">
+                Tìm hiểu thêm về cách tối ưu hóa thu nhập và quản lý lớp học hiệu quả trên EduConnect.
+              </p>
+              <button
+                onClick={() => onNavigate("help")}
+                className="w-full py-2.5 bg-white text-blue-700 rounded-lg text-sm font-bold shadow-sm hover:bg-blue-50 transition-colors"
+              >
+                Xem hướng dẫn
+              </button>
+            </div>
+            {/* Decoration */}
+            <div className="absolute -right-6 -bottom-6 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
+            <div className="absolute -left-6 -top-6 w-24 h-24 bg-blue-400/20 rounded-full blur-xl"></div>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

@@ -2,11 +2,13 @@ package iuh.fit.learning_service.messaging;
 
 import iuh.fit.learning_service.entity.ProcessedEvent;
 import iuh.fit.learning_service.entity.Subject;
+import iuh.fit.learning_service.entity.TutorAuthorizationState;
 import iuh.fit.learning_service.entity.TutorSubject;
 import iuh.fit.learning_service.messaging.event.TutorApprovedEvent;
 import iuh.fit.learning_service.messaging.event.TutorRejectedEvent;
 import iuh.fit.learning_service.repository.ProcessedEventRepository;
 import iuh.fit.learning_service.repository.SubjectRepository;
+import iuh.fit.learning_service.repository.TutorAuthorizationStateRepository;
 import iuh.fit.learning_service.repository.TutorSubjectRepository;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.stereotype.Component;
@@ -20,11 +22,18 @@ import java.util.stream.Collectors;
 public class TutorApplicationEventListener {
     private final ProcessedEventRepository processedEventRepository;
     private final SubjectRepository subjectRepository;
+    private final TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
     private final TutorSubjectRepository tutorSubjectRepository;
 
-    public TutorApplicationEventListener(ProcessedEventRepository processedEventRepository, SubjectRepository subjectRepository, TutorSubjectRepository tutorSubjectRepository) {
+    public TutorApplicationEventListener(
+            ProcessedEventRepository processedEventRepository,
+            SubjectRepository subjectRepository,
+            TutorAuthorizationStateRepository tutorAuthorizationStateRepository,
+            TutorSubjectRepository tutorSubjectRepository
+    ) {
         this.processedEventRepository = processedEventRepository;
         this.subjectRepository = subjectRepository;
+        this.tutorAuthorizationStateRepository = tutorAuthorizationStateRepository;
         this.tutorSubjectRepository = tutorSubjectRepository;
     }
 
@@ -63,6 +72,7 @@ public class TutorApplicationEventListener {
                 tutorSubjectRepository.save(existing);
             }
         }
+        upsertTutorAuthorization(event.userId(), event.tutorProfileId(), "APPROVED", event.eventId());
         markProcessed(event.eventId(), TutorApprovedEvent.class.getSimpleName());
     }
 
@@ -72,7 +82,30 @@ public class TutorApplicationEventListener {
         if (event == null || event.eventId() == null || processedEventRepository.existsById(event.eventId())) {
             return;
         }
+        upsertTutorAuthorization(event.userId(), null, "REJECTED", event.eventId());
+        for (TutorSubject subject : tutorSubjectRepository.findByUserIdAndActiveTrueOrderByCreatedAtAsc(event.userId())) {
+            subject.setActive(false);
+            tutorSubjectRepository.save(subject);
+        }
         markProcessed(event.eventId(), TutorRejectedEvent.class.getSimpleName());
+    }
+
+    private void upsertTutorAuthorization(Long userId, Long tutorProfileId, String status, String eventId) {
+        if (userId == null) {
+            return;
+        }
+        TutorAuthorizationState state = tutorAuthorizationStateRepository.findById(userId)
+                .orElseGet(() -> {
+                    TutorAuthorizationState created = new TutorAuthorizationState();
+                    created.setUserId(userId);
+                    return created;
+                });
+        state.setStatus(status);
+        if (tutorProfileId != null) {
+            state.setTutorProfileId(tutorProfileId);
+        }
+        state.setSourceEventId(eventId);
+        tutorAuthorizationStateRepository.save(state);
     }
 
     private void markProcessed(String eventId, String eventType) {

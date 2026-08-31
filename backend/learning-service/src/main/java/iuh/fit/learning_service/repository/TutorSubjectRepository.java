@@ -9,6 +9,7 @@ import java.util.Optional;
 public interface TutorSubjectRepository extends JpaRepository<TutorSubject, Long> {
     List<TutorSubject> findByTutorProfileIdOrderByCreatedAtAsc(Long tutorProfileId);
     List<TutorSubject> findByTutorProfileIdAndActiveTrueOrderByCreatedAtAsc(Long tutorProfileId);
+    List<TutorSubject> findByUserIdAndActiveTrueOrderByCreatedAtAsc(Long userId);
     List<TutorSubject> findByTutorProfileIdInAndActiveTrueOrderByCreatedAtAsc(List<Long> tutorProfileIds);
     Optional<TutorSubject> findByTutorProfileIdAndSubjectId(Long tutorProfileId, Long subjectId);
 }

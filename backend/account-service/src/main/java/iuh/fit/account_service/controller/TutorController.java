@@ -50,7 +50,7 @@ public class TutorController {
     }
 
     @PostMapping("/profile")
-    @PreAuthorize("hasRole('TUTOR')")
+    @PreAuthorize("isAuthenticated()")
     public TutorResponse createProfile(
             Authentication authentication,
             @Valid @RequestBody TutorProfileRequest request
@@ -66,13 +66,13 @@ public class TutorController {
     }
 
     @GetMapping("/profile")
-    @PreAuthorize("hasRole('TUTOR')")
+    @PreAuthorize("isAuthenticated()")
     public TutorResponse getProfile(Authentication authentication) {
         return tutorService.getProfile(authentication.getName());
     }
 
     @PutMapping("/profile")
-    @PreAuthorize("hasRole('TUTOR')")
+    @PreAuthorize("isAuthenticated()")
     public TutorResponse updateProfile(
             Authentication authentication,
             @Valid @RequestBody TutorProfileRequest request

@@ -11,6 +11,7 @@ import iuh.fit.account_service.dto.tutorapplication.TutorDocumentDownloadRespons
 import iuh.fit.account_service.entity.TutorApplication;
 import iuh.fit.account_service.entity.TutorApplicationSubject;
 import iuh.fit.account_service.entity.TutorDocument;
+import iuh.fit.account_service.entity.Tutor;
 import iuh.fit.account_service.entity.TutorProfile;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.entity.UserRole;
@@ -18,6 +19,7 @@ import iuh.fit.account_service.enums.Role;
 import iuh.fit.account_service.enums.TutorApplicationStatus;
 import iuh.fit.account_service.enums.TutorDocumentType;
 import iuh.fit.account_service.enums.TutorDocumentVerificationStatus;
+import iuh.fit.account_service.enums.TutorStatus;
 import iuh.fit.account_service.exception.ConflictException;
 import iuh.fit.account_service.exception.IncompleteTutorApplicationException;
 import iuh.fit.account_service.exception.ResourceNotFoundException;
@@ -25,6 +27,7 @@ import iuh.fit.account_service.messaging.AccountEventPublisher;
 import iuh.fit.account_service.repository.TutorApplicationRepository;
 import iuh.fit.account_service.repository.TutorApplicationSubjectRepository;
 import iuh.fit.account_service.repository.TutorDocumentRepository;
+import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.TutorProfileRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.repository.UserRoleRepository;
@@ -51,6 +54,7 @@ public class TutorApprovalService {
     private final TutorApplicationRepository tutorApplicationRepository;
     private final TutorApplicationSubjectRepository tutorApplicationSubjectRepository;
     private final TutorDocumentRepository tutorDocumentRepository;
+    private final TutorRepository tutorRepository;
     private final TutorProfileRepository tutorProfileRepository;
     private final UserRoleRepository userRoleRepository;
     private final UserRepository userRepository;
@@ -62,6 +66,7 @@ public class TutorApprovalService {
             TutorApplicationRepository tutorApplicationRepository,
             TutorApplicationSubjectRepository tutorApplicationSubjectRepository,
             TutorDocumentRepository tutorDocumentRepository,
+            TutorRepository tutorRepository,
             TutorProfileRepository tutorProfileRepository,
             UserRoleRepository userRoleRepository,
             UserRepository userRepository,
@@ -72,6 +77,7 @@ public class TutorApprovalService {
         this.tutorApplicationRepository = tutorApplicationRepository;
         this.tutorApplicationSubjectRepository = tutorApplicationSubjectRepository;
         this.tutorDocumentRepository = tutorDocumentRepository;
+        this.tutorRepository = tutorRepository;
         this.tutorProfileRepository = tutorProfileRepository;
         this.userRoleRepository = userRoleRepository;
         this.userRepository = userRepository;
@@ -138,6 +144,7 @@ public class TutorApprovalService {
         }
 
         ensureTutorRole(applicant);
+        syncTutorStatus(applicant, TutorStatus.APPROVED, null);
         TutorProfile profile = getOrCreateProfile(applicant);
         profile.setActive(true);
         if (StringUtils.hasText(application.getBio())) {
@@ -169,6 +176,8 @@ public class TutorApprovalService {
         application.setReviewedAt(LocalDateTime.now());
         application.setRejectionReason(normalize(request.getReason()));
         application.setReviewNote(normalize(request.getNote()));
+        ensureTutorRole(application.getUser());
+        syncTutorStatus(application.getUser(), TutorStatus.REJECTED, application.getRejectionReason());
 
         // Delete rejected files from S3 to free up storage, while recording rejection status
         List<TutorDocument> documents = tutorDocumentRepository
@@ -219,6 +228,18 @@ public class TutorApprovalService {
         role.setUser(applicant);
         role.setRole(Role.TUTOR);
         userRoleRepository.save(role);
+    }
+
+    private Tutor syncTutorStatus(User applicant, TutorStatus status, String rejectionReason) {
+        Tutor tutor = tutorRepository.findByUserId(applicant.getId())
+                .orElseGet(() -> {
+                    Tutor created = new Tutor();
+                    created.setUser(applicant);
+                    return created;
+                });
+        tutor.setStatus(status);
+        tutor.setRejectionReason(rejectionReason);
+        return tutorRepository.save(tutor);
     }
 
     private TutorProfile getOrCreateProfile(User applicant) {

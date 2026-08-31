@@ -8,20 +8,24 @@ import iuh.fit.account_service.dto.auth.ResetPasswordRequest;
 import iuh.fit.account_service.dto.auth.VerifyEmailRequest;
 import iuh.fit.account_service.dto.auth.LoginRequest;
 import iuh.fit.account_service.dto.auth.LoginResult;
+import iuh.fit.account_service.dto.auth.RefreshTokenRotation;
 import iuh.fit.account_service.dto.auth.SwitchRoleRequest;
 import iuh.fit.account_service.entity.Student;
 import iuh.fit.account_service.entity.Tutor;
+import iuh.fit.account_service.entity.TutorApplication;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.entity.UserRole;
 import iuh.fit.account_service.config.security.JwtService;
 import iuh.fit.account_service.enums.AccountStatus;
 import iuh.fit.account_service.enums.Role;
+import iuh.fit.account_service.enums.TutorApplicationStatus;
 import iuh.fit.account_service.enums.TutorStatus;
 import iuh.fit.account_service.exception.BadRequestException;
 import iuh.fit.account_service.exception.ConflictException;
 import iuh.fit.account_service.exception.ForbiddenException;
 import iuh.fit.account_service.repository.OtpVerificationRepository;
 import iuh.fit.account_service.repository.StudentRepository;
+import iuh.fit.account_service.repository.TutorApplicationRepository;
 import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.repository.UserRoleRepository;
@@ -43,32 +47,38 @@ public class AuthService {
     private final UserRoleRepository userRoleRepository;
     private final StudentRepository studentRepository;
     private final TutorRepository tutorRepository;
+    private final TutorApplicationRepository tutorApplicationRepository;
     private final OtpVerificationRepository otpRepository;
     private final PasswordEncoder passwordEncoder;
     private final OtpService otpService;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
 
     public AuthService(
             UserRepository userRepository,
             UserRoleRepository userRoleRepository,
             StudentRepository studentRepository,
             TutorRepository tutorRepository,
+            TutorApplicationRepository tutorApplicationRepository,
             OtpVerificationRepository otpRepository,
             PasswordEncoder passwordEncoder,
             OtpService otpService,
             AuthenticationManager authenticationManager,
-            JwtService jwtService
+            JwtService jwtService,
+            RefreshTokenService refreshTokenService
     ) {
         this.userRepository = userRepository;
         this.userRoleRepository = userRoleRepository;
         this.studentRepository = studentRepository;
         this.tutorRepository = tutorRepository;
+        this.tutorApplicationRepository = tutorApplicationRepository;
         this.otpRepository = otpRepository;
         this.passwordEncoder = passwordEncoder;
         this.otpService = otpService;
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
+        this.refreshTokenService = refreshTokenService;
     }
 
     @Transactional
@@ -137,6 +147,7 @@ public class AuthService {
                 userRole.setRole(Role.TUTOR);
                 userRoleRepository.save(userRole);
             }
+            ensureDraftTutorApplication(user);
         } else {
             if (!studentRepository.existsByUserId(user.getId())) {
                 Student student = new Student();
@@ -150,6 +161,17 @@ public class AuthService {
                 userRoleRepository.save(userRole);
             }
         }
+    }
+
+    private void ensureDraftTutorApplication(User user) {
+        if (tutorApplicationRepository.existsByUserId(user.getId())) {
+            return;
+        }
+
+        TutorApplication application = new TutorApplication();
+        application.setUser(user);
+        application.setStatus(TutorApplicationStatus.DRAFT);
+        tutorApplicationRepository.save(application);
     }
 
     @Transactional
@@ -213,6 +235,7 @@ public class AuthService {
         otpService.verifyPasswordResetOtp(user, request.getOtp());
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
+        refreshTokenService.revokeAllForUser(user);
     }
 
     public LoginResult login(LoginRequest request) {
@@ -243,7 +266,7 @@ public class AuthService {
         boolean hasStudent = studentRepository.existsByUserId(user.getId());
         Optional<Tutor> tutorOpt = tutorRepository.findByUserId(user.getId());
         boolean hasTutor = tutorOpt.isPresent();
-        String tutorStatusStr = tutorOpt.map(t -> t.getStatus().name()).orElse(null);
+        String tutorStatusStr = resolveTutorStatusForClient(user.getId(), tutorOpt);
 
         boolean isTutorMode = Boolean.TRUE.equals(request.getTutorMode());
 
@@ -267,7 +290,8 @@ public class AuthService {
             }
         }
 
-        String token = jwtService.generateToken(user.getEmail(), selectedActiveRole, roles);
+        String token = jwtService.generateToken(user.getEmail(), user.getId(), selectedActiveRole, roles, tutorStatusStr);
+        String refreshToken = refreshTokenService.createSession(user, selectedActiveRole);
 
         return new LoginResult(
                 user.getId(),
@@ -278,11 +302,16 @@ public class AuthService {
                 hasStudent,
                 hasTutor,
                 tutorStatusStr,
-                token
+                token,
+                refreshToken
         );
     }
 
     public LoginResult switchRole(String authenticatedEmail, SwitchRoleRequest request) {
+        return switchRole(authenticatedEmail, request, null);
+    }
+
+    public LoginResult switchRole(String authenticatedEmail, SwitchRoleRequest request, String rawRefreshToken) {
         String normalizedEmail = EmailNormalizer.normalize(authenticatedEmail);
         User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new BadRequestException("User not found"));
@@ -292,7 +321,7 @@ public class AuthService {
         boolean hasStudent = studentRepository.existsByUserId(user.getId());
         Optional<Tutor> tutorOpt = tutorRepository.findByUserId(user.getId());
         boolean hasTutor = tutorOpt.isPresent();
-        String tutorStatusStr = tutorOpt.map(t -> t.getStatus().name()).orElse(null);
+        String tutorStatusStr = resolveTutorStatusForClient(user.getId(), tutorOpt);
 
         List<UserRole> userRoles = userRoleRepository.findByUserId(user.getId());
         List<String> roles = userRoles.stream()
@@ -307,9 +336,6 @@ public class AuthService {
             if (!hasTutor) {
                 throw new BadRequestException("ROLE_NOT_AVAILABLE: Bạn chưa đăng ký làm Gia sư.");
             }
-            if (tutorOpt.get().getStatus() != TutorStatus.APPROVED) {
-                throw new BadRequestException("TUTOR_NOT_APPROVED: Hồ sơ Gia sư chưa được duyệt.");
-            }
         } else if ("STAFF".equals(targetRole) || "ADMIN".equals(targetRole)) {
             if (!roles.contains(targetRole)) {
                 throw new BadRequestException("ROLE_NOT_AVAILABLE: Bạn không có quyền " + targetRole);
@@ -318,7 +344,8 @@ public class AuthService {
             throw new BadRequestException("Invalid target role: " + targetRole);
         }
 
-        String newToken = jwtService.generateToken(user.getEmail(), targetRole, roles);
+        String newToken = jwtService.generateToken(user.getEmail(), user.getId(), targetRole, roles, tutorStatusStr);
+        refreshTokenService.updateActiveRoleIfPresent(rawRefreshToken, targetRole);
 
         return new LoginResult(
                 user.getId(),
@@ -331,5 +358,55 @@ public class AuthService {
                 tutorStatusStr,
                 newToken
         );
+    }
+
+    @Transactional
+    public LoginResult refresh(String rawRefreshToken) {
+        RefreshTokenRotation rotation = refreshTokenService.consumeForRefresh(rawRefreshToken);
+        User user = rotation.getRefreshSession().getUser();
+
+        if (!user.isEmailVerified()) {
+            throw new ForbiddenException("Please verify your email first");
+        }
+
+        if (user.getAccountStatus() != AccountStatus.ACTIVE) {
+            throw new ForbiddenException("Account is not allowed to login");
+        }
+
+        List<UserRole> userRoles = userRoleRepository.findByUserId(user.getId());
+        List<String> roles = userRoles.stream()
+                .map(userRole -> userRole.getRole().name())
+                .toList();
+
+        boolean hasStudent = studentRepository.existsByUserId(user.getId());
+        Optional<Tutor> tutorOpt = tutorRepository.findByUserId(user.getId());
+        boolean hasTutor = tutorOpt.isPresent();
+        String tutorStatusStr = resolveTutorStatusForClient(user.getId(), tutorOpt);
+        String activeRole = rotation.getRefreshSession().getActiveRole();
+        String accessToken = jwtService.generateToken(user.getEmail(), user.getId(), activeRole, roles, tutorStatusStr);
+
+        return new LoginResult(
+                user.getId(),
+                user.getEmail(),
+                user.getFullName(),
+                roles,
+                activeRole,
+                hasStudent,
+                hasTutor,
+                tutorStatusStr,
+                accessToken,
+                rotation.getRawRefreshToken()
+        );
+    }
+
+    @Transactional
+    public void logout(String rawRefreshToken) {
+        refreshTokenService.revokeIfPresent(rawRefreshToken);
+    }
+
+    private String resolveTutorStatusForClient(Long userId, Optional<Tutor> tutorOpt) {
+        return tutorApplicationRepository.findByUserId(userId)
+                .map(application -> application.getStatus().name())
+                .orElseGet(() -> tutorOpt.map(tutor -> tutor.getStatus().name()).orElse(null));
     }
 }

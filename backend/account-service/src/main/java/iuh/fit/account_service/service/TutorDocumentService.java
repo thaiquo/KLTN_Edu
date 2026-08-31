@@ -3,6 +3,7 @@ package iuh.fit.account_service.service;
 import iuh.fit.account_service.config.FilePolicyProperties;
 import iuh.fit.account_service.dto.tutorapplication.TutorDocumentDownloadResponse;
 import iuh.fit.account_service.dto.tutorapplication.TutorDocumentResponse;
+import iuh.fit.account_service.entity.Tutor;
 import iuh.fit.account_service.entity.TutorApplication;
 import iuh.fit.account_service.entity.TutorDocument;
 import iuh.fit.account_service.entity.User;
@@ -10,6 +11,7 @@ import iuh.fit.account_service.enums.CredentialValidityType;
 import iuh.fit.account_service.enums.TutorApplicationStatus;
 import iuh.fit.account_service.enums.TutorDocumentType;
 import iuh.fit.account_service.enums.TutorDocumentVerificationStatus;
+import iuh.fit.account_service.enums.TutorStatus;
 import iuh.fit.account_service.util.HashUtils;
 import iuh.fit.account_service.dto.tutorapplication.TutorApplicationResponse;
 import iuh.fit.account_service.exception.BadRequestException;
@@ -19,6 +21,7 @@ import iuh.fit.account_service.exception.ResourceNotFoundException;
 import iuh.fit.account_service.exception.StorageException;
 import iuh.fit.account_service.repository.TutorApplicationRepository;
 import iuh.fit.account_service.repository.TutorDocumentRepository;
+import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.service.storage.FileStorageService;
 import iuh.fit.account_service.util.EmailNormalizer;
@@ -61,6 +64,7 @@ public class TutorDocumentService {
 
     private final TutorApplicationRepository tutorApplicationRepository;
     private final TutorDocumentRepository tutorDocumentRepository;
+    private final TutorRepository tutorRepository;
     private final UserRepository userRepository;
     private final FileStorageService fileStorageService;
     private final FilePolicyProperties filePolicyProperties;
@@ -68,12 +72,14 @@ public class TutorDocumentService {
     public TutorDocumentService(
             TutorApplicationRepository tutorApplicationRepository,
             TutorDocumentRepository tutorDocumentRepository,
+            TutorRepository tutorRepository,
             UserRepository userRepository,
             FileStorageService fileStorageService,
             FilePolicyProperties filePolicyProperties
     ) {
         this.tutorApplicationRepository = tutorApplicationRepository;
         this.tutorDocumentRepository = tutorDocumentRepository;
+        this.tutorRepository = tutorRepository;
         this.userRepository = userRepository;
         this.fileStorageService = fileStorageService;
         this.filePolicyProperties = filePolicyProperties;
@@ -196,16 +202,27 @@ public class TutorDocumentService {
         User user = application.getUser();
         List<TutorDocument> docs = tutorDocumentRepository.findByTutorApplication_IdOrderByUploadedAtDesc(application.getId());
 
+        if (hasMinimalIdentityReviewData(user, docs)) {
+            application.setStatus(TutorApplicationStatus.PENDING);
+            application.setSubmittedAt(LocalDateTime.now());
+            application.setReviewedAt(null);
+            application.setReviewedBy(null);
+            application.setRejectionReason(null);
+            application.setReviewNote(null);
+            TutorApplication saved = tutorApplicationRepository.save(application);
+            syncTutorPending(user);
+            return toApplicationResponse(saved);
+        }
+
         List<String> missing = new ArrayList<>();
         if (!StringUtils.hasText(user.getFullName())) missing.add("Họ và tên");
-        if (!StringUtils.hasText(user.getPhone())) missing.add("Số điện thoại");
-        if (user.getDateOfBirth() == null) missing.add("Ngày sinh");
-        if (!StringUtils.hasText(user.getProvince()) && !StringUtils.hasText(user.getProvinceCode())) missing.add("Địa chỉ");
+        if (!StringUtils.hasText(user.getEmail())) missing.add("Email");
+        if (!user.isEmailVerified()) missing.add("Email chưa xác thực");
 
         Set<TutorDocumentType> types = docs.stream().map(TutorDocument::getDocumentType).collect(Collectors.toSet());
         boolean hasIdentity = types.contains(TutorDocumentType.PASSPORT) || (types.contains(TutorDocumentType.IDENTITY_FRONT) && types.contains(TutorDocumentType.IDENTITY_BACK));
         if (!hasIdentity) {
-            missing.add("Xác minh danh tính (CCCD/Hộ chiếu)");
+            missing.add("Giấy tờ định danh CCCD/CMND hoặc hộ chiếu");
         }
 
         if (!missing.isEmpty()) {
@@ -219,6 +236,7 @@ public class TutorDocumentService {
         application.setRejectionReason(null);
         application.setReviewNote(null);
         TutorApplication saved = tutorApplicationRepository.save(application);
+        syncTutorPending(user);
 
         return new TutorApplicationResponse(
                 saved.getId(),
@@ -235,6 +253,45 @@ public class TutorDocumentService {
                 saved.getCreatedAt(),
                 saved.getUpdatedAt()
         );
+    }
+
+    private boolean hasMinimalIdentityReviewData(User user, List<TutorDocument> documents) {
+        if (!StringUtils.hasText(user.getFullName()) || !StringUtils.hasText(user.getEmail()) || !user.isEmailVerified()) {
+            return false;
+        }
+        Set<TutorDocumentType> types = documents.stream().map(TutorDocument::getDocumentType).collect(Collectors.toSet());
+        return types.contains(TutorDocumentType.PASSPORT)
+                || (types.contains(TutorDocumentType.IDENTITY_FRONT) && types.contains(TutorDocumentType.IDENTITY_BACK));
+    }
+
+    private TutorApplicationResponse toApplicationResponse(TutorApplication application) {
+        return new TutorApplicationResponse(
+                application.getId(),
+                application.getStatus(),
+                application.getBio(),
+                application.getEducationLevel(),
+                application.getInstitution(),
+                application.getMajor(),
+                application.getExperienceSummary(),
+                application.getSubmittedAt(),
+                application.getReviewedAt(),
+                application.getRejectionReason(),
+                application.getReviewNote(),
+                application.getCreatedAt(),
+                application.getUpdatedAt()
+        );
+    }
+
+    private void syncTutorPending(User user) {
+        Tutor tutor = tutorRepository.findByUserId(user.getId())
+                .orElseGet(() -> {
+                    Tutor created = new Tutor();
+                    created.setUser(user);
+                    return created;
+                });
+        tutor.setStatus(TutorStatus.PENDING);
+        tutor.setRejectionReason(null);
+        tutorRepository.save(tutor);
     }
 
     @Transactional(readOnly = true)

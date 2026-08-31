@@ -96,11 +96,6 @@ public class TutorService {
 
         applyProfileData(tutor, request);
 
-        if (tutor.getStatus() == TutorStatus.REJECTED) {
-            tutor.setStatus(TutorStatus.PENDING);
-            tutor.setRejectionReason(null);
-        }
-
         return toResponse(tutorRepository.save(tutor));
     }
 

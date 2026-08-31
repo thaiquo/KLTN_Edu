@@ -49,13 +49,14 @@ public class UserService {
     private final AdministrativeProvinceRepository provinceRepository;
     private final AdministrativeCommuneRepository communeRepository;
     private final TutorApplicationRepository tutorApplicationRepository;
+    private final RefreshTokenService refreshTokenService;
 
     public UserService(
             UserRepository userRepository,
             UserRoleRepository userRoleRepository,
             PasswordEncoder passwordEncoder
     ) {
-        this(userRepository, userRoleRepository, null, null, passwordEncoder, null, null, null, null, null);
+        this(userRepository, userRoleRepository, null, null, passwordEncoder, null, null, null, null, null, null);
     }
 
     public UserService(
@@ -65,7 +66,7 @@ public class UserService {
             FileStorageService fileStorageService,
             FilePolicyProperties filePolicyProperties
     ) {
-        this(userRepository, userRoleRepository, null, null, passwordEncoder, fileStorageService, filePolicyProperties, null, null, null);
+        this(userRepository, userRoleRepository, null, null, passwordEncoder, fileStorageService, filePolicyProperties, null, null, null, null);
     }
 
     @Autowired
@@ -79,7 +80,8 @@ public class UserService {
             FilePolicyProperties filePolicyProperties,
             @Autowired(required = false) AdministrativeProvinceRepository provinceRepository,
             @Autowired(required = false) AdministrativeCommuneRepository communeRepository,
-            @Autowired(required = false) TutorApplicationRepository tutorApplicationRepository
+            @Autowired(required = false) TutorApplicationRepository tutorApplicationRepository,
+            @Autowired(required = false) RefreshTokenService refreshTokenService
     ) {
         this.userRepository = userRepository;
         this.userRoleRepository = userRoleRepository;
@@ -91,6 +93,7 @@ public class UserService {
         this.provinceRepository = provinceRepository;
         this.communeRepository = communeRepository;
         this.tutorApplicationRepository = tutorApplicationRepository;
+        this.refreshTokenService = refreshTokenService;
     }
 
     @Transactional(readOnly = true)
@@ -190,6 +193,9 @@ public class UserService {
 
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
+        if (refreshTokenService != null) {
+            refreshTokenService.revokeAllForUser(user);
+        }
     }
 
     private User findCurrentUser(String authenticatedEmail) {

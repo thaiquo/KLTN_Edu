@@ -16,6 +16,7 @@ public class LoginResult {
     private boolean hasTutorProfile;
     private String tutorStatus;
     private String token;
+    private String refreshToken;
 
     public LoginResult(Long userId, String email, String fullName, List<String> roles, String token) {
         this(userId, email, fullName, roles, null, false, false, null, token);
@@ -32,6 +33,21 @@ public class LoginResult {
             String tutorStatus,
             String token
     ) {
+        this(userId, email, fullName, roles, activeRole, hasStudentProfile, hasTutorProfile, tutorStatus, token, null);
+    }
+
+    public LoginResult(
+            Long userId,
+            String email,
+            String fullName,
+            List<String> roles,
+            String activeRole,
+            boolean hasStudentProfile,
+            boolean hasTutorProfile,
+            String tutorStatus,
+            String token,
+            String refreshToken
+    ) {
         this.userId = userId;
         this.email = email;
         this.fullName = fullName;
@@ -41,6 +57,7 @@ public class LoginResult {
         this.hasTutorProfile = hasTutorProfile;
         this.tutorStatus = tutorStatus;
         this.token = token;
+        this.refreshToken = refreshToken;
     }
 
     public Long getUserId() {
@@ -77,5 +94,9 @@ public class LoginResult {
 
     public String getToken() {
         return token;
+    }
+
+    public String getRefreshToken() {
+        return refreshToken;
     }
 }

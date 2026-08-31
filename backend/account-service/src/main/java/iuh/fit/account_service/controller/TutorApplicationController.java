@@ -69,7 +69,7 @@ public class TutorApplicationController {
 
     @PostMapping("/me/submit-profile")
     public TutorApplicationResponse submitProfileForReview(Authentication authentication) {
-        return tutorDocumentService.submitProfileForReview(authentication.getName());
+        return tutorApplicationService.submitMyApplication(authentication.getName());
     }
 
     @PutMapping("/me")

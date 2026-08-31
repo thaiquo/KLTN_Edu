@@ -4,12 +4,15 @@ import iuh.fit.account_service.config.security.JwtService;
 import iuh.fit.account_service.dto.auth.RegisterRequest;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.entity.UserRole;
+import iuh.fit.account_service.entity.TutorApplication;
 import iuh.fit.account_service.enums.AccountStatus;
 import iuh.fit.account_service.enums.Role;
+import iuh.fit.account_service.enums.TutorApplicationStatus;
 import iuh.fit.account_service.exception.BadRequestException;
 import iuh.fit.account_service.exception.ConflictException;
 import iuh.fit.account_service.repository.OtpVerificationRepository;
 import iuh.fit.account_service.repository.StudentRepository;
+import iuh.fit.account_service.repository.TutorApplicationRepository;
 import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.repository.UserRoleRepository;
@@ -36,17 +39,20 @@ class AuthServiceRegisterTest {
     private final StudentRepository studentRepository = mock(StudentRepository.class);
     private final OtpVerificationRepository otpRepository = mock(OtpVerificationRepository.class);
     private final TutorRepository tutorRepository = mock(TutorRepository.class);
+    private final TutorApplicationRepository tutorApplicationRepository = mock(TutorApplicationRepository.class);
     private final OtpService otpService = mock(OtpService.class);
     private final AuthService authService = new AuthService(
             userRepository,
             userRoleRepository,
             studentRepository,
             tutorRepository,
+            tutorApplicationRepository,
             otpRepository,
             new BCryptPasswordEncoder(),
             otpService,
             mock(AuthenticationManager.class),
-            mock(JwtService.class)
+            mock(JwtService.class),
+            mock(RefreshTokenService.class)
     );
 
     @Test
@@ -88,6 +94,26 @@ class AuthServiceRegisterTest {
     void registerRequestSupportsRoleField() {
         assertThat(hasField("role")).isTrue();
         assertThat(hasField("userType")).isFalse();
+    }
+
+    @Test
+    void tutorRegisterCreatesTutorRoleProfileAndDraftApplication() {
+        RegisterRequest request = validRequest();
+        request.setRole("TUTOR");
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
+            User user = invocation.getArgument(0);
+            ReflectionTestUtils.setField(user, "id", 501L);
+            return user;
+        });
+
+        var response = authService.register(request);
+
+        assertThat(response.getUserId()).isEqualTo(501L);
+
+        var applicationCaptor = org.mockito.ArgumentCaptor.forClass(TutorApplication.class);
+        verify(tutorApplicationRepository).save(applicationCaptor.capture());
+        assertThat(applicationCaptor.getValue().getUser().getId()).isEqualTo(501L);
+        assertThat(applicationCaptor.getValue().getStatus()).isEqualTo(TutorApplicationStatus.DRAFT);
     }
 
     @Test

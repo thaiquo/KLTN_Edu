@@ -13,9 +13,9 @@
 
 | Domain | Owning Service | Main API Responsibility |
 | --- | --- | --- |
-| Authentication | `account-service` | Register, verify email, resend OTP, login, switch role, logout, forgot/reset password, CSRF endpoint. |
+| Authentication | `account-service` | Register, verify email, resend OTP, login, refresh session, switch role, logout, forgot/reset password, CSRF endpoint. |
 | User/Profile | `account-service` | Current user, profile updates, student activation, avatar, password change. |
-| Tutor Profile/Application | `account-service` | Tutor public profile, tutor application, documents, staff tutor approval. |
+| Tutor Profile/Application | `account-service` | Tutor public profile, lightweight identity-document application, staff tutor approval. |
 | Reference Geography | `account-service` | Provinces/communes reference data. |
 | Teaching Catalog | `learning-service` | Program type, education level, subject category/group/subject/level catalog. |
 | Tutor Expertise | `learning-service` | Tutor subject registrations and tutor subject data. |
@@ -33,6 +33,9 @@ Current large API groups with source evidence:
 - Current user/profile and avatar.
 - Tutor public search/detail.
 - Tutor application and document management.
+- Tutor application lifecycle: `DRAFT` before submit, `PENDING` after submit, then Staff `APPROVED` or `REJECTED`.
+- Restricted Tutor application flow for `DRAFT`/`PENDING`/`REJECTED` tutors through Account Service profile/application/document APIs.
+- Current Tutor approval submission requires identity documents only: CCCD/CMND front + back, or passport. Teaching/class registration belongs to full Tutor functionality after approval.
 - Staff tutor application approval/rejection.
 - Staff/admin user management.
 - Reference province/commune lookup.
@@ -71,6 +74,11 @@ Keep new APIs consistent with nearby controllers in the owning service.
 ## 6. Authentication Requirements
 
 Authenticated APIs must follow the JWT/cookie/CSRF/role baseline in `docs/AUTH_SECURITY.md`.
+
+Tutor API distinction:
+
+- Account Service owns Tutor application/profile-review APIs that authenticated restricted Tutors need for identity-document submission/correction. These APIs do not imply full teaching permission.
+- Learning Service owns full teaching operation APIs. These require approved Tutor eligibility and must not be opened to `PENDING`/`REJECTED` Tutors by frontend hiding alone.
 
 Before adding or changing an API, audit:
 

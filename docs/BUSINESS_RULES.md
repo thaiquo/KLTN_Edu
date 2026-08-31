@@ -96,7 +96,10 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
 ## 5. Core Business Rules
 
 - Account/Role: người dùng đăng ký, xác thực và sử dụng hệ thống theo vai trò được cấp.
-- Tutor approval: Tutor cần hồ sơ đáp ứng điều kiện xét duyệt trước khi dùng đầy đủ chức năng gia sư.
+- Tutor approval: Tutor cần hồ sơ định danh đáp ứng điều kiện xét duyệt trước khi dùng đầy đủ chức năng gia sư.
+- Tutor application lifecycle: Tutor mới đăng ký và xác thực email có tài khoản/role Tutor nhưng hồ sơ xét duyệt bắt đầu ở `TutorApplication.status=DRAFT`, nghĩa là chưa gửi cho Staff. Hồ sơ xét duyệt hiện chỉ yêu cầu giấy tờ định danh: CCCD/CMND hai mặt hoặc hộ chiếu. `PENDING` chỉ áp dụng cho hồ sơ đã được Tutor submit và đang chờ Staff xét duyệt. `REJECTED` có thể chỉnh sửa/resubmit về `PENDING`; `APPROVED` mở quyền Tutor đầy đủ.
+- Tutor teaching setup: đăng ký lớp học, môn/lĩnh vực dạy và các nghiệp vụ giảng dạy đầy đủ thuộc giai đoạn sau khi Tutor đã `APPROVED`, không phải điều kiện bắt buộc của hồ sơ xét duyệt ban đầu.
+- Tutor restricted mode: Tutor có hồ sơ `DRAFT`, `PENDING` hoặc `REJECTED` vẫn được đăng nhập/switch sang ngữ cảnh Gia sư để xem trạng thái, cập nhật hồ sơ, upload tài liệu và gửi/gửi lại hồ sơ theo flow hiện có. Chỉ Tutor `APPROVED` mới được dùng đầy đủ các chức năng giảng dạy.
 - Tutor profile: hồ sơ gia sư cung cấp thông tin để hệ thống và Staff xác minh.
 - Search: Guest và user có thể tra cứu thông tin công khai; thao tác nghiệp vụ yêu cầu đăng nhập.
 - Join request: Student gửi yêu cầu tham gia lớp; Tutor xử lý yêu cầu theo trạng thái và điều kiện lớp.

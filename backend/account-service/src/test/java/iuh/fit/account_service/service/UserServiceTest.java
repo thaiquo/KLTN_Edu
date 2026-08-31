@@ -16,9 +16,8 @@ import iuh.fit.account_service.repository.UserRoleRepository;
 import iuh.fit.account_service.repository.AdministrativeCommuneRepository;
 import iuh.fit.account_service.repository.AdministrativeProvinceRepository;
 import iuh.fit.account_service.repository.StudentRepository;
+import iuh.fit.account_service.repository.TutorApplicationRepository;
 import iuh.fit.account_service.repository.TutorRepository;
-import iuh.fit.account_service.repository.UserRepository;
-import iuh.fit.account_service.repository.UserRoleRepository;
 import iuh.fit.account_service.service.storage.FileStorageService;
 import iuh.fit.account_service.service.storage.StoredFile;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,10 +42,12 @@ class UserServiceTest {
     private final UserRoleRepository userRoleRepository = mock(UserRoleRepository.class);
     private final StudentRepository studentRepository = mock(StudentRepository.class);
     private final TutorRepository tutorRepository = mock(TutorRepository.class);
+    private final TutorApplicationRepository tutorApplicationRepository = mock(TutorApplicationRepository.class);
     private final AdministrativeProvinceRepository provinceRepository = mock(AdministrativeProvinceRepository.class);
     private final AdministrativeCommuneRepository communeRepository = mock(AdministrativeCommuneRepository.class);
     private final FileStorageService fileStorageService = mock(FileStorageService.class);
     private final FilePolicyProperties filePolicyProperties = filePolicyProperties();
+    private final RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     private UserService userService;
     private User user;
@@ -62,7 +63,9 @@ class UserServiceTest {
                 fileStorageService,
                 filePolicyProperties,
                 provinceRepository,
-                communeRepository
+                communeRepository,
+                tutorApplicationRepository,
+                refreshTokenService
         );
 
         user = new User();
@@ -177,16 +180,16 @@ class UserServiceTest {
         when(userRepository.findByEmailIgnoreCase("test@example.com")).thenReturn(Optional.of(user));
         when(userRepository.save(user)).thenReturn(user);
         when(userRoleRepository.findByUserId(7L)).thenReturn(List.of(role(user, Role.STUDENT)));
-        when(fileStorageService.store(org.mockito.ArgumentMatchers.startsWith("avatars/7/"), org.mockito.ArgumentMatchers.any(byte[].class), org.mockito.ArgumentMatchers.eq("image/png")))
+        when(fileStorageService.store(org.mockito.ArgumentMatchers.startsWith("users/7/avatar/"), org.mockito.ArgumentMatchers.any(byte[].class), org.mockito.ArgumentMatchers.eq("image/png")))
                 .thenAnswer(invocation -> new StoredFile(invocation.getArgument(0), "image/png", 8));
         when(fileStorageService.createPresignedGetUrl(org.mockito.ArgumentMatchers.anyString())).thenReturn("https://signed.example/avatar");
 
         var response = userService.updateCurrentUserAvatar("test@example.com", file);
 
-        assertThat(user.getAvatarKey()).startsWith("avatars/7/");
+        assertThat(user.getAvatarKey()).startsWith("users/7/avatar/");
         assertThat(response.getAvatarKey()).isEqualTo(user.getAvatarKey());
         assertThat(response.getAvatarUrl()).isEqualTo("https://signed.example/avatar");
-        verify(fileStorageService).store(org.mockito.ArgumentMatchers.startsWith("avatars/7/"), org.mockito.ArgumentMatchers.any(byte[].class), org.mockito.ArgumentMatchers.eq("image/png"));
+        verify(fileStorageService).store(org.mockito.ArgumentMatchers.startsWith("users/7/avatar/"), org.mockito.ArgumentMatchers.any(byte[].class), org.mockito.ArgumentMatchers.eq("image/png"));
     }
 
     @Test
@@ -213,6 +216,7 @@ class UserServiceTest {
         assertThat(passwordEncoder.matches("newPassword123", user.getPassword())).isTrue();
         assertThat(passwordEncoder.matches("oldPassword123", user.getPassword())).isFalse();
         verify(userRepository).save(user);
+        verify(refreshTokenService).revokeAllForUser(user);
     }
 
     @Test

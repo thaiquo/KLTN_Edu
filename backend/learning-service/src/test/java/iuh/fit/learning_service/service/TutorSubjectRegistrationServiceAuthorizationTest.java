@@ -10,6 +10,7 @@ import iuh.fit.learning_service.repository.CatalogCategoryRepository;
 import iuh.fit.learning_service.repository.CatalogLevelRepository;
 import iuh.fit.learning_service.repository.CatalogSubjectRepository;
 import iuh.fit.learning_service.repository.TutorSubjectRegistrationRepository;
+import iuh.fit.learning_service.realtime.RealtimeEventHub;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
@@ -47,7 +48,8 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
                 levels,
                 categories,
                 mock(TeachingCatalogService.class),
-                tutorIdentityLookup
+                tutorIdentityLookup,
+                mock(RealtimeEventHub.class)
         );
     }
 

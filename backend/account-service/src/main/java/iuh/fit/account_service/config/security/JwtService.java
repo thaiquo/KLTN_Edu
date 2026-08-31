@@ -30,17 +30,28 @@ public class JwtService {
     }
 
     public String generateToken(String email, String activeRole, List<String> roles) {
+        return generateToken(email, null, activeRole, roles, null);
+    }
+
+    public String generateToken(String email, Long userId, String activeRole, List<String> roles, String tutorStatus) {
         Date now = new Date();
         Date expirationDate = new Date(now.getTime() + expiration);
 
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(email)
                 .claim("activeRole", activeRole)
                 .claim("roles", roles)
                 .issuedAt(now)
-                .expiration(expirationDate)
-                .signWith(secretKey)
-                .compact();
+                .expiration(expirationDate);
+
+        if (userId != null) {
+            builder.claim("userId", userId);
+        }
+        if (tutorStatus != null && !tutorStatus.isBlank()) {
+            builder.claim("tutorStatus", tutorStatus);
+        }
+
+        return builder.signWith(secretKey).compact();
     }
 
     public String extractEmail(String token) {
@@ -63,6 +74,10 @@ public class JwtService {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    public long getExpirationMillis() {
+        return expiration;
     }
 
     private Claims getClaims(String token) {

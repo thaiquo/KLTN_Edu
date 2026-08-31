@@ -123,6 +123,11 @@ GATEWAY_MAX_IN_MEMORY_SIZE=<your-value>
 
 ```env
 ACCOUNT_SERVICE_PORT=<your-value>
+AUTH_COOKIE_SECURE=<your-value>
+AUTH_COOKIE_SAME_SITE=<your-value>
+AUTH_ACCESS_COOKIE_PATH=<your-value>
+AUTH_REFRESH_COOKIE_PATH=<your-value>
+AUTH_REFRESH_TOKEN_MAX_AGE=<your-value>
 MAIL_USERNAME=<your-value>
 MAIL_PASSWORD=<your-value>
 OTP_MAX_ATTEMPTS=<your-value>
@@ -241,7 +246,7 @@ cd backend/contract-service
 
 ```bash
 cd backend/api-gateway
-./run-local.sh
+
 ```
 
 Trên Windows PowerShell, dùng Maven wrapper trực tiếp nếu không dùng Git Bash:
@@ -277,7 +282,7 @@ npm run build
 npm run preview
 ```
 
-Web client dùng credentialed requests và CSRF handling. Kiểm tra `VITE_API_URL` và gateway CORS settings khi authentication hoạt động không như mong đợi.
+Web client dùng credentialed requests, CSRF handling, và refresh token rotation. Kiểm tra `VITE_API_URL`, gateway CORS settings, cookie flags, và CSRF token flow khi authentication hoạt động không như mong đợi.
 
 ### 4. Mobile
 
@@ -601,6 +606,7 @@ Không biến AI thành dependency bắt buộc của core business flow.
 ## Trạng thái phát triển hiện tại
 
 - AI Matching service, Qdrant, Spring AI, embeddings, và semantic search là planned/not implemented trong current source.
+- Authentication Web hiện dùng short-lived `access_token` cookie, `refresh_token` HttpOnly Cookie, refresh token rotation, và revoke refresh sessions khi logout/reset/change password.
 - Contract Service có persistence/workflow/Web3j logic, nhưng public Contract REST API evidence hiện chưa được tìm thấy.
 - Frontend Web3 hiện còn ABI/address conflict với current Solidity/deployment evidence.
 - Local Anvil evidence đã tồn tại; Sepolia deployment là planned/configured nhưng chưa được chứng minh bằng deployment evidence.
@@ -616,6 +622,7 @@ Không biến AI thành dependency bắt buộc của core business flow.
 | Backend không kết nối được database | Kiểm tra `docker compose ps`, `DB_URL`, và host PostgreSQL port. |
 | RabbitMQ event flow không hoạt động | Kiểm tra RabbitMQ container, `RABBITMQ_*` variables, exchange/queue declarations, và service logs. |
 | Login thành công nhưng browser requests fail | Kiểm tra `VITE_API_URL`, gateway CORS origins, credentialed requests, và CSRF token flow. |
+| Phiên đăng nhập hết hạn nhanh | Kiểm tra refresh flow `POST /api/auth/refresh`, `refresh_token` cookie, CSRF token, và refresh session trong database. |
 | CSRF errors | Kiểm tra frontend requests `XSRF-TOKEN`/`X-XSRF-TOKEN` behavior và không bypass cookie auth rules. |
 | Port đã được sử dụng | Override `*_PORT` tương ứng trong `.env`. |
 | Web3 local transaction fail | Re-check Solidity ABI, exported frontend ABI, Anvil chain ID, escrow address, và ERC-20 token address. |

@@ -10,13 +10,14 @@ import iuh.fit.account_service.dto.auth.ResendVerificationOtpRequest;
 import iuh.fit.account_service.dto.auth.ResetPasswordRequest;
 import iuh.fit.account_service.dto.auth.SwitchRoleRequest;
 import iuh.fit.account_service.dto.auth.VerifyEmailRequest;
+import iuh.fit.account_service.service.AuthCookieService;
 import iuh.fit.account_service.service.AuthService;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpHeaders;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.csrf.CsrfToken;
@@ -26,14 +27,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.Duration;
-
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
     private final AuthService authService;
+    private final AuthCookieService authCookieService;
 
     @PostMapping("/register")
     public ResponseEntity<RegisterResponse> register(@Valid @RequestBody RegisterRequest request) {
@@ -67,8 +67,11 @@ public class AuthController {
     }
 
     @PostMapping("/reset-password")
-    public ResponseEntity<String> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+    public ResponseEntity<String> resetPassword(
+            @Valid @RequestBody ResetPasswordRequest request,
+            HttpServletResponse response) {
         authService.resetPassword(request);
+        authCookieService.clearAuthCookies(response);
 
         return ResponseEntity.ok("Password has been reset successfully.");
     }
@@ -85,16 +88,8 @@ public class AuthController {
             HttpServletResponse response) {
         LoginResult result = authService.login(request);
 
-        ResponseCookie cookie = ResponseCookie
-                .from("access_token", result.getToken())
-                .httpOnly(true)
-                .secure(false)
-                .sameSite("Lax")
-                .path("/")
-                .maxAge(Duration.ofDays(1))
-                .build();
-
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+        authCookieService.addAccessTokenCookie(response, result.getToken());
+        authCookieService.addRefreshTokenCookie(response, result.getRefreshToken());
 
         return ResponseEntity.ok(
                 new LoginResponse(
@@ -112,23 +107,40 @@ public class AuthController {
     public ResponseEntity<LoginResponse> switchRole(
             @Valid @RequestBody SwitchRoleRequest request,
             Authentication authentication,
+            HttpServletRequest servletRequest,
             HttpServletResponse response) {
         if (authentication == null || authentication.getName() == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        LoginResult result = authService.switchRole(authentication.getName(), request);
+        LoginResult result = authService.switchRole(
+                authentication.getName(),
+                request,
+                extractCookieValue(servletRequest, AuthCookieService.REFRESH_TOKEN_COOKIE)
+        );
 
-        ResponseCookie cookie = ResponseCookie
-                .from("access_token", result.getToken())
-                .httpOnly(true)
-                .secure(false)
-                .sameSite("Lax")
-                .path("/")
-                .maxAge(Duration.ofDays(1))
-                .build();
+        authCookieService.addAccessTokenCookie(response, result.getToken());
 
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+        return ResponseEntity.ok(
+                new LoginResponse(
+                        result.getUserId(),
+                        result.getEmail(),
+                        result.getFullName(),
+                        result.getRoles(),
+                        result.getActiveRole(),
+                        result.isHasStudentProfile(),
+                        result.isHasTutorProfile(),
+                        result.getTutorStatus()));
+    }
+
+    @PostMapping("/refresh")
+    public ResponseEntity<LoginResponse> refresh(
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        LoginResult result = authService.refresh(extractCookieValue(request, AuthCookieService.REFRESH_TOKEN_COOKIE));
+
+        authCookieService.addAccessTokenCookie(response, result.getToken());
+        authCookieService.addRefreshTokenCookie(response, result.getRefreshToken());
 
         return ResponseEntity.ok(
                 new LoginResponse(
@@ -143,18 +155,27 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(HttpServletResponse response) {
-        ResponseCookie cookie = ResponseCookie
-                .from("access_token", "")
-                .httpOnly(true)
-                .secure(false)
-                .sameSite("Lax")
-                .path("/")
-                .maxAge(Duration.ZERO)
-                .build();
-
-        response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+    public ResponseEntity<Void> logout(
+            HttpServletRequest request,
+            HttpServletResponse response) {
+        authService.logout(extractCookieValue(request, AuthCookieService.REFRESH_TOKEN_COOKIE));
+        authCookieService.clearAuthCookies(response);
 
         return ResponseEntity.noContent().build();
+    }
+
+    private String extractCookieValue(HttpServletRequest request, String name) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies == null) {
+            return null;
+        }
+
+        for (Cookie cookie : cookies) {
+            if (name.equals(cookie.getName())) {
+                return cookie.getValue();
+            }
+        }
+
+        return null;
     }
 }
