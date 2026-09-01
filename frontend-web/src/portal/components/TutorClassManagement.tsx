@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { 
   GraduationCap, Plus, Calendar, Clock, DollarSign, Users, 
   Video, MapPin, AlertCircle, CheckCircle2, XCircle, Search, 
-  ChevronRight, Trash2, Eye, FileText, Sparkles, Key, Lock, Settings2, Globe, EyeOff, Copy, Check, Info, Layers
+  ChevronRight, Trash2, Eye, FileText, Sparkles, Key, Lock, Settings2, Globe, EyeOff, Copy, Check, Info, Layers, RefreshCw
 } from "lucide-react";
 import { classApi } from "../../api/classes";
 import { CreateClassWizard } from "./CreateClassWizard";
@@ -71,7 +71,7 @@ export function TutorClassManagement() {
 
   // Unified Class Detail & Settings Modal State
   const [detailModalClass, setDetailModalClass] = useState<ClassRoomItem | null>(null);
-  const [modalTab, setModalTab] = useState<"OVERVIEW" | "EDIT" | "SETTINGS" | "REQUESTS">("OVERVIEW");
+  const [modalTab, setModalTab] = useState<"OVERVIEW" | "EDIT" | "SETTINGS" | "REQUESTS" | "MEMBERS">("OVERVIEW");
 
   // Edit details form state
   const [editDescription, setEditDescription] = useState("");
@@ -737,17 +737,33 @@ export function TutorClassManagement() {
               <button
                 type="button"
                 onClick={() => {
-                  setModalTab("REQUESTS" as any);
+                  setModalTab("REQUESTS");
                   loadRequestsForClass(detailModalClass.id);
                 }}
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
-                  modalTab === ("REQUESTS" as any)
+                  modalTab === "REQUESTS"
                     ? "bg-brand-primary text-white shadow-sm"
                     : "text-slate-600 hover:bg-slate-100"
                 }`}
               >
                 <Users className="w-3.5 h-3.5" />
                 <span>📋 2. Yêu cầu tham gia lớp</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setModalTab("MEMBERS");
+                  loadRequestsForClass(detailModalClass.id);
+                }}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  modalTab === "MEMBERS"
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <Users className="w-3.5 h-3.5 text-emerald-500" />
+                <span>👥 3. Thành viên lớp học</span>
               </button>
 
               {(detailModalClass.status === "PRIVATE" || detailModalClass.status === "PUBLISHED" || detailModalClass.status === "PENDING_APPROVAL") && (
@@ -761,7 +777,7 @@ export function TutorClassManagement() {
                   }`}
                 >
                   <FileText className="w-3.5 h-3.5" />
-                  <span>✏️ 3. Chỉnh sửa mô tả</span>
+                  <span>✏️ 4. Chỉnh sửa mô tả</span>
                 </button>
               )}
 
@@ -776,7 +792,7 @@ export function TutorClassManagement() {
                   }`}
                 >
                   <Settings2 className="w-3.5 h-3.5" />
-                  <span>⚙️ 4. Cài đặt Mở bán</span>
+                  <span>⚙️ 5. Cài đặt Mở bán</span>
                 </button>
               )}
             </div>
@@ -845,8 +861,13 @@ export function TutorClassManagement() {
                       <strong className="text-slate-900 font-bold">{detailModalClass.totalSessions} buổi ({detailModalClass.totalPrice?.toLocaleString("vi-VN")} đ)</strong>
                     </div>
                     <div>
-                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Sĩ số tối đa</span>
-                      <strong className="text-slate-900 font-bold">{detailModalClass.maxStudents} học viên</strong>
+                      <span className="text-slate-400 block text-[10px] uppercase font-bold">Sĩ số & Chỗ trống</span>
+                      <strong className="text-emerald-700 font-bold">
+                        {detailModalClass.acceptedCount != null ? detailModalClass.acceptedCount : 0} / {detailModalClass.maxStudents} HV
+                        <span className="text-[11px] text-slate-500 font-semibold ml-1">
+                          (Còn {detailModalClass.availableSlots != null ? detailModalClass.availableSlots : Math.max(0, detailModalClass.maxStudents - (detailModalClass.acceptedCount || 0))} chỗ)
+                        </span>
+                      </strong>
                     </div>
                     <div>
                       <span className="text-slate-400 block text-[10px] uppercase font-bold">Tần suất & Thời lượng</span>
@@ -1170,6 +1191,82 @@ export function TutorClassManagement() {
                     })}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* ========================================================= */}
+            {/* TAB 3: MEMBERS TAB (ACCEPTED STUDENTS)                    */}
+            {/* ========================================================= */}
+            {modalTab === "MEMBERS" && (
+              <div className="space-y-4 text-xs">
+                {(() => {
+                  const acceptedMembers = enrollmentRequests.filter((r) => r.status === "ACCEPTED");
+                  return (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                          <Users className="w-4 h-4 text-emerald-600" /> Danh sách thành viên lớp học ({acceptedMembers.length} / {detailModalClass.maxStudents} HV):
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => loadRequestsForClass(detailModalClass.id)}
+                          className="text-xs font-bold text-emerald-600 hover:underline flex items-center gap-1"
+                        >
+                          <RefreshCw className="w-3 h-3" /> Làm mới
+                        </button>
+                      </div>
+
+                      {requestsLoading ? (
+                        <div className="p-6 text-center text-slate-400 font-medium">Đang tải danh sách thành viên...</div>
+                      ) : acceptedMembers.length === 0 ? (
+                        <div className="p-8 border border-dashed border-slate-200 rounded-2xl text-center text-slate-400 font-medium space-y-1">
+                          <p className="font-bold text-slate-600">Chưa có học viên nào tham gia lớp học này.</p>
+                          <p className="text-[11px]">Khi bạn chấp nhận yêu cầu của học viên và học viên hoàn tất nạp cọc Escrow, họ sẽ xuất hiện tại đây.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                          {acceptedMembers.map((member, index) => {
+                            const displayName = member.studentName && member.studentName.toLowerCase() !== member.studentEmail?.toLowerCase()
+                              ? member.studentName
+                              : `Học viên #${index + 1}`;
+
+                            const joinedDate = member.updatedAt
+                              ? new Date(member.updatedAt).toLocaleDateString("vi-VN")
+                              : member.createdAt
+                              ? new Date(member.createdAt).toLocaleDateString("vi-VN")
+                              : "Đã tham gia";
+
+                            return (
+                              <div
+                                key={member.id}
+                                className="p-3.5 bg-emerald-50/40 border border-emerald-200/80 rounded-2xl flex items-center justify-between gap-3 shadow-2xs"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 font-black text-xs flex items-center justify-center border border-emerald-200">
+                                    {index + 1}
+                                  </div>
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-black text-slate-900 text-xs font-display">{displayName}</span>
+                                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> ĐÃ THAM GIA
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] text-slate-500 font-medium flex items-center gap-2">
+                                      <span>Email: <strong className="text-slate-700 font-bold">{member.studentEmail}</strong></span>
+                                      <span>&bull;</span>
+                                      <span>Ngày duyệt: <strong className="text-slate-700">{joinedDate}</strong></span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             )}
 

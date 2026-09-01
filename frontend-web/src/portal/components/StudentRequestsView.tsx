@@ -184,8 +184,16 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
       // 2. Auto-Initiate Contract Agreement in contract-service with classroom data
       const agreementDetail = await contractsApi.initiateAgreement({
         classroomId: contractModalReq.classRoomId,
+        className: contractModalReq.className || `Lớp học #${contractModalReq.classRoomId}`,
+        studentId: undefined,
+        studentName: contractModalReq.studentName && contractModalReq.studentName.toLowerCase() !== contractModalReq.studentEmail?.toLowerCase()
+          ? contractModalReq.studentName
+          : undefined,
         studentEmail: contractModalReq.studentEmail,
+        studentPhone: (contractModalReq as any).studentPhone || "",
+        tutorName: user?.fullName || user?.name || "Gia sư",
         tutorEmail: user?.email,
+        tutorPhone: user?.phone || (user as any)?.phoneNumber || "",
         studentWallet: defaultStudentWallet,
         tutorWallet: tutorWallet,
         pricePerSessionVnd: pricePerSession,

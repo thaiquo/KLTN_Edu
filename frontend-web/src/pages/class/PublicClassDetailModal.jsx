@@ -333,12 +333,6 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
               </strong>
             </div>
             <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-bold">Sĩ số & Chỗ trống</span>
-              <strong className="text-slate-900 font-bold text-xs">
-                {acceptedCount} / {classRoom.maxStudents} HV (Còn {availableSlots} chỗ)
-              </strong>
-            </div>
-            <div>
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Tần suất & Thời lượng</span>
               <strong className="text-slate-900 font-bold text-xs">
                 {classRoom.sessionsPerWeek} buổi/tuần ({classRoom.durationPerSessionMinutes} phút)

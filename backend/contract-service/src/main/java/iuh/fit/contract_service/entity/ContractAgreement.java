@@ -46,6 +46,27 @@ public class ContractAgreement {
     @Column(name = "classroom_reviewer_email")
     private String classroomReviewerEmail;
 
+    @Column(name = "student_email", length = 255)
+    private String studentEmail;
+
+    @Column(name = "tutor_email", length = 255)
+    private String tutorEmail;
+
+    @Column(name = "student_name", length = 255)
+    private String studentName;
+
+    @Column(name = "tutor_name", length = 255)
+    private String tutorName;
+
+    @Column(name = "class_name", length = 500)
+    private String className;
+
+    @Column(name = "student_phone", length = 50)
+    private String studentPhone;
+
+    @Column(name = "tutor_phone", length = 50)
+    private String tutorPhone;
+
     @Column(name = "student_wallet", nullable = false, length = 42)
     private String studentWallet;
 

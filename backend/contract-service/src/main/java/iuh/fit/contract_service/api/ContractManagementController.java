@@ -9,6 +9,8 @@ import iuh.fit.contract_service.entity.Dispute;
 import iuh.fit.contract_service.enums.ContractAgreementStatus;
 import iuh.fit.contract_service.enums.DisputeStatus;
 import iuh.fit.contract_service.enums.SettlementStatus;
+import iuh.fit.contract_service.entity.ContractAcceptance;
+import iuh.fit.contract_service.repository.ContractAcceptanceRepository;
 import iuh.fit.contract_service.repository.ContractAgreementRepository;
 import iuh.fit.contract_service.repository.SessionSettlementRepository;
 import iuh.fit.contract_service.repository.BlockchainTransactionRepository;
@@ -46,6 +48,7 @@ public class ContractManagementController {
     private final iuh.fit.contract_service.service.NotificationDispatcher notificationDispatcher;
     private final iuh.fit.contract_service.service.ContractSignatureService signatureService;
     private final iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository;
+    private final ContractAcceptanceRepository acceptanceRepository;
 
     public ContractManagementController(
             ContractAgreementRepository agreementRepository,
@@ -55,7 +58,8 @@ public class ContractManagementController {
             DisputeWorkflowService disputeWorkflowService,
             iuh.fit.contract_service.service.NotificationDispatcher notificationDispatcher,
             iuh.fit.contract_service.service.ContractSignatureService signatureService,
-            iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository) {
+            iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository,
+            ContractAcceptanceRepository acceptanceRepository) {
         this.agreementRepository = agreementRepository;
         this.settlementRepository = settlementRepository;
         this.transactionRepository = transactionRepository;
@@ -64,14 +68,20 @@ public class ContractManagementController {
         this.notificationDispatcher = notificationDispatcher;
         this.signatureService = signatureService;
         this.escrowPaymentRepository = escrowPaymentRepository;
+        this.acceptanceRepository = acceptanceRepository;
     }
 
     public record InitiateAgreementRequest(
             Long classroomId,
+            String className,
             Long studentId,
+            String studentName,
             String studentEmail,
+            String studentPhone,
             Long tutorId,
+            String tutorName,
             String tutorEmail,
+            String tutorPhone,
             String studentWallet,
             String tutorWallet,
             BigDecimal pricePerSessionVnd,
@@ -130,8 +140,15 @@ public class ContractManagementController {
                 .id(agreementId)
                 .onchainAgreementId(onchainAgreementId)
                 .classroomId(request.classroomId() != null ? request.classroomId() : 1L)
+                .className(request.className())
                 .studentId(request.studentId() != null ? request.studentId() : 1L)
+                .studentName(request.studentName())
+                .studentEmail(request.studentEmail())
+                .studentPhone(request.studentPhone())
                 .tutorId(request.tutorId() != null ? request.tutorId() : 1L)
+                .tutorName(request.tutorName())
+                .tutorEmail(request.tutorEmail())
+                .tutorPhone(request.tutorPhone())
                 .classroomReviewerEmail(request.classroomReviewerEmail() != null ? request.classroomReviewerEmail() : request.tutorEmail())
                 .studentWallet(studentWallet.toLowerCase(Locale.ROOT))
                 .tutorWallet(request.tutorWallet().toLowerCase(Locale.ROOT))
@@ -243,6 +260,24 @@ public class ContractManagementController {
                     .orElseGet(() -> EscrowPayment.create(saved));
             payment.markLocked(txHash != null ? txHash : "0x_escrow_deposit_tx", 0L, "0x_block_hash");
             escrowPaymentRepository.saveAndFlush(payment);
+
+            // Ensure student acceptance with signature/txHash is recorded
+            boolean hasStudentAcceptance = acceptanceRepository.findByAgreementId(id).stream()
+                    .anyMatch(a -> "STUDENT".equalsIgnoreCase(a.getRole()));
+            if (!hasStudentAcceptance) {
+                ContractAcceptance studentAcceptance = ContractAcceptance.builder()
+                        .id(UUID.randomUUID())
+                        .agreementId(saved.getId())
+                        .userId(saved.getStudentId())
+                        .role("STUDENT")
+                        .walletAddress(saved.getStudentWallet())
+                        .signature(txHash != null && txHash.startsWith("0x") ? txHash : ("0x" + org.web3j.crypto.Hash.sha3String("SIGN:" + saved.getId() + ":" + saved.getStudentWallet())))
+                        .acceptedAt(OffsetDateTime.now())
+                        .termsHash(saved.getTermsHash())
+                        .contractVersion(saved.getContractVersion())
+                        .build();
+                acceptanceRepository.save(studentAcceptance);
+            }
 
             String studentEmail = extractStudentEmail(saved);
             if (studentEmail == null || studentEmail.isBlank()) {
@@ -395,11 +430,34 @@ public class ContractManagementController {
 
     @GetMapping("/agreements/{id}/transactions")
     public ResponseEntity<List<BlockchainTxDto>> getTransactions(@PathVariable UUID id) {
-        List<BlockchainTxDto> list = transactionRepository.findAll().stream()
+        List<BlockchainTxDto> list = new ArrayList<>(transactionRepository.findAll().stream()
                 .filter(t -> id.equals(t.getAgreementId()))
                 .sorted(Comparator.comparing(BlockchainTransaction::getCreatedAt))
                 .map(this::toTxDto)
-                .collect(Collectors.toList());
+                .collect(Collectors.toList()));
+
+        escrowPaymentRepository.findByAgreementId(id).ifPresent(p -> {
+            if (p.getFundTxHash() != null && p.getFundTxHash().startsWith("0x") && !p.getFundTxHash().equals("0x_escrow_deposit_tx")) {
+                boolean alreadyListed = list.stream().anyMatch(t -> p.getFundTxHash().equalsIgnoreCase(t.transactionHash()));
+                if (!alreadyListed) {
+                    list.add(new BlockchainTxDto(
+                            UUID.randomUUID().toString(),
+                            "DEPOSIT_ESCROW",
+                            p.getFundTxHash(),
+                            p.getStatus().name(),
+                            p.getConfirmedBlockNumber(),
+                            (short) 1,
+                            id.toString(),
+                            null,
+                            p.getChainId(),
+                            p.getCreatedAt() != null ? p.getCreatedAt().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null,
+                            p.getUpdatedAt() != null ? p.getUpdatedAt().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null,
+                            null
+                    ));
+                }
+            }
+        });
+
         return ResponseEntity.ok(list);
     }
 
@@ -560,12 +618,45 @@ public class ContractManagementController {
                 .filter(s -> s.getStatus() == SettlementStatus.SETTLED
                         || s.getStatus() == SettlementStatus.REFUNDED)
                 .count();
+
+        String studentEmail = a.getStudentEmail();
+        if (studentEmail == null || studentEmail.isBlank()) {
+            studentEmail = extractStudentEmail(a);
+        }
+
+        String tutorEmail = a.getTutorEmail();
+        if (tutorEmail == null || tutorEmail.isBlank()) {
+            tutorEmail = a.getClassroomReviewerEmail();
+        }
+
+        String studentName = a.getStudentName();
+        if (studentName != null && (studentName.isBlank() || studentName.contains("@") || studentName.startsWith("Học viên #"))) {
+            studentName = null;
+        }
+
+        String tutorName = a.getTutorName();
+        if (tutorName != null && (tutorName.isBlank() || tutorName.contains("@") || tutorName.startsWith("Gia sư #"))) {
+            tutorName = null;
+        }
+
+        String className = a.getClassName();
+        if (className == null || className.isBlank()) {
+            className = "Lớp học #" + a.getClassroomId();
+        }
+
         return new AgreementSummaryDto(
                 a.getId().toString(),
                 a.getOnchainAgreementId(),
                 a.getClassroomId(),
+                className,
                 a.getStudentId(),
+                studentName,
+                studentEmail,
+                a.getStudentPhone(),
                 a.getTutorId(),
+                tutorName,
+                tutorEmail,
+                a.getTutorPhone(),
                 a.getStudentWallet(),
                 a.getTutorWallet(),
                 a.getPlatformWallet(),
@@ -663,7 +754,9 @@ public class ContractManagementController {
 
     public record AgreementSummaryDto(
             String id, String onchainAgreementId,
-            Long classroomId, Long studentId, Long tutorId,
+            Long classroomId, String className,
+            Long studentId, String studentName, String studentEmail, String studentPhone,
+            Long tutorId, String tutorName, String tutorEmail, String tutorPhone,
             String studentWallet, String tutorWallet, String platformWallet,
             String tokenSymbol,
             double totalAmountUsdc, double pricePerSessionUsdc,

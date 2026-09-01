@@ -495,11 +495,9 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
 
                 <aside className="grid content-start gap-6">
                   <AccountInfoCard profile={profile} roles={roles} />
-                  {!embedded && (!roles.includes('TUTOR') ? (
-                    <BecomeTutorCard />
-                  ) : (
+                  {!embedded && roles.includes('TUTOR') && (
                     <TutorRegistrationCard tutorApp={tutorApp} />
-                  ))}
+                  )}
                   <CompletionCard completion={completion} />
                   <SecurityCard embedded={embedded} onTabChange={onTabChange} />
                 </aside>

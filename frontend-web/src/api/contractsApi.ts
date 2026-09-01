@@ -11,8 +11,15 @@ export interface AgreementSummary {
   id: string;
   onchainAgreementId: string | null;
   classroomId: number;
+  className?: string | null;
   studentId: number;
+  studentName?: string | null;
+  studentEmail?: string | null;
+  studentPhone?: string | null;
   tutorId: number;
+  tutorName?: string | null;
+  tutorEmail?: string | null;
+  tutorPhone?: string | null;
   studentWallet: string;
   tutorWallet: string;
   platformWallet: string;
@@ -147,10 +154,15 @@ export const contractsApi = {
 
   initiateAgreement(payload: {
     classroomId: number;
+    className?: string;
     studentId?: number;
+    studentName?: string;
     studentEmail?: string;
+    studentPhone?: string;
     tutorId?: number;
+    tutorName?: string;
     tutorEmail?: string;
+    tutorPhone?: string;
     studentWallet: string;
     tutorWallet: string;
     pricePerSessionVnd?: number;
