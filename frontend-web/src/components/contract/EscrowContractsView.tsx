@@ -93,8 +93,8 @@ export function EscrowContractsView({
 
   const handleOpenPayment = (agreement: AgreementSummary) => {
     setSelectedAgreementForPayment({
-      agreementId: parseInt(agreement.id) || 0,
-      onchainAgreementId: parseInt(agreement.onchainAgreementId ?? '0') || 0,
+      agreementId: agreement.id,
+      onchainAgreementId: agreement.onchainAgreementId || agreement.id,
       classTitle: `Hợp đồng #${agreement.id.slice(0, 8)}`,
       tutorName: `Gia sư #${agreement.tutorId}`,
       tutorAddress: agreement.tutorWallet,
@@ -111,7 +111,55 @@ export function EscrowContractsView({
     setActiveTab('TIMELINE');
   };
 
+  const handleSignByTutor = async (agreement: AgreementSummary) => {
+    const tutorWallet = address || agreement.tutorWallet;
+    if (!tutorWallet || !tutorWallet.startsWith("0x")) {
+      alert("Bạn chưa kết nối Ví MetaMask! Vui lòng kết nối ví trước khi thực hiện ký hợp đồng.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      let tutorSignature: string | undefined = undefined;
+
+      try {
+        tutorSignature = await signContractAgreementEip712(
+          {
+            id: agreement.id,
+            tutorWallet: tutorWallet,
+            studentWallet: agreement.studentWallet || "0x0000000000000000000000000000000000000000",
+            totalAmountUsdc: agreement.totalAmountUsdc,
+            createdAt: agreement.createdAt,
+            chainId: agreement.chainId || DEFAULT_CHAIN_ID,
+            escrowContractAddress: agreement.escrowContractAddress || undefined,
+          },
+          tutorWallet
+        );
+      } catch (signErr: any) {
+        console.warn('MetaMask EIP-712 tutor sign skipped/failed:', signErr);
+      }
+
+      await contractsApi.signAgreement(agreement.id, {
+        role: 'TUTOR',
+        walletAddress: tutorWallet,
+        signature: tutorSignature,
+        userEmail: userEmail,
+      });
+      await fetchAgreements();
+    } catch (err: any) {
+      alert(err?.message || 'Không thể ký xác nhận hợp đồng.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSignByStudent = async (agreement: AgreementSummary) => {
+    const signingWallet = address || agreement.studentWallet;
+    if (!signingWallet || !signingWallet.startsWith("0x") || signingWallet === "0x0000000000000000000000000000000000000000") {
+      alert("Bạn chưa kết nối Ví Web3! Vui lòng kết nối ví MetaMask trước khi thực hiện ký hợp đồng.");
+      return;
+    }
+
     try {
       setLoading(true);
       let studentSignature: string | undefined = undefined;
@@ -121,13 +169,13 @@ export function EscrowContractsView({
           {
             id: agreement.id,
             tutorWallet: agreement.tutorWallet,
-            studentWallet: agreement.studentWallet,
+            studentWallet: signingWallet,
             totalAmountUsdc: agreement.totalAmountUsdc,
             createdAt: agreement.createdAt,
             chainId: agreement.chainId || DEFAULT_CHAIN_ID,
             escrowContractAddress: agreement.escrowContractAddress || undefined,
           },
-          agreement.studentWallet
+          signingWallet
         );
       } catch (signErr: any) {
         console.warn('MetaMask EIP-712 student sign skipped/failed:', signErr);
@@ -135,8 +183,9 @@ export function EscrowContractsView({
 
       await contractsApi.signAgreement(agreement.id, {
         role: 'STUDENT',
-        walletAddress: agreement.studentWallet,
+        walletAddress: signingWallet,
         signature: studentSignature,
+        userEmail: userEmail,
       });
       await fetchAgreements();
     } catch (err: any) {
@@ -270,6 +319,7 @@ export function EscrowContractsView({
                 const isStudentWalletMismatch =
                   !!address &&
                   !!item.studentWallet &&
+                  item.studentWallet !== "0x0000000000000000000000000000000000000000" &&
                   address.toLowerCase() !== item.studentWallet.toLowerCase();
 
                 return (
@@ -383,6 +433,16 @@ export function EscrowContractsView({
                           <span>Văn bản hợp đồng</span>
                         </button>
                       </div>
+
+                      {item.status === 'PENDING_TUTOR_ACCEPTANCE' && (activeRole === 'tutor' || activeRole === 'staff' || activeRole === 'admin') && (
+                        <button
+                          onClick={() => handleSignByTutor(item)}
+                          className="flex items-center gap-1.5 px-4 py-2 text-white text-xs font-display font-black rounded-xl shadow-sm transition-all bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 hover:shadow"
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Ký hợp đồng (Gia sư)</span>
+                        </button>
+                      )}
 
                       {item.status === 'PENDING_STUDENT_ACCEPTANCE' && activeRole === 'student' && (
                         <button

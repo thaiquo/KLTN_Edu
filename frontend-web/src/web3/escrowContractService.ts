@@ -35,6 +35,24 @@ export interface DisputeOnchain {
   resolvedAtBlock: bigint;
 }
 
+function toBytes32(id: string | number | bigint): string {
+  if (typeof id === 'string') {
+    const cleaned = id.trim();
+    if (cleaned.startsWith('0x') && cleaned.length === 66) {
+      return cleaned;
+    }
+    const hexOnly = cleaned.replace(/^0x/, '').replace(/-/g, '');
+    if (hexOnly.length <= 64) {
+      return '0x' + hexOnly.padStart(64, '0');
+    }
+  }
+  try {
+    return ethers.zeroPadValue(ethers.toBeHex(BigInt(id)), 32);
+  } catch {
+    return ethers.id(String(id));
+  }
+}
+
 export class EscrowContractService {
   private chainId: number;
 
@@ -95,7 +113,8 @@ export class EscrowContractService {
     agreementId: bigint | number | string
   ): Promise<ethers.ContractTransactionResponse> {
     const escrowContract = this.getEscrowContract(signer);
-    const tx = await escrowContract.fundAgreement(BigInt(agreementId));
+    const formattedId = toBytes32(agreementId);
+    const tx = await escrowContract.fundAgreement(formattedId);
     return tx;
   }
 
@@ -107,19 +126,20 @@ export class EscrowContractService {
     agreementId: bigint | number | string
   ): Promise<EscrowAgreementOnchain> {
     const escrowContract = this.getEscrowContract(runner);
-    const res = await escrowContract.getAgreement(BigInt(agreementId));
+    const formattedId = toBytes32(agreementId);
+    const res = await escrowContract.getAgreement(formattedId);
     return {
-      status: Number(res[0]),
-      student: res[1],
-      tutor: res[2],
-      totalSessions: res[3],
-      settledSessions: res[4],
-      totalAmount: res[5],
-      remainingDeposit: res[6],
-      studentRefundedAmount: res[7],
-      platformFeeBasisPoints: res[8],
-      createdAtBlock: res[9],
-      fundedAtBlock: res[10],
+      status: Number(res.status ?? res[12] ?? 0),
+      student: res.student ?? res[0],
+      tutor: res.tutor ?? res[1],
+      totalSessions: BigInt(res.totalSessions ?? res[9] ?? 0),
+      settledSessions: BigInt(res.settledSessions ?? res[10] ?? 0),
+      totalAmount: BigInt(res.totalAmount ?? res[3] ?? 0),
+      remainingDeposit: BigInt(res.remainingAmount ?? res[5] ?? 0),
+      studentRefundedAmount: BigInt(res.refundedAmount ?? res[7] ?? 0),
+      platformFeeBasisPoints: 1500n,
+      createdAtBlock: 0n,
+      fundedAtBlock: 0n,
     };
   }
 
@@ -132,15 +152,15 @@ export class EscrowContractService {
     sessionId: bigint | number | string
   ): Promise<SessionSettlementOnchain> {
     const escrowContract = this.getEscrowContract(runner);
-    const res = await escrowContract.getSessionSettlement(BigInt(agreementId), BigInt(sessionId));
+    const res = await escrowContract.getSessionSettlement(toBytes32(agreementId), toBytes32(sessionId));
     return {
-      status: Number(res[0]),
-      attendanceType: Number(res[1]),
-      tutorPaidAmount: res[2],
-      studentRefundAmount: res[3],
-      platformFeeAmount: res[4],
-      disputeWindowDeadline: res[5],
-      createdAtBlock: res[6],
+      status: Number(res.status ?? res[6] ?? 0),
+      attendanceType: Number(res.outcome ?? res[0] ?? 0),
+      tutorPaidAmount: BigInt(res.tutorAmount ?? res[1] ?? 0),
+      studentRefundAmount: BigInt(res.studentRefund ?? res[2] ?? 0),
+      platformFeeAmount: BigInt(res.platformFee ?? res[3] ?? 0),
+      disputeWindowDeadline: BigInt(res.disputeDeadline ?? res[4] ?? 0),
+      createdAtBlock: 0n,
     };
   }
 
@@ -155,8 +175,8 @@ export class EscrowContractService {
   ): Promise<ethers.ContractTransactionResponse> {
     const escrowContract = this.getEscrowContract(signer);
     const tx = await escrowContract.openTutorFraudDispute(
-      BigInt(agreementId),
-      BigInt(sessionId),
+      toBytes32(agreementId),
+      toBytes32(sessionId),
       evidenceHash
     );
     return tx;
@@ -174,8 +194,8 @@ export class EscrowContractService {
   ): Promise<ethers.ContractTransactionResponse> {
     const escrowContract = this.getEscrowContract(signer);
     const tx = await escrowContract.resolveTutorFraudDispute(
-      BigInt(agreementId),
-      BigInt(sessionId),
+      toBytes32(agreementId),
+      toBytes32(sessionId),
       studentRefundApproved,
       auditProofHash
     );

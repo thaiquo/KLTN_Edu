@@ -398,6 +398,15 @@ export function ClassMarketplacePage() {
             <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
               {classList.map((cls) => {
                 const tutorName = getTutorDisplayName(cls);
+                const VND_PER_USDC = 25000;
+                const pricePerSession = Number(cls.pricePerSession) || 0;
+                const totalSessionsFromChapters = Array.isArray(cls.chapters)
+                  ? cls.chapters.reduce((sum, ch) => sum + (Number(ch.sessionCount) || 0), 0)
+                  : 0;
+                const totalSessions = cls.totalSessions || totalSessionsFromChapters || 0;
+                const totalCoursePriceVnd = pricePerSession * totalSessions;
+                const totalCoursePriceUsdc = (totalCoursePriceVnd / VND_PER_USDC).toFixed(2);
+
                 return (
                   <article 
                     key={cls.id} 
@@ -479,10 +488,17 @@ export function ClassMarketplacePage() {
 
                     <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
                       <div>
-                        <span className="text-[10px] font-bold uppercase text-slate-400 block">Học phí</span>
-                        <strong className="font-display text-lg font-black text-brand-primary">
-                          {cls.pricePerSession?.toLocaleString('vi-VN')} đ <span className="text-[11px] text-slate-500 font-semibold">/ buổi</span>
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                          Học phí {totalSessions > 0 ? `(${totalSessions} buổi)` : '/ buổi'}
+                        </span>
+                        <strong className="font-display text-base font-black text-brand-primary">
+                          {pricePerSession.toLocaleString('vi-VN')} đ <span className="text-[10px] text-slate-500 font-semibold">/ buổi</span>
                         </strong>
+                        {totalCoursePriceVnd > 0 && (
+                          <span className="block text-[10px] font-bold text-emerald-600">
+                            Khóa: {totalCoursePriceVnd.toLocaleString('vi-VN')} đ (~{totalCoursePriceUsdc} USDC)
+                          </span>
+                        )}
                       </div>
 
                       <button

@@ -8,9 +8,10 @@ export const homeNavLinks = [
 export const studentNavLinks = [
   { label: 'Tìm gia sư', href: '/tutors', icon: 'search' },
   { label: 'Tìm lớp', href: '/classes', icon: 'book' },
-  { label: 'Lớp học của tôi', href: '#my-learning', icon: 'book' },
-  { label: 'Tin nhắn', href: '#student-inbox', icon: 'message' },
-  { label: 'Gợi ý cho bạn', href: '#matching', icon: 'sparkles' },
+  { label: 'Hợp đồng của tôi', href: '/dashboard?tab=contracts', icon: 'shield' },
+  { label: 'Ví của tôi', href: '/dashboard?tab=wallet', icon: 'wallet' },
+  { label: 'Lớp học của tôi', href: '/dashboard?tab=courses', icon: 'dashboard' },
+  { label: 'Tin nhắn', href: '/dashboard?tab=messages', icon: 'message' },
 ];
 
 export const pathways = [

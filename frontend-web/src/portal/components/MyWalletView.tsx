@@ -25,6 +25,7 @@ import { useWeb3Wallet } from "../../web3/useWeb3Wallet";
 import { DEFAULT_CHAIN_ID, SUPPORTED_CHAINS, getContractAddresses } from "../../web3/web3Config";
 import { apiRequest } from "../../api/client";
 import { userApi } from "../../api/user";
+import { useAuth } from "../../hooks/useAuth";
 
 interface MyWalletViewProps {
   activeRole?: "student" | "tutor" | string;
@@ -63,6 +64,8 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
   const activeChain = chainId ? SUPPORTED_CHAINS[chainId] : SUPPORTED_CHAINS[DEFAULT_CHAIN_ID];
   const contracts = getContractAddresses(chainId || DEFAULT_CHAIN_ID);
 
+  const { refreshUser } = useAuth();
+
   // Fetch Profile to read linked wallet_address
   useEffect(() => {
     async function fetchUserProfile() {
@@ -70,13 +73,37 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
         const profile: any = await userApi.getMe();
         if (profile?.walletAddress) {
           setProfileWallet(profile.walletAddress);
+        } else {
+          setProfileWallet("");
         }
       } catch (err) {
         console.warn("Could not load user profile wallet:", err);
+        setProfileWallet("");
       }
     }
     fetchUserProfile();
   }, []);
+
+  // Auto-sync connected Web3 wallet address to Database if DB profile wallet is empty
+  useEffect(() => {
+    async function autoSyncWallet() {
+      if (isConnected && address && profileWallet === "" && !savingProfileWallet) {
+        try {
+          setSavingProfileWallet(true);
+          const res: any = await userApi.updateWallet(address);
+          setProfileWallet(res?.walletAddress || address);
+          await refreshUser();
+          setWalletSaveSuccess("Đã tự động lưu địa chỉ ví Web3 này vào hồ sơ tài khoản thành công!");
+          setTimeout(() => setWalletSaveSuccess(null), 4000);
+        } catch (err: any) {
+          console.warn("Auto sync wallet error:", err);
+        } finally {
+          setSavingProfileWallet(false);
+        }
+      }
+    }
+    autoSyncWallet();
+  }, [isConnected, address, profileWallet, savingProfileWallet, refreshUser]);
 
   // Fetch Escrow Contracts for User to build Financial Overview
   useEffect(() => {
@@ -103,6 +130,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
     try {
       const res: any = await userApi.updateWallet(address);
       setProfileWallet(res?.walletAddress || address);
+      await refreshUser();
       setWalletSaveSuccess("Đã lưu địa chỉ ví này làm ví mặc định cho hồ sơ thành công!");
       setTimeout(() => setWalletSaveSuccess(null), 4000);
     } catch (err: any) {
@@ -119,6 +147,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
     try {
       await userApi.updateWallet(null);
       setProfileWallet(null);
+      await refreshUser();
       setWalletSaveSuccess("Đã gỡ liên kết ví mặc định khỏi hồ sơ.");
       setTimeout(() => setWalletSaveSuccess(null), 4000);
     } catch (err: any) {
@@ -146,16 +175,16 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
 
   // Calculate statistics from agreements
   const totalEscrowDeposited = agreements
-    .filter((a) => a.onchainFunded)
-    .reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+    .filter((a) => a.onchainFunded || a.status === "ACTIVE" || a.status === "COMPLETED")
+    .reduce((acc, curr) => acc + (Number(curr.totalAmountUsdc ?? curr.totalAmount) || 0), 0);
 
   const escrowHoldingAmount = agreements
-    .filter((a) => a.onchainFunded && a.status !== "COMPLETED" && a.status !== "REFUNDED")
-    .reduce((acc, curr) => acc + (Number(curr.remainingDeposit || curr.totalAmount) || 0), 0);
+    .filter((a) => (a.onchainFunded || a.status === "ACTIVE") && a.status !== "COMPLETED" && a.status !== "REFUNDED")
+    .reduce((acc, curr) => acc + (Number(curr.remainingDeposit ?? curr.totalAmountUsdc ?? curr.totalAmount) || 0), 0);
 
   const totalDisbursedAmount = agreements
     .filter((a) => a.status === "COMPLETED" || (a.settledSessions > 0))
-    .reduce((acc, curr) => acc + (Number(curr.totalAmount || 0) - Number(curr.remainingDeposit || 0)), 0);
+    .reduce((acc, curr) => acc + ((Number(curr.totalAmountUsdc ?? curr.totalAmount) || 0) - (Number(curr.remainingDeposit) || 0)), 0);
 
   return (
     <section className="mx-auto max-w-6xl pb-16 font-sans text-slate-800 space-y-8 select-none">
@@ -398,12 +427,12 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
               Dùng thanh toán Gas giao dịch
             </span>
             <a
-              href="https://faucet.quicknode.com/drip"
+              href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia"
               target="_blank"
               rel="noreferrer"
               className="inline-flex items-center gap-1 text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline"
             >
-              <span>Nhận Faucet ETH</span>
+              <span>Google Cloud Web3 Faucet ETH</span>
               <ExternalLink className="h-3 w-3" />
             </a>
           </div>
@@ -609,7 +638,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                       <p className="text-[11px] text-slate-400">Lớp: {item.className || `Lớp học ID #${item.classroomId}`}</p>
                     </td>
                     <td className="py-3.5 pr-3">
-                      {item.onchainFunded ? (
+                      {item.onchainFunded || item.status === 'ACTIVE' || item.status === 'COMPLETED' ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-emerald-700 border border-emerald-200">
                           <CheckCircle2 className="h-3 w-3" /> Đã nạp cọc Smart Contract
                         </span>
@@ -620,7 +649,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                       )}
                     </td>
                     <td className="py-3.5 pr-3 font-mono font-bold text-emerald-700 text-sm">
-                      {Number(item.totalAmount).toLocaleString("vi-VN")} USDC
+                      {(Number(item.totalAmountUsdc ?? item.totalAmount) || 0).toLocaleString("vi-VN")} USDC
                     </td>
                     <td className="py-3.5 pr-3 text-slate-500 font-mono text-[11px]">
                       {item.createdAt ? new Date(item.createdAt).toLocaleString("vi-VN") : "N/A"}

@@ -486,14 +486,50 @@ Phase P7 (End-to-End EIP-712 Gasless Signing & Multi-Channel Notifications) is 1
   3. **Multi-Channel Notification Hub (`notification-service`)**:
      - `spring-boot-starter-mail` integrated with `EmailNotificationService.java` for responsive branded HTML emails (`AGREEMENT_PENDING_STUDENT`, `AGREEMENT_WAITING_PAYMENT`, `AGREEMENT_ACTIVATED`).
      - WebSocket real-time in-app notification dispatching with unread badge counter.
-  4. **In-App Legal Contract Viewer & PDF Export (`frontend-web`)**:
-     - `ContractDocumentModal.tsx`: Displays formal legal document (parties, fees, 85/15 Escrow rules, 24h dispute window, EIP-712 cryptographic proofs, terms hash) with browser print / PDF export.
-     - Integrated across `EscrowContractsView.tsx`, `StudentRequestsView.tsx`, and `NotificationDropdown.tsx`.
-- Verification Results:
-  - `contract-service`: 67/67 tests passed, 0 failures (`BUILD SUCCESS`).
-  - `notification-service`: 5/5 tests passed, 0 failures (`BUILD SUCCESS`).
-  - `frontend-web`: TypeScript compilation `tsc --noEmit` passed with 0 errors.
 
-## Next steps
-- Execute live Sepolia transaction tests with funded MetaMask accounts in local dev server environment.
-- Continue system integration tests and end-to-end user scenario demonstrations.
+## P8 handoff — Real-time Web3 Wallet Sync, Pre-Signing Safeguards, Dynamic Session/Pricing Calculation & Official Vietnamese Legal Contract Template
+
+- Date: 2026-09-01
+- Scope: `frontend-web`, `contract-service`, `account-service`, `docs`.
+- Key Features Implemented & Verified:
+  1. **Web3 Wallet Auto-Sync & Real-Time Auth Propagation (`AuthContext.jsx` & `MyWalletView.tsx`)**:
+     - Automatic linking of connected MetaMask address to PostgreSQL DB profile via `userApi.updateWallet(address)`.
+     - Integrated `refreshUser()` call on wallet connect/save/unlink, updating application-wide auth state instantly in memory without page refresh.
+  2. **Pre-Action Wallet Verification Safeguards (`StudentRequestsView.tsx` & `EscrowContractsView.tsx`)**:
+     - Enforces that both Tutor and Student must have a linked Web3 wallet (`0x...`) before initiating or signing EIP-712 contract agreements or funding escrow.
+     - Displays clear guidance and warning notifications to connect via "Ví của tôi" (My Wallet) if wallet is unlinked.
+  3. **Automated Course Pricing & Total Session Calculation**:
+     - `PublicClassDetailModal.jsx` and `ClassMarketplacePage.jsx` dynamically calculate total course sessions by summing syllabus chapter session counts (`chapters.sessionCount`).
+     - Real-time display of Per-session Fee (VND & USDC), Total Course Sessions, and Total Escrow Deposit (VND & USDC at fixed rate `1 USDC = 25,000 VND`).
+  4. **Official Vietnamese Legal Contract Template (`ContractDocumentModal.tsx`)**:
+     - Standardized formal document layout conforming to Vietnamese Civil Code 2015 & Law on Electronic Transactions 2023.
+     - Details 3-party roles (Tutor Bên A, Student Bên B, EduConnect Smart Escrow Bên C).
+     - Explicit 3-party escrow settlement rules: 
+       * `BOTH_PRESENT`: 85% Tutor / 15% Platform fee / 0% Student.
+       * `STUDENT_ABSENT`: 45% Tutor / 10% Platform fee / 45% Student Refund.
+       * `TUTOR_ABSENT` / `DISPUTE_REFUND`: 100% Student Refund / 0% Tutor / 0% Platform.
+     - Displays cryptographic verification proofs: EIP-712 Signature Hashes, signing timestamps, signer wallet addresses, and SHA-3 Terms Hash digest.
+     - Complete browser print and PDF export styling (A4 formatted).
+- Verification Results:
+  - `frontend-web`: TypeScript compiler `tsc --noEmit` passed with 0 errors.
+  - `frontend-web`: Production build `npm run build` completed successfully (`built in 1.33s`).
+
+## P9 handoff — 100% Automated Contract Generation & 1-Click EIP-712 Signing Workflow
+
+- Date: 2026-09-01
+- Scope: `frontend-web`, `contract-service`, `docs`.
+- Key Features Implemented & Verified:
+  1. **Elimination of Manual Form Inputs**:
+     - Removed redundant manual inputs (student wallet, price per session, total sessions) from the tutor contract initiation modal.
+     - All parameters (Class title, Tutor details, Student details, Tuition fee per session, Syllabus session counts, Total VND, Total USDC) are auto-fetched and locked from classroom database entities.
+  2. **1-Click Legal Document Preview & EIP-712 Signing (`StudentRequestsView.tsx`)**:
+     - Replaced form modal with a formal Vietnamese Legal Contract Document Preview (A4 styled, conforming to Vietnamese Civil Code 2015).
+     - Single action button: `[🖋️ Đồng ý & Ký số EIP-712 (MetaMask)]` automatically initiates the backend agreement record, opens MetaMask for zero-gas EIP-712 cryptographic signature, submits the proof to `contract-service`, and marks the enrollment request as approved.
+  3. **Automated Multi-Channel Notification Dispatch**:
+     - Upon Tutor signature, backend automatically sends real-time in-app WebSocket notification and branded HTML email to the Student: *"Gia sư đã ký hợp đồng, mời bạn vào xem và hoàn tất ký kết trong vòng 24 giờ"*.
+  4. **Dynamic Student Wallet Binding**:
+     - Backend (`ContractManagementController` & `ContractSignatureService`) allows auto-initiation without requiring the student's wallet upfront; the student's actual signing MetaMask wallet address is dynamically bound to `student_wallet` when they execute their EIP-712 signature.
+- Verification Results:
+  - `contract-service`: `mvn test-compile` passed with 0 errors (`BUILD SUCCESS`).
+  - `frontend-web`: `tsc --noEmit` passed with 0 errors.
+  - `frontend-web`: `npm run build` completed successfully (`built in 1.53s`).

@@ -15,7 +15,11 @@ import {
   DollarSign,
   Sparkles,
   BookOpen,
-  MessageSquare
+  MessageSquare,
+  FileText,
+  Building,
+  ShieldCheck,
+  Printer
 } from "lucide-react";
 import { classApi } from "../../api/classes";
 import { contractsApi } from "../../api/contractsApi";
@@ -57,9 +61,9 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
 
   // Initiate Contract Modal state
   const [contractModalReq, setContractModalReq] = useState<EnrollmentRequestItem | null>(null);
-  const [studentWalletInput, setStudentWalletInput] = useState("");
   const [pricePerSession, setPricePerSession] = useState(250000);
   const [totalSessions, setTotalSessions] = useState(10);
+  const [isSigningContract, setIsSigningContract] = useState(false);
 
   const fetchRequests = async () => {
     setLoading(true);
@@ -124,19 +128,6 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
     };
   }, [requests]);
 
-  const handleAcceptOnly = async (req: EnrollmentRequestItem) => {
-    setActionLoadingId(req.id);
-    try {
-      await classApi.acceptEnrollmentRequest(req.id);
-      setActionMsg({ text: `Đã chấp nhận học viên ${req.studentName || req.studentEmail} vào lớp!`, tone: "success" });
-      await fetchRequests();
-    } catch (err: any) {
-      setActionMsg({ text: err?.message || "Không thể chấp nhận yêu cầu.", tone: "error" });
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
-
   const handleOpenReject = (req: EnrollmentRequestItem) => {
     setRejectModalReq(req);
     setRejectReason("");
@@ -157,41 +148,49 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
     }
   };
 
-  const handleOpenContractModal = (req: EnrollmentRequestItem) => {
+  const handleOpenContractModal = async (req: EnrollmentRequestItem) => {
     setContractModalReq(req);
-    setStudentWalletInput("");
-    setPricePerSession(250000);
-    setTotalSessions(10);
+    try {
+      const classDetail = await classApi.getClassById(req.classRoomId);
+      const price = Number(classDetail?.pricePerSession) || 250000;
+      const totalSessionsFromChapters = Array.isArray(classDetail?.chapters)
+        ? classDetail.chapters.reduce((sum: number, ch: any) => sum + (Number(ch.sessionCount) || 0), 0)
+        : 0;
+      const sessions = classDetail?.totalSessions || totalSessionsFromChapters || 10;
+      setPricePerSession(price);
+      setTotalSessions(sessions);
+    } catch {
+      setPricePerSession(250000);
+      setTotalSessions(10);
+    }
   };
 
   const handleConfirmInitiateContract = async () => {
     if (!contractModalReq) return;
     const tutorWallet = user?.walletAddress;
     if (!tutorWallet || !tutorWallet.startsWith("0x")) {
-      alert("Bạn chưa liên kết Ví MetaMask trên hồ sơ Gia sư. Vui lòng vào 'Ví của tôi' để liên kết ví trước khi khởi tạo hợp đồng!");
+      alert("Bạn chưa liên kết Ví MetaMask trên hồ sơ Gia sư. Vui lòng vào 'Ví của tôi' để liên kết ví trước khi ký hợp đồng!");
       return;
     }
 
-    const studentWallet = studentWalletInput.trim();
-    if (!studentWallet || !studentWallet.startsWith("0x") || studentWallet.length !== 42) {
-      alert("Vui lòng nhập địa chỉ ví Ethereum/USDC hợp lệ của học viên (0x... 42 ký tự)!");
-      return;
-    }
+    const defaultStudentWallet = "0x0000000000000000000000000000000000000000";
 
     setActionLoadingId(contractModalReq.id);
+    setIsSigningContract(true);
     try {
       // 1. Accept enrollment request in learning-service
       await classApi.acceptEnrollmentRequest(contractModalReq.id);
 
-      // 2. Initiate Contract Agreement in contract-service
+      // 2. Auto-Initiate Contract Agreement in contract-service with classroom data
       const agreementDetail = await contractsApi.initiateAgreement({
         classroomId: contractModalReq.classRoomId,
         studentEmail: contractModalReq.studentEmail,
         tutorEmail: user?.email,
-        studentWallet: studentWallet,
+        studentWallet: defaultStudentWallet,
         tutorWallet: tutorWallet,
         pricePerSessionVnd: pricePerSession,
         totalSessions: totalSessions,
+        classroomReviewerEmail: user?.email,
       });
 
       // 3. Prompt MetaMask for EIP-712 Gasless Signing
@@ -202,7 +201,7 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
             {
               id: agreementDetail.summary.id,
               tutorWallet: tutorWallet,
-              studentWallet: studentWallet,
+              studentWallet: defaultStudentWallet,
               totalAmountUsdc: agreementDetail.summary.totalAmountUsdc,
               termsHash: agreementDetail.termsHash,
               createdAt: agreementDetail.summary.createdAt,
@@ -220,20 +219,23 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
           role: "TUTOR",
           walletAddress: tutorWallet,
           signature: tutorSignature,
+          userEmail: user?.email,
+          studentEmail: contractModalReq.studentEmail,
         });
       }
 
       setActionMsg({
-        text: `Đã duyệt yêu cầu & Ký số EIP-712 hợp đồng Escrow thành công! Hợp đồng đã chuyển sang 'Chờ học viên ký xác nhận' và gửi thông báo tới ${contractModalReq.studentName || contractModalReq.studentEmail}.`,
+        text: `Đã duyệt yêu cầu & Ký số EIP-712 hợp đồng Escrow thành công! Đã gửi thông báo Realtime & Email mời học viên ${contractModalReq.studentName || contractModalReq.studentEmail} vào ký xác nhận trong 24 giờ.`,
         tone: "success",
       });
 
       setContractModalReq(null);
       await fetchRequests();
     } catch (err: any) {
-      setActionMsg({ text: err?.message || "Lỗi khi khởi tạo và ký hợp đồng Escrow.", tone: "error" });
+      setActionMsg({ text: err?.message || "Lỗi khi ký và phát hành hợp đồng Escrow.", tone: "error" });
     } finally {
       setActionLoadingId(null);
+      setIsSigningContract(false);
     }
   };
 
@@ -457,17 +459,9 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
                       <button
                         onClick={() => handleOpenReject(req)}
                         disabled={actionLoadingId === req.id}
-                        className="px-3.5 py-2 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold transition-all"
+                        className="px-4 py-2 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold transition-all"
                       >
                         Từ chối
-                      </button>
-
-                      <button
-                        onClick={() => handleAcceptOnly(req)}
-                        disabled={actionLoadingId === req.id}
-                        className="px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold transition-all shadow-xs"
-                      >
-                        Chấp nhận vào lớp
                       </button>
 
                       <button
@@ -475,7 +469,7 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
                         disabled={actionLoadingId === req.id}
                         className="px-4 py-2 rounded-xl bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-95 text-white text-xs font-black transition-all shadow-md flex items-center gap-1.5"
                       >
-                        <Sparkles className="w-3.5 h-3.5" /> Tạo & Ký Hợp đồng Escrow
+                        <FileText className="w-3.5 h-3.5" /> Xem & Ký Hợp đồng
                       </button>
                     </>
                   )}
@@ -540,90 +534,206 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
         </div>
       )}
 
-      {/* Initiate Contract Escrow Modal */}
+      {/* Official Vietnamese Legal Contract Preview Modal (No manual inputs, 100% auto-filled) */}
       {contractModalReq && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-          <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-indigo-600" /> Khởi tạo Hợp đồng Escrow Blockchain
-              </h3>
-              <button onClick={() => setContractModalReq(null)} className="text-slate-400 hover:text-slate-600 font-black text-lg">×</button>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <div className="p-3.5 bg-indigo-50/60 border border-indigo-100 rounded-2xl space-y-1">
-                <p className="font-bold text-indigo-900">Thông tin khóa học & Hợp đồng:</p>
-                <p className="text-slate-700 font-medium">Lớp học: <strong>{contractModalReq.className}</strong></p>
-                <p className="text-slate-700 font-medium">Học viên: <strong>{contractModalReq.studentName || contractModalReq.studentEmail}</strong> ({contractModalReq.studentEmail})</p>
-                <p className="text-slate-700 font-medium">Ví Gia sư (đã liên kết): <code className="bg-white px-1.5 py-0.5 rounded text-indigo-800">{user?.walletAddress || "Chưa có ví"}</code></p>
-              </div>
-
-              {/* Student Wallet Input */}
-              <div className="space-y-1">
-                <label className="font-bold text-slate-800 flex items-center gap-1.5">
-                  <Wallet className="w-3.5 h-3.5 text-indigo-600" /> Địa chỉ ví Blockchain của Học viên (0x...):
-                </label>
-                <input
-                  type="text"
-                  value={studentWalletInput}
-                  onChange={(e) => setStudentWalletInput(e.target.value)}
-                  placeholder="0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-xs text-slate-900 outline-none focus:bg-white focus:border-indigo-600"
-                />
-                <p className="text-[11px] text-slate-400 font-medium">
-                  Địa chỉ ví mà học viên sẽ dùng trên MetaMask để ký và nạp tiền cọc USDC vào Smart Contract.
-                </p>
-              </div>
-
-              {/* Financial Terms */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="font-bold text-slate-800">Học phí mỗi buổi (VND):</label>
-                  <input
-                    type="number"
-                    value={pricePerSession}
-                    onChange={(e) => setPricePerSession(Number(e.target.value))}
-                    step={10000}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs outline-none focus:bg-white focus:border-indigo-600"
-                  />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto">
+          <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl border border-slate-200 flex flex-col max-h-[92vh] animate-in fade-in">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 rounded-t-3xl">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 text-brand-primary flex items-center justify-center border border-indigo-100 font-bold">
+                  <FileText className="w-5 h-5" />
                 </div>
-
-                <div className="space-y-1">
-                  <label className="font-bold text-slate-800">Tổng số buổi học:</label>
-                  <input
-                    type="number"
-                    value={totalSessions}
-                    onChange={(e) => setTotalSessions(Number(e.target.value))}
-                    min={1}
-                    max={100}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-bold text-xs outline-none focus:bg-white focus:border-indigo-600"
-                  />
+                <div>
+                  <h3 className="font-black text-slate-900 text-sm sm:text-base tracking-tight font-display">
+                    Xem trước Hợp đồng Dịch vụ & Ký số EIP-712
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-semibold">
+                    Toàn bộ thông tin được tự động đồng bộ từ lớp học. Gia sư đọc điều khoản và ký xác thực bằng MetaMask.
+                  </p>
                 </div>
               </div>
-
-              {/* Total Calculation */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs font-bold text-slate-800">
-                <span>Tổng giá trị khóa học ký quỹ:</span>
-                <span className="text-brand-primary text-sm font-black">
-                  {(pricePerSession * totalSessions).toLocaleString("vi-VN")} VND (~{((pricePerSession * totalSessions) / 25000).toFixed(2)} USDC)
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
               <button
                 onClick={() => setContractModalReq(null)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+                className="w-8 h-8 rounded-full bg-slate-200/60 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors font-bold text-sm"
               >
-                Hủy
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Document Body (Scrollable A4 Legal Contract Layout) */}
+            <div className="p-5 sm:p-8 overflow-y-auto space-y-6 text-slate-800 text-xs sm:text-sm font-sans leading-relaxed bg-slate-50/40">
+              <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200/90 shadow-xs space-y-6">
+                {/* Formal Header: Quốc hiệu, Tiêu ngữ */}
+                <div className="text-center space-y-1 pb-4 border-b border-slate-200">
+                  <p className="font-black tracking-widest uppercase text-xs sm:text-sm text-slate-900">
+                    CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+                  </p>
+                  <p className="font-bold text-xs sm:text-sm text-slate-700 underline decoration-1 underline-offset-4">
+                    Độc lập – Tự do – Hạnh phúc
+                  </p>
+                  <div className="pt-3">
+                    <h2 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-tight font-display">
+                      HỢP ĐỒNG DỊCH VỤ KẾT NỐI GIA SƯ VÀ HỌC TẬP TRỰC TUYẾN
+                    </h2>
+                    <p className="text-[11px] text-indigo-700 font-bold">
+                      (Bảo chứng tự động qua Smart Contract Escrow Blockchain)
+                    </p>
+                  </div>
+                </div>
+
+                {/* Căn cứ pháp lý */}
+                <div className="text-[11px] sm:text-xs text-slate-500 italic space-y-1 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <p>• Căn cứ Bộ luật Dân sự số 91/2015/QH13 được Quốc hội nước CHXHCN Việt Nam thông qua ngày 24/11/2015;</p>
+                  <p>• Căn cứ Luật Giao dịch điện tử số 20/2023/QH15 về tính pháp lý của chữ ký điện tử EIP-712;</p>
+                  <p>• Căn cứ vào nhu cầu thỏa thuận tự nguyện giữa các bên tham gia trên nền tảng giáo dục thông minh EduConnect.</p>
+                </div>
+
+                {/* Các Bên Tham Gia */}
+                <div className="space-y-4 pt-2">
+                  <h4 className="font-black text-slate-900 text-xs uppercase tracking-wider text-brand-primary">
+                    1. CÁC BÊN THAM GIA HỢP ĐỒNG
+                  </h4>
+
+                  {/* Bên A: Gia Sư */}
+                  <div className="p-3.5 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-1.5">
+                    <p className="font-black text-indigo-950 flex items-center gap-1.5">
+                      <Building className="w-3.5 h-3.5 text-indigo-600" /> BÊN CUNG CẤP DỊCH VỤ GIA SƯ (BÊN A - GIA SƯ):
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-700 pt-1">
+                      <div>Họ và tên: <strong className="text-slate-900">{user?.fullName || "Gia sư EduConnect"}</strong></div>
+                      <div>Email: <strong className="text-slate-900">{user?.email}</strong></div>
+                      <div className="sm:col-span-2 flex items-center gap-1.5">
+                        <span>Địa chỉ ví Web3 (EVM):</span>
+                        <code className="font-mono text-[11px] bg-white px-2 py-0.5 rounded border border-indigo-200 text-indigo-900 font-bold">
+                          {user?.walletAddress || "Chưa liên kết ví"}
+                        </code>
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-black">
+                          ✓ ĐÃ XÁC THỰC
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bên B: Học Viên */}
+                  <div className="p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl space-y-1.5">
+                    <p className="font-black text-emerald-950 flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5 text-emerald-600" /> BÊN SỬ DỤNG DỊCH VỤ (BÊN B - HỌC VIÊN):
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-700 pt-1">
+                      <div>Họ và tên: <strong className="text-slate-900">{contractModalReq.studentName || contractModalReq.studentEmail}</strong></div>
+                      <div>Email: <strong className="text-slate-900">{contractModalReq.studentEmail}</strong></div>
+                      <div className="sm:col-span-2 text-[11px] text-slate-500 italic">
+                        * Địa chỉ ví Web3 của Học viên sẽ được tự động liên kết và bảo chứng mật mã khi Học viên ký số EIP-712 trên MetaMask.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bên C: Nền tảng */}
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1 text-xs text-slate-600">
+                    <p className="font-bold text-slate-900 flex items-center gap-1.5">
+                      <ShieldCheck className="w-3.5 h-3.5 text-slate-600" /> ĐƠN VỊ TRUNG GIAN BẢO CHỨNG (BÊN C - EDUCONNECT SMART ESCROW):
+                    </p>
+                    <p>Hợp đồng thông minh Smart Contract: <code className="font-mono text-[11px] text-slate-800">0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3</code> (Ethereum Sepolia Testnet).</p>
+                  </div>
+                </div>
+
+                {/* Điều khoản hợp đồng */}
+                <div className="space-y-4 pt-2">
+                  <h4 className="font-black text-slate-900 text-xs uppercase tracking-wider text-brand-primary">
+                    2. THÔNG SỐ KHÓA HỌC & ĐIỀU KHOẢN GIẢI NGÂN
+                  </h4>
+
+                  {/* Table summary */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden text-xs">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 bg-slate-100 font-bold text-slate-700 p-2.5 border-b border-slate-200">
+                      <div>Khóa học</div>
+                      <div>Đơn giá / buổi</div>
+                      <div>Tổng số buổi</div>
+                      <div>Tổng giá trị ký quỹ</div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 p-2.5 font-bold text-slate-900 items-center gap-1">
+                      <div className="text-indigo-800">{contractModalReq.className}</div>
+                      <div>{pricePerSession.toLocaleString("vi-VN")} VND</div>
+                      <div>{totalSessions} buổi</div>
+                      <div className="text-brand-primary font-black">
+                        {(pricePerSession * totalSessions).toLocaleString("vi-VN")} VND
+                        <div className="text-[11px] text-slate-500 font-medium">
+                          (~{((pricePerSession * totalSessions) / 25000).toFixed(2)} USDC)
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Escrow rules summary */}
+                  <div className="bg-amber-50/70 border border-amber-200/80 p-3.5 rounded-xl text-xs space-y-1.5 text-amber-950">
+                    <p className="font-bold flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600" /> Cơ chế Bảo chứng & Giải ngân 3 bên (Smart Contract Escrow):
+                    </p>
+                    <ul className="list-disc list-inside space-y-0.5 text-[11px] text-amber-900">
+                      <li><strong>100% học phí</strong> được nạp và khóa an toàn trong Smart Contract trước buổi học đầu tiên.</li>
+                      <li>Sau mỗi buổi học điểm danh thành công: Giải ngân tự động <strong>85% cho Gia sư</strong> và <strong>15% phí nền tảng</strong>.</li>
+                      <li>Học viên có <strong>24 giờ</strong> sau khi ký để nạp cọc giữ chỗ. Nếu quá hạn hợp đồng tự động giải phóng cho Waitlist.</li>
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Digital Signatures Box */}
+                <div className="pt-2 border-t border-slate-200 space-y-3">
+                  <h4 className="font-black text-slate-900 text-xs uppercase tracking-wider text-brand-primary">
+                    3. XÁC NHẬN CHỮ KÝ ĐIỆN TỬ (EIP-712 CRYPTOGRAPHIC SIGNATURE)
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="p-3 bg-indigo-50/60 border border-indigo-200 rounded-xl space-y-1">
+                      <p className="font-bold text-indigo-900 flex items-center gap-1">
+                        <FileSignature className="w-3.5 h-3.5 text-indigo-600" /> BÊN A (GIA SƯ)
+                      </p>
+                      <p className="text-slate-600">Ký số điện tử bằng ví MetaMask:</p>
+                      <code className="font-mono text-[10px] block truncate bg-white p-1 rounded border border-indigo-100 font-bold text-indigo-900">
+                        {user?.walletAddress || "0x..."}
+                      </code>
+                      <p className="text-[10px] text-indigo-700 font-bold pt-1">
+                        👉 Sẵn sàng ký số EIP-712 khi bạn bấm xác nhận bên dưới (0 Gas Fee).
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                      <p className="font-bold text-slate-800 flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5 text-slate-500" /> BÊN B (HỌC VIÊN)
+                      </p>
+                      <p className="text-slate-600">Trạng thái xác nhận:</p>
+                      <div className="text-[10px] bg-amber-100 text-amber-900 p-1.5 rounded font-bold">
+                        ⏳ Hệ thống sẽ gửi thông báo Realtime & Email để Học viên ký xác nhận ngay sau khi Gia sư ký.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="p-4 sm:p-5 border-t border-slate-100 flex items-center justify-end gap-3 bg-white rounded-b-3xl">
+              <button
+                onClick={() => setContractModalReq(null)}
+                disabled={isSigningContract}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                Hủy bỏ
               </button>
               <button
                 onClick={handleConfirmInitiateContract}
-                disabled={actionLoadingId === contractModalReq.id}
-                className="px-5 py-2.5 bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-95 text-white rounded-xl text-xs font-black transition-all shadow-md flex items-center gap-1.5"
+                disabled={isSigningContract || actionLoadingId === contractModalReq.id}
+                className="px-6 py-2.5 bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-95 text-white rounded-xl text-xs font-black transition-all shadow-md flex items-center gap-2 disabled:opacity-50"
               >
-                <FileSignature className="w-4 h-4" /> Ký & Phát hành Hợp đồng
+                {isSigningContract ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" /> Đang ký số qua MetaMask...
+                  </>
+                ) : (
+                  <>
+                    <FileSignature className="w-4 h-4" /> Đồng ý & Ký số EIP-712 (MetaMask)
+                  </>
+                )}
               </button>
             </div>
           </div>

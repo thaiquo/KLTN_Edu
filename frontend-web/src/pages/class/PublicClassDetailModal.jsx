@@ -127,6 +127,16 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const isFull = acceptedCount >= classRoom.maxStudents || classRoom.status === 'LOCKED' || classRoom.status === 'CLOSED';
   const isTemporarilyFull = !isFull && classRoom.isBufferPoolFull;
 
+  const VND_PER_USDC = 25000;
+  const pricePerSession = Number(classRoom.pricePerSession) || 0;
+  const totalSessionsFromChapters = Array.isArray(classRoom.chapters)
+    ? classRoom.chapters.reduce((sum, ch) => sum + (Number(ch.sessionCount) || 0), 0)
+    : 0;
+  const totalSessions = classRoom.totalSessions || totalSessionsFromChapters || 0;
+  const totalCoursePriceVnd = pricePerSession * totalSessions;
+  const pricePerSessionUsdc = (pricePerSession / VND_PER_USDC).toFixed(2);
+  const totalCoursePriceUsdc = (totalCoursePriceVnd / VND_PER_USDC).toFixed(2);
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl max-w-3xl w-full p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in duration-200">
@@ -294,14 +304,33 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
         )}
 
         {/* Specifications Grid */}
-        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
           <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-            <Info className="w-4 h-4 text-brand-primary" /> Thông số chi tiết & Tình trạng slot:
+            <Info className="w-4 h-4 text-brand-primary" /> Thông số cốt lõi đã qua kiểm duyệt:
           </span>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-slate-700">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5 text-slate-700">
             <div>
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Học phí / buổi</span>
-              <strong className="text-brand-primary text-base font-black">{classRoom.pricePerSession?.toLocaleString('vi-VN')} đ</strong>
+              <strong className="text-brand-primary text-base font-black">
+                {pricePerSession.toLocaleString('vi-VN')} đ
+                <span className="block text-[11px] text-slate-500 font-bold">~ {pricePerSessionUsdc} USDC</span>
+              </strong>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[10px] uppercase font-bold">Tổng số buổi / Khóa</span>
+              <strong className="text-indigo-900 text-base font-black">
+                {totalSessions} buổi
+                <span className="block text-[11px] text-slate-500 font-bold">
+                  {classRoom.chapters?.length ? `(${classRoom.chapters.length} chương lộ trình)` : 'Theo thỏa thuận'}
+                </span>
+              </strong>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[10px] uppercase font-bold">Tổng học phí trọn khóa</span>
+              <strong className="text-emerald-700 text-base font-black">
+                {totalCoursePriceVnd.toLocaleString('vi-VN')} đ
+                <span className="block text-[11px] text-emerald-600 font-bold">~ {totalCoursePriceUsdc} USDC</span>
+              </strong>
             </div>
             <div>
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Sĩ số & Chỗ trống</span>
@@ -311,15 +340,30 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
             </div>
             <div>
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Tần suất & Thời lượng</span>
-              <strong className="text-slate-900 font-bold text-xs">{classRoom.sessionsPerWeek} buổi/tuần ({classRoom.durationPerSessionMinutes} phút)</strong>
+              <strong className="text-slate-900 font-bold text-xs">
+                {classRoom.sessionsPerWeek} buổi/tuần ({classRoom.durationPerSessionMinutes} phút)
+              </strong>
             </div>
             <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-bold">Hình thức học</span>
-              <strong className="text-slate-900 font-bold text-xs">{classRoom.learningMode === 'ONLINE' ? 'Học Online' : 'Học Offline'}</strong>
+              <span className="text-slate-400 block text-[10px] uppercase font-bold">Hình thức & Thời gian</span>
+              <strong className="text-slate-900 font-bold text-xs">
+                {classRoom.learningMode === 'ONLINE' ? 'Học Online' : 'Học Offline'} &bull; {classRoom.startDate} ➔ {classRoom.endDate}
+              </strong>
             </div>
-            <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-bold">Thời gian học</span>
-              <strong className="text-slate-900 font-bold text-xs">{classRoom.startDate} ➔ {classRoom.endDate}</strong>
+          </div>
+
+          {/* Smart Contract Escrow Conversion Info Callout */}
+          <div className="p-3.5 bg-blue-50/80 border border-blue-200/90 rounded-2xl flex items-start gap-2.5 text-blue-900 text-xs">
+            <div className="p-1.5 rounded-xl bg-blue-100 text-blue-700 shrink-0 mt-0.5">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div className="space-y-1">
+              <p className="font-extrabold text-[12px] text-blue-950">
+                Bảo chứng Ký quỹ Hợp đồng Thông minh (Smart Contract Escrow):
+              </p>
+              <p className="text-[11px] text-blue-800 font-medium leading-relaxed">
+                Khóa học được bảo đảm tài chính qua Smart Contract bằng <strong>USDC Sepolia</strong> với tỷ giá chuẩn <strong>1 USDC ≈ 25.000 VNĐ</strong>. Khi Gia sư duyệt yêu cầu, bạn sẽ nạp cọc <strong>{totalCoursePriceUsdc} USDC</strong> ({totalCoursePriceVnd.toLocaleString('vi-VN')} đ) vào hợp đồng Escrow và tiền chỉ được giải ngân sau từng buổi học hoàn thành.
+              </p>
             </div>
           </div>
         </div>

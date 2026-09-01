@@ -1,24 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowUpRight,
-  Bell,
   BookOpen,
   ChevronDown,
   GraduationCap,
   KeyRound,
+  LayoutDashboard,
   LogOut,
   Menu,
   MessageCircle,
   RefreshCw,
   Search,
   Settings,
+  ShieldCheck,
   Sparkles,
   UserRound,
+  WalletCards,
   X
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { homeNavLinks, studentNavLinks } from './homeData';
+import { NotificationDropdown } from '../notification/NotificationDropdown';
 
 export function HomeHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -26,6 +29,7 @@ export function HomeHeader() {
   const accountRef = useRef(null);
   const { user, logout, switchRole, activateStudentProfile } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const isAuthenticated = Boolean(user);
   const navLinks = isAuthenticated ? navLinksFor(user) : homeNavLinks;
   const displayName = user?.fullName || user?.email || 'Tài khoản';
@@ -90,9 +94,27 @@ export function HomeHeader() {
     }
   }
 
+  const isLinkActive = (link) => {
+    const href = link.href;
+    const path = location.pathname;
+    const search = location.search;
+
+    if (href === '/tutors') return path === '/tutors';
+    if (href === '/classes') return path === '/classes';
+    if (href.includes('tab=')) {
+      const targetTab = new URLSearchParams(href.split('?')[1] || '').get('tab');
+      const currentTab = new URLSearchParams(search).get('tab') || 'dashboard';
+      if (path === '/dashboard') {
+        if (targetTab === 'courses' && (currentTab === 'dashboard' || currentTab === 'courses')) return true;
+        return currentTab === targetTab;
+      }
+    }
+    return path === href;
+  };
+
   return (
-    <header className="fixed inset-x-0 top-0 z-40 bg-white/80 border-b border-slate-200/80 backdrop-blur-lg">
-      <div className="container-app flex items-center justify-between gap-7 min-h-[80px]">
+    <header className="fixed inset-x-0 top-0 z-40 bg-white/95 border-b border-slate-200/80 backdrop-blur-lg">
+      <div className="container-app flex items-center justify-between gap-6 min-h-[76px]">
         <Link
           className="inline-flex items-center gap-2.5 font-display font-extrabold text-[20px] tracking-tight text-slate-900 whitespace-nowrap"
           to="/"
@@ -108,53 +130,59 @@ export function HomeHeader() {
           <span>Kết Nối Học</span>
         </Link>
 
-        <nav className="hidden lg:flex items-center gap-7 ml-auto" aria-label="Điều hướng chính">
-          {navLinks.map((link) => (
-            <NavItem
-              key={link.href + link.label}
-              link={link}
-              className="inline-flex items-center gap-1.5 text-slate-500 text-[11px] font-bold tracking-[0.1em] uppercase hover:text-primary transition-colors"
-            >
-              {link.icon === 'search' && <Search size={14} />}
-              {link.icon === 'book' && <BookOpen size={14} />}
-              {link.icon === 'message' && <MessageCircle size={14} />}
-              {link.icon === 'sparkles' && <Sparkles size={14} />}
-              {link.label}
-            </NavItem>
-          ))}
+        <nav className="hidden lg:flex items-center gap-2 ml-auto pr-2" aria-label="Điều hướng chính">
+          {navLinks.map((link) => {
+            const active = isLinkActive(link);
+            return (
+              <NavItem
+                key={link.href + link.label}
+                link={link}
+                active={active}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-extrabold tracking-wide transition-all ${
+                  active
+                    ? 'bg-primary text-white shadow-sm shadow-primary/25'
+                    : 'text-slate-600 hover:text-primary hover:bg-slate-100/80'
+                }`}
+              >
+                {link.icon === 'search' && <Search size={14} className={active ? 'text-white' : 'text-slate-400'} />}
+                {link.icon === 'book' && <BookOpen size={14} className={active ? 'text-white' : 'text-slate-400'} />}
+                {link.icon === 'message' && <MessageCircle size={14} className={active ? 'text-white' : 'text-slate-400'} />}
+                {link.icon === 'sparkles' && <Sparkles size={14} className={active ? 'text-white' : 'text-slate-400'} />}
+                {link.icon === 'shield' && <ShieldCheck size={14} className={active ? 'text-white' : 'text-emerald-600'} />}
+                {link.icon === 'wallet' && <WalletCards size={14} className={active ? 'text-white' : 'text-indigo-600'} />}
+                {link.icon === 'dashboard' && <LayoutDashboard size={14} className={active ? 'text-white' : 'text-slate-400'} />}
+                {link.label}
+              </NavItem>
+            );
+          })}
         </nav>
 
-        <div className="hidden md:flex items-center gap-3">
+        <div className="hidden md:flex items-center gap-3 shrink-0">
           {isAuthenticated ? (
             <>
-              <button
-                type="button"
-                className="relative w-11 h-11 grid place-items-center rounded-[14px] border border-slate-200 bg-white text-slate-700 hover:border-primary/40 hover:text-primary transition-colors"
-                aria-label="Thông báo"
-              >
-                <Bell size={18} />
-              </button>
+              {/* Real-time Notification Hub Dropdown */}
+              <NotificationDropdown userEmail={user?.email} />
 
               <div className="relative" ref={accountRef}>
                 <button
                   type="button"
                   onClick={() => setAccountOpen((current) => !current)}
-                  className="inline-flex min-w-0 items-center gap-3 min-h-[46px] max-w-[250px] rounded-[14px] border border-slate-200 bg-white px-3.5 text-slate-900 hover:border-primary/40 hover:shadow-[0_12px_24px_rgba(15,23,42,.08)] transition-all"
+                  className="inline-flex min-w-0 items-center gap-2.5 min-h-[44px] rounded-2xl border border-slate-200 bg-white px-3 text-slate-900 hover:border-primary/40 hover:shadow-md transition-all"
                   aria-haspopup="menu"
                   aria-expanded={accountOpen}
                 >
-                  <span className="w-8 h-8 grid place-items-center overflow-hidden rounded-[11px] bg-slate-900 text-xs font-extrabold text-white">
+                  <span className="w-8 h-8 grid place-items-center overflow-hidden rounded-xl bg-slate-900 text-xs font-extrabold text-white">
                     {avatarUrl ? (
                       <img src={avatarUrl} alt={`Ảnh đại diện của ${displayName}`} className="h-full w-full object-cover" />
                     ) : initials}
                   </span>
                   <span className="min-w-0 text-left">
-                    <span className="block truncate text-sm font-extrabold">{displayName}</span>
-                    <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                    <span className="block truncate text-xs font-extrabold max-w-[120px] sm:max-w-[160px]">{displayName}</span>
+                    <span className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                       {roleText}
                     </span>
                   </span>
-                  <ChevronDown size={15} className="shrink-0 text-slate-400" />
+                  <ChevronDown size={14} className="shrink-0 text-slate-400" />
                 </button>
 
                 {accountOpen && (
@@ -207,14 +235,45 @@ export function HomeHeader() {
               key={link.href + link.label}
               link={link}
               onClick={closeMenu}
-              className="py-3 text-slate-500 text-sm font-bold hover:text-primary transition-colors"
+              className="py-3 text-slate-600 text-sm font-bold hover:text-primary transition-colors flex items-center gap-2"
             >
+              {link.icon === 'search' && <Search size={16} />}
+              {link.icon === 'book' && <BookOpen size={16} />}
+              {link.icon === 'message' && <MessageCircle size={16} />}
+              {link.icon === 'sparkles' && <Sparkles size={16} />}
+              {link.icon === 'shield' && <ShieldCheck size={16} className="text-emerald-600" />}
+              {link.icon === 'wallet' && <WalletCards size={16} className="text-indigo-600" />}
+              {link.icon === 'dashboard' && <LayoutDashboard size={16} />}
               {link.label}
             </NavItem>
           ))}
 
           {isAuthenticated ? (
             <div className="mt-2 grid gap-2">
+              <Link
+                to="/dashboard"
+                onClick={closeMenu}
+                className="flex items-center gap-3 rounded-[14px] border border-slate-200 bg-indigo-50/50 px-3 py-3 text-indigo-900 font-extrabold text-sm"
+              >
+                <LayoutDashboard size={17} className="text-indigo-600" />
+                Dashboard Học viên
+              </Link>
+              <Link
+                to="/dashboard?tab=contracts"
+                onClick={closeMenu}
+                className="flex items-center gap-3 rounded-[14px] border border-slate-200 bg-emerald-50/50 px-3 py-3 text-emerald-900 font-extrabold text-sm"
+              >
+                <ShieldCheck size={17} className="text-emerald-600" />
+                Hợp đồng Escrow & Ký quỹ
+              </Link>
+              <Link
+                to="/dashboard?tab=wallet"
+                onClick={closeMenu}
+                className="flex items-center gap-3 rounded-[14px] border border-slate-200 bg-sky-50/50 px-3 py-3 text-sky-900 font-extrabold text-sm"
+              >
+                <WalletCards size={17} className="text-sky-600" />
+                Ví Web3 của tôi
+              </Link>
               <Link
                 to="/profile"
                 onClick={closeMenu}
@@ -229,7 +288,6 @@ export function HomeHeader() {
                   <span className="block truncate text-sm font-extrabold">{displayName}</span>
                   <span className="block text-[11px] font-bold text-slate-400">Hồ sơ cá nhân ({roleText})</span>
                 </span>
-                <Bell size={17} className="ml-auto text-slate-500" />
               </Link>
 
               <Link
@@ -292,9 +350,21 @@ function AccountMenu({ user, onSwitchRole, onActivateStudent, onLogout, onClose 
 
   return (
     <div
-      className="absolute right-0 top-[calc(100%+12px)] z-50 w-72 overflow-hidden rounded-[14px] border border-slate-200 bg-white p-2 shadow-[0_24px_64px_rgba(15,23,42,.16)]"
+      className="absolute right-0 top-[calc(100%+12px)] z-50 w-72 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"
       role="menu"
     >
+      <MenuLink to="/dashboard" icon={<LayoutDashboard size={16} />} onClick={onClose}>
+        Dashboard Học viên
+      </MenuLink>
+
+      <MenuLink to="/dashboard?tab=contracts" icon={<ShieldCheck size={16} />} onClick={onClose}>
+        Hợp đồng Escrow & Ký quỹ
+      </MenuLink>
+
+      <MenuLink to="/dashboard?tab=wallet" icon={<WalletCards size={16} />} onClick={onClose}>
+        Ví Web3 của tôi
+      </MenuLink>
+
       <MenuLink to="/profile" icon={<UserRound size={16} />} onClick={onClose}>
         Hồ sơ cá nhân
       </MenuLink>
@@ -320,7 +390,7 @@ function AccountMenu({ user, onSwitchRole, onActivateStudent, onLogout, onClose 
             onClose();
             onSwitchRole('TUTOR');
           }}
-          className="flex w-full items-center gap-3 rounded-[10px] px-3 py-3 text-left text-sm font-extrabold text-indigo-600 hover:bg-indigo-50"
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-xs font-extrabold text-indigo-600 hover:bg-indigo-50"
           role="menuitem"
         >
           <RefreshCw size={16} />
@@ -331,7 +401,7 @@ function AccountMenu({ user, onSwitchRole, onActivateStudent, onLogout, onClose 
       <button
         type="button"
         onClick={onLogout}
-        className="mt-1 flex w-full items-center gap-3 rounded-[10px] px-3 py-3 text-left text-sm font-extrabold text-[#b83333] hover:bg-red-50"
+        className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-xs font-extrabold text-rose-600 hover:bg-rose-50"
         role="menuitem"
       >
         <LogOut size={16} />
@@ -346,7 +416,7 @@ function MenuLink({ to, icon, children, onClick }) {
     <Link
       to={to}
       onClick={onClick}
-      className="flex items-center gap-3 rounded-[10px] px-3 py-3 text-sm font-extrabold text-slate-800 hover:bg-slate-50 hover:text-primary"
+      className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-extrabold text-slate-800 hover:bg-slate-50 hover:text-primary transition-colors"
       role="menuitem"
     >
       {icon}

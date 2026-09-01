@@ -2,6 +2,7 @@ package iuh.fit.contract_service.api;
 
 import iuh.fit.contract_service.command.BlockchainTransactionIntentResult;
 import iuh.fit.contract_service.entity.ContractAgreement;
+import iuh.fit.contract_service.entity.EscrowPayment;
 import iuh.fit.contract_service.entity.SessionSettlement;
 import iuh.fit.contract_service.entity.BlockchainTransaction;
 import iuh.fit.contract_service.entity.Dispute;
@@ -19,6 +20,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -43,6 +45,7 @@ public class ContractManagementController {
     private final DisputeWorkflowService disputeWorkflowService;
     private final iuh.fit.contract_service.service.NotificationDispatcher notificationDispatcher;
     private final iuh.fit.contract_service.service.ContractSignatureService signatureService;
+    private final iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository;
 
     public ContractManagementController(
             ContractAgreementRepository agreementRepository,
@@ -51,7 +54,8 @@ public class ContractManagementController {
             DisputeRepository disputeRepository,
             DisputeWorkflowService disputeWorkflowService,
             iuh.fit.contract_service.service.NotificationDispatcher notificationDispatcher,
-            iuh.fit.contract_service.service.ContractSignatureService signatureService) {
+            iuh.fit.contract_service.service.ContractSignatureService signatureService,
+            iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository) {
         this.agreementRepository = agreementRepository;
         this.settlementRepository = settlementRepository;
         this.transactionRepository = transactionRepository;
@@ -59,6 +63,7 @@ public class ContractManagementController {
         this.disputeWorkflowService = disputeWorkflowService;
         this.notificationDispatcher = notificationDispatcher;
         this.signatureService = signatureService;
+        this.escrowPaymentRepository = escrowPaymentRepository;
     }
 
     public record InitiateAgreementRequest(
@@ -77,7 +82,9 @@ public class ContractManagementController {
     public record SignAgreementRequest(
             String role,
             String walletAddress,
-            String signature
+            String signature,
+            String userEmail,
+            String studentEmail
     ) {}
 
     public record AcceptanceDto(
@@ -96,9 +103,10 @@ public class ContractManagementController {
     public ResponseEntity<AgreementDetailDto> initiateAgreement(
             @RequestBody InitiateAgreementRequest request) {
 
-        if (request.studentWallet() == null || !request.studentWallet().startsWith("0x") || request.studentWallet().length() != 42) {
-            return ResponseEntity.badRequest().build();
-        }
+        String studentWallet = (request.studentWallet() != null && request.studentWallet().startsWith("0x") && request.studentWallet().length() == 42)
+                ? request.studentWallet()
+                : "0x0000000000000000000000000000000000000000";
+
         if (request.tutorWallet() == null || !request.tutorWallet().startsWith("0x") || request.tutorWallet().length() != 42) {
             return ResponseEntity.badRequest().build();
         }
@@ -124,8 +132,8 @@ public class ContractManagementController {
                 .classroomId(request.classroomId() != null ? request.classroomId() : 1L)
                 .studentId(request.studentId() != null ? request.studentId() : 1L)
                 .tutorId(request.tutorId() != null ? request.tutorId() : 1L)
-                .classroomReviewerEmail(request.classroomReviewerEmail())
-                .studentWallet(request.studentWallet().toLowerCase(Locale.ROOT))
+                .classroomReviewerEmail(request.classroomReviewerEmail() != null ? request.classroomReviewerEmail() : request.tutorEmail())
+                .studentWallet(studentWallet.toLowerCase(Locale.ROOT))
                 .tutorWallet(request.tutorWallet().toLowerCase(Locale.ROOT))
                 .platformWallet("0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266")
                 .chainId(11155111L)
@@ -133,7 +141,7 @@ public class ContractManagementController {
                 .tokenAddress("0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238")
                 .tokenSymbol("USDC")
                 .tokenDecimals((short) 6)
-                .termsJson("{\"classroomId\":" + request.classroomId() + ",\"sessions\":" + totalSessions + "}")
+                .termsJson("{\"classroomId\":" + request.classroomId() + ",\"studentEmail\":\"" + (request.studentEmail() != null ? request.studentEmail() : "") + "\",\"sessions\":" + totalSessions + "}")
                 .termsHash(termsHash)
                 .contractVersion(1)
                 .totalPriceVnd(totalPriceVnd)
@@ -180,23 +188,32 @@ public class ContractManagementController {
     @PostMapping("/agreements/{id}/sign")
     public ResponseEntity<?> signAgreement(
             @PathVariable UUID id,
-            @RequestHeader(value = "X-User-Role", defaultValue = "TUTOR") String headerRole,
+            @RequestBody SignAgreementRequest request,
             @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
             @RequestHeader(value = "X-User-Email", defaultValue = "") String userEmail,
-            @RequestHeader(value = "X-Forwarded-For", defaultValue = "127.0.0.1") String ipAddress,
-            @RequestHeader(value = "User-Agent", defaultValue = "EduConnect-Web") String userAgent,
-            @RequestBody SignAgreementRequest request) {
+            @RequestHeader(value = "X-User-Role", defaultValue = "STUDENT") String role,
+            HttpServletRequest httpServletRequest) {
 
-        String role = (request.role() != null && !request.role().isBlank()) ? request.role() : headerRole;
+        String ipAddress = httpServletRequest.getRemoteAddr();
+        String userAgent = httpServletRequest.getHeader("User-Agent");
+
+        String effectiveRole = (request.role() != null && !request.role().isBlank())
+                ? request.role().toUpperCase(Locale.ROOT).trim()
+                : (role != null && !role.isBlank() ? role.toUpperCase(Locale.ROOT).trim() : "TUTOR");
+
+        String effectiveUserEmail = (request.userEmail() != null && !request.userEmail().isBlank())
+                ? request.userEmail()
+                : userEmail;
 
         try {
             ContractAgreement updated = signatureService.signAgreement(
                     id,
                     userId,
-                    userEmail,
-                    role,
+                    effectiveUserEmail,
+                    effectiveRole,
                     request.walletAddress(),
                     request.signature(),
+                    request.studentEmail(),
                     ipAddress,
                     userAgent
             );
@@ -206,6 +223,76 @@ public class ContractManagementController {
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("error", "Lỗi xử lý ký hợp đồng: " + e.getMessage()));
         }
+    }
+
+    @PostMapping("/agreements/{id}/payment-submitted")
+    public ResponseEntity<?> submitPayment(
+            @PathVariable UUID id,
+            @RequestBody(required = false) Map<String, String> payload,
+            @RequestHeader(value = "X-User-Email", defaultValue = "") String userEmail) {
+        try {
+            String txHash = payload != null ? payload.get("txHash") : null;
+            ContractAgreement agreement = agreementRepository.findById(id)
+                    .orElseThrow(() -> new IllegalArgumentException("Hợp đồng không tồn tại: " + id));
+
+            agreement.markActive();
+            agreement.setUpdatedAt(OffsetDateTime.now());
+            ContractAgreement saved = agreementRepository.saveAndFlush(agreement);
+
+            EscrowPayment payment = escrowPaymentRepository.findByAgreementId(id)
+                    .orElseGet(() -> EscrowPayment.create(saved));
+            payment.markLocked(txHash != null ? txHash : "0x_escrow_deposit_tx", 0L, "0x_block_hash");
+            escrowPaymentRepository.saveAndFlush(payment);
+
+            String studentEmail = extractStudentEmail(saved);
+            if (studentEmail == null || studentEmail.isBlank()) {
+                studentEmail = userEmail;
+            }
+            String tutorEmail = saved.getClassroomReviewerEmail();
+
+            // 1. Multi-channel Notification to Student
+            if (studentEmail != null && !studentEmail.isBlank()) {
+                notificationDispatcher.sendAsync(
+                        studentEmail,
+                        saved.getStudentId(),
+                        "Nạp cọc Escrow thành công",
+                        "Bạn đã nạp cọc thành công vào Smart Contract Escrow. Hợp đồng chính thức kích hoạt và bạn đã được thêm vào lớp học!",
+                        "AGREEMENT_ACTIVATED",
+                        "AGREEMENT",
+                        saved.getId().toString()
+                );
+            }
+
+            // 2. Multi-channel Notification to Tutor
+            if (tutorEmail != null && !tutorEmail.isBlank()) {
+                notificationDispatcher.sendAsync(
+                        tutorEmail,
+                        saved.getTutorId(),
+                        "Học viên đã nạp cọc Escrow",
+                        "Học viên đã nạp cọc thành công vào Smart Contract Escrow. Hợp đồng lớp học đã chính thức HOẠT ĐỘNG (ACTIVE)!",
+                        "AGREEMENT_ACTIVATED",
+                        "AGREEMENT",
+                        saved.getId().toString()
+                );
+            }
+
+            return ResponseEntity.ok(toAgreementDetail(saved));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "Lỗi ghi nhận thanh toán: " + e.getMessage()));
+        }
+    }
+
+    private String extractStudentEmail(ContractAgreement agreement) {
+        if (agreement.getTermsJson() != null && agreement.getTermsJson().contains("\"studentEmail\":\"")) {
+            try {
+                int start = agreement.getTermsJson().indexOf("\"studentEmail\":\"") + 16;
+                int end = agreement.getTermsJson().indexOf("\"", start);
+                if (start > 15 && end > start) {
+                    return agreement.getTermsJson().substring(start, end);
+                }
+            } catch (Exception ignored) {}
+        }
+        return null;
     }
 
     @GetMapping("/agreements/{id}/acceptances")

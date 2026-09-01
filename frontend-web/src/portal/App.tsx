@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   GraduationCap,
@@ -51,6 +51,7 @@ import {
 } from "./types";
 
 import { Header } from "./components/Header";
+import { HomeHeader } from "../components/home/HomeHeader";
 import { Sidebar } from "./components/Sidebar";
 import { TutorDashboard } from "./components/TutorDashboard";
 import { Marketplace } from "./components/Marketplace";
@@ -199,28 +200,21 @@ const INITIAL_CONVERSATIONS: Conversation[] = [
       },
       {
         id: "m-2",
-        sender: "partner",
-        text: "I have some extra notes on how to apply the Chain Rule without making standard bracket typos. I am attaching a PDF practice sheet below.",
-        timestamp: "12:32 PM",
-        attachments: [
-          {
-            name: "Calculus_ChainRule_Adv.pdf",
-            size: "1.2 MB",
-            type: "pdf",
-          },
-        ],
+        sender: "user",
+        text: "Thank you Dr. Vance! I spent a good chunk of time on the chain rule applications.",
+        timestamp: "12:35 PM",
       },
       {
         id: "m-3",
-        sender: "user",
-        text: "That sounds perfect, Dr. Vance! I found those composite derivatives pretty tricky during the exam.",
-        timestamp: "12:42 PM",
+        sender: "partner",
+        text: "It clearly paid off. Are you ready for our interactive workshop tomorrow morning?",
+        timestamp: "12:40 PM",
       },
       {
         id: "m-4",
         sender: "user",
-        text: "Thanks, I will download the sheet now to practice.",
-        timestamp: "12:45 PM",
+        text: "Yes, I'll be in Virtual Consultation Room B at 09:00 AM.",
+        timestamp: "12:42 PM",
       },
     ],
   },
@@ -228,8 +222,8 @@ const INITIAL_CONVERSATIONS: Conversation[] = [
     id: "jenkins",
     partnerName: "Dr. Sarah Jenkins",
     partnerAvatar: tutorAvatar1,
-    partnerRole: "AI Lead Researcher",
-    lastMessage: "Let me check the prompt engineering curriculum.",
+    partnerRole: "AI Research Lead",
+    lastMessage: "Hello, have you had a chance to work with the NLP modules yet?",
     lastMessageTime: "Yesterday",
     unreadCount: 2,
     isOnline: false,
@@ -298,14 +292,14 @@ const INITIAL_PROFILE_SETTINGS: AppProfileSettings = {
   phoneNumber: "+1 (555) 000-1234",
   gender: "Male",
   educationLevel: "Undergraduate",
-  availableTime: "Afternoons (12PM - 5PM)",
-  physicalAddress: "123 Academic Drive, Knowledge Park, Boston, MA 02115",
+  availableTime: "15 Hours / Week",
+  physicalAddress: "Los Angeles, CA",
   profileStrength: 85,
   status: "none",
 };
 
-// Recharts Dummy Analytics Datasets for student / tutor / admin custom dashboards
-const WEEKLY_HOURS_DATA = [
+// Analytics Mock Datasets
+const PERFORMANCE_DATA = [
   { name: "Mon", hours: 4.5 },
   { name: "Tue", hours: 6.0 },
   { name: "Wed", hours: 3.5 },
@@ -337,10 +331,23 @@ interface AppProps {
 
 export default function App({ user, onLogout }: AppProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const tabParam = searchParams.get("tab");
+
   // Global States holding data consistently across tabs
   const [activeRole] = useState<UserRole>(user.currentRole || user.role || "student");
-  const [currentPage, setCurrentPage] = useState<string>(activeRole === "staff" ? "tutor-approval" : "dashboard");
+  const [currentPage, setCurrentPage] = useState<string>(() => {
+    if (tabParam) return tabParam;
+    return activeRole === "staff" ? "tutor-approval" : "dashboard";
+  });
   const [searchValue, setSearchValue] = useState("");
+
+  useEffect(() => {
+    if (tabParam) {
+      setCurrentPage(tabParam);
+    }
+  }, [tabParam]);
   
   // Custom mock database tables binded in React
   const [requests, setRequests] = useState<StudentRequest[]>(INITIAL_REQUESTS);
@@ -447,7 +454,7 @@ export default function App({ user, onLogout }: AppProps) {
     setUsers((prev) => prev.filter((u) => u.id !== id));
   };
 
-  // Main Page Router switch board
+  // Render view engine
   const renderMainContent = () => {
     switch (currentPage) {
       case "dashboard":
@@ -456,192 +463,193 @@ export default function App({ user, onLogout }: AppProps) {
             <TutorDashboard
               userName={user.fullName}
               requests={requests}
+              schedule={schedule}
               onAcceptRequest={handleAcceptRequest}
               onRejectRequest={handleRejectRequest}
-              schedule={schedule}
               onNavigate={setCurrentPage}
             />
           );
+        } else if (activeRole === "admin") {
+          return <AdminPortal />;
         } else if (activeRole === "staff") {
           return <TutorApprovalPanel />;
-        } else if (activeRole === "admin") {
-          // Comprehensive ADMIN DASHBOARD layout compiling active graphs!
-          const colors = ["#0058be", "#6b38d4", "#f43f5e", "#eab308"];
-          const userStatusSummary = [
-            { name: "Active", value: users.filter((u) => u.status === "Active").length },
-            { name: "Pending", value: users.filter((u) => u.status === "Pending").length },
-            { name: "Suspended", value: users.filter((u) => u.status === "Suspended").length },
-          ];
-
+        } else {
+          // Student Dashboard View
           return (
-            <div className="space-y-8 select-none font-sans max-w-7xl mx-auto">
-              <div>
-                <h2 className="font-display font-black text-2xl lg:text-3xl tracking-tight text-brand-text">
-                  Administrative Analytics Overview
-                </h2>
-                <p className="text-brand-text-variant/60 text-sm mt-1">
-                  Global data streams, license volumes and infrastructure safety parameters.
-                </p>
-              </div>
-
-              {/* Advanced Bento Cards & Charts layout */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                
-                {/* Chart 1: Enrollment stats */}
-                <div className="bg-white p-6 rounded-3xl border border-brand-border/30 shadow-sm flex flex-col md:col-span-2">
-                  <h3 className="font-display font-black text-xs uppercase text-brand-text-variant/50 tracking-wider mb-6">
-                    Dynamic Enrollment Distribution
-                  </h3>
-                  <div className="h-64 select-none w-full">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={100}>
-                      <BarChart data={ENROLLMENTS_DATA}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                        <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
-                        <Tooltip />
-                        <Bar dataKey="students" fill="#0058be" radius={[8, 8, 0, 0]} barSize={40} />
-                      </BarChart>
-                    </ResponsiveContainer>
+            <div className="space-y-8 animate-fade-in font-sans">
+              
+              {/* Dynamic Welcome Hero Panel */}
+              <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-brand-primary via-indigo-700 to-brand-secondary p-8 text-white shadow-xl shadow-brand-primary/10">
+                <div className="relative z-10 max-w-2xl">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md text-xs font-black uppercase tracking-widest text-brand-surface mb-4">
+                    <Sparkles className="w-3.5 h-3.5 text-brand-secondary" />
+                    EduConnect Fall Semester
+                  </div>
+                  <h2 className="font-display font-black text-2xl lg:text-3xl tracking-tight leading-tight">
+                    Welcome back, {user.fullName}! 
+                  </h2>
+                  <p className="mt-2 text-brand-surface/80 text-sm font-medium leading-relaxed">
+                    You have <span className="text-brand-secondary font-black underline decoration-2">2 live sessions</span> scheduled today. Your academic progress is trending up +14% compared to last week.
+                  </p>
+                  
+                  <div className="mt-6 flex flex-wrap gap-4">
+                    <button
+                      onClick={() => setCurrentPage("schedule")}
+                      className="px-5 py-2.5 bg-brand-surface text-brand-primary rounded-xl font-display font-black text-xs hover:bg-white transition-all shadow-md active:scale-95"
+                    >
+                      View Live Schedule
+                    </button>
+                    <button
+                      onClick={() => setCurrentPage("courses")}
+                      className="px-5 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-xl font-display font-black text-xs transition-all backdrop-blur-md"
+                    >
+                      Explore New Courses
+                    </button>
                   </div>
                 </div>
 
-                {/* Pie Chart Widget */}
-                <div className="bg-white p-6 rounded-3xl border border-brand-border/30 shadow-sm flex flex-col">
-                  <h3 className="font-display font-black text-xs uppercase text-brand-text-variant/50 tracking-wider mb-6">
-                    Account Breakdown Status
-                  </h3>
-                  <div className="h-48 w-full select-none justify-center flex relative">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={100}>
-                      <PieChart>
-                        <Pie
-                          data={userStatusSummary}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={80}
-                          paddingAngle={5}
-                          dataKey="value"
-                        >
-                          {userStatusSummary.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center select-none font-display">
-                      <p className="text-xl font-black text-brand-text leading-none">{users.length}</p>
-                      <p className="text-[9px] font-bold text-brand-text-variant/50 uppercase tracing-wider mt-1">Users</p>
+                {/* Ambient Decorative Accents */}
+                <div className="absolute right-0 top-0 bottom-0 w-96 bg-gradient-to-l from-white/10 to-transparent pointer-events-none" />
+                <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-brand-secondary/20 rounded-full blur-3xl pointer-events-none" />
+              </div>
+
+              {/* Quick KPIs Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="bg-white border border-brand-border/30 rounded-3xl p-6 shadow-sm hover:border-brand-primary/40 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black tracking-wider text-brand-text-variant/60 uppercase font-display">Enrolled Classes</span>
+                    <div className="w-9 h-9 rounded-xl bg-blue-50 text-brand-primary flex items-center justify-center">
+                      <BookOpen className="w-4 h-4" />
                     </div>
                   </div>
-                  <div className="flex justify-center gap-4 text-[10px] font-bold font-display select-none uppercase tracking-wide pt-4">
-                    <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-brand-primary"></span>Active</span>
-                    <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-brand-secondary"></span>Pending</span>
-                    <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>Suspended</span>
+                  <p className="font-display font-black text-2xl text-brand-text mt-3">4 Courses</p>
+                  <p className="text-[11px] text-emerald-600 font-bold mt-1 flex items-center gap-1">
+                    <TrendingUp className="w-3.5 h-3.5" /> 2 active this term
+                  </p>
+                </div>
+
+                <div className="bg-white border border-brand-border/30 rounded-3xl p-6 shadow-sm hover:border-brand-primary/40 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black tracking-wider text-brand-text-variant/60 uppercase font-display">Weekly Study Time</span>
+                    <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+                      <Clock className="w-4 h-4" />
+                    </div>
                   </div>
-                </div>
-
-              </div>
-
-              {/* Quick Actions Router cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div
-                  onClick={() => setCurrentPage("user-management")}
-                  className="bg-brand-low/50 hover:bg-brand-low border border-brand-border/30 p-6 rounded-3xl cursor-pointer transition-colors group"
-                >
-                  <Users className="w-8 h-8 text-brand-primary mb-3 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-display font-black text-sm text-brand-text mb-1">
-                    Manage Accounts
-                  </h4>
-                  <p className="text-xs text-brand-text-variant">
-                    Control permissions, search names, edit status profiles and remove accounts.
+                  <p className="font-display font-black text-2xl text-brand-text mt-3">18.5 Hours</p>
+                  <p className="text-[11px] text-emerald-600 font-bold mt-1 flex items-center gap-1">
+                    <TrendingUp className="w-3.5 h-3.5" /> +2.5h from goal
                   </p>
                 </div>
 
-                <div
-                  onClick={() => setCurrentPage("tutor-approval")}
-                  className="bg-brand-low/50 hover:bg-brand-low border border-brand-border/30 p-6 rounded-3xl cursor-pointer transition-colors group"
-                >
-                  <UserCheck className="w-8 h-8 text-brand-secondary mb-3 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-display font-black text-sm text-brand-text mb-1">
-                    Tutor Onboarding Approvals
-                  </h4>
-                  <p className="text-xs text-brand-text-variant">
-                    Review academic AWS/IELTS transcripts and pending applications.
-                  </p>
+                <div className="bg-white border border-brand-border/30 rounded-3xl p-6 shadow-sm hover:border-brand-primary/40 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black tracking-wider text-brand-text-variant/60 uppercase font-display">Completed Credits</span>
+                    <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                      <Award className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <p className="font-display font-black text-2xl text-brand-text mt-3">32 Credits</p>
+                  <p className="text-[11px] text-brand-text-variant/60 font-semibold mt-1">GPA: 3.84 / 4.0</p>
+                </div>
+
+                <div className="bg-white border border-brand-border/30 rounded-3xl p-6 shadow-sm hover:border-brand-primary/40 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black tracking-wider text-brand-text-variant/60 uppercase font-display">Next Session</span>
+                    <div className="w-9 h-9 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                      <Video className="w-4 h-4" />
+                    </div>
+                  </div>
+                  <p className="font-display font-black text-lg text-brand-text mt-3 truncate">Calculus II</p>
+                  <p className="text-[11px] text-rose-600 font-bold mt-1">Today, 01:30 PM</p>
                 </div>
               </div>
 
-            </div>
-          );
-        } else {
-          // Clean high-contrast Student Dashboard
-          return (
-            <div className="space-y-8 select-none font-sans max-w-7xl mx-auto">
-              <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                <div>
-                  <h2 className="font-display font-black text-2xl lg:text-3xl tracking-tight text-brand-text">
-                    Welcome back, {user.fullName}!
-                  </h2>
-                  <p className="text-brand-text-variant/60 text-sm mt-1">
-                    You have 3 active study classes and 1 consultation scheduled for today.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setCurrentPage("courses")}
-                  className="px-5 py-2.5 bg-brand-primary text-white rounded-xl text-xs font-display font-black tracking-widest hover:bg-brand-primary/95 transition-all shadow-md shrink-0"
-                >
-                  EXPLORE MARKETPLACE
-                </button>
-              </div>
-
-              {/* Bento Grid */}
+              {/* Study Performance Visualizer & Upcoming schedule */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 
-                {/* Recharts Analytics: Weekly Study Hours */}
-                <div className="bg-white p-6 rounded-3xl border border-brand-border/30 shadow-sm md:col-span-2">
-                  <h3 className="font-display font-black text-xs uppercase text-brand-text-variant/50 tracking-wider mb-6">
-                    Weekly Study Time Tracker
-                  </h3>
-                  <div className="h-64 select-none w-full">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={100}>
-                      <LineChart data={WEEKLY_HOURS_DATA}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                {/* Performance Chart Column */}
+                <div className="lg:col-span-2 bg-white border border-brand-border/30 rounded-3xl p-6 shadow-sm">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="font-display font-black text-base text-brand-text">
+                        Weekly Study Frequency
+                      </h3>
+                      <p className="text-xs text-brand-text-variant/60 font-medium mt-0.5">
+                        Hours spent in lectures & 1-on-1 tutor rooms
+                      </p>
+                    </div>
+                    <span className="px-3 py-1 bg-brand-low rounded-lg text-xs font-bold text-brand-primary">
+                      Oct 2023
+                    </span>
+                  </div>
+
+                  <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={PERFORMANCE_DATA}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
                         <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
                         <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
-                        <Tooltip />
+                        <Tooltip
+                          contentStyle={{
+                            backgroundColor: "#1e293b",
+                            borderColor: "#334155",
+                            borderRadius: "12px",
+                            color: "#fff",
+                            fontSize: "12px",
+                          }}
+                        />
                         <Line
                           type="monotone"
                           dataKey="hours"
-                          stroke="#0058be"
+                          stroke="#2563eb"
                           strokeWidth={3}
-                          dot={{ r: 4 }}
-                          activeDot={{ r: 6 }}
+                          dot={{ fill: "#2563eb", strokeWidth: 2, r: 4 }}
+                          activeDot={{ r: 6, fill: "#f59e0b" }}
                         />
                       </LineChart>
                     </ResponsiveContainer>
                   </div>
                 </div>
 
-                {/* Profile Strengths Indicator & launch cards */}
-                <div className="bg-brand-secondary text-white p-8 rounded-3xl shadow-sm flex flex-col justify-between relative overflow-hidden">
-                  <div className="relative z-10 space-y-4">
-                    <span className="bg-white/15 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider">
-                      Premium Pass Active
-                    </span>
-                    <h3 className="font-display font-black text-xl leading-snug">
-                      Schedule 1-on-1 calls with Ivy-League tutors
+                {/* Upcoming Live Sessions Column */}
+                <div className="bg-white border border-brand-border/30 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
+                  <div>
+                    <h3 className="font-display font-black text-base text-brand-text mb-1">
+                      Today's Live Sessions
                     </h3>
+                    <p className="text-xs text-brand-text-variant/60 font-medium mb-6">
+                      Click room button when session time arrives
+                    </p>
+
+                    <div className="space-y-4">
+                      {schedule.slice(0, 2).map((item) => (
+                        <div
+                          key={item.id}
+                          className="p-4 border border-brand-border/20 rounded-2xl bg-brand-low/30 hover:border-brand-primary/40 transition-colors"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-display font-black text-xs text-brand-primary">
+                              {item.time} {item.period}
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                              Confirmed
+                            </span>
+                          </div>
+                          <p className="font-bold text-sm text-brand-text leading-tight">{item.title}</p>
+                          <p className="text-xs text-brand-text-variant/60 font-medium mt-1">{item.detailValue}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="pt-8 relative z-10">
-                    <button
-                      onClick={handleStartSession}
-                      className="px-5 py-2.5 bg-white text-brand-secondary font-black text-xs font-display tracking-widest rounded-xl hover:-translate-y-0.5 active:translate-y-0 transition-transform shadow-md"
-                    >
-                      DIAL TUTOR ROOM
-                    </button>
-                  </div>
-                  <Award className="absolute -right-6 -bottom-6 w-32 h-32 opacity-10 rotate-12 shrink-0 pointer-events-none" />
+
+                  <button
+                    onClick={handleStartSession}
+                    className="w-full mt-6 py-3 bg-brand-primary text-white rounded-xl font-display font-black text-xs flex items-center justify-center gap-2 hover:bg-brand-primary/90 transition-all shadow-md shadow-brand-primary/20 active:scale-95"
+                  >
+                    <Video className="w-4 h-4" />
+                    Enter Scheduled Room (4B)
+                  </button>
                 </div>
 
               </div>
@@ -781,26 +789,36 @@ export default function App({ user, onLogout }: AppProps) {
     }
   };
 
+  const isStudent = activeRole === "student";
+
   return (
     <div className="min-h-screen bg-brand-surface text-brand-text selection:bg-brand-primary/10 select-none">
       
       {/* Dynamic Unified Header */}
-      <Header
-        activeRole={activeRole}
-        user={user}
-        searchValue={searchValue}
-        onSearchChange={setSearchValue}
-      />
-
-      {/* Main Structural Frame Component */}
-      <div className="pt-24 pl-80 pr-8 min-h-screen">
-        <Sidebar
+      {isStudent ? (
+        <HomeHeader />
+      ) : (
+        <Header
           activeRole={activeRole}
+          user={user}
+          searchValue={searchValue}
+          onSearchChange={setSearchValue}
           currentPage={currentPage}
           onNavigate={setCurrentPage}
-          onStartSession={handleStartSession}
-          onLogout={onLogout}
         />
+      )}
+
+      {/* Main Structural Frame Component */}
+      <div className={`pt-20 min-h-screen ${isStudent ? "px-6 max-w-7xl mx-auto" : "pl-80 pr-8"}`}>
+        {!isStudent && (
+          <Sidebar
+            activeRole={activeRole}
+            currentPage={currentPage}
+            onNavigate={setCurrentPage}
+            onStartSession={handleStartSession}
+            onLogout={onLogout}
+          />
+        )}
 
         {/* Core Main View Container */}
         <main className="animate-fade-in relative">

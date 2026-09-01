@@ -44,6 +44,7 @@ public class ContractSignatureService {
             String role,
             String walletAddress,
             String signature,
+            String studentEmailOverride,
             String ipAddress,
             String userAgent) {
 
@@ -106,21 +107,32 @@ public class ContractSignatureService {
             log.info("Tutor {} signed agreement {}. Status updated to PENDING_STUDENT_ACCEPTANCE", userId, agreementId);
 
             // Notify student
-            notificationDispatcher.sendAsync(
-                    userEmail,
-                    agreement.getStudentId(),
-                    "Gia sư đã ký hợp đồng",
-                    "Gia sư đã ký hợp đồng cho lớp học bằng chữ ký số EIP-712. Vui lòng kiểm tra các điều khoản và ký xác nhận!",
-                    "AGREEMENT_PENDING_STUDENT",
-                    "AGREEMENT",
-                    agreementId.toString()
-            );
+            String studentEmail = extractStudentEmail(agreement);
+            if ((studentEmail == null || studentEmail.isBlank()) && studentEmailOverride != null && !studentEmailOverride.isBlank()) {
+                studentEmail = studentEmailOverride;
+            }
+            if (studentEmail != null && !studentEmail.isBlank()) {
+                notificationDispatcher.sendAsync(
+                        studentEmail,
+                        agreement.getStudentId(),
+                        "Gia sư đã ký hợp đồng",
+                        "Gia sư đã ký hợp đồng cho lớp học bằng chữ ký số EIP-712. Vui lòng kiểm tra các điều khoản và ký xác nhận!",
+                        "AGREEMENT_PENDING_STUDENT",
+                        "AGREEMENT",
+                        agreementId.toString()
+                );
+            }
 
             return saved;
 
         } else if ("STUDENT".equals(normalizedRole)) {
             if (agreement.getStatus() != ContractAgreementStatus.PENDING_STUDENT_ACCEPTANCE) {
                 throw new IllegalStateException("Hợp đồng không ở trạng thái chờ Học viên ký (Hiện tại: " + agreement.getStatus() + ")");
+            }
+
+            // Bind student's actual signing wallet address to the agreement
+            if (normalizedWallet != null && normalizedWallet.startsWith("0x") && normalizedWallet.length() == 42) {
+                agreement.setStudentWallet(normalizedWallet);
             }
 
             // Record student acceptance with signature
@@ -139,31 +151,50 @@ public class ContractSignatureService {
                     userId, agreementId, paymentDeadline);
 
             // Notify student about 24h payment window
-            notificationDispatcher.sendAsync(
-                    userEmail,
-                    agreement.getStudentId(),
-                    "Hợp đồng sẵn sàng nạp cọc",
-                    "Hợp đồng đã được ký hoàn tất bởi cả 2 bên. Bạn có 24 giờ để nạp cọc Escrow (USDC) giữ chỗ chính thức!",
-                    "AGREEMENT_WAITING_PAYMENT",
-                    "AGREEMENT",
-                    agreementId.toString()
-            );
+            String studentEmail = userEmail != null && !userEmail.isBlank() ? userEmail : extractStudentEmail(agreement);
+            if (studentEmail != null && !studentEmail.isBlank()) {
+                notificationDispatcher.sendAsync(
+                        studentEmail,
+                        agreement.getStudentId(),
+                        "Hợp đồng sẵn sàng nạp cọc",
+                        "Hợp đồng đã được ký hoàn tất bởi cả 2 bên. Bạn có 24 giờ để nạp cọc Escrow (USDC) giữ chỗ chính thức!",
+                        "AGREEMENT_WAITING_PAYMENT",
+                        "AGREEMENT",
+                        agreementId.toString()
+                );
+            }
 
             // Notify tutor
-            notificationDispatcher.sendAsync(
-                    null,
-                    agreement.getTutorId(),
-                    "Học viên đã ký hợp đồng",
-                    "Học viên đã ký hợp đồng thành công. Hệ thống đang giữ chỗ 24 giờ để học viên nạp cọc Escrow.",
-                    "AGREEMENT_WAITING_PAYMENT",
-                    "AGREEMENT",
-                    agreementId.toString()
-            );
+            String tutorEmail = agreement.getClassroomReviewerEmail();
+            if (tutorEmail != null && !tutorEmail.isBlank()) {
+                notificationDispatcher.sendAsync(
+                        tutorEmail,
+                        agreement.getTutorId(),
+                        "Học viên đã ký hợp đồng",
+                        "Học viên đã ký hợp đồng thành công. Hệ thống đang giữ chỗ 24 giờ để học viên nạp cọc Escrow.",
+                        "AGREEMENT_WAITING_PAYMENT",
+                        "AGREEMENT",
+                        agreementId.toString()
+                );
+            }
 
             return saved;
         } else {
             throw new IllegalArgumentException("Vai trò không hợp lệ để ký hợp đồng: " + role);
         }
+    }
+
+    private String extractStudentEmail(ContractAgreement agreement) {
+        if (agreement.getTermsJson() != null && agreement.getTermsJson().contains("\"studentEmail\":\"")) {
+            try {
+                int start = agreement.getTermsJson().indexOf("\"studentEmail\":\"") + 16;
+                int end = agreement.getTermsJson().indexOf("\"", start);
+                if (start > 15 && end > start) {
+                    return agreement.getTermsJson().substring(start, end);
+                }
+            } catch (Exception ignored) {}
+        }
+        return null;
     }
 
     public List<ContractAcceptance> getAcceptances(UUID agreementId) {

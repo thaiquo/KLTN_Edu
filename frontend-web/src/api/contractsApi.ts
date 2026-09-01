@@ -164,11 +164,19 @@ export const contractsApi = {
     });
   },
 
-  signAgreement(id: string, payload: { role?: string; walletAddress: string; signature?: string }): Promise<AgreementDetail> {
+  signAgreement(id: string, payload: { role?: string; walletAddress: string; signature?: string; userEmail?: string; studentEmail?: string }): Promise<AgreementDetail> {
     return apiRequest(`/api/contracts/agreements/${id}/sign`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+    });
+  },
+
+  submitPayment(id: string, txHash?: string): Promise<AgreementDetail> {
+    return apiRequest(`/api/contracts/agreements/${id}/payment-submitted`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ txHash }),
     });
   },
 

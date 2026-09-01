@@ -142,27 +142,42 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <RealtimeProvider><Routes>
-          <Route path="/" element={<HomeEntry />} />
-          <Route path="/login" element={<Gate guest><LoginPage /></Gate>} />
-          <Route path="/register" element={<Gate guest><RegisterPage /></Gate>} />
-          <Route path="/verify-email" element={<Gate guest><VerifyEmailPage /></Gate>} />
-          <Route path="/forgot-password" element={<Gate guest><ForgotPasswordPage /></Gate>} />
-          <Route path="/reset-password" element={<Gate guest><ResetPasswordPage /></Gate>} />
-          <Route path="/tutors" element={<TutorMarketplacePage />} />
-          <Route path="/tutors/:id" element={<PublicTutorProfilePage />} />
-          <Route path="/classes" element={<ClassMarketplacePage />} />
-          <Route path="/profile" element={<ProtectedProfile />} />
-          <Route path="/profile/password" element={<ProtectedChangePassword />} />
-          <Route path="/become-tutor" element={<ProtectedBecomeTutor />} />
-          <Route path="/tutor/complete-profile" element={<ProtectedCompleteProfile />} />
-          <Route path="/tutor-next-step" element={<TutorNextStepPage />} />
-          <Route path="/tutor/profile" element={<ProtectedTutorProfile />} />
-          <Route path="/tutor/teaching-registrations" element={<ProtectedTeachingRegistration />} />
-          <Route path="/staff/tutors" element={<ProtectedStaffDashboard />} />
-          <Route path="/dashboard" element={<ProtectedDashboard />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes></RealtimeProvider>
+        <RealtimeProvider>
+          <Routes>
+            <Route path="/" element={<HomeEntry />} />
+            <Route path="/login" element={<Gate guest><LoginPage /></Gate>} />
+            <Route path="/register" element={<Gate guest><RegisterPage /></Gate>} />
+            <Route path="/verify-email" element={<Gate guest><VerifyEmailPage /></Gate>} />
+            <Route path="/forgot-password" element={<Gate guest><ForgotPasswordPage /></Gate>} />
+            <Route path="/reset-password" element={<Gate guest><ResetPasswordPage /></Gate>} />
+            
+            {/* Public Marketplace Routes */}
+            <Route path="/tutors" element={<TutorMarketplacePage />} />
+            <Route path="/tutors/:id" element={<PublicTutorProfilePage />} />
+            <Route path="/classes" element={<ClassMarketplacePage />} />
+            
+            {/* Protected Profile & Workspace Routes */}
+            <Route path="/profile" element={<ProtectedProfile />} />
+            <Route path="/profile/password" element={<ProtectedChangePassword />} />
+            <Route path="/become-tutor" element={<ProtectedBecomeTutor />} />
+            <Route path="/tutor/complete-profile" element={<ProtectedCompleteProfile />} />
+            <Route path="/tutor-next-step" element={<TutorNextStepPage />} />
+            <Route path="/tutor/profile" element={<ProtectedTutorProfile />} />
+            <Route path="/tutor/teaching-registrations" element={<ProtectedTeachingRegistration />} />
+            
+            {/* Staff & Shared Dashboard Routes */}
+            <Route path="/staff/tutors" element={<ProtectedStaffDashboard />} />
+            <Route path="/dashboard" element={<ProtectedDashboard />} />
+            
+            {/* Student Clean RESTful Route Aliases */}
+            <Route path="/student/contracts" element={<Navigate to="/dashboard?tab=contracts" replace />} />
+            <Route path="/student/wallet" element={<Navigate to="/dashboard?tab=wallet" replace />} />
+            <Route path="/student/classes" element={<Navigate to="/dashboard?tab=courses" replace />} />
+            <Route path="/student/messages" element={<Navigate to="/dashboard?tab=messages" replace />} />
+            
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </RealtimeProvider>
       </AuthProvider>
     </BrowserRouter>
   );
