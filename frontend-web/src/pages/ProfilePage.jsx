@@ -494,11 +494,6 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
 
                 <aside className="grid content-start gap-6">
                   <AccountInfoCard profile={profile} roles={roles} />
-                  {!embedded && (!roles.includes('TUTOR') ? (
-                    <BecomeTutorCard />
-                  ) : (
-                    <TutorRegistrationCard tutorApp={tutorApp} />
-                  ))}
                   <CompletionCard completion={completion} />
                   <SecurityCard embedded={embedded} onTabChange={onTabChange} />
                 </aside>
@@ -929,7 +924,7 @@ function BecomeTutorCard() {
         Hoàn thiện thông tin, CCCD và minh chứng một lần để Admin xét duyệt hồ sơ. Sau đó bạn có thể đăng ký thêm nhiều môn mà không cần nộp lại CCCD.
       </p>
       <Link
-        to="/tutor/teaching-registrations"
+        to="/dashboard"
         className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[8px] bg-[#147b77] px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-slate-900"
       >
         <Sparkles size={16} />

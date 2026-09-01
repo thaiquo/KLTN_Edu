@@ -136,26 +136,31 @@ export function RegisterPage() {
       title="Tạo tài khoản"
       description="Chọn vai trò và đăng ký để bắt đầu trải nghiệm hệ thống."
     >
-      <div className="mb-6 flex rounded-lg bg-slate-100 p-1 dark:bg-slate-800">
+      <div className="mb-6 grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-slate-50 p-1.5">
         <button
           type="button"
-          onClick={() => { setSelectedRole('STUDENT'); setError(''); }}
-          className={`flex-1 rounded-md py-2 text-sm font-semibold transition-all ${
-            selectedRole === 'STUDENT'
-              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-400'
-              : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-          }`}
+          onClick={() => {
+            setSelectedRole('STUDENT');
+            setError('');
+          }}
+          className={`rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 ${selectedRole === 'STUDENT'
+              ? 'border border-teal-200 bg-teal-50 text-teal-700 shadow-sm'
+              : 'border border-transparent bg-transparent text-slate-600 hover:bg-white hover:text-slate-900'
+            }`}
         >
           Tôi là Học viên
         </button>
+
         <button
           type="button"
-          onClick={() => { setSelectedRole('TUTOR'); setError(''); }}
-          className={`flex-1 rounded-md py-2 text-sm font-semibold transition-all ${
-            selectedRole === 'TUTOR'
-              ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-700 dark:text-indigo-400'
-              : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-          }`}
+          onClick={() => {
+            setSelectedRole('TUTOR');
+            setError('');
+          }}
+          className={`rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200 ${selectedRole === 'TUTOR'
+              ? 'border border-teal-200 bg-teal-50 text-teal-700 shadow-sm'
+              : 'border border-transparent bg-transparent text-slate-600 hover:bg-white hover:text-slate-900'
+            }`}
         >
           Tôi là Gia sư
         </button>

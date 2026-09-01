@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -65,6 +65,9 @@ import { TeachingCatalogManagement } from "./components/staff/TeachingCatalogMan
 import { EscrowContractsView } from "../components/contract/EscrowContractsView";
 import { DisputeManagementPanel } from "../components/contract/DisputeManagementPanel";
 import { MyWalletView } from "./components/MyWalletView";
+import { TutorRestrictedHome } from "./components/TutorRestrictedHome";
+import { TeachingRegistrationPage } from "../pages/tutor/TeachingRegistrationPage";
+import { tutorApplicationApi } from "../api/tutorApplications";
 
 // High Resolution course and avatar placeholders
 const studentAvatar =
@@ -321,6 +324,20 @@ const ENROLLMENTS_DATA = [
   { name: "Physics", students: 45 },
 ];
 
+const FULL_TUTOR_PAGE_IDS = new Set([
+  "dashboard",
+  "subjects",
+  "my-classes",
+  "class-management",
+  "contracts",
+  "wallet",
+  "requests",
+  "messages",
+  "schedule",
+  "courses",
+  "complaints"
+]);
+
 interface PortalUser {
   fullName: string;
   email: string;
@@ -355,6 +372,69 @@ export default function App({ user, onLogout }: AppProps) {
   });
 
   const [activeConversationId, setActiveConversationId] = useState<string>("vance");
+  const [settingsTab, setSettingsTab] = useState<"info" | "password">("info");
+  const [tutorApplicationStatus, setTutorApplicationStatus] = useState<string | null>(null);
+  const [tutorApplicationLoading, setTutorApplicationLoading] = useState(activeRole === "tutor");
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadTutorApplicationStatus() {
+      if (activeRole !== "tutor") {
+        setTutorApplicationStatus(null);
+        setTutorApplicationLoading(false);
+        return;
+      }
+
+      setTutorApplicationLoading(true);
+      try {
+        const application = await tutorApplicationApi.getMyTutorApplication();
+        if (active) setTutorApplicationStatus(application?.status || null);
+      } catch {
+        if (active) setTutorApplicationStatus(null);
+      } finally {
+        if (active) setTutorApplicationLoading(false);
+      }
+    }
+
+    loadTutorApplicationStatus();
+    return () => {
+      active = false;
+    };
+  }, [activeRole]);
+
+  const restrictedTutor = activeRole === "tutor" && (tutorApplicationLoading || tutorApplicationStatus !== "APPROVED");
+  const fullTutorAccess = activeRole === "tutor" && !restrictedTutor;
+
+  const handleTutorStatusChange = React.useCallback((status: string) => {
+    setTutorApplicationStatus(status);
+    setTutorApplicationLoading(false);
+  }, []);
+
+  const handleNavigate = React.useCallback((page: string) => {
+    if (page === "settings-password") {
+      setSettingsTab("password");
+      setCurrentPage("settings");
+      return;
+    }
+
+    if (page === "settings") {
+      setSettingsTab("info");
+    }
+
+    if (restrictedTutor && FULL_TUTOR_PAGE_IDS.has(page)) {
+      setCurrentPage("dashboard");
+      return;
+    }
+
+    setCurrentPage(page);
+  }, [restrictedTutor]);
+
+  useEffect(() => {
+    if (restrictedTutor && FULL_TUTOR_PAGE_IDS.has(currentPage) && currentPage !== "dashboard") {
+      setCurrentPage("dashboard");
+    }
+  }, [currentPage, restrictedTutor]);
 
   // Interaction handlers
   const handleStartSession = () => {
@@ -375,7 +455,7 @@ export default function App({ user, onLogout }: AppProps) {
     } else {
       setActiveConversationId("vance");
     }
-    setCurrentPage("messages");
+    handleNavigate("messages");
   };
 
   // Messages handlers
@@ -448,6 +528,16 @@ export default function App({ user, onLogout }: AppProps) {
 
   // Main Page Router switch board
   const renderMainContent = () => {
+    if (activeRole === "tutor" && restrictedTutor && FULL_TUTOR_PAGE_IDS.has(currentPage)) {
+      return (
+        <TutorRestrictedHome
+          tutorStatus={tutorApplicationStatus as any}
+          onTutorStatusChange={handleTutorStatusChange as any}
+          onNavigate={handleNavigate}
+        />
+      );
+    }
+
     switch (currentPage) {
       case "dashboard":
         if (activeRole === "tutor") {
@@ -458,7 +548,7 @@ export default function App({ user, onLogout }: AppProps) {
               onAcceptRequest={handleAcceptRequest}
               onRejectRequest={handleRejectRequest}
               schedule={schedule}
-              onNavigate={setCurrentPage}
+              onNavigate={handleNavigate}
             />
           );
         } else if (activeRole === "staff") {
@@ -545,7 +635,7 @@ export default function App({ user, onLogout }: AppProps) {
               {/* Quick Actions Router cards */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div
-                  onClick={() => setCurrentPage("user-management")}
+                  onClick={() => handleNavigate("user-management")}
                   className="bg-brand-low/50 hover:bg-brand-low border border-brand-border/30 p-6 rounded-3xl cursor-pointer transition-colors group"
                 >
                   <Users className="w-8 h-8 text-brand-primary mb-3 group-hover:scale-110 transition-transform" />
@@ -558,7 +648,7 @@ export default function App({ user, onLogout }: AppProps) {
                 </div>
 
                 <div
-                  onClick={() => setCurrentPage("tutor-approval")}
+                  onClick={() => handleNavigate("tutor-approval")}
                   className="bg-brand-low/50 hover:bg-brand-low border border-brand-border/30 p-6 rounded-3xl cursor-pointer transition-colors group"
                 >
                   <UserCheck className="w-8 h-8 text-brand-secondary mb-3 group-hover:scale-110 transition-transform" />
@@ -587,7 +677,7 @@ export default function App({ user, onLogout }: AppProps) {
                   </p>
                 </div>
                 <button
-                  onClick={() => setCurrentPage("courses")}
+                  onClick={() => handleNavigate("courses")}
                   className="px-5 py-2.5 bg-brand-primary text-white rounded-xl text-xs font-display font-black tracking-widest hover:bg-brand-primary/95 transition-all shadow-md shrink-0"
                 >
                   EXPLORE MARKETPLACE
@@ -706,7 +796,10 @@ export default function App({ user, onLogout }: AppProps) {
         );
 
       case "settings":
-        return <ProfileSettings settings={profileSettings} onSaveSettings={setProfileSettings} activeRole={activeRole} />;
+        return <ProfileSettings settings={profileSettings} onSaveSettings={setProfileSettings} activeRole={activeRole} initialTab={settingsTab} />;
+
+      case "subjects":
+        return fullTutorAccess ? <TeachingRegistrationPage embedded={true} /> : null;
 
       case "contracts":
         return <EscrowContractsView activeRole={activeRole} userEmail={user.email} />;
@@ -825,9 +918,10 @@ export default function App({ user, onLogout }: AppProps) {
         <Sidebar
           activeRole={activeRole}
           currentPage={currentPage}
-          onNavigate={setCurrentPage}
+          onNavigate={handleNavigate}
           onStartSession={handleStartSession}
           onLogout={onLogout}
+          restrictedTutor={restrictedTutor}
         />
 
         {/* Core Main View Container */}

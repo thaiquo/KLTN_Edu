@@ -120,7 +120,7 @@ export function TutorNextStepPage() {
                     <div className="mt-5">
                       <button
                         type="button"
-                        onClick={() => navigate('/tutor/teaching-registrations')}
+                        onClick={() => navigate('/dashboard')}
                         className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-3 text-sm font-extrabold text-white hover:bg-indigo-700 transition-all shadow-md hover:shadow-indigo-500/20"
                       >
                         Hoàn tất hồ sơ gia sư
@@ -141,7 +141,7 @@ export function TutorNextStepPage() {
                     <div className="flex flex-wrap items-center gap-3 pt-2">
                       <button
                         type="button"
-                        onClick={() => navigate('/tutor/complete-profile')}
+                        onClick={() => navigate('/dashboard')}
                         className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors"
                       >
                         <Edit3 size={16} />
@@ -183,7 +183,7 @@ export function TutorNextStepPage() {
                     <div className="flex flex-wrap items-center gap-3 pt-2">
                       <button
                         type="button"
-                        onClick={() => navigate('/tutor/complete-profile')}
+                        onClick={() => navigate('/dashboard')}
                         className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-3 text-sm font-extrabold text-white hover:bg-indigo-700 transition-all shadow-md"
                       >
                         <Edit3 size={16} />

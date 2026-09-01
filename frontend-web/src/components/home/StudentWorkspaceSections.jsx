@@ -7,6 +7,7 @@ import {
   MessageCircle,
   Sparkles
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { featuredTutors } from './homeData';
 import { TutorCard } from './TutorCard';
 
@@ -48,8 +49,8 @@ export function StudentWorkspaceSections() {
               icon={<Sparkles size={22} />}
               title="Chưa có gợi ý cá nhân hóa"
               description="Hoàn thiện hồ sơ học tập để hệ thống có đủ dữ liệu về môn học, mục tiêu, lịch rảnh và ngân sách trước khi đề xuất gia sư."
-              actionHref="#learning-profile"
-              actionLabel="Hoàn thiện hồ sơ học tập"
+              actionHref="/matching"
+              actionLabel="Xem AI Matching"
             />
           )}
         </div>
@@ -68,7 +69,7 @@ export function StudentWorkspaceSections() {
               icon={<BookOpen size={22} />}
               title="Bạn chưa tham gia lớp học nào"
               description="Bắt đầu bằng cách tìm gia sư phù hợp. Sau khi có lớp, các buổi học và hành động liên quan sẽ xuất hiện tại đây."
-              actionHref="#find-tutor"
+              actionHref="/tutors"
               actionLabel="Tìm gia sư"
             />
             <EmptyState
@@ -173,13 +174,13 @@ function NextClassCard({ hasClasses }) {
           <p className="mt-3 text-sm font-semibold leading-6 text-slate-300">
             Khi có lớp, buổi học kế tiếp, hành động nhắn tin và lịch học sẽ được ưu tiên ở khu vực này.
           </p>
-          <a
-            href="#find-tutor"
+          <Link
+            to="/tutors"
             className="mt-6 inline-flex items-center gap-2 rounded-[8px] bg-white px-4 py-3 text-sm font-extrabold text-slate-900 hover:bg-blue-50"
           >
             Tìm gia sư để bắt đầu
             <ArrowRight size={16} />
-          </a>
+          </Link>
         </div>
       )}
     </article>
@@ -237,13 +238,23 @@ function EmptyState({ icon, title, description, actionHref, actionLabel }) {
       <h3 className="mt-4 font-display text-xl font-extrabold tracking-tight text-slate-950">{title}</h3>
       <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">{description}</p>
       {actionHref && actionLabel && (
-        <a
-          href={actionHref}
-          className="mt-5 inline-flex items-center gap-2 rounded-[8px] bg-slate-900 px-4 py-3 text-sm font-extrabold text-white hover:bg-primary"
-        >
-          {actionLabel}
-          <ArrowRight size={16} />
-        </a>
+        actionHref.startsWith('/') ? (
+          <Link
+            to={actionHref}
+            className="mt-5 inline-flex items-center gap-2 rounded-[8px] bg-slate-900 px-4 py-3 text-sm font-extrabold text-white hover:bg-primary"
+          >
+            {actionLabel}
+            <ArrowRight size={16} />
+          </Link>
+        ) : (
+          <a
+            href={actionHref}
+            className="mt-5 inline-flex items-center gap-2 rounded-[8px] bg-slate-900 px-4 py-3 text-sm font-extrabold text-white hover:bg-primary"
+          >
+            {actionLabel}
+            <ArrowRight size={16} />
+          </a>
+        )
       )}
     </article>
   );

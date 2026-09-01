@@ -6,11 +6,12 @@ export const homeNavLinks = [
 ];
 
 export const studentNavLinks = [
+  { label: 'Trang chủ', href: '/', icon: 'home' },
   { label: 'Tìm gia sư', href: '/tutors', icon: 'search' },
   { label: 'Tìm lớp', href: '/classes', icon: 'book' },
-  { label: 'Lớp học của tôi', href: '#my-learning', icon: 'book' },
-  { label: 'Tin nhắn', href: '#student-inbox', icon: 'message' },
-  { label: 'Gợi ý cho bạn', href: '#matching', icon: 'sparkles' },
+  { label: 'Lớp học của tôi', href: '/my-classes', icon: 'book' },
+  { label: 'AI Matching', href: '/matching', icon: 'sparkles' },
+  { label: 'Tin nhắn', href: '/messages', icon: 'message' },
 ];
 
 export const pathways = [

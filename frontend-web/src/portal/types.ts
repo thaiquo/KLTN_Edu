@@ -101,7 +101,8 @@ export interface AppProfileSettings {
   subjects?: string[];
 }
 
-export type TutorApprovalStatus = "PENDING" | "APPROVED" | "REJECTED";
+export type TutorApprovalStatus = "DRAFT" | "PENDING" | "APPROVED" | "REJECTED";
+export type TutorReviewStatus = TutorApprovalStatus;
 
 export interface TutorApprovalSubject {
   id: number;

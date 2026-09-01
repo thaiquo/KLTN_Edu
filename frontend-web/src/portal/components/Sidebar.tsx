@@ -1,28 +1,22 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React from "react";
 import {
-  LayoutDashboard,
-  GraduationCap,
-  MessageSquare,
-  Calendar,
-  Settings,
-  Users,
-  CheckCircle2,
-  BookOpen,
-  Briefcase,
-  HelpCircle,
-  LogOut,
-  PlayCircle,
   BarChart3,
+  BookOpen,
+  Calendar,
+  CheckCircle2,
+  Globe,
+  GraduationCap,
+  HelpCircle,
+  LayoutDashboard,
+  Lock,
+  LogOut,
+  MessageSquare,
+  Settings,
   ShieldAlert,
   ShieldCheck,
-  Globe,
-  Layers3,
-  WalletCards
+  Users,
+  WalletCards,
+  Layers3
 } from "lucide-react";
 import { UserRole } from "../types";
 
@@ -32,14 +26,15 @@ interface SidebarProps {
   onNavigate: (page: string) => void;
   onStartSession: () => void;
   onLogout: () => void;
+  restrictedTutor?: boolean;
 }
 
 export function Sidebar({
   activeRole,
   currentPage,
   onNavigate,
-  onStartSession,
   onLogout,
+  restrictedTutor = false,
 }: SidebarProps) {
   const isStaff = activeRole === "staff";
 
@@ -48,13 +43,13 @@ export function Sidebar({
       case "tutor":
         return [
           { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
+          { id: "subjects", label: "Môn học", icon: BookOpen },
           { id: "my-classes", label: "Lớp học", icon: GraduationCap },
           { id: "contracts", label: "Hợp đồng & Ký quỹ", icon: ShieldCheck },
           { id: "wallet", label: "Ví của tôi", icon: WalletCards },
           { id: "requests", label: "Yêu cầu học", icon: CheckCircle2 },
           { id: "messages", label: "Tin nhắn", icon: MessageSquare },
           { id: "schedule", label: "Lịch dạy", icon: Calendar },
-          { id: "settings", label: "Tài khoản", icon: Settings },
         ];
       case "admin":
         return [
@@ -90,39 +85,17 @@ export function Sidebar({
   };
 
   const navItems = getNavItems();
+  const lockedTutorItems = new Set(["subjects", "my-classes", "contracts", "wallet", "requests", "messages", "schedule"]);
 
   return (
-    <aside className={`fixed left-0 top-16 bottom-0 z-20 flex w-72 select-none flex-col border-r pt-6 font-sans ${
+    <aside className={`fixed left-0 top-16 bottom-0 z-20 flex w-72 select-none flex-col border-r pt-3 font-sans ${
       isStaff ? "border-[#0d466f] bg-[#073554] text-white" : "border-brand-border/30 bg-brand-low/40"
     }`}>
-      <div className="mb-6 px-6">
-        <div className="flex items-center gap-3">
-          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-md ${
-            isStaff ? "bg-[#ff695f] shadow-[#ff695f]/15" : "bg-brand-secondary shadow-brand-secondary/15"
-          }`}>
-            <GraduationCap className="h-5 w-5" />
-          </div>
-          <div>
-            <p className={`font-display text-title-sm font-black leading-tight ${isStaff ? "text-white" : "text-brand-text"}`}>
-              {isStaff ? "TutorConnect" : "EduConnect"}
-            </p>
-            <p className={`font-display-lg text-[10px] font-extrabold tracking-wider ${isStaff ? "text-white/55" : "text-brand-text-variant/50"}`}>
-              {activeRole === "admin"
-                ? "ADMIN PORTAL"
-                : activeRole === "staff"
-                ? "STAFF OPERATIONS"
-                : activeRole === "tutor"
-                ? "CỔNG GIA SƯ"
-                : "LEARNING PORTAL"}
-            </p>
-          </div>
-        </div>
-      </div>
-
       <nav className="custom-scrollbar flex-1 space-y-1 overflow-y-auto px-3">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
+          const disabled = restrictedTutor && lockedTutorItems.has(item.id);
           let activeClass = "";
 
           if (isActive) {
@@ -141,14 +114,26 @@ export function Sidebar({
               : "text-brand-text-variant/80 hover:bg-brand-container/50 hover:text-brand-text";
           }
 
+          if (disabled) {
+            activeClass = "text-brand-text-variant/40 cursor-not-allowed opacity-70";
+          }
+
           return (
             <button
               key={item.id}
-              onClick={() => onNavigate(item.id)}
+              type="button"
+              onClick={() => {
+                if (disabled) return;
+                onNavigate(item.id);
+              }}
+              disabled={disabled}
+              aria-disabled={disabled}
+              title={disabled ? "Hồ sơ gia sư cần được duyệt trước khi sử dụng chức năng này." : undefined}
               className={`group relative flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left font-display text-xs font-bold tracking-wider transition-all ${activeClass}`}
             >
-              <Icon className={`h-4 w-4 transition-transform duration-300 ${!isActive && "group-hover:scale-110"}`} />
+              <Icon className={`h-4 w-4 transition-transform duration-300 ${!isActive && !disabled && "group-hover:scale-110"}`} />
               <span>{item.label}</span>
+              {disabled && <Lock className="ml-auto h-3.5 w-3.5" />}
               {isActive && !isStaff && (
                 <span className="absolute right-3 top-1/2 h-1.5 w-1.5 -translate-y-1/2 rounded-full bg-white" />
               )}
@@ -158,8 +143,9 @@ export function Sidebar({
       </nav>
 
       <div className={`space-y-1 border-t px-3 pb-6 pt-4 select-none ${isStaff ? "border-white/10" : "border-brand-border/20"}`}>
-        {activeRole !== 'tutor' && (
+        {activeRole !== "tutor" && (
           <button
+            type="button"
             onClick={() => window.location.href = "/"}
             className={`flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left font-display text-xs font-bold tracking-wider transition-all mb-1 ${
               isStaff ? "text-white/80 hover:bg-white/10" : "text-brand-primary hover:bg-brand-primary/10 font-black"
@@ -169,7 +155,18 @@ export function Sidebar({
             <span>Trang chủ Tra cứu</span>
           </button>
         )}
+        {activeRole === "tutor" && (
+          <button
+            type="button"
+            onClick={() => onNavigate("settings")}
+            className="flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left font-display text-xs font-bold tracking-wider text-brand-text-variant/80 transition-all hover:bg-brand-container/30 hover:text-brand-text"
+          >
+            <Settings className="h-4 w-4" />
+            <span>Tài khoản</span>
+          </button>
+        )}
         <button
+          type="button"
           onClick={() => onNavigate("help")}
           className={`flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left font-display text-xs font-bold tracking-wider transition-all ${
             isStaff ? "text-white/60 hover:bg-white/8 hover:text-white" : "text-brand-text-variant/80 hover:bg-brand-container/30 hover:text-brand-text"
@@ -179,6 +176,7 @@ export function Sidebar({
           <span>Trợ giúp</span>
         </button>
         <button
+          type="button"
           onClick={onLogout}
           className={`flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left font-display text-xs font-bold tracking-wider transition-all ${
             isStaff ? "text-white/60 hover:bg-[#ff695f]/15 hover:text-white" : "text-brand-error/80 hover:bg-brand-error/5 hover:text-brand-error"

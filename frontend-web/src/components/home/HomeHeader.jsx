@@ -5,7 +5,9 @@ import {
   Bell,
   BookOpen,
   ChevronDown,
+  FileText,
   GraduationCap,
+  Home,
   KeyRound,
   LogOut,
   Menu,
@@ -15,6 +17,7 @@ import {
   Settings,
   Sparkles,
   UserRound,
+  WalletCards,
   X
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
@@ -23,7 +26,10 @@ import { homeNavLinks, studentNavLinks } from './homeData';
 export function HomeHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [mobileNotificationOpen, setMobileNotificationOpen] = useState(false);
   const accountRef = useRef(null);
+  const notificationRef = useRef(null);
   const { user, logout, switchRole, activateStudentProfile } = useAuth();
   const navigate = useNavigate();
   const isAuthenticated = Boolean(user);
@@ -32,12 +38,15 @@ export function HomeHeader() {
   const initials = getInitials(displayName);
   const avatarUrl = getAvatarUrl(user);
   const roleText = displayRole(user);
+  const isStudentActive = user?.activeRole === 'STUDENT';
 
   useEffect(() => {
     function closeOnEscape(event) {
       if (event.key === 'Escape') {
         setMenuOpen(false);
         setAccountOpen(false);
+        setNotificationOpen(false);
+        setMobileNotificationOpen(false);
       }
     }
 
@@ -50,13 +59,19 @@ export function HomeHeader() {
       if (accountRef.current && !accountRef.current.contains(event.target)) {
         setAccountOpen(false);
       }
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+        setNotificationOpen(false);
+      }
     }
 
     document.addEventListener('mousedown', closeOnClickOutside);
     return () => document.removeEventListener('mousedown', closeOnClickOutside);
   }, []);
 
-  const closeMenu = () => setMenuOpen(false);
+  const closeMenu = () => {
+    setMenuOpen(false);
+    setMobileNotificationOpen(false);
+  };
 
   async function handleLogout() {
     await logout();
@@ -108,7 +123,7 @@ export function HomeHeader() {
           <span>Kết Nối Học</span>
         </Link>
 
-        <nav className="hidden lg:flex items-center gap-7 ml-auto" aria-label="Điều hướng chính">
+        <nav className="hidden lg:flex items-center gap-4 xl:gap-6 ml-auto" aria-label="Điều hướng chính">
           {navLinks.map((link) => (
             <NavItem
               key={link.href + link.label}
@@ -117,6 +132,7 @@ export function HomeHeader() {
             >
               {link.icon === 'search' && <Search size={14} />}
               {link.icon === 'book' && <BookOpen size={14} />}
+              {link.icon === 'home' && <Home size={14} />}
               {link.icon === 'message' && <MessageCircle size={14} />}
               {link.icon === 'sparkles' && <Sparkles size={14} />}
               {link.label}
@@ -127,18 +143,45 @@ export function HomeHeader() {
         <div className="hidden md:flex items-center gap-3">
           {isAuthenticated ? (
             <>
-              <button
-                type="button"
-                className="relative w-11 h-11 grid place-items-center rounded-[14px] border border-slate-200 bg-white text-slate-700 hover:border-primary/40 hover:text-primary transition-colors"
-                aria-label="Thông báo"
-              >
-                <Bell size={18} />
-              </button>
+              <div className="relative" ref={notificationRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAccountOpen(false);
+                    setNotificationOpen((current) => !current);
+                  }}
+                  className="relative w-11 h-11 grid place-items-center rounded-[14px] border border-slate-200 bg-white text-slate-700 hover:border-primary/40 hover:text-primary transition-colors"
+                  aria-label="Thông báo"
+                  aria-haspopup="dialog"
+                  aria-expanded={notificationOpen}
+                >
+                  <Bell size={18} />
+                </button>
+
+                {notificationOpen && (
+                  <div className="absolute right-0 top-[calc(100%+12px)] z-50 w-80 rounded-[14px] border border-slate-200 bg-white p-4 shadow-[0_24px_64px_rgba(15,23,42,.16)]">
+                    <div className="flex items-start gap-3">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-blue-50 text-primary">
+                        <Bell size={17} />
+                      </span>
+                      <div>
+                        <p className="text-sm font-extrabold text-slate-950">Chưa có trung tâm thông báo</p>
+                        <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+                          Realtime toast hiện vẫn được giữ nguyên. Danh sách thông báo và unread count sẽ cần API thật trước khi hiển thị.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <div className="relative" ref={accountRef}>
                 <button
                   type="button"
-                  onClick={() => setAccountOpen((current) => !current)}
+                  onClick={() => {
+                    setNotificationOpen(false);
+                    setAccountOpen((current) => !current);
+                  }}
                   className="inline-flex min-w-0 items-center gap-3 min-h-[46px] max-w-[250px] rounded-[14px] border border-slate-200 bg-white px-3.5 text-slate-900 hover:border-primary/40 hover:shadow-[0_12px_24px_rgba(15,23,42,.08)] transition-all"
                   aria-haspopup="menu"
                   aria-expanded={accountOpen}
@@ -198,7 +241,7 @@ export function HomeHeader() {
       <div
         id="home-mobile-menu"
         className={`overflow-hidden transition-[max-height] duration-300 ease-in-out bg-white/97 ${
-          menuOpen ? 'max-h-[680px] border-t border-slate-200' : 'max-h-0'
+          menuOpen ? 'max-h-[860px] border-t border-slate-200' : 'max-h-0'
         }`}
       >
         <nav className="container-app grid gap-1 py-4" aria-label="Điều hướng di động">
@@ -229,8 +272,52 @@ export function HomeHeader() {
                   <span className="block truncate text-sm font-extrabold">{displayName}</span>
                   <span className="block text-[11px] font-bold text-slate-400">Hồ sơ cá nhân ({roleText})</span>
                 </span>
-                <Bell size={17} className="ml-auto text-slate-500" />
               </Link>
+
+              <button
+                type="button"
+                onClick={() => setMobileNotificationOpen((current) => !current)}
+                className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
+                aria-expanded={mobileNotificationOpen}
+              >
+                <Bell size={17} />
+                Thông báo
+              </button>
+
+              {mobileNotificationOpen && (
+                <div className="rounded-[14px] border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold leading-6 text-slate-600">
+                  Chưa có trung tâm thông báo thật. Realtime toast hiện vẫn được giữ nguyên.
+                </div>
+              )}
+
+              {isStudentActive && (
+                <>
+                  <Link
+                    to="/contracts"
+                    onClick={closeMenu}
+                    className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <FileText size={17} />
+                    Hợp đồng của tôi
+                  </Link>
+                  <Link
+                    to="/payments"
+                    onClick={closeMenu}
+                    className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <WalletCards size={17} />
+                    Thanh toán & Ký quỹ
+                  </Link>
+                  <Link
+                    to="/profile"
+                    onClick={closeMenu}
+                    className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <Settings size={17} />
+                    Cài đặt
+                  </Link>
+                </>
+              )}
 
               <Link
                 to="/profile/password"
@@ -289,23 +376,44 @@ function NavItem({ link, className, onClick, children }) {
 function AccountMenu({ user, onSwitchRole, onActivateStudent, onLogout, onClose }) {
   const isStaffOrAdmin = user?.roles?.includes('STAFF') || user?.roles?.includes('ADMIN');
   const isTutor = user?.roles?.includes('TUTOR') || user?.activeRole === 'TUTOR';
+  const isStudentActive = user?.activeRole === 'STUDENT';
 
   return (
     <div
       className="absolute right-0 top-[calc(100%+12px)] z-50 w-72 overflow-hidden rounded-[14px] border border-slate-200 bg-white p-2 shadow-[0_24px_64px_rgba(15,23,42,.16)]"
       role="menu"
     >
-      <MenuLink to="/profile" icon={<UserRound size={16} />} onClick={onClose}>
-        Hồ sơ cá nhân
-      </MenuLink>
-
-      <MenuLink to="/profile" icon={<Settings size={16} />} onClick={onClose}>
-        Cài đặt tài khoản
-      </MenuLink>
-
-      <MenuLink to="/profile/password" icon={<KeyRound size={16} />} onClick={onClose}>
-        Đổi mật khẩu
-      </MenuLink>
+      {isStudentActive ? (
+        <>
+          <MenuLink to="/profile" icon={<UserRound size={16} />} onClick={onClose}>
+            Hồ sơ cá nhân
+          </MenuLink>
+          <MenuLink to="/contracts" icon={<FileText size={16} />} onClick={onClose}>
+            Hợp đồng của tôi
+          </MenuLink>
+          <MenuLink to="/payments" icon={<WalletCards size={16} />} onClick={onClose}>
+            Thanh toán & Ký quỹ
+          </MenuLink>
+          <MenuLink to="/profile" icon={<Settings size={16} />} onClick={onClose}>
+            Cài đặt
+          </MenuLink>
+          <MenuLink to="/profile/password" icon={<KeyRound size={16} />} onClick={onClose}>
+            Đổi mật khẩu
+          </MenuLink>
+        </>
+      ) : (
+        <>
+          <MenuLink to="/profile" icon={<UserRound size={16} />} onClick={onClose}>
+            Hồ sơ cá nhân
+          </MenuLink>
+          <MenuLink to="/profile" icon={<Settings size={16} />} onClick={onClose}>
+            Cài đặt tài khoản
+          </MenuLink>
+          <MenuLink to="/profile/password" icon={<KeyRound size={16} />} onClick={onClose}>
+            Đổi mật khẩu
+          </MenuLink>
+        </>
+      )}
 
       {isStaffOrAdmin && (
         <MenuLink to="/staff/tutors" icon={<Settings size={16} />} onClick={onClose}>
@@ -313,7 +421,7 @@ function AccountMenu({ user, onSwitchRole, onActivateStudent, onLogout, onClose 
         </MenuLink>
       )}
 
-      {isTutor && (
+      {isTutor && !isStudentActive && (
         <button
           type="button"
           onClick={() => {
@@ -331,7 +439,7 @@ function AccountMenu({ user, onSwitchRole, onActivateStudent, onLogout, onClose 
       <button
         type="button"
         onClick={onLogout}
-        className="mt-1 flex w-full items-center gap-3 rounded-[10px] px-3 py-3 text-left text-sm font-extrabold text-[#b83333] hover:bg-red-50"
+        className="mt-2 flex w-full items-center gap-3 border-t border-slate-100 px-3 py-3 text-left text-sm font-extrabold text-[#b83333] hover:bg-red-50"
         role="menuitem"
       >
         <LogOut size={16} />

@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider } from './store/AuthContext';
 import { RealtimeProvider } from './realtime/RealtimeProvider';
@@ -17,6 +17,12 @@ import { TutorMarketplacePage } from './pages/tutor/TutorMarketplacePage';
 import { ClassMarketplacePage } from './pages/class/ClassMarketplacePage';
 import { TutorProfilePage } from './pages/tutor/TutorProfilePage';
 import { TeachingRegistrationPage } from './pages/tutor/TeachingRegistrationPage';
+import { StudentContractsPage } from './pages/student/StudentContractsPage';
+import { StudentMatchingPage } from './pages/student/StudentMatchingPage';
+import { StudentMessagesPage } from './pages/student/StudentMessagesPage';
+import { StudentMyClassesPage } from './pages/student/StudentMyClassesPage';
+import { StudentPaymentsPage } from './pages/student/StudentPaymentsPage';
+import { tutorApplicationApi } from './api/tutorApplications';
 
 const DashboardPage = lazy(() =>
   import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage }))
@@ -78,21 +84,67 @@ function RoleGate({ roles, children }) {
   return <Navigate to="/" replace />;
 }
 
+function FullTutorFeatureGate({ children }) {
+  const { user, authenticated, loading } = useAuth();
+  const location = useLocation();
+  const [applicationStatus, setApplicationStatus] = React.useState(null);
+  const [applicationLoading, setApplicationLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    let active = true;
+
+    async function loadApplicationStatus() {
+      if (!authenticated || user?.activeRole !== 'TUTOR') {
+        if (active) setApplicationLoading(false);
+        return;
+      }
+
+      setApplicationLoading(true);
+      try {
+        const application = await tutorApplicationApi.getMyTutorApplication();
+        if (active) setApplicationStatus(application?.status || null);
+      } catch {
+        if (active) setApplicationStatus(null);
+      } finally {
+        if (active) setApplicationLoading(false);
+      }
+    }
+
+    loadApplicationStatus();
+    return () => {
+      active = false;
+    };
+  }, [authenticated, user?.activeRole]);
+
+  if (loading || applicationLoading) return <div className="loader" aria-label="Dang tai" />;
+  if (!authenticated) return <Navigate to="/login" replace state={{ from: location }} />;
+  if (user?.activeRole !== 'TUTOR') return <Navigate to="/" replace />;
+
+  return applicationStatus === 'APPROVED'
+    ? children
+    : <Navigate to="/dashboard" replace />;
+}
+
 function ProtectedDashboard() {
+  const { user, authenticated, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) return <div className="loader" aria-label="Dang tai" />;
+  if (!authenticated) return <Navigate to="/login" replace state={{ from: location }} />;
+  if (user?.activeRole === 'STUDENT') return <Navigate to="/" replace />;
+
   return (
-    <Gate>
-      <Suspense fallback={<div className="loader" aria-label="Dang tai cong hoc tap" />}>
-        <DashboardPage />
-      </Suspense>
-    </Gate>
+    <Suspense fallback={<div className="loader" aria-label="Dang tai cong hoc tap" />}>
+      <DashboardPage />
+    </Suspense>
   );
 }
 
 function ProtectedTutorProfile() {
   return (
-    <RoleGate roles={['TUTOR']}>
+    <FullTutorFeatureGate>
       <TutorProfilePage />
-    </RoleGate>
+    </FullTutorFeatureGate>
   );
 }
 
@@ -122,20 +174,36 @@ function ProtectedChangePassword() {
   );
 }
 
+function ProtectedStudentPage({ children }) {
+  return (
+    <RoleGate roles={['STUDENT']}>
+      {children}
+    </RoleGate>
+  );
+}
+
 function ProtectedBecomeTutor() {
   return (
     <Gate>
-      <TeachingRegistrationPage />
+      <Navigate to="/profile" replace />
     </Gate>
   );
 }
 
 function ProtectedTeachingRegistration() {
-  return <Gate><TeachingRegistrationPage /></Gate>;
+  return (
+    <FullTutorFeatureGate>
+      <TeachingRegistrationPage />
+    </FullTutorFeatureGate>
+  );
 }
 
 function ProtectedCompleteProfile() {
-  return <Gate><TeachingRegistrationPage /></Gate>;
+  return (
+    <Gate>
+      <Navigate to="/dashboard" replace />
+    </Gate>
+  );
 }
 
 export default function App() {
@@ -152,6 +220,11 @@ export default function App() {
           <Route path="/tutors" element={<TutorMarketplacePage />} />
           <Route path="/tutors/:id" element={<PublicTutorProfilePage />} />
           <Route path="/classes" element={<ClassMarketplacePage />} />
+          <Route path="/my-classes" element={<ProtectedStudentPage><StudentMyClassesPage /></ProtectedStudentPage>} />
+          <Route path="/matching" element={<ProtectedStudentPage><StudentMatchingPage /></ProtectedStudentPage>} />
+          <Route path="/messages" element={<ProtectedStudentPage><StudentMessagesPage /></ProtectedStudentPage>} />
+          <Route path="/contracts" element={<ProtectedStudentPage><StudentContractsPage /></ProtectedStudentPage>} />
+          <Route path="/payments" element={<ProtectedStudentPage><StudentPaymentsPage /></ProtectedStudentPage>} />
           <Route path="/profile" element={<ProtectedProfile />} />
           <Route path="/profile/password" element={<ProtectedChangePassword />} />
           <Route path="/become-tutor" element={<ProtectedBecomeTutor />} />
