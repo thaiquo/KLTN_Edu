@@ -30,6 +30,7 @@
 Current large API groups with source evidence:
 
 - Authentication and session lifecycle.
+- `POST /api/auth/switch-role` validates role/profile eligibility; switching to `TUTOR` requires approved Tutor and TutorApplication records.
 - Current user/profile and avatar.
 - Tutor public search/detail.
 - Tutor application and document management.

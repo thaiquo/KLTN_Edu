@@ -21,6 +21,7 @@ import {
   X
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useCreateTutorApplication, useTutorApplication } from '../../hooks/useTutorApplication';
 import { homeNavLinks, studentNavLinks } from './homeData';
 
 export function HomeHeader() {
@@ -28,9 +29,11 @@ export function HomeHeader() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [mobileNotificationOpen, setMobileNotificationOpen] = useState(false);
+  const [roleActionLoading, setRoleActionLoading] = useState(false);
+  const [roleActionError, setRoleActionError] = useState('');
   const accountRef = useRef(null);
   const notificationRef = useRef(null);
-  const { user, logout, switchRole, activateStudentProfile } = useAuth();
+  const { user, logout, switchRole, refreshUser } = useAuth();
   const navigate = useNavigate();
   const isAuthenticated = Boolean(user);
   const navLinks = isAuthenticated ? navLinksFor(user) : homeNavLinks;
@@ -39,6 +42,30 @@ export function HomeHeader() {
   const avatarUrl = getAvatarUrl(user);
   const roleText = displayRole(user);
   const isStudentActive = user?.activeRole === 'STUDENT';
+  const {
+    data: tutorApplication,
+    isLoading: tutorApplicationLoading,
+    isFetching: tutorApplicationFetching,
+    error: tutorApplicationError
+  } = useTutorApplication({
+    enabled: isAuthenticated && isStudentActive
+  });
+  const createTutorApplication = useCreateTutorApplication();
+  const studentRoleAction = getStudentRoleAction({
+    user,
+    tutorApplication,
+    loading: tutorApplicationLoading || tutorApplicationFetching || roleActionLoading
+  });
+
+  useEffect(() => {
+    if (!isAuthenticated || !isStudentActive || !tutorApplicationError) {
+      setRoleActionError('');
+      return;
+    }
+
+    console.error('Không thể tải trạng thái hồ sơ gia sư:', tutorApplicationError);
+    setRoleActionError('Không thể kiểm tra hồ sơ gia sư lúc này.');
+  }, [isAuthenticated, isStudentActive, tutorApplicationError]);
 
   useEffect(() => {
     function closeOnEscape(event) {
@@ -81,7 +108,8 @@ export function HomeHeader() {
   }
 
   async function handleSwitchRole(targetRole) {
-    setAccountOpen(false);
+    setRoleActionLoading(true);
+    setRoleActionError('');
     try {
       const updatedUser = await switchRole(targetRole);
       if (targetRole === 'TUTOR') {
@@ -89,19 +117,50 @@ export function HomeHeader() {
       } else {
         navigate('/');
       }
+      setAccountOpen(false);
+      closeMenu();
+      return updatedUser;
     } catch (err) {
       console.error('Lỗi chuyển vai trò:', err);
+      setRoleActionError('Không thể chuyển vai trò lúc này. Vui lòng thử lại.');
+      throw err;
+    } finally {
+      setRoleActionLoading(false);
     }
   }
 
-  async function handleActivateStudent() {
-    setAccountOpen(false);
+  async function handleStudentTutorAction() {
+    if (!studentRoleAction || studentRoleAction.disabled || roleActionLoading) return;
+
+    setRoleActionLoading(true);
+    setRoleActionError('');
     try {
-      await activateStudentProfile();
-      await switchRole('STUDENT');
-      navigate('/');
+      if (studentRoleAction.kind === 'switch') {
+        await handleSwitchRole('TUTOR');
+        return;
+      }
+
+      if (studentRoleAction.kind === 'create') {
+        await createTutorApplication.mutateAsync();
+        await refreshUser();
+        setAccountOpen(false);
+        closeMenu();
+        navigate('/profile');
+        return;
+      }
+
+      setAccountOpen(false);
+      closeMenu();
+      navigate(studentRoleAction.href || '/profile');
     } catch (err) {
-      console.error('Lỗi kích hoạt học viên:', err);
+      console.error('Không thể xử lý hồ sơ gia sư:', err);
+      setRoleActionError(
+        studentRoleAction.kind === 'create'
+          ? 'Không thể khởi tạo hồ sơ gia sư.'
+          : 'Không thể chuyển vai trò lúc này. Vui lòng thử lại.'
+      );
+    } finally {
+      setRoleActionLoading(false);
     }
   }
 
@@ -203,8 +262,9 @@ export function HomeHeader() {
                 {accountOpen && (
                   <AccountMenu
                     user={user}
-                    onSwitchRole={handleSwitchRole}
-                    onActivateStudent={handleActivateStudent}
+                    roleAction={studentRoleAction}
+                    roleActionError={roleActionError}
+                    onStudentTutorAction={handleStudentTutorAction}
                     onLogout={handleLogout}
                     onClose={() => setAccountOpen(false)}
                   />
@@ -308,6 +368,22 @@ export function HomeHeader() {
                     <WalletCards size={17} />
                     Thanh toán & Ký quỹ
                   </Link>
+                  {studentRoleAction && (
+                    <button
+                      type="button"
+                      onClick={handleStudentTutorAction}
+                      disabled={studentRoleAction.disabled}
+                      className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-emerald-200 bg-emerald-50 text-[#147b77] font-extrabold hover:border-[#147b77]/40 hover:bg-emerald-100 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {studentRoleAction.icon === 'switch' ? <RefreshCw size={17} /> : <GraduationCap size={17} />}
+                      {studentRoleAction.label}
+                    </button>
+                  )}
+                  {roleActionError && (
+                    <p className="rounded-[12px] border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+                      {roleActionError}
+                    </p>
+                  )}
                   <Link
                     to="/profile"
                     onClick={closeMenu}
@@ -373,9 +449,8 @@ function NavItem({ link, className, onClick, children }) {
   );
 }
 
-function AccountMenu({ user, onSwitchRole, onActivateStudent, onLogout, onClose }) {
+function AccountMenu({ user, roleAction, roleActionError, onStudentTutorAction, onLogout, onClose }) {
   const isStaffOrAdmin = user?.roles?.includes('STAFF') || user?.roles?.includes('ADMIN');
-  const isTutor = user?.roles?.includes('TUTOR') || user?.activeRole === 'TUTOR';
   const isStudentActive = user?.activeRole === 'STUDENT';
 
   return (
@@ -394,6 +469,25 @@ function AccountMenu({ user, onSwitchRole, onActivateStudent, onLogout, onClose 
           <MenuLink to="/payments" icon={<WalletCards size={16} />} onClick={onClose}>
             Thanh toán & Ký quỹ
           </MenuLink>
+          {roleAction && (
+            <div className="my-2 border-t border-slate-100 pt-2">
+              <button
+                type="button"
+                onClick={onStudentTutorAction}
+                disabled={roleAction.disabled}
+                className="flex w-full items-center gap-3 rounded-[10px] px-3 py-3 text-left text-sm font-extrabold text-[#147b77] hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                role="menuitem"
+              >
+                {roleAction.icon === 'switch' ? <RefreshCw size={16} /> : <GraduationCap size={16} />}
+                <span>{roleAction.label}</span>
+              </button>
+              {roleActionError && (
+                <p className="mt-1 rounded-[10px] border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold leading-5 text-red-700">
+                  {roleActionError}
+                </p>
+              )}
+            </div>
+          )}
           <MenuLink to="/profile" icon={<Settings size={16} />} onClick={onClose}>
             Cài đặt
           </MenuLink>
@@ -421,21 +515,6 @@ function AccountMenu({ user, onSwitchRole, onActivateStudent, onLogout, onClose 
         </MenuLink>
       )}
 
-      {isTutor && !isStudentActive && (
-        <button
-          type="button"
-          onClick={() => {
-            onClose();
-            onSwitchRole('TUTOR');
-          }}
-          className="flex w-full items-center gap-3 rounded-[10px] px-3 py-3 text-left text-sm font-extrabold text-indigo-600 hover:bg-indigo-50"
-          role="menuitem"
-        >
-          <RefreshCw size={16} />
-          Chuyển sang Dashboard Gia sư
-        </button>
-      )}
-
       <button
         type="button"
         onClick={onLogout}
@@ -461,6 +540,63 @@ function MenuLink({ to, icon, children, onClick }) {
       {children}
     </Link>
   );
+}
+
+function getStudentRoleAction({ user, tutorApplication, loading }) {
+  if (user?.activeRole !== 'STUDENT') return null;
+
+  if (loading) {
+    return {
+      kind: 'loading',
+      label: 'Đang kiểm tra hồ sơ gia sư...',
+      disabled: true,
+      icon: 'create'
+    };
+  }
+
+  const status = tutorApplication?.status || user?.tutorStatus || null;
+  if (status === 'APPROVED') {
+    return {
+      kind: 'switch',
+      label: 'Chuyển sang Gia sư',
+      disabled: false,
+      icon: 'switch'
+    };
+  }
+  if (status === 'DRAFT') {
+    return {
+      kind: 'profile',
+      label: 'Hoàn thiện hồ sơ gia sư',
+      href: '/profile',
+      disabled: false,
+      icon: 'create'
+    };
+  }
+  if (status === 'PENDING') {
+    return {
+      kind: 'status',
+      label: 'Hồ sơ gia sư đang chờ duyệt',
+      href: '/tutor-next-step',
+      disabled: false,
+      icon: 'create'
+    };
+  }
+  if (status === 'REJECTED') {
+    return {
+      kind: 'profile',
+      label: 'Cập nhật hồ sơ gia sư',
+      href: '/profile',
+      disabled: false,
+      icon: 'create'
+    };
+  }
+
+  return {
+    kind: 'create',
+    label: 'Trở thành gia sư',
+    disabled: false,
+    icon: 'create'
+  };
 }
 
 function navLinksFor(user) {

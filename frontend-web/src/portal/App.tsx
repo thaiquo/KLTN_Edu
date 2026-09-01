@@ -4,7 +4,6 @@
  */
 
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   GraduationCap,
@@ -56,7 +55,7 @@ import { DisputeManagementPanel } from "../components/contract/DisputeManagement
 import { MyWalletView } from "./components/MyWalletView";
 import { TutorRestrictedHome } from "./components/TutorRestrictedHome";
 import { TeachingRegistrationPage } from "../pages/tutor/TeachingRegistrationPage";
-import { tutorApplicationApi } from "../api/tutorApplications";
+import { useTutorApplication } from "../hooks/useTutorApplication";
 
 // High Resolution course and avatar placeholders
 const studentAvatar =
@@ -284,7 +283,6 @@ interface AppProps {
 }
 
 export default function App({ user, onLogout }: AppProps) {
-  const navigate = useNavigate();
   // Global States holding data consistently across tabs
   const [activeRole] = useState<UserRole>(user.currentRole || user.role || "student");
   const [currentPage, setCurrentPage] = useState<string>(activeRole === "staff" ? "tutor-approval" : "dashboard");
@@ -305,36 +303,24 @@ export default function App({ user, onLogout }: AppProps) {
   const [activeConversationId, setActiveConversationId] = useState<string>("vance");
   const [settingsTab, setSettingsTab] = useState<"info" | "password">("info");
   const [tutorApplicationStatus, setTutorApplicationStatus] = useState<string | null>(null);
-  const [tutorApplicationLoading, setTutorApplicationLoading] = useState(activeRole === "tutor");
+  const {
+    data: tutorApplication,
+    isLoading: tutorApplicationLoading,
+    isFetching: tutorApplicationFetching
+  } = useTutorApplication({
+    enabled: activeRole === "tutor"
+  });
 
   useEffect(() => {
-    let active = true;
-
-    async function loadTutorApplicationStatus() {
-      if (activeRole !== "tutor") {
-        setTutorApplicationStatus(null);
-        setTutorApplicationLoading(false);
-        return;
-      }
-
-      setTutorApplicationLoading(true);
-      try {
-        const application = await tutorApplicationApi.getMyTutorApplication();
-        if (active) setTutorApplicationStatus(application?.status || null);
-      } catch {
-        if (active) setTutorApplicationStatus(null);
-      } finally {
-        if (active) setTutorApplicationLoading(false);
-      }
+    if (activeRole !== "tutor") {
+      setTutorApplicationStatus(null);
+      return;
     }
 
-    loadTutorApplicationStatus();
-    return () => {
-      active = false;
-    };
-  }, [activeRole]);
+    setTutorApplicationStatus(tutorApplication?.status || null);
+  }, [activeRole, tutorApplication?.status]);
 
-  const restrictedTutor = activeRole === "tutor" && (tutorApplicationLoading || tutorApplicationStatus !== "APPROVED");
+  const restrictedTutor = activeRole === "tutor" && (tutorApplicationLoading || tutorApplicationFetching || tutorApplicationStatus !== "APPROVED");
   const fullTutorAccess = activeRole === "tutor" && !restrictedTutor;
 
   const handleTutorStatusChange = React.useCallback((status: string) => {

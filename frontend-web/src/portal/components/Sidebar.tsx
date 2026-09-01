@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import {
   BarChart3,
   BookOpen,
@@ -11,13 +12,16 @@ import {
   Lock,
   LogOut,
   MessageSquare,
+  RefreshCw,
   Settings,
   ShieldAlert,
   ShieldCheck,
   Users,
+  UserPlus,
   WalletCards,
   Layers3
 } from "lucide-react";
+import { useAuth } from "../../hooks/useAuth";
 import { UserRole } from "../types";
 
 interface SidebarProps {
@@ -36,7 +40,35 @@ export function Sidebar({
   onLogout,
   restrictedTutor = false,
 }: SidebarProps) {
+  const navigate = useNavigate();
+  const { user, switchRole, activateStudentProfile } = useAuth();
+  const [roleActionLoading, setRoleActionLoading] = React.useState(false);
+  const [roleActionError, setRoleActionError] = React.useState("");
   const isStaff = activeRole === "staff";
+  const hasStudentRole = Boolean(user?.roles?.includes("STUDENT") || user?.hasStudentProfile);
+
+  async function handleTutorStudentAction() {
+    if (activeRole !== "tutor" || roleActionLoading) return;
+
+    setRoleActionLoading(true);
+    setRoleActionError("");
+    try {
+      if (!hasStudentRole) {
+        await activateStudentProfile();
+      }
+      await switchRole("STUDENT");
+      navigate("/");
+    } catch (err) {
+      console.error("Không thể chuyển sang học viên:", err);
+      setRoleActionError(
+        hasStudentRole
+          ? "Không thể chuyển vai trò lúc này. Vui lòng thử lại."
+          : "Không thể tạo hồ sơ học viên."
+      );
+    } finally {
+      setRoleActionLoading(false);
+    }
+  }
 
   const getNavItems = () => {
     switch (activeRole) {
@@ -153,6 +185,30 @@ export function Sidebar({
             <Settings className="h-4 w-4" />
             <span>Tài khoản</span>
           </button>
+        )}
+        {activeRole === "tutor" && (
+          <>
+            <button
+              type="button"
+              onClick={handleTutorStudentAction}
+              disabled={roleActionLoading}
+              className="flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left font-display text-xs font-bold tracking-wider text-brand-primary transition-all hover:bg-brand-primary/10 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {hasStudentRole ? <RefreshCw className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+              <span>
+                {roleActionLoading
+                  ? "Đang xử lý..."
+                  : hasStudentRole
+                    ? "Chuyển sang Học viên"
+                    : "Trở thành Học viên"}
+              </span>
+            </button>
+            {roleActionError && (
+              <p className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-[11px] font-bold leading-5 text-red-700">
+                {roleActionError}
+              </p>
+            )}
+          </>
         )}
         <button
           type="button"

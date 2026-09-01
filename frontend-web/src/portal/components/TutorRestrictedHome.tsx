@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -8,7 +8,7 @@ import {
   Lock,
   RefreshCw,
 } from "lucide-react";
-import { tutorApplicationApi } from "../../api/tutorApplications";
+import { useTutorApplication } from "../../hooks/useTutorApplication";
 import { TutorReviewStatus } from "../types";
 
 interface TutorRestrictedHomeProps {
@@ -22,52 +22,22 @@ export function TutorRestrictedHome({
   onTutorStatusChange,
   onNavigate,
 }: TutorRestrictedHomeProps) {
-  const [application, setApplication] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadApplication() {
-      setLoading(true);
-      setError("");
-
-      try {
-        const data = await tutorApplicationApi.getMyTutorApplication();
-
-        if (!active) return;
-
-        setApplication(data);
-        onTutorStatusChange?.(
-          (data?.status || "DRAFT") as TutorReviewStatus
-        );
-      } catch (loadError: any) {
-        if (active) {
-          setError(
-            loadError?.message || "Không thể tải trạng thái hồ sơ gia sư."
-          );
-          onTutorStatusChange?.("DRAFT");
-        }
-      } finally {
-        if (active) {
-          setLoading(false);
-        }
-      }
-    }
-
-    loadApplication();
-
-    return () => {
-      active = false;
-    };
-  }, [onTutorStatusChange]);
+  const {
+    data: application,
+    isLoading: loading,
+    isFetching,
+    error
+  } = useTutorApplication();
 
   const status = (
     application?.status ||
     tutorStatus ||
     "DRAFT"
   ) as TutorReviewStatus;
+
+  useEffect(() => {
+    onTutorStatusChange?.(status);
+  }, [onTutorStatusChange, status]);
 
   const rejected = status === "REJECTED";
   const pending = status === "PENDING";
@@ -158,7 +128,7 @@ export function TutorRestrictedHome({
               {content.description}
             </p>
 
-            {loading && (
+            {(loading || isFetching) && (
               <p className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-slate-500">
                 <LoaderCircle className="h-4 w-4 animate-spin" />
                 Đang tải thông tin xét duyệt...
@@ -167,7 +137,7 @@ export function TutorRestrictedHome({
 
             {error && (
               <p className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
-                {error}
+                {(error as any)?.message || "Không thể tải trạng thái hồ sơ gia sư."}
               </p>
             )}
 

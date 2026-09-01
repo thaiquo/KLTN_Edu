@@ -1,46 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Edit3, LogOut, RefreshCw, UserCheck } from 'lucide-react';
-import { tutorApplicationApi } from '../api/tutorApplications';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { TutorApplicationStatusBanner } from '../components/tutor-application/TutorApplicationStatusBanner';
 import { useAuth } from '../hooks/useAuth';
+import { useTutorApplication } from '../hooks/useTutorApplication';
 
 export function TutorNextStepPage() {
   const navigate = useNavigate();
-  const { user, logout, switchRole, refreshUser } = useAuth();
-  const [application, setApplication] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { user, logout, switchRole } = useAuth();
   const [error, setError] = useState('');
   const [switching, setSwitching] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadStatus() {
-      setLoading(true);
-      setError('');
-      try {
-        const appData = await tutorApplicationApi.getMyTutorApplication();
-        if (active) setApplication(appData);
-      } catch (err) {
-        if (!active) return;
-        if (err.status === 404) {
-          setApplication(null);
-        } else {
-          setError(err.message || 'Không thể tải trạng thái hồ sơ.');
-        }
-      } finally {
-        if (active) setLoading(false);
-      }
-    }
-
-    loadStatus();
-
-    return () => {
-      active = false;
-    };
-  }, []);
+  const {
+    data: application,
+    isLoading: loading,
+    isFetching,
+    error: applicationError,
+    refetch
+  } = useTutorApplication({
+    enabled: Boolean(user)
+  });
 
   async function handleSwitchToStudent() {
     if (switching) return;
@@ -61,22 +40,15 @@ export function TutorNextStepPage() {
   }
 
   async function handleRetry() {
-    setLoading(true);
     setError('');
     try {
-      const appData = await tutorApplicationApi.getMyTutorApplication();
-      setApplication(appData);
+      await refetch();
     } catch (err) {
-      if (err.status === 404) {
-        setApplication(null);
-      } else {
-        setError(err.message || 'Không thể tải trạng thái hồ sơ.');
-      }
-    } finally {
-      setLoading(false);
+      setError(err.message || 'Không thể tải trạng thái hồ sơ.');
     }
   }
 
+  const queryError = applicationError ? (applicationError.message || 'Không thể tải trạng thái hồ sơ.') : '';
   const status = application?.status || (user?.tutorStatus || 'DRAFT');
 
   return (
@@ -95,14 +67,14 @@ export function TutorNextStepPage() {
           </div>
 
           <div className="p-6 sm:p-8 space-y-6">
-            {loading ? (
+            {loading || isFetching ? (
               <div className="py-12 text-center text-slate-500">
                 <RefreshCw size={24} className="mx-auto mb-3 animate-spin text-indigo-600" />
                 <p className="text-sm font-bold">Đang kiểm tra trạng thái hồ sơ...</p>
               </div>
-            ) : error ? (
+            ) : error || queryError ? (
               <div className="rounded-lg bg-red-50 p-4 text-red-800 text-sm font-semibold flex items-center justify-between">
-                <span>{error}</span>
+                <span>{error || queryError}</span>
                 <button type="button" onClick={handleRetry} className="underline text-red-900">Thử lại</button>
               </div>
             ) : (

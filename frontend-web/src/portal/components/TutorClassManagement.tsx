@@ -7,6 +7,7 @@ import {
 import { classApi } from "../../api/classes";
 import { CreateClassWizard } from "./CreateClassWizard";
 import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
+import { useTutorApplication } from "../../hooks/useTutorApplication";
 
 interface ChapterItem {
   id?: number | string;
@@ -141,7 +142,7 @@ export function TutorClassManagement() {
     }
   };
 
-  const [tutorApp, setTutorApp] = useState<any>(null);
+  const { data: tutorApp } = useTutorApplication();
 
   const loadClasses = async () => {
     setLoading(true);
@@ -168,11 +169,6 @@ export function TutorClassManagement() {
 
   useEffect(() => {
     loadClasses();
-    import("../../api/tutorApplications").then(({ tutorApplicationApi }) => {
-      tutorApplicationApi.getMyTutorApplication()
-        .then(data => setTutorApp(data))
-        .catch(() => setTutorApp(null));
-    });
   }, []);
 
   const handleCreateClick = () => {

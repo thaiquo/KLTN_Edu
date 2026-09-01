@@ -12,6 +12,8 @@ interface HeaderProps {
   user: {
     fullName: string;
     email: string;
+    roles?: string[];
+    hasStudentProfile?: boolean;
   };
   searchValue: string;
   onSearchChange: (value: string) => void;
@@ -100,7 +102,11 @@ export function Header({
         </div>
 
         {/* User profile block */}
-        <div className="flex items-center gap-3">
+        <div className="relative">
+          <button
+            type="button"
+            className="flex items-center gap-3 rounded-xl px-2 py-1.5"
+          >
           <div className="text-right hidden sm:block">
             <p className="font-bold text-brand-text text-sm leading-tight">
               {user.fullName}
@@ -117,6 +123,7 @@ export function Header({
               referrerPolicy="no-referrer"
             />
           </div>
+          </button>
         </div>
       </div>
     </header>

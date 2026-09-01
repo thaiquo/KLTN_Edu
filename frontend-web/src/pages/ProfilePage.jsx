@@ -10,6 +10,7 @@ import {
   Mail,
   MapPin,
   Phone,
+  RefreshCw,
   Save,
   Send,
   ShieldCheck,
@@ -22,6 +23,7 @@ import { userApi } from '../api/user';
 import { referenceApi } from '../api/reference';
 import { HomeHeader } from '../components/home/HomeHeader';
 import { useAuth } from '../hooks/useAuth';
+import { useInvalidateTutorApplication, useTutorApplication } from '../hooks/useTutorApplication';
 import {
   ProfileEditForm,
   mapValidationErrors,
@@ -55,7 +57,7 @@ const GENDER_OPTIONS = [
 ];
 
 export function ProfilePage({ embedded = false, onTabChange = null }) {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, switchRole } = useAuth();
   const navigate = useNavigate();
   const [profile, setProfile] = useState(user);
   const [form, setForm] = useState(toFormState(user));
@@ -80,6 +82,15 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
   const [tutorApp, setTutorApp] = useState(null);
   const [submittingReview, setSubmittingReview] = useState(false);
   const [hasUnsubmittedChanges, setHasUnsubmittedChanges] = useState(false);
+  const [switchingTutor, setSwitchingTutor] = useState(false);
+  const {
+    data: tutorApplication,
+    isLoading: tutorApplicationLoading,
+    error: tutorApplicationError
+  } = useTutorApplication({
+    enabled: Boolean(user)
+  });
+  const invalidateTutorApplication = useInvalidateTutorApplication();
 
   const roles = useMemo(
     () => (Array.isArray(profile?.roles) ? profile.roles : []),
@@ -89,20 +100,33 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
   const primaryRole = roles.includes('STUDENT') ? 'Học viên' : roles.map(roleLabel).join(' · ') || 'Tài khoản';
   const avatarUrl = getAvatarUrl(profile);
   const initials = getInitials(displayName);
-  const completion = getCompletion(profile, roles.includes('TUTOR'), documents, tutorApp);
+  const tutorAppForUi = tutorApplication || tutorApp;
+  const activeRole = profile?.activeRole || user?.activeRole;
+  const tutorStatus = tutorAppForUi?.status || profile?.tutorStatus || user?.tutorStatus || null;
+  const hasTutorContext = Boolean(
+    roles.includes('TUTOR')
+      || profile?.hasTutorProfile
+      || user?.hasTutorProfile
+      || tutorAppForUi
+      || tutorStatus
+  );
+  const showTutorOnboardingSection = activeRole === 'STUDENT' && hasTutorContext && tutorStatus !== 'APPROVED';
+  const showCompactTutorApproved = activeRole === 'STUDENT' && hasTutorContext && tutorStatus === 'APPROVED';
+  const showTutorIdentitySection = (activeRole === 'TUTOR' && hasTutorContext) || showTutorOnboardingSection;
+  const completion = getCompletion(profile, showTutorIdentitySection, documents, tutorAppForUi);
 
   const loadTutorIdentityState = useCallback(async ({ active = true, showLoading = true } = {}) => {
-    if (!roles.includes('TUTOR')) return;
+    if (!hasTutorContext) {
+      setDocuments([]);
+      setTutorApp(null);
+      return;
+    }
     if (showLoading) setLoadingDocs(true);
     try {
       const { tutorApplicationApi } = await import('../api/tutorApplications');
-      const [docs, app] = await Promise.all([
-        tutorApplicationApi.getMyApplicationDocuments().catch(() => []),
-        tutorApplicationApi.getMyTutorApplication().catch(() => null)
-      ]);
+      const docs = await tutorApplicationApi.getMyApplicationDocuments().catch(() => []);
       if (!active) return;
       setDocuments(Array.isArray(docs) ? docs : []);
-      if (app) setTutorApp(app);
       const hasPassport = Array.isArray(docs) && docs.some((d) => d.documentType === 'PASSPORT');
       if (hasPassport) setIdentityMode('PASSPORT');
     } catch (err) {
@@ -110,7 +134,7 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
     } finally {
       if (active && showLoading) setLoadingDocs(false);
     }
-  }, [roles]);
+  }, [hasTutorContext]);
 
   useEffect(() => {
     let active = true;
@@ -146,19 +170,47 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
     };
   }, [navigate, refreshUser]);
 
-  // Load identity documents and tutor application for TUTORs
   useEffect(() => {
-    if (!roles.includes('TUTOR')) return;
+    if (tutorApplication !== undefined) {
+      setTutorApp(tutorApplication);
+    }
+  }, [tutorApplication]);
+
+  useEffect(() => {
+    if (!tutorApplicationError || !hasTutorContext) return;
+    console.error('Failed to load tutor application', tutorApplicationError);
+    setDocError('Không thể tải trạng thái hồ sơ gia sư lúc này.');
+  }, [hasTutorContext, tutorApplicationError]);
+
+  useEffect(() => {
+    if (!user || editing) return;
+    setProfile(user);
+    setForm(toFormState(user));
+  }, [
+    editing,
+    user?.id,
+    user?.email,
+    user?.fullName,
+    user?.phone,
+    user?.activeRole,
+    user?.hasTutorProfile,
+    user?.tutorStatus,
+    user?.roles?.join('|')
+  ]);
+
+  // Load identity documents and tutor application when the current account has a tutor application context.
+  useEffect(() => {
+    if (!hasTutorContext) return;
     let active = true;
 
     loadTutorIdentityState({ active });
     return () => {
       active = false;
     };
-  }, [loadTutorIdentityState, roles]);
+  }, [hasTutorContext, loadTutorIdentityState, tutorStatus]);
 
   useRealtimeRefresh(['TUTOR_APPLICATION_REVIEWED'], async (event) => {
-    if (!roles.includes('TUTOR')) return;
+    if (!hasTutorContext) return;
     const payload = event?.payload || {};
     const currentUserId = profile?.id ?? user?.id;
     const currentEmail = profile?.email || user?.email;
@@ -231,8 +283,7 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
 
       const freshDocs = await tutorApplicationApi.getMyApplicationDocuments();
       setDocuments(Array.isArray(freshDocs) ? freshDocs : []);
-      const freshApp = await tutorApplicationApi.getMyTutorApplication().catch(() => null);
-      if (freshApp) setTutorApp(freshApp);
+      await invalidateTutorApplication();
       setHasUnsubmittedChanges(true);
       setMessage('Tải lên tài liệu xác minh danh tính thành công!');
     } catch (err) {
@@ -252,6 +303,12 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
       const { tutorApplicationApi } = await import('../api/tutorApplications');
       const updatedApp = await tutorApplicationApi.submitProfileForReview();
       setTutorApp(updatedApp);
+      await invalidateTutorApplication();
+      const syncedProfile = await refreshUser().catch(() => null);
+      if (syncedProfile) {
+        setProfile(syncedProfile);
+        setForm(toFormState(syncedProfile));
+      }
       setHasUnsubmittedChanges(false);
       setMessage('Đã gửi hồ sơ và giấy tờ xác minh danh tính cho Ban quản trị phê duyệt thành công!');
     } catch (err) {
@@ -324,11 +381,8 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
       setEditing(false);
       setHasUnsubmittedChanges(true);
       
-      // Reload tutor application status after profile update (may transition to PENDING)
-      if (roles.includes('TUTOR')) {
-        const { tutorApplicationApi } = await import('../api/tutorApplications');
-        const app = await tutorApplicationApi.getMyTutorApplication().catch(() => null);
-        if (app) setTutorApp(app);
+      if (hasTutorContext) {
+        await invalidateTutorApplication();
       }
 
       setMessage('Hồ sơ cá nhân đã được cập nhật.');
@@ -374,6 +428,22 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
       setAvatarError(uploadError.message || 'Không thể cập nhật ảnh đại diện.');
     } finally {
       setUploadingAvatar(false);
+    }
+  }
+
+  async function handleSwitchToTutor() {
+    if (switchingTutor) return;
+
+    setSwitchingTutor(true);
+    setError('');
+    setMessage('');
+    try {
+      await switchRole('TUTOR');
+      navigate('/dashboard');
+    } catch (switchError) {
+      setError(switchError.message || 'Không thể chuyển sang Gia sư lúc này. Vui lòng thử lại.');
+    } finally {
+      setSwitchingTutor(false);
     }
   }
 
@@ -475,7 +545,7 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
                   <PersonalInfoSection profile={profile} />
                   <AddressSection profile={profile} />
                   <AboutSection profile={profile} />
-                  {roles.includes('TUTOR') && (
+                  {showTutorIdentitySection && (
                     <TutorIdentityVerificationSection
                       profile={profile}
                       documents={documents}
@@ -484,10 +554,16 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
                       uploadingDocType={uploadingDocType}
                       onUpload={handleUploadIdentityDoc}
                       error={docError}
-                      tutorApp={tutorApp}
+                      tutorApp={tutorAppForUi}
                       submittingReview={submittingReview}
                       onSubmitForReview={handleSubmitForReview}
                       hasUnsubmittedChanges={hasUnsubmittedChanges}
+                    />
+                  )}
+                  {showCompactTutorApproved && (
+                    <TutorApprovedSummarySection
+                      switching={switchingTutor}
+                      onSwitchToTutor={handleSwitchToTutor}
                     />
                   )}
                 </div>
@@ -839,6 +915,36 @@ function TutorIdentityVerificationSection({
             </button>
           </>
         )}
+      </div>
+    </section>
+  );
+}
+
+function TutorApprovedSummarySection({ switching, onSwitchToTutor }) {
+  return (
+    <section className="rounded-[8px] border border-emerald-200 bg-emerald-50/70 p-6 shadow-[0_18px_45px_rgba(15,23,42,.06)]">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[14px] bg-white text-emerald-700">
+            <ShieldCheck size={20} />
+          </span>
+          <div>
+            <SectionTitle eyebrow="Tutor profile" title="Hồ sơ gia sư" compact />
+            <p className="mt-2 text-sm font-extrabold text-emerald-900">Đã được phê duyệt</p>
+            <p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-emerald-800/80">
+              Thông tin xét duyệt gia sư đã sẵn sàng. Chi tiết giấy tờ và minh chứng được quản lý trong ngữ cảnh Gia sư.
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onSwitchToTutor}
+          disabled={switching}
+          className="inline-flex items-center justify-center gap-2 rounded-[8px] bg-[#147b77] px-5 py-3 text-sm font-extrabold text-white transition-colors hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <RefreshCw size={16} />
+          {switching ? 'Đang chuyển...' : 'Chuyển sang Gia sư'}
+        </button>
       </div>
     </section>
   );

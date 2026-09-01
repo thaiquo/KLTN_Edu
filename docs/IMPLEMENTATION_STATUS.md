@@ -142,7 +142,7 @@ Tutor application lifecycle now distinguishes account existence from Staff revie
 - Staff approval changes application/Tutor status to `APPROVED`.
 - Staff rejection changes application/Tutor status to `REJECTED` and preserves the rejection reason.
 
-Tutor `DRAFT`, `PENDING`, and `REJECTED` can authenticate/switch with `activeRole=TUTOR` for restricted onboarding/profile correction. Account Service withholds `ROLE_TUTOR` unless Tutor status is `APPROVED`; Learning Service uses a local approval projection from Account events as the priority source for full Tutor authority, with a signed JWT `tutorStatus=APPROVED` fallback when projection has not arrived yet.
+Tutor `DRAFT`, `PENDING`, and `REJECTED` can authenticate with `activeRole=TUTOR` for restricted onboarding/profile correction when using the Tutor login flow. Account Service withholds `ROLE_TUTOR` unless Tutor status is `APPROVED`; Learning Service uses a local approval projection from Account events as the priority source for full Tutor authority, with a signed JWT `tutorStatus=APPROVED` fallback when projection has not arrived yet. `POST /api/auth/switch-role` is stricter: switching into Tutor mode is allowed only when both Tutor and TutorApplication are `APPROVED`, so Student -> Tutor cannot bypass Staff approval.
 
 Status: IMPLEMENTED for backend auth/authorization and Web restricted routing. Mobile is out of scope for this status.
 

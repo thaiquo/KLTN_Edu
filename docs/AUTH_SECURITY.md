@@ -86,6 +86,7 @@ Tutor authorization baseline:
 - Tutor application `DRAFT`, `PENDING`, and `REJECTED` states may authenticate with `activeRole=TUTOR`, but they must not receive full teaching authority.
 - `TutorApplication.status=DRAFT` means the Tutor account/application exists but has not been submitted for Staff review. `PENDING` means the application has been submitted and is awaiting Staff review.
 - Account Service grants `ROLE_TUTOR` only when the current Tutor status is `APPROVED`.
+- `POST /api/auth/switch-role` only allows switching into Tutor mode when both the Tutor record and TutorApplication are `APPROVED`; `DRAFT`, `PENDING`, and `REJECTED` are denied at the backend even if the user has a compatibility `TUTOR` role row.
 - Account Service self profile/application endpoints remain available to authenticated Tutor users for identity-document submission/correction without granting full `ROLE_TUTOR`.
 - Learning Service uses its local tutor authorization projection from Account approval/rejection events as the priority source for full Tutor APIs. If no projection exists yet, it may fall back to the signed JWT `tutorStatus=APPROVED` claim after token refresh/switch-role.
 - Full Tutor APIs remain `APPROVED`-only even when the browser has a valid `access_token` cookie and `activeRole=TUTOR`.

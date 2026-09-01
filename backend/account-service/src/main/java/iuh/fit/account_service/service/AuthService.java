@@ -316,11 +316,20 @@ public class AuthService {
         User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new BadRequestException("User not found"));
 
+        if (!user.isEmailVerified()) {
+            throw new ForbiddenException("Please verify your email first");
+        }
+
+        if (user.getAccountStatus() != AccountStatus.ACTIVE) {
+            throw new ForbiddenException("Account is not allowed to login");
+        }
+
         String targetRole = request.getTargetRole() == null ? "" : request.getTargetRole().trim().toUpperCase();
 
         boolean hasStudent = studentRepository.existsByUserId(user.getId());
         Optional<Tutor> tutorOpt = tutorRepository.findByUserId(user.getId());
         boolean hasTutor = tutorOpt.isPresent();
+        Optional<TutorApplication> tutorApplicationOpt = tutorApplicationRepository.findByUserId(user.getId());
         String tutorStatusStr = resolveTutorStatusForClient(user.getId(), tutorOpt);
 
         List<UserRole> userRoles = userRoleRepository.findByUserId(user.getId());
@@ -329,12 +338,19 @@ public class AuthService {
                 .toList();
 
         if ("STUDENT".equals(targetRole)) {
-            if (!hasStudent) {
+            if (!roles.contains(Role.STUDENT.name()) || !hasStudent) {
                 throw new BadRequestException("ROLE_NOT_AVAILABLE: Bạn chưa có hồ sơ Học viên.");
             }
         } else if ("TUTOR".equals(targetRole)) {
-            if (!hasTutor) {
+            if (!roles.contains(Role.TUTOR.name()) || !hasTutor || tutorApplicationOpt.isEmpty()) {
                 throw new BadRequestException("ROLE_NOT_AVAILABLE: Bạn chưa đăng ký làm Gia sư.");
+            }
+            TutorApplication application = tutorApplicationOpt.get();
+            Tutor tutor = tutorOpt.get();
+            boolean applicationApproved = application.getStatus() == TutorApplicationStatus.APPROVED;
+            boolean tutorApproved = tutor.getStatus() == TutorStatus.APPROVED;
+            if (!applicationApproved || !tutorApproved) {
+                throw new ForbiddenException("TUTOR_NOT_APPROVED: Hồ sơ gia sư chưa được duyệt.");
             }
         } else if ("STAFF".equals(targetRole) || "ADMIN".equals(targetRole)) {
             if (!roles.contains(targetRole)) {

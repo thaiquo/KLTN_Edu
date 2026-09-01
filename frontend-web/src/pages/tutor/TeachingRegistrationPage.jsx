@@ -11,6 +11,7 @@ import { catalogSuggestionApi, teachingCatalogApi, teachingRegistrationApi } fro
 import { TeachingRegistrationDetailsStep } from './TeachingRegistrationDetailsStep';
 import { TeachingRegistrationHistory } from './TeachingRegistrationHistory';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
+import { useInvalidateTutorApplication, useTutorApplication } from '../../hooks/useTutorApplication';
 
 const EMPTY_FORM = {
   programTypeId: '', educationLevelId: '', categoryId: '', subjectId: '', levelIds: [],
@@ -90,22 +91,21 @@ export function TeachingRegistrationPage({ embedded = false }) {
   const hasIdentity = hasIdentityDocuments(documents);
   const visibleDocuments = [...documents, ...stagedDocuments];
 
-  const [tutorApp, setTutorApp] = useState(null);
+  const { data: tutorApp } = useTutorApplication();
+  const invalidateTutorApplication = useInvalidateTutorApplication();
 
   useEffect(() => {
     let active = true;
     Promise.all([
       teachingCatalogApi.programTypes(), teachingCatalogApi.educationLevels(),
       teachingRegistrationApi.mine(), catalogSuggestionApi.mine().catch(() => []),
-      tutorApplicationApi.getMyApplicationDocuments().catch(() => []),
-      tutorApplicationApi.getMyTutorApplication().catch(() => null)
-    ]).then(([programs, educationLevels, items, requested, savedDocuments, app]) => {
+      tutorApplicationApi.getMyApplicationDocuments().catch(() => [])
+    ]).then(([programs, educationLevels, items, requested, savedDocuments]) => {
       if (!active) return;
       setCatalog((current) => ({ ...current, programs, educationLevels }));
       setRegistrations(Array.isArray(items) ? items : []);
       setSuggestions(Array.isArray(requested) ? requested : []);
       setDocuments(Array.isArray(savedDocuments) ? savedDocuments : []);
-      if (app) setTutorApp(app);
     }).catch((loadError) => {
       if (active) setError(loadError.message || 'Không thể tải dữ liệu đăng ký dạy.');
     }).finally(() => {
@@ -245,6 +245,7 @@ export function TeachingRegistrationPage({ embedded = false }) {
       const readyStaged = stagedDocuments.filter((item) => item.file);
       const uploadedStaged = await Promise.all(readyStaged.map((item) => tutorApplicationApi.uploadApplicationDocument({ documentType: item.documentType, file: item.file, metadata: TEACHING_EVIDENCE_TYPES.includes(item.documentType) ? { title: item.title || item.file.name.replace(/\.[^/.]+$/, ''), issuer: '', issueDate: item.issueDate || '', validityType: item.validityType || 'DOES_NOT_EXPIRE', expiryDate: item.expiryDate || '' } : {} })));
       const freshDocuments = uploadedStaged.length ? await tutorApplicationApi.getMyApplicationDocuments() : documents;
+      if (uploadedStaged.length) await invalidateTutorApplication();
       const selectedEvidence = [...uploadedStaged.filter((item) => TEACHING_EVIDENCE_TYPES.includes(item.documentType)), ...selectedSavedEvidence];
       
       const payload = {
@@ -354,6 +355,7 @@ export function TeachingRegistrationPage({ embedded = false }) {
       });
       const savedDocuments = await tutorApplicationApi.getMyApplicationDocuments();
       setDocuments(Array.isArray(savedDocuments) ? savedDocuments : []);
+      await invalidateTutorApplication();
       setDocumentErrors((current) => ({ ...current, [documentType]: '' }));
       setMessage('Tài liệu đã được lưu và có thể chọn cho quyền dạy này.');
     } catch (uploadError) {
@@ -396,6 +398,7 @@ export function TeachingRegistrationPage({ embedded = false }) {
       });
       const savedDocuments = await tutorApplicationApi.getMyApplicationDocuments();
       setDocuments(Array.isArray(savedDocuments) ? savedDocuments : []);
+      await invalidateTutorApplication();
       setMessage('Tài liệu đã được lưu và có thể chọn cho quyền dạy này.');
     } catch (uploadError) {
       const message = uploadError.message || 'Không thể tải tài liệu lên.';

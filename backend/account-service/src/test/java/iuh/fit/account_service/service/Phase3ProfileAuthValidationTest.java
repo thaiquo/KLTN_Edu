@@ -9,10 +9,12 @@ import iuh.fit.account_service.dto.auth.RegisterResponse;
 import iuh.fit.account_service.dto.auth.SwitchRoleRequest;
 import iuh.fit.account_service.entity.Student;
 import iuh.fit.account_service.entity.Tutor;
+import iuh.fit.account_service.entity.TutorApplication;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.entity.UserRole;
 import iuh.fit.account_service.enums.AccountStatus;
 import iuh.fit.account_service.enums.Role;
+import iuh.fit.account_service.enums.TutorApplicationStatus;
 import iuh.fit.account_service.enums.TutorStatus;
 import iuh.fit.account_service.exception.ForbiddenException;
 import iuh.fit.account_service.repository.OtpVerificationRepository;
@@ -213,6 +215,9 @@ public class Phase3ProfileAuthValidationTest {
         Tutor approvedTutor = new Tutor();
         approvedTutor.setUser(user);
         approvedTutor.setStatus(TutorStatus.APPROVED);
+        TutorApplication application = new TutorApplication();
+        application.setUser(user);
+        application.setStatus(TutorApplicationStatus.APPROVED);
 
         UserRole tRole = new UserRole();
         tRole.setUser(user);
@@ -250,6 +255,9 @@ public class Phase3ProfileAuthValidationTest {
         Tutor rejectedTutor = new Tutor();
         rejectedTutor.setUser(user);
         rejectedTutor.setStatus(TutorStatus.REJECTED);
+        TutorApplication application = new TutorApplication();
+        application.setUser(user);
+        application.setStatus(TutorApplicationStatus.REJECTED);
         rejectedTutor.setRejectionReason("Bằng cấp không rõ ràng");
 
         UserRole tRole = new UserRole();
@@ -311,6 +319,9 @@ public class Phase3ProfileAuthValidationTest {
         Tutor approvedTutor = new Tutor();
         approvedTutor.setUser(user);
         approvedTutor.setStatus(TutorStatus.APPROVED);
+        TutorApplication application = new TutorApplication();
+        application.setUser(user);
+        application.setStatus(TutorApplicationStatus.APPROVED);
 
         UserRole sRole = new UserRole();
         sRole.setUser(user);
@@ -323,6 +334,7 @@ public class Phase3ProfileAuthValidationTest {
         when(userRepository.findByEmailIgnoreCase("dual.user@example.com")).thenReturn(Optional.of(user));
         when(studentRepository.existsByUserId(606L)).thenReturn(true);
         when(tutorRepository.findByUserId(606L)).thenReturn(Optional.of(approvedTutor));
+        when(tutorApplicationRepository.findByUserId(606L)).thenReturn(Optional.of(application));
         when(userRoleRepository.findByUserId(606L)).thenReturn(List.of(sRole, tRole));
 
         SwitchRoleRequest switchReq = new SwitchRoleRequest();
@@ -339,8 +351,8 @@ public class Phase3ProfileAuthValidationTest {
     }
 
     @Test
-    @DisplayName("Phase C: Switch Role allows PENDING Tutor restricted context")
-    void testSwitchRolePendingTutorSucceedsRestricted() {
+    @DisplayName("Phase 5B: Switch Role denies PENDING Tutor full context")
+    void testSwitchRolePendingTutorDenied() {
         User user = new User();
         ReflectionTestUtils.setField(user, "id", 607L);
         user.setEmail("pending.switch@example.com");
@@ -350,6 +362,9 @@ public class Phase3ProfileAuthValidationTest {
         Tutor pendingTutor = new Tutor();
         pendingTutor.setUser(user);
         pendingTutor.setStatus(TutorStatus.PENDING);
+        TutorApplication application = new TutorApplication();
+        application.setUser(user);
+        application.setStatus(TutorApplicationStatus.PENDING);
 
         UserRole tutorRole = new UserRole();
         tutorRole.setUser(user);
@@ -358,26 +373,20 @@ public class Phase3ProfileAuthValidationTest {
         when(userRepository.findByEmailIgnoreCase("pending.switch@example.com")).thenReturn(Optional.of(user));
         when(studentRepository.existsByUserId(607L)).thenReturn(false);
         when(tutorRepository.findByUserId(607L)).thenReturn(Optional.of(pendingTutor));
+        when(tutorApplicationRepository.findByUserId(607L)).thenReturn(Optional.of(application));
         when(userRoleRepository.findByUserId(607L)).thenReturn(List.of(tutorRole));
-        when(jwtService.generateToken(eq("pending.switch@example.com"), eq(607L), eq("TUTOR"), any(), eq("PENDING")))
-                .thenReturn("jwt-pending-tutor");
 
         SwitchRoleRequest switchReq = new SwitchRoleRequest();
         switchReq.setTargetRole("TUTOR");
 
-        LoginResult result = authService.switchRole("pending.switch@example.com", switchReq);
-
-        assertThat(result.getActiveRole()).isEqualTo("TUTOR");
-        assertThat(result.getTutorStatus()).isEqualTo("PENDING");
-        assertThat(result.getToken()).isEqualTo("jwt-pending-tutor");
-
-        UserDetails userDetails = userDetailsService.loadUserByUsernameAndActiveRole("pending.switch@example.com", "TUTOR");
-        assertThat(userDetails.getAuthorities()).isEmpty();
+        assertThatThrownBy(() -> authService.switchRole("pending.switch@example.com", switchReq))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessageContaining("TUTOR_NOT_APPROVED");
     }
 
     @Test
-    @DisplayName("Phase C: Switch Role allows REJECTED Tutor restricted context")
-    void testSwitchRoleRejectedTutorSucceedsRestricted() {
+    @DisplayName("Phase 5B: Switch Role denies REJECTED Tutor full context")
+    void testSwitchRoleRejectedTutorDenied() {
         User user = new User();
         ReflectionTestUtils.setField(user, "id", 608L);
         user.setEmail("rejected.switch@example.com");
@@ -393,24 +402,22 @@ public class Phase3ProfileAuthValidationTest {
         tutorRole.setUser(user);
         tutorRole.setRole(Role.TUTOR);
 
+        TutorApplication application = new TutorApplication();
+        application.setUser(user);
+        application.setStatus(TutorApplicationStatus.REJECTED);
+
         when(userRepository.findByEmailIgnoreCase("rejected.switch@example.com")).thenReturn(Optional.of(user));
         when(studentRepository.existsByUserId(608L)).thenReturn(false);
         when(tutorRepository.findByUserId(608L)).thenReturn(Optional.of(rejectedTutor));
+        when(tutorApplicationRepository.findByUserId(608L)).thenReturn(Optional.of(application));
         when(userRoleRepository.findByUserId(608L)).thenReturn(List.of(tutorRole));
-        when(jwtService.generateToken(eq("rejected.switch@example.com"), eq(608L), eq("TUTOR"), any(), eq("REJECTED")))
-                .thenReturn("jwt-rejected-tutor");
 
         SwitchRoleRequest switchReq = new SwitchRoleRequest();
         switchReq.setTargetRole("TUTOR");
 
-        LoginResult result = authService.switchRole("rejected.switch@example.com", switchReq);
-
-        assertThat(result.getActiveRole()).isEqualTo("TUTOR");
-        assertThat(result.getTutorStatus()).isEqualTo("REJECTED");
-        assertThat(result.getToken()).isEqualTo("jwt-rejected-tutor");
-
-        UserDetails userDetails = userDetailsService.loadUserByUsernameAndActiveRole("rejected.switch@example.com", "TUTOR");
-        assertThat(userDetails.getAuthorities()).isEmpty();
+        assertThatThrownBy(() -> authService.switchRole("rejected.switch@example.com", switchReq))
+                .isInstanceOf(ForbiddenException.class)
+                .hasMessageContaining("TUTOR_NOT_APPROVED");
     }
 
     @Test

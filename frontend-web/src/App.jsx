@@ -22,7 +22,7 @@ import { StudentMatchingPage } from './pages/student/StudentMatchingPage';
 import { StudentMessagesPage } from './pages/student/StudentMessagesPage';
 import { StudentMyClassesPage } from './pages/student/StudentMyClassesPage';
 import { StudentPaymentsPage } from './pages/student/StudentPaymentsPage';
-import { tutorApplicationApi } from './api/tutorApplications';
+import { useTutorApplication } from './hooks/useTutorApplication';
 
 const DashboardPage = lazy(() =>
   import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage }))
@@ -87,40 +87,19 @@ function RoleGate({ roles, children }) {
 function FullTutorFeatureGate({ children }) {
   const { user, authenticated, loading } = useAuth();
   const location = useLocation();
-  const [applicationStatus, setApplicationStatus] = React.useState(null);
-  const [applicationLoading, setApplicationLoading] = React.useState(true);
+  const {
+    data: application,
+    isLoading: applicationLoading,
+    isFetching: applicationFetching
+  } = useTutorApplication({
+    enabled: authenticated && user?.activeRole === 'TUTOR'
+  });
 
-  React.useEffect(() => {
-    let active = true;
-
-    async function loadApplicationStatus() {
-      if (!authenticated || user?.activeRole !== 'TUTOR') {
-        if (active) setApplicationLoading(false);
-        return;
-      }
-
-      setApplicationLoading(true);
-      try {
-        const application = await tutorApplicationApi.getMyTutorApplication();
-        if (active) setApplicationStatus(application?.status || null);
-      } catch {
-        if (active) setApplicationStatus(null);
-      } finally {
-        if (active) setApplicationLoading(false);
-      }
-    }
-
-    loadApplicationStatus();
-    return () => {
-      active = false;
-    };
-  }, [authenticated, user?.activeRole]);
-
-  if (loading || applicationLoading) return <div className="loader" aria-label="Dang tai" />;
+  if (loading || applicationLoading || applicationFetching) return <div className="loader" aria-label="Dang tai" />;
   if (!authenticated) return <Navigate to="/login" replace state={{ from: location }} />;
   if (user?.activeRole !== 'TUTOR') return <Navigate to="/" replace />;
 
-  return applicationStatus === 'APPROVED'
+  return application?.status === 'APPROVED'
     ? children
     : <Navigate to="/dashboard" replace />;
 }
