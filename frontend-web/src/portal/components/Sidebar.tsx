@@ -70,17 +70,8 @@ export function Sidebar({
           { id: "class-management", label: "Lớp / nội dung", icon: BookOpen },
           { id: "reports", label: "Báo cáo nghiệp vụ", icon: BarChart3 },
         ];
-      case "student":
       default:
-        return [
-          { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-          { id: "courses", label: "Courses", icon: BookOpen },
-          { id: "contracts", label: "Hợp đồng & Ký quỹ", icon: ShieldCheck },
-          { id: "wallet", label: "Ví của tôi", icon: WalletCards },
-          { id: "messages", label: "Messages", icon: MessageSquare },
-          { id: "schedule", label: "Schedule", icon: Calendar },
-          { id: "settings", label: "Settings", icon: Settings },
-        ];
+        return [];
     }
   };
 
@@ -99,9 +90,7 @@ export function Sidebar({
           let activeClass = "";
 
           if (isActive) {
-            if (activeRole === "student") {
-              activeClass = "bg-brand-primary text-white shadow-lg shadow-brand-primary/10";
-            } else if (activeRole === "tutor") {
+            if (activeRole === "tutor") {
               activeClass = "bg-brand-secondary text-white shadow-lg shadow-brand-secondary/10";
             } else if (activeRole === "staff") {
               activeClass = "bg-white/10 text-white border-l-4 border-[#ff695f]";

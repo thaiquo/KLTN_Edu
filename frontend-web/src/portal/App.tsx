@@ -16,18 +16,9 @@ import {
   BookOpen,
   HelpCircle,
   LogOut,
-  PlayCircle,
-  Video,
-  Clock,
-  Sparkles,
-  TrendingUp,
-  Award,
-  VideoOff,
   UserCheck
 } from "lucide-react";
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -44,7 +35,6 @@ import {
   UserRole,
   StudentRequest,
   ScheduleItem,
-  Course,
   Conversation,
   SystemUser,
   AppProfileSettings
@@ -53,7 +43,6 @@ import {
 import { Header } from "./components/Header";
 import { Sidebar } from "./components/Sidebar";
 import { TutorDashboard } from "./components/TutorDashboard";
-import { Marketplace } from "./components/Marketplace";
 import { MessagesView } from "./components/MessagesView";
 import { ProfileSettings } from "./components/ProfileSettings";
 import { AdminPortal } from "./components/AdminPortal";
@@ -134,51 +123,6 @@ const INITIAL_SCHEDULE: ScheduleItem[] = [
     detailType: "location",
     detailValue: "Phòng 4B",
     status: "past",
-  },
-];
-
-const INITIAL_COURSES: Course[] = [
-  {
-    id: "c-1",
-    title: "Mastering AI Prompt Engineering for Business",
-    tag: "Best Seller",
-    tagColor: "bg-rose-50 text-rose-700 border-rose-100",
-    tutorName: "Dr. Sarah Jenkins",
-    tutorAvatar: tutorAvatar1,
-    duration: "12h 30m total",
-    studentCount: "1.5k students",
-    price: 129.99,
-    originalPrice: 189.99,
-    coverImage: "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&w=600&q=80",
-    isFavorite: true,
-  },
-  {
-    id: "c-2",
-    title: "Full Stack Web Dev with Next.js 14",
-    tag: "New",
-    tagColor: "bg-blue-50 text-blue-700 border-blue-100",
-    tutorName: "Alex Rivera",
-    tutorAvatar: "https://lh3.googleusercontent.com/aida-public/AB6AXuBYfodNBlGcqTaAKMNzNGEaAOg2AUygYGk8XYUF-_NxGI0SZ75MJgFNJvnmJOrkWem-SdVi53mp7A_Wnz4MmsG2XPHrfEQDt4ZmgHzGQFPvWonX1v39Fb71Q5zdulTudkDaMij4Xw9Q4Y57T8jqjnkI-7mohDZBerRX-WeA0xJNdv_gXWnBJu5hwIMtOWgoxSaYkJWwoQhgaRZss0L-r-SwS2c2dlRlQPWBtoeTCIDIR_sv_jgEgBVf97PjoOk6KVZHKS6VAf0II9GY",
-    duration: "45h total",
-    studentCount: "3k students",
-    price: 149.99,
-    originalPrice: 220.00,
-    coverImage: "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=600&q=80",
-    isFavorite: false,
-  },
-  {
-    id: "c-3",
-    title: "Corporate Leadership & Team Psychology",
-    tag: "",
-    tagColor: "",
-    tutorName: "David Cohen",
-    tutorAvatar: tutorAvatar2,
-    duration: "8h intensive",
-    studentCount: "500 students",
-    price: 79.99,
-    originalPrice: 99.99,
-    coverImage: "https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&w=600&q=80",
-    isFavorite: false,
   },
 ];
 
@@ -306,17 +250,6 @@ const INITIAL_PROFILE_SETTINGS: AppProfileSettings = {
   status: "none",
 };
 
-// Recharts Dummy Analytics Datasets for student / tutor / admin custom dashboards
-const WEEKLY_HOURS_DATA = [
-  { name: "Mon", hours: 4.5 },
-  { name: "Tue", hours: 6.0 },
-  { name: "Wed", hours: 3.5 },
-  { name: "Thu", hours: 7.0 },
-  { name: "Fri", hours: 5.0 },
-  { name: "Sat", hours: 2.0 },
-  { name: "Sun", hours: 1.5 },
-];
-
 const ENROLLMENTS_DATA = [
   { name: "AI Tech", students: 120 },
   { name: "Web Dev", students: 240 },
@@ -334,7 +267,6 @@ const FULL_TUTOR_PAGE_IDS = new Set([
   "requests",
   "messages",
   "schedule",
-  "courses",
   "complaints"
 ]);
 
@@ -361,7 +293,6 @@ export default function App({ user, onLogout }: AppProps) {
   // Custom mock database tables binded in React
   const [requests, setRequests] = useState<StudentRequest[]>(INITIAL_REQUESTS);
   const [schedule, setSchedule] = useState<ScheduleItem[]>(INITIAL_SCHEDULE);
-  const [courses, setCourses] = useState<Course[]>(INITIAL_COURSES);
   const [conversations, setConversations] = useState<Conversation[]>(INITIAL_CONVERSATIONS);
   const [users, setUsers] = useState<SystemUser[]>(INITIAL_SYSTEM_USERS);
   const [profileSettings, setProfileSettings] = useState<AppProfileSettings>({
@@ -439,23 +370,6 @@ export default function App({ user, onLogout }: AppProps) {
   // Interaction handlers
   const handleStartSession = () => {
     alert("Launching EduConnect Peer Video/Audio Room 4B. Your camera and audio systems are online...");
-  };
-
-  // Student specific handlers
-  const handleToggleFavoriteCourse = (id: string) => {
-    setCourses((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, isFavorite: !c.isFavorite } : c))
-    );
-  };
-
-  const handleTutorChat = (tutorId: string) => {
-    // If we select Sarah Jenkins
-    if (tutorId === "sarah-jenkins") {
-      setActiveConversationId("jenkins");
-    } else {
-      setActiveConversationId("vance");
-    }
-    handleNavigate("messages");
   };
 
   // Messages handlers
@@ -663,127 +577,8 @@ export default function App({ user, onLogout }: AppProps) {
 
             </div>
           );
-        } else {
-          // Clean high-contrast Student Dashboard
-          return (
-            <div className="space-y-8 select-none font-sans max-w-7xl mx-auto">
-              <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-                <div>
-                  <h2 className="font-display font-black text-2xl lg:text-3xl tracking-tight text-brand-text">
-                    Welcome back, {user.fullName}!
-                  </h2>
-                  <p className="text-brand-text-variant/60 text-sm mt-1">
-                    You have 3 active study classes and 1 consultation scheduled for today.
-                  </p>
-                </div>
-                <button
-                  onClick={() => handleNavigate("courses")}
-                  className="px-5 py-2.5 bg-brand-primary text-white rounded-xl text-xs font-display font-black tracking-widest hover:bg-brand-primary/95 transition-all shadow-md shrink-0"
-                >
-                  EXPLORE MARKETPLACE
-                </button>
-              </div>
-
-              {/* Bento Grid */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                
-                {/* Recharts Analytics: Weekly Study Hours */}
-                <div className="bg-white p-6 rounded-3xl border border-brand-border/30 shadow-sm md:col-span-2">
-                  <h3 className="font-display font-black text-xs uppercase text-brand-text-variant/50 tracking-wider mb-6">
-                    Weekly Study Time Tracker
-                  </h3>
-                  <div className="h-64 select-none w-full">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={100}>
-                      <LineChart data={WEEKLY_HOURS_DATA}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                        <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
-                        <Tooltip />
-                        <Line
-                          type="monotone"
-                          dataKey="hours"
-                          stroke="#0058be"
-                          strokeWidth={3}
-                          dot={{ r: 4 }}
-                          activeDot={{ r: 6 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Profile Strengths Indicator & launch cards */}
-                <div className="bg-brand-secondary text-white p-8 rounded-3xl shadow-sm flex flex-col justify-between relative overflow-hidden">
-                  <div className="relative z-10 space-y-4">
-                    <span className="bg-white/15 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-wider">
-                      Premium Pass Active
-                    </span>
-                    <h3 className="font-display font-black text-xl leading-snug">
-                      Schedule 1-on-1 calls with Ivy-League tutors
-                    </h3>
-                  </div>
-                  <div className="pt-8 relative z-10">
-                    <button
-                      onClick={handleStartSession}
-                      className="px-5 py-2.5 bg-white text-brand-secondary font-black text-xs font-display tracking-widest rounded-xl hover:-translate-y-0.5 active:translate-y-0 transition-transform shadow-md"
-                    >
-                      DIAL TUTOR ROOM
-                    </button>
-                  </div>
-                  <Award className="absolute -right-6 -bottom-6 w-32 h-32 opacity-10 rotate-12 shrink-0 pointer-events-none" />
-                </div>
-
-              </div>
-
-              {/* Favorite Courses & schedule shortcuts row */}
-              <div className="bg-white border border-brand-border/30 rounded-3xl p-6 shadow-sm">
-                <h3 className="font-display font-black text-base text-brand-text mb-4">
-                  My Live Subscriptions
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {courses.filter((c) => c.isFavorite).map((course) => (
-                    <div
-                      key={course.id}
-                      className="p-4 border border-brand-border/20 rounded-2xl flex gap-3 hover:border-brand-primary transition-colors"
-                    >
-                      <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0">
-                        <img
-                          className="w-full h-full object-cover"
-                          src={course.coverImage}
-                          alt={course.title}
-                          referrerPolicy="no-referrer"
-                        />
-                      </div>
-                      <div className="min-w-0 flex-1 select-none">
-                        <h4 className="font-bold text-brand-text text-xs truncate leading-snug">
-                          {course.title}
-                        </h4>
-                        <p className="text-[11px] text-brand-text-variant/60 font-semibold mt-1">
-                          {course.tutorName}
-                        </p>
-                        <div className="flex items-center gap-1.5 text-[10px] text-brand-text-variant/40 uppercase tracking-wider font-bold mt-2 font-display">
-                          <Clock className="w-3.5 h-3.5" />
-                          {course.duration}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-            </div>
-          );
         }
-
-      case "courses":
-        return (
-          <Marketplace
-            courses={courses}
-            onToggleFavorite={handleToggleFavoriteCourse}
-            onTutorChat={handleTutorChat}
-            searchTerm={searchValue}
-          />
-        );
+        return null;
 
       case "messages":
         return (
@@ -805,7 +600,7 @@ export default function App({ user, onLogout }: AppProps) {
         return <EscrowContractsView activeRole={activeRole} userEmail={user.email} />;
 
       case "wallet":
-        return activeRole === "student" || activeRole === "tutor"
+        return activeRole === "tutor"
           ? <MyWalletView />
           : null;
 

@@ -627,3 +627,141 @@ Không biến AI thành dependency bắt buộc của core business flow.
 | Port đã được sử dụng | Override `*_PORT` tương ứng trong `.env`. |
 | Web3 local transaction fail | Re-check Solidity ABI, exported frontend ABI, Anvil chain ID, escrow address, và ERC-20 token address. |
 | Sepolia flow có config nhưng chưa deploy | Xem config chỉ là configuration; cần actual deployment evidence trước khi gọi là implemented. |
+## TEMP - PHASE 4 FRONTEND CLEANUP / MERGE NOTES
+
+> Ghi chu tam phuc vu merge code.
+> Xoa section nay sau khi merge hoan tat.
+
+### Phase 4 Scope
+
+- Student legacy cleanup.
+- Tutor old onboarding cleanup.
+- Staff dead UI cleanup.
+- No Contract/Web3 cleanup.
+- No backend, route redesign, business logic, or API change.
+
+### Phase 4A - Safe Dead Files
+
+Deleted:
+
+- `frontend-web/src/pages/StudentFeatures.jsx`
+- `frontend-web/src/pages/tutor-application/TutorApplicationWizardPage.jsx`
+- `frontend-web/src/pages/tutor-application/TutorCompleteProfilePage.jsx`
+- `frontend-web/src/components/tutor-application/steps/StepPlaceholder.jsx`
+
+### Phase 4B - Student Legacy Portal Cleanup
+
+Modified:
+
+- `frontend-web/src/portal/App.tsx`
+- `frontend-web/src/portal/components/Sidebar.tsx`
+
+Deleted:
+
+- `frontend-web/src/portal/components/Marketplace.tsx`
+
+Removed:
+
+- Student-specific Portal dashboard branch.
+- Student-specific Portal sidebar branch.
+- Legacy Portal `courses` case.
+- Student-only mock course marketplace data/state/handlers.
+
+### Phase 4C - Tutor Legacy Onboarding Cleanup
+
+Deleted:
+
+- `frontend-web/src/components/tutor-application/TutorApplicationWizard.jsx`
+- `frontend-web/src/components/tutor-application/TutorApplicationStepper.jsx`
+- `frontend-web/src/components/tutor-application/WizardNavigation.jsx`
+- `frontend-web/src/components/tutor-application/steps/BasicInfoStep.jsx`
+- `frontend-web/src/components/tutor-application/steps/EducationExperienceStep.jsx`
+- `frontend-web/src/components/tutor-application/steps/IntroductionStep.jsx`
+- `frontend-web/src/components/tutor-application/steps/TeachingSubjectsStep.jsx`
+- `frontend-web/src/components/tutor-application/steps/VerificationDocumentsStep.jsx`
+- `frontend-web/src/components/tutor-application/steps/ReviewSubmitStep.jsx`
+- `frontend-web/src/components/tutor-application/subjects/ApplicationSubjectCard.jsx`
+- `frontend-web/src/components/tutor-application/subjects/ApplicationSubjectForm.jsx`
+- `frontend-web/src/components/tutor-application/subjects/DeleteSubjectDialog.jsx`
+- `frontend-web/src/components/tutor-application/subjects/SubjectAutocomplete.jsx`
+- `frontend-web/src/portal/components/BecomeTutorForm.tsx`
+- `frontend-web/src/portal/components/EvidenceUploader.tsx`
+- `frontend-web/src/portal/components/TeachingSubjectCard.tsx`
+- `frontend-web/src/portal/components/PriceRangeInput.tsx`
+- `frontend-web/src/portal/components/WeeklyAvailabilityEditor.tsx`
+- `frontend-web/src/portal/tutorApplication.ts`
+
+Kept:
+
+- Compatibility routes `/become-tutor` and `/tutor/complete-profile`.
+- Current restricted Tutor profile/document flow.
+- `frontend-web/src/components/tutor-application/TutorApplicationStatusBanner.jsx`.
+- `frontend-web/src/pages/tutor/TeachingRegistrationPage.jsx` as post-approval Tutor feature.
+
+### Phase 4D - Staff Legacy Cleanup
+
+Deleted:
+
+- `frontend-web/src/portal/components/staff/RejectTutorModal.tsx`
+- `frontend-web/src/portal/components/staff/TutorApprovalQueue.tsx`
+- `frontend-web/src/portal/components/staff/TutorDetailPanel.tsx`
+
+Kept:
+
+- Current Staff approval flow: `StaffDashboardPage` -> `TutorProfileApprovalReview`.
+- Current Staff tutor application API client: `frontend-web/src/api/staffTutors.js`.
+
+### Active Architecture After Cleanup
+
+STUDENT:
+
+- Student Web Application at `/`.
+- No Portal sidebar.
+- `/dashboard` redirects Student to `/`.
+
+TUTOR:
+
+- Tutor uses `/dashboard` Portal.
+- DRAFT/PENDING/REJECTED Tutor stays restricted.
+- APPROVED Tutor gets full Tutor access.
+
+STAFF/ADMIN:
+
+- Staff/Admin Portal remains active.
+- `/staff/tutors` enters current Staff review UI.
+
+### Intentionally Kept
+
+- `frontend-web/src/portal/App.tsx`
+- `frontend-web/src/portal/components/Sidebar.tsx`
+- `frontend-web/src/portal/components/MessagesView.tsx`
+- `frontend-web/src/portal/components/ProfileSettings.tsx`
+- `frontend-web/src/portal/components/MyWalletView.tsx`
+- `frontend-web/src/components/contract/*`
+- `frontend-web/src/web3/*`
+- `frontend-web/src/components/tutor-application/TutorApplicationStatusBanner.jsx`
+- `frontend-web/src/pages/tutor/TeachingRegistrationPage.jsx`
+- `frontend-web/src/portal/components/staff/StaffDashboardPage.tsx`
+- `frontend-web/src/portal/components/staff/TutorProfileApprovalReview.tsx`
+- `frontend-web/src/portal/components/staff/TeachingRegistrationReview.tsx`
+- `frontend-web/src/portal/components/staff/ClassApprovalReview.tsx`
+
+### Merge Warnings
+
+1. Khong restore lai Student legacy branch vao `frontend-web/src/portal/App.tsx`.
+2. Khong restore Student branch trong `frontend-web/src/portal/components/Sidebar.tsx`.
+3. Khong restore deleted Portal `Marketplace.tsx`.
+4. Khong restore old `TutorApplicationWizard` / `BecomeTutorForm` subtree.
+5. Khong restore deleted Staff legacy queue/detail/reject components.
+6. Khi resolve conflict, uu tien current Student Web routes va current Tutor restricted flow.
+7. Contract/Web3 components chua cleanup; khong xoa khi merge.
+8. `frontend-web/dist/**` la generated build output; phan biet voi source change.
+
+### Validation
+
+- `npm run build`: PASS.
+- HTTP SPA shell smoke: PASS for `/`, `/my-classes`, `/matching`, `/messages`, `/contracts`, `/payments`, `/dashboard`, `/tutor/profile`, `/tutor/teaching-registrations`, `/staff/tutors`.
+- Phase 2 Student Web manual test: PASS, confirmed before Phase 4E.
+- Phase 4B Student/Tutor/Staff UI manual test: PASS, confirmed before Phase 4E.
+- Phase 4C Tutor lifecycle authenticated manual test: NOT_RUN / user validation pending.
+- Phase 4D Staff authenticated business test: NOT_RUN.
