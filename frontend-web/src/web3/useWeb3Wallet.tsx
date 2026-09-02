@@ -162,9 +162,18 @@ export function Web3WalletProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Listen to provider events (accountsChanged, chainChanged)
+  // Listen to provider events (accountsChanged, chainChanged, auth:logout)
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.ethereum) return;
+    const handleAuthLogout = () => {
+      disconnectWallet();
+    };
+    window.addEventListener('auth:logout', handleAuthLogout);
+
+    if (typeof window === 'undefined' || !window.ethereum) {
+      return () => {
+        window.removeEventListener('auth:logout', handleAuthLogout);
+      };
+    }
 
     const handleAccountsChanged = (accounts: string[]) => {
       if (accounts.length === 0) {
@@ -192,6 +201,7 @@ export function Web3WalletProvider({ children }: { children: ReactNode }) {
     }).catch(() => {});
 
     return () => {
+      window.removeEventListener('auth:logout', handleAuthLogout);
       window.ethereum?.removeListener?.('accountsChanged', handleAccountsChanged);
       window.ethereum?.removeListener?.('chainChanged', handleChainChanged);
     };

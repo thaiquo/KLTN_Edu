@@ -62,7 +62,7 @@ class AuthServiceLoginTest {
         when(userRepository.findByEmailIgnoreCase("test@gmail.com")).thenReturn(Optional.of(user));
         when(userRoleRepository.findByUserId(1L)).thenReturn(List.of(role(user, Role.STUDENT)));
         when(studentRepository.existsByUserId(1L)).thenReturn(true);
-        when(jwtService.generateToken("test@gmail.com", "STUDENT", List.of("STUDENT"))).thenReturn("jwt-token");
+        when(jwtService.generateToken(1L, "test@gmail.com", "STUDENT", List.of("STUDENT"))).thenReturn("jwt-token");
 
         var result = authService.login(loginRequest(" TEST@GMAIL.COM ", "12345678"));
 
@@ -143,7 +143,7 @@ class AuthServiceLoginTest {
                 role(user, Role.TUTOR)
         ));
         when(studentRepository.existsByUserId(1L)).thenReturn(true);
-        when(jwtService.generateToken("tutor@gmail.com", "STUDENT", List.of("STUDENT", "TUTOR"))).thenReturn("jwt-token");
+        when(jwtService.generateToken(1L, "tutor@gmail.com", "STUDENT", List.of("STUDENT", "TUTOR"))).thenReturn("jwt-token");
 
         var result = authService.login(loginRequest("tutor@gmail.com", "12345678"));
 

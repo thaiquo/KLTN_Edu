@@ -3,7 +3,7 @@
  * Maps to ContractManagementController endpoints in contract-service.
  */
 // @ts-ignore — client.js is a plain JS module
-import { apiRequest } from "./client";
+import { apiBlobRequest, apiRequest } from "./client";
 
 // ─── Types ───────────────────────────────────────────
 
@@ -41,6 +41,67 @@ export interface AgreementDetail {
   termsHash: string;
   contractVersion: number;
   totalPriceVnd: number;
+}
+
+export interface ContractDocumentParty {
+  fullName: string | null;
+  email: string | null;
+  phone: string | null;
+  walletAddress: string | null;
+}
+
+export interface ContractSignatureProof {
+  signed: boolean;
+  role: "TUTOR" | "STUDENT";
+  walletAddress: string | null;
+  signature: string | null;
+  acceptedAt: string | null;
+  termsHash: string | null;
+  contractVersion: number | null;
+}
+
+export interface ContractDocumentView {
+  agreementId: string;
+  onchainAgreementId: string | null;
+  className: string | null;
+  tutor: ContractDocumentParty;
+  student: ContractDocumentParty;
+  platform: {
+    walletAddress: string | null;
+    chainId: number | null;
+    escrowContractAddress: string | null;
+    tokenAddress: string | null;
+  };
+  financialTerms: {
+    tokenSymbol: string;
+    tokenDecimals: number;
+    totalAmountUsdc: string;
+    pricePerSessionUsdc: string;
+    totalPriceVnd: string;
+    pricePerSessionVnd: string | null;
+    vndPerUsdc: string;
+    totalSessions: number;
+  };
+  termsHash: string;
+  termsJson: string;
+  contractVersion: number;
+  status: string;
+  createdAt: string;
+  paymentDeadline: string | null;
+  tutorSignature: ContractSignatureProof;
+  studentSignature: ContractSignatureProof;
+}
+
+export interface ContractDocumentArtifact {
+  agreementId: string;
+  contractVersion: number;
+  templateVersion: string;
+  status: "GENERATING" | "READY" | "FAILED";
+  pdfSha256: string | null;
+  pdfSize: number | null;
+  generatedAt: string | null;
+  failureCode: string | null;
+  failureMessage: string | null;
 }
 
 export interface SettlementDto {
@@ -108,13 +169,16 @@ export interface PagedResponse<T> {
 
 export const contractsApi = {
   /**
-   * List agreements - filtered by role on backend via JWT headers.
+   * List agreements - filtered by role on backend via JWT headers or params.
    */
-  listAgreements(params?: { status?: string; page?: number; size?: number }): Promise<PagedResponse<AgreementSummary>> {
+  listAgreements(params?: { status?: string; page?: number; size?: number; userId?: number; role?: string; email?: string }): Promise<PagedResponse<AgreementSummary>> {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
     if (params?.page !== undefined) query.set("page", String(params.page));
     if (params?.size !== undefined) query.set("size", String(params.size));
+    if (params?.userId) query.set("userId", String(params.userId));
+    if (params?.role) query.set("role", params.role);
+    if (params?.email) query.set("email", params.email);
     const qs = query.toString() ? `?${query.toString()}` : "";
     return apiRequest(`/api/contracts/agreements${qs}`);
   },
@@ -123,8 +187,28 @@ export const contractsApi = {
     return apiRequest(`/api/contracts/agreements/${id}`);
   },
 
+  getContractDocument(id: string): Promise<ContractDocumentView> {
+    return apiRequest(`/api/contracts/agreements/${id}/document-view`);
+  },
+
+  getContractDocumentArtifact(id: string): Promise<ContractDocumentArtifact> {
+    return apiRequest(`/api/contracts/agreements/${id}/document-artifact`);
+  },
+
+  finalizeContractDocument(id: string): Promise<ContractDocumentArtifact> {
+    return apiRequest(`/api/contracts/agreements/${id}/document-artifact/finalize`, { method: "POST" });
+  },
+
+  getContractDocumentFile(id: string, format: "pdf" | "docx" = "pdf"): Promise<Blob> {
+    return apiBlobRequest(`/api/contracts/agreements/${id}/document-artifact/download?format=${format}`);
+  },
+
   getSettlements(agreementId: string): Promise<SettlementDto[]> {
     return apiRequest(`/api/contracts/agreements/${agreementId}/settlements`);
+  },
+
+  getAcceptances(agreementId: string): Promise<any[]> {
+    return apiRequest(`/api/contracts/agreements/${agreementId}/acceptances`);
   },
 
   getAgreementTransactions(agreementId: string): Promise<BlockchainTxDto[]> {
@@ -154,14 +238,14 @@ export const contractsApi = {
 
   initiateAgreement(payload: {
     classroomId: number;
-    className?: string;
-    studentId?: number;
-    studentName?: string;
-    studentEmail?: string;
-    studentPhone?: string;
-    tutorId?: number;
-    tutorName?: string;
-    tutorEmail?: string;
+    className: string;
+    studentId: number;
+    studentName: string;
+    studentEmail: string;
+    studentPhone: string;
+    tutorId: number;
+    tutorName: string;
+    tutorEmail: string;
     tutorPhone?: string;
     studentWallet: string;
     tutorWallet: string;
@@ -198,6 +282,7 @@ export const contractsApi = {
     userId: number;
     role: string;
     walletAddress: string;
+    signature: string | null;
     acceptedAt: string;
     termsHash: string;
     contractVersion: number;

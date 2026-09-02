@@ -30,15 +30,23 @@ public class JwtService {
     }
 
     public String generateToken(String email, String activeRole, List<String> roles) {
+        return generateToken(null, email, activeRole, roles);
+    }
+
+    public String generateToken(Long userId, String email, String activeRole, List<String> roles) {
         Date now = new Date();
         Date expirationDate = new Date(now.getTime() + expiration);
 
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(email)
                 .claim("activeRole", activeRole)
                 .claim("roles", roles)
                 .issuedAt(now)
-                .expiration(expirationDate)
+                .expiration(expirationDate);
+        if (userId != null) {
+            builder.claim("userId", userId);
+        }
+        return builder
                 .signWith(secretKey)
                 .compact();
     }

@@ -36,7 +36,17 @@ public class EnrollmentRequestService {
      * Student submits enrollment request for a classroom
      */
     @Transactional
-    public EnrollmentRequestResponse enrollClass(Long classRoomId, String studentEmail, EnrollClassRequest request) {
+    public EnrollmentRequestResponse enrollClass(Long classRoomId, Long authenticatedStudentId, String studentEmail, EnrollClassRequest request) {
+        if (request == null || authenticatedStudentId == null || authenticatedStudentId <= 0) {
+            throw new BadRequestException("Không xác định được tài khoản học viên. Vui lòng đăng nhập lại.");
+        }
+        if (request.studentName() == null || request.studentName().isBlank()
+                || request.studentName().contains("@") || request.studentName().startsWith("Học viên")) {
+            throw new BadRequestException("Học viên cần cập nhật họ tên thật trước khi gửi yêu cầu.");
+        }
+        if (request.studentPhone() == null || request.studentPhone().isBlank()) {
+            throw new BadRequestException("Học viên cần cập nhật số điện thoại trước khi gửi yêu cầu.");
+        }
         // Pessimistic Lock on classroom to avoid race conditions
         ClassRoom classRoom = classRoomRepository.findByIdForUpdate(classRoomId)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + classRoomId));
@@ -85,8 +95,10 @@ public class EnrollmentRequestService {
         // Create enrollment request
         EnrollmentRequest req = new EnrollmentRequest();
         req.setClassRoom(classRoom);
+        req.setStudentId(authenticatedStudentId);
         req.setStudentEmail(studentEmail);
-        req.setStudentName(request != null && request.studentName() != null ? request.studentName().trim() : null);
+        req.setStudentName(request.studentName().trim());
+        req.setStudentPhone(request.studentPhone().trim());
         req.setJoinKey(request != null ? request.joinKey() : null);
         req.setNote(request != null && request.note() != null ? request.note().trim() : null);
         req.setStatus(EnrollmentRequestStatus.PENDING);
@@ -256,8 +268,10 @@ public class EnrollmentRequestService {
                 c.getId(),
                 c.getName(),
                 c.getTutorEmail(),
+                r.getStudentId(),
                 r.getStudentEmail(),
                 r.getStudentName(),
+                r.getStudentPhone(),
                 r.getStatus(),
                 r.getJoinKey(),
                 r.getNote(),

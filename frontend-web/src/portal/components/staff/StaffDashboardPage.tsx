@@ -340,7 +340,7 @@ function tutorDisplayName(item: any) {
     || item?.tutorName?.trim()
     || item?.requestedByFullName?.trim()
     || item?.tutorEmail
-    || (item?.requestedByUserId ? `Gia sư #${item.requestedByUserId}` : "Gia sư");
+    || "Gia sư chưa cập nhật họ tên";
 }
 
 function identityLabel(item: any) {

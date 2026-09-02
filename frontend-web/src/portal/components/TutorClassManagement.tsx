@@ -1228,28 +1228,28 @@ export function TutorClassManagement() {
                           {acceptedMembers.map((member, index) => {
                             const displayName = member.studentName && member.studentName.toLowerCase() !== member.studentEmail?.toLowerCase()
                               ? member.studentName
-                              : `Học viên #${index + 1}`;
+                              : 'Học viên';
 
                             const joinedDate = member.updatedAt
                               ? new Date(member.updatedAt).toLocaleDateString("vi-VN")
                               : member.createdAt
                               ? new Date(member.createdAt).toLocaleDateString("vi-VN")
-                              : "Đã tham gia";
+                              : "Đã duyệt";
 
                             return (
                               <div
                                 key={member.id}
-                                className="p-3.5 bg-emerald-50/40 border border-emerald-200/80 rounded-2xl flex items-center justify-between gap-3 shadow-2xs"
+                                className="p-3.5 bg-slate-50 border border-slate-200/90 rounded-2xl flex items-center justify-between gap-3 shadow-2xs"
                               >
                                 <div className="flex items-center gap-3">
-                                  <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 font-black text-xs flex items-center justify-center border border-emerald-200">
+                                  <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-900 font-black text-xs flex items-center justify-center border border-indigo-200">
                                     {index + 1}
                                   </div>
                                   <div className="space-y-0.5">
                                     <div className="flex items-center gap-2">
                                       <span className="font-black text-slate-900 text-xs font-display">{displayName}</span>
                                       <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> ĐÃ THAM GIA
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> ĐÃ DUYỆT THAM GIA
                                       </span>
                                     </div>
                                     <div className="text-[11px] text-slate-500 font-medium flex items-center gap-2">

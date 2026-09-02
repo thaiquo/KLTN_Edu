@@ -164,6 +164,27 @@ export async function apiRequest(path, options = {}) {
   return data;
 }
 
+export async function apiBlobRequest(path, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  if (isMutation(method)) await ensureCsrfToken();
+  let response;
+  try {
+    response = await fetch(buildUrl(path), {
+      ...options,
+      credentials: 'include',
+      headers: buildHeaders(options, isMutation(method), options.body instanceof FormData)
+    });
+  } catch {
+    throw new ApiError({ status: 0, message: 'Không thể kết nối máy chủ. Vui lòng thử lại.' });
+  }
+  if (!response.ok) {
+    const data = await parseResponseBody(response);
+    const { code, message } = parseErrorPayload(data, response.status);
+    throw new ApiError({ status: response.status, code, message, raw: data });
+  }
+  return response.blob();
+}
+
 export function isUnauthorized(error) {
   return error?.status === 401;
 }

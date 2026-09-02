@@ -23,8 +23,14 @@ public class EnrollmentRequest {
     @Column(nullable = false, length = 255)
     private String studentEmail;
 
+    @Column(name = "student_id")
+    private Long studentId;
+
     @Column(length = 255)
     private String studentName;
+
+    @Column(name = "student_phone", length = 50)
+    private String studentPhone;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)

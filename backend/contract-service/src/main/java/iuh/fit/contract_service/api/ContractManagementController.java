@@ -113,6 +113,29 @@ public class ContractManagementController {
     public ResponseEntity<AgreementDetailDto> initiateAgreement(
             @RequestBody InitiateAgreementRequest request) {
 
+        if (request.classroomId() == null || request.classroomId() <= 0
+                || request.studentId() == null || request.studentId() <= 0
+                || request.tutorId() == null || request.tutorId() <= 0
+                || isBlank(request.className())
+                || isBlank(request.studentEmail())
+                || isBlank(request.tutorEmail())
+                || request.pricePerSessionVnd() == null || request.pricePerSessionVnd().signum() <= 0
+                || request.totalSessions() == null || request.totalSessions() <= 0) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        // Return existing active/pending agreement if already initiated for this class and student
+        Optional<ContractAgreement> existing = agreementRepository.findByClassroomIdAndStudentIdAndContractVersion(
+                request.classroomId(), request.studentId(), 1);
+        if (existing.isPresent()) {
+            return ResponseEntity.ok(toAgreementDetail(existing.get()));
+        }
+
+        String studentName = !isBlank(request.studentName()) ? request.studentName() : request.studentEmail().split("@")[0];
+        String tutorName = !isBlank(request.tutorName()) ? request.tutorName() : request.tutorEmail().split("@")[0];
+        String studentPhone = request.studentPhone() != null ? request.studentPhone().trim() : "";
+        String tutorPhone = request.tutorPhone() != null ? request.tutorPhone().trim() : "";
+
         String studentWallet = (request.studentWallet() != null && request.studentWallet().startsWith("0x") && request.studentWallet().length() == 42)
                 ? request.studentWallet()
                 : "0x0000000000000000000000000000000000000000";
@@ -125,8 +148,8 @@ public class ContractManagementController {
         String onchainAgreementId = org.web3j.crypto.Hash.sha3String("AGREEMENT:" + agreementId);
         String termsHash = org.web3j.crypto.Hash.sha3String("TERMS:" + request.classroomId() + ":" + request.studentId() + ":" + request.tutorId());
 
-        BigDecimal pricePerSessionVnd = request.pricePerSessionVnd() != null ? request.pricePerSessionVnd() : BigDecimal.valueOf(250000);
-        int totalSessions = request.totalSessions() != null && request.totalSessions() > 0 ? request.totalSessions() : 10;
+        BigDecimal pricePerSessionVnd = request.pricePerSessionVnd();
+        int totalSessions = request.totalSessions();
         BigDecimal totalPriceVnd = pricePerSessionVnd.multiply(BigDecimal.valueOf(totalSessions));
         BigDecimal vndPerUsdc = BigDecimal.valueOf(25000);
 
@@ -139,13 +162,13 @@ public class ContractManagementController {
         ContractAgreement agreement = ContractAgreement.builder()
                 .id(agreementId)
                 .onchainAgreementId(onchainAgreementId)
-                .classroomId(request.classroomId() != null ? request.classroomId() : 1L)
+                .classroomId(request.classroomId())
                 .className(request.className())
-                .studentId(request.studentId() != null ? request.studentId() : 1L)
+                .studentId(request.studentId())
                 .studentName(request.studentName())
                 .studentEmail(request.studentEmail())
                 .studentPhone(request.studentPhone())
-                .tutorId(request.tutorId() != null ? request.tutorId() : 1L)
+                .tutorId(request.tutorId())
                 .tutorName(request.tutorName())
                 .tutorEmail(request.tutorEmail())
                 .tutorPhone(request.tutorPhone())
@@ -330,6 +353,10 @@ public class ContractManagementController {
         return null;
     }
 
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
     @GetMapping("/agreements/{id}/acceptances")
     public ResponseEntity<List<AcceptanceDto>> getAcceptances(@PathVariable UUID id) {
         List<AcceptanceDto> list = signatureService.getAcceptances(id).stream()
@@ -360,27 +387,60 @@ public class ContractManagementController {
      */
     @GetMapping("/agreements")
     public ResponseEntity<Page<AgreementSummaryDto>> listAgreements(
-            @RequestHeader(value = "X-User-Role", defaultValue = "STUDENT") String role,
-            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
-            @RequestHeader(value = "X-User-Email", defaultValue = "") String email,
+            @RequestHeader(value = "X-User-Role", required = false) String headerRole,
+            @RequestHeader(value = "X-User-Id", required = false) Long headerUserId,
+            @RequestHeader(value = "X-User-Email", required = false) String headerEmail,
+            @RequestParam(value = "role", required = false) String paramRole,
+            @RequestParam(value = "userId", required = false) Long paramUserId,
+            @RequestParam(value = "email", required = false) String paramEmail,
             @RequestParam(value = "status", required = false) String statusFilter,
             @PageableDefault(size = 20) Pageable pageable) {
 
+        String role = (paramRole != null && !paramRole.isBlank()) ? paramRole : ((headerRole != null && !headerRole.isBlank()) ? headerRole : "ALL");
+        Long userId = (paramUserId != null && paramUserId > 0) ? paramUserId : ((headerUserId != null && headerUserId > 0) ? headerUserId : 0L);
+        String email = (paramEmail != null && !paramEmail.isBlank()) ? paramEmail.trim() : ((headerEmail != null && !headerEmail.isBlank()) ? headerEmail.trim() : "");
+
         List<ContractAgreement> all = agreementRepository.findAll();
 
-        // Filter by role
-        List<ContractAgreement> filtered = switch (role.toUpperCase()) {
-            case "ADMIN" -> all;
-            case "STAFF" -> email.isBlank() ? all : all.stream()
+        // Filter by role & identity
+        List<ContractAgreement> filtered;
+        if ("ADMIN".equalsIgnoreCase(role)) {
+            filtered = all;
+        } else if ("STAFF".equalsIgnoreCase(role)) {
+            filtered = email.isBlank() ? all : all.stream()
                     .filter(a -> email.equalsIgnoreCase(a.getClassroomReviewerEmail()))
                     .collect(Collectors.toList());
-            case "TUTOR" -> userId == 0 ? all : all.stream()
-                    .filter(a -> a.getTutorId().equals(userId))
-                    .collect(Collectors.toList());
-            default -> userId == 0 ? all : all.stream() // STUDENT
-                    .filter(a -> a.getStudentId().equals(userId))
-                    .collect(Collectors.toList());
-        };
+        } else if ("TUTOR".equalsIgnoreCase(role)) {
+            if (userId > 0 || !email.isBlank()) {
+                filtered = all.stream().filter(a ->
+                    (userId > 0 && a.getTutorId() != null && a.getTutorId().equals(userId)) ||
+                    (!email.isBlank() && (
+                        (a.getTutorEmail() != null && email.equalsIgnoreCase(a.getTutorEmail())) ||
+                        (a.getClassroomReviewerEmail() != null && email.equalsIgnoreCase(a.getClassroomReviewerEmail()))
+                    ))
+                ).collect(Collectors.toList());
+            } else {
+                filtered = all;
+            }
+        } else if ("STUDENT".equalsIgnoreCase(role)) {
+            if (userId > 0 || !email.isBlank()) {
+                filtered = all.stream().filter(a ->
+                    (userId > 0 && a.getStudentId() != null && a.getStudentId().equals(userId)) ||
+                    (!email.isBlank() && a.getStudentEmail() != null && email.equalsIgnoreCase(a.getStudentEmail()))
+                ).collect(Collectors.toList());
+            } else {
+                filtered = all;
+            }
+        } else {
+            if (userId > 0 || !email.isBlank()) {
+                filtered = all.stream().filter(a ->
+                    (userId > 0 && ((a.getTutorId() != null && a.getTutorId().equals(userId)) || (a.getStudentId() != null && a.getStudentId().equals(userId)))) ||
+                    (!email.isBlank() && ((a.getTutorEmail() != null && email.equalsIgnoreCase(a.getTutorEmail())) || (a.getStudentEmail() != null && email.equalsIgnoreCase(a.getStudentEmail()))))
+                ).collect(Collectors.toList());
+            } else {
+                filtered = all;
+            }
+        }
 
         // Filter by status
         if (statusFilter != null && !statusFilter.isBlank()) {
@@ -407,29 +467,52 @@ public class ContractManagementController {
         return ResponseEntity.ok(new PageImpl<>(page, pageable, filtered.size()));
     }
 
+    private boolean isAuthorizedForAgreement(ContractAgreement agreement, String role, Long userId) {
+        if ("ADMIN".equalsIgnoreCase(role) || "STAFF".equalsIgnoreCase(role)) return true;
+        if (userId == null || userId == 0) return true;
+        return userId.equals(agreement.getStudentId()) || userId.equals(agreement.getTutorId());
+    }
+
     @GetMapping("/agreements/{id}")
-    public ResponseEntity<AgreementDetailDto> getAgreement(@PathVariable UUID id) {
+    public ResponseEntity<AgreementDetailDto> getAgreement(
+            @RequestHeader(value = "X-User-Role", defaultValue = "STUDENT") String role,
+            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
+            @PathVariable UUID id) {
         return agreementRepository.findById(id)
+                .filter(a -> isAuthorizedForAgreement(a, role, userId))
                 .map(this::toAgreementDetail)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/agreements/{id}/settlements")
-    public ResponseEntity<List<SettlementDto>> getSettlements(@PathVariable UUID id) {
-        return agreementRepository.findById(id).map(agreement -> {
-            List<SettlementDto> list = settlementRepository
-                    .findByAgreementId(agreement.getId())
-                    .stream()
-                    .sorted(Comparator.comparing(SessionSettlement::getCreatedAt))
-                    .map(this::toSettlementDto)
-                    .collect(Collectors.toList());
-            return ResponseEntity.ok(list);
-        }).orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<List<SettlementDto>> getSettlements(
+            @RequestHeader(value = "X-User-Role", defaultValue = "STUDENT") String role,
+            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
+            @PathVariable UUID id) {
+        return agreementRepository.findById(id)
+                .filter(a -> isAuthorizedForAgreement(a, role, userId))
+                .map(agreement -> {
+                    List<SettlementDto> list = settlementRepository
+                            .findByAgreementId(agreement.getId())
+                            .stream()
+                            .sorted(Comparator.comparing(SessionSettlement::getCreatedAt))
+                            .map(this::toSettlementDto)
+                            .collect(Collectors.toList());
+                    return ResponseEntity.ok(list);
+                }).orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/agreements/{id}/transactions")
-    public ResponseEntity<List<BlockchainTxDto>> getTransactions(@PathVariable UUID id) {
+    public ResponseEntity<List<BlockchainTxDto>> getTransactions(
+            @RequestHeader(value = "X-User-Role", defaultValue = "STUDENT") String role,
+            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
+            @PathVariable UUID id) {
+        ContractAgreement agreement = agreementRepository.findById(id).orElse(null);
+        if (agreement == null || !isAuthorizedForAgreement(agreement, role, userId)) {
+            return ResponseEntity.notFound().build();
+        }
+
         List<BlockchainTxDto> list = new ArrayList<>(transactionRepository.findAll().stream()
                 .filter(t -> id.equals(t.getAgreementId()))
                 .sorted(Comparator.comparing(BlockchainTransaction::getCreatedAt))
@@ -481,7 +564,7 @@ public class ContractManagementController {
                     .filter(d -> email.equalsIgnoreCase(
                             d.getSettlement().getAgreement().getClassroomReviewerEmail()))
                     .collect(Collectors.toList());
-            default -> userId == 0 ? all : all.stream() // STUDENT / TUTOR: only own
+            default -> userId == 0 ? Collections.emptyList() : all.stream() // STUDENT / TUTOR: only own
                     .filter(d -> d.getComplainantId().equals(userId))
                     .collect(Collectors.toList());
         };

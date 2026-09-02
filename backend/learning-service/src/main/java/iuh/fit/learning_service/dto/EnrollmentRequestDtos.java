@@ -11,7 +11,8 @@ public final class EnrollmentRequestDtos {
     public record EnrollClassRequest(
             @Size(max = 50) String joinKey,
             @Size(max = 1000) String note,
-            @Size(max = 255) String studentName
+            @Size(max = 255) String studentName,
+            @Size(max = 50) String studentPhone
     ) {}
 
     public record RejectRequestPayload(
@@ -23,8 +24,10 @@ public final class EnrollmentRequestDtos {
             Long classRoomId,
             String className,
             String tutorEmail,
+            Long studentId,
             String studentEmail,
             String studentName,
+            String studentPhone,
             EnrollmentRequestStatus status,
             String joinKey,
             String note,

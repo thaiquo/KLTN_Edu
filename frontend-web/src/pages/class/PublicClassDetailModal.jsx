@@ -89,7 +89,8 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
       const studentName = user?.fullName || user?.name || user?.email || 'Học viên';
       await classApi.enrollClass(classRoom.id, {
         joinKey: classRoom.joinMode === 'INVITE_KEY' ? joinKey.trim() : undefined,
-        studentName: studentName
+        studentName: studentName,
+        studentPhone: user?.phone
       });
       setEnrollSuccess('Gửi yêu cầu tham gia thành công! Vui lòng chờ Gia sư duyệt.');
       setShowInviteKeyForm(false);

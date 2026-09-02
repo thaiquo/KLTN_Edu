@@ -1,5 +1,171 @@
 # EDUCONNECT - MASTER PLAN TRIỂN KHAI HỢP ĐỒNG WORD/PDF
 
+## TIẾN ĐỘ TRIỂN KHAI — 02/09/2026
+
+- [x] Phase A: đối chiếu modal, entity, migration, repository và luồng ký hiện tại.
+- [x] Phase B: thêm read model `GET /api/contracts/agreements/{id}/document-view` từ
+  `contract_agreement` + `contract_acceptance`; không thêm bảng/cột/migration.
+- [x] Phase C: modal dùng duy nhất document-view, bỏ dữ liệu người dùng hiện tại, public class API và mọi
+  fallback giả cho PII, ví, chữ ký, chain, escrow, tỷ giá, ngày và chính sách chia tiền.
+- [x] Phase D (tự động): contract-service 70 test PASS (7 Anvil test được skip theo cấu hình),
+  learning-service 16 test PASS, 16 test liên quan JWT/login account-service PASS và frontend production
+  build PASS. Bộ test đầy đủ account-service còn 5 lỗi có sẵn, không thuộc thay đổi hợp đồng/danh tính.
+  Cần kiểm thử thao tác bằng dữ liệu local thực trước khi duyệt Phase E.
+- [x] Phase E: Sinh artifact Word/PDF chính thức và lưu trữ S3/Local Storage. Đã loại bỏ các dòng ID nội bộ (`tutorId`, `studentId`, `classroomId`) khỏi file mẫu Word `EDUCONNECT_HOP_DONG_TEMPLATE_V1.docx`. Backend tự động chốt snapshot và sinh file DOCX/PDF khi đủ 2 chữ ký. Frontend hỗ trợ tải trực tiếp file PDF chính thức đã lưu trữ.
+
+Quyết định schema hiện tại: chưa tạo `contract_document` hay `contract_document_metadata`. Hai bảng hiện có
+đã đủ cho read model; chỉ bổ sung metadata tài liệu khi bắt đầu Phase E và đã chốt yêu cầu lưu trữ/version.
+
+### Issue nguồn dữ liệu đã phát hiện khi audit
+
+Issue đã xử lý theo quan hệ hiện có, không đọc chéo database:
+
+- account-service thêm `userId` do server sở hữu vào JWT khi login/chuyển role;
+- learning-service lấy `studentId` từ JWT, không nhận ID này từ form frontend;
+- `enrollment_requests` bổ sung `student_id` và `student_phone` bằng migration V23 để giữ danh tính của yêu cầu;
+- khi gia sư chấp nhận, `StudentRequestsView` chuyển đúng ID/tên/email/phone của yêu cầu và đúng dữ liệu lớp
+  sang Agreement; endpoint initiate không còn thay ID bằng `1`, giá bằng `250000` hay số buổi bằng `10`;
+- ví học viên vẫn là zero-address ở bước tạo Agreement theo đúng workflow hiện tại và chỉ được gắn khi chính
+  học viên ký bằng MetaMask;
+- document-view không trả `classroomId`, `studentId`, `tutorId` hoặc `userId`; frontend vẫn dùng khóa quan hệ
+  nội bộ để gọi API/lọc dữ liệu nhưng không render chúng cho người dùng;
+- các màn escrow, timeline, ví, staff và dispute không còn dùng ID DB làm tên dự phòng và không còn PII mẫu.
+
+V23 chỉ thêm hai cột vào bảng yêu cầu đã tồn tại; không tạo bảng contract-document hoặc snapshot trùng lặp.
+Yêu cầu cũ thiếu danh tính phải được gửi lại thay vì tự bịa dữ liệu để tạo hợp đồng.
+
+> **BẢN HIỆU CHỈNH TƯƠNG THÍCH CODE HIỆN TẠI — 02/09/2026**  
+> Phần này có độ ưu tiên cao hơn các phase cũ bên dưới. Không triển khai migration, snapshot mới,
+> EIP-712 mới, payment workflow mới hoặc PDF pipeline cho đến khi hoàn tất và duyệt phần hiển thị
+> hợp đồng bằng dữ liệu thật.
+
+## 0. PHẠM VI ĐÃ CHỐT: SỬA HIỂN THỊ, KHÔNG LÀM LẠI LUỒNG ESCROW
+
+### 0.1. Baseline nghiệp vụ phải giữ nguyên
+
+Luồng đang chạy trong code hiện tại là baseline, không được đổi trạng thái, thứ tự hoặc cách gọi
+MetaMask chỉ để phục vụ việc hiển thị văn bản:
+
+1. Gia sư chấp nhận yêu cầu học.
+2. Hệ thống tạo Agreement ở trạng thái chờ gia sư ký.
+3. Gia sư ký EIP-712 trước.
+4. Agreement chuyển sang chờ học viên ký.
+5. Học viên ký EIP-712.
+6. Agreement chuyển sang `WAITING_PAYMENT` và bắt đầu thời hạn thanh toán 24 giờ.
+7. Học viên thực hiện approve USDC và ký quỹ/deposit bằng MetaMask theo UI hiện có.
+8. Thanh toán thành công thì Agreement/Payment chuyển sang trạng thái đang hoạt động/đã khóa quỹ
+   theo workflow hiện có; thanh toán lỗi được thử lại; quá hạn thì hết hiệu lực.
+
+Các phần sau **không thuộc phạm vi sửa hiển thị**:
+
+- `ContractSignatureService` và thứ tự ký.
+- `EscrowPaymentModal`, approve/deposit, ABI, địa chỉ contract và giao dịch MetaMask.
+- Agreement/Payment state machine, payout, settlement, dispute, refund.
+- Solidity và blockchain watcher.
+- Luồng chấp nhận yêu cầu học và notification hiện có.
+
+Nếu audit phát hiện rủi ro ở các phần trên thì chỉ ghi thành issue riêng, không tự sửa trong nhánh
+hiển thị hợp đồng.
+
+### 0.2. Lỗi cần giải quyết
+
+`ContractDocumentModal.tsx` hiện đang trộn dữ liệu API với dữ liệu giả/fallback hard-code. Ví dụ:
+
+- tên, email, số điện thoại của gia sư và học viên;
+- địa chỉ ví của hai bên;
+- chữ ký giả khi DB chưa có chữ ký;
+- chain ID, escrow address, tỷ giá và một số chính sách được ghi trực tiếp trong JSX;
+- ngày hiện tại và tên lớp dạng `Khóa học #...` được dùng để che dữ liệu thiếu;
+- thông tin của user đang đăng nhập có thể bị dùng thay cho bên còn lại của hợp đồng.
+
+Kết quả yêu cầu: modal chỉ hiển thị dữ liệu của đúng Agreement từ backend. Thiếu dữ liệu phải hiện
+`Chưa cập nhật` hoặc ẩn trường theo quy tắc UI; tuyệt đối không dựng một người, ví, chữ ký, số tiền
+hoặc trạng thái giả.
+
+### 0.3. Nguồn dữ liệu thật theo code hiện tại
+
+| Nhóm dữ liệu | Nguồn ưu tiên | Quy tắc |
+| --- | --- | --- |
+| Agreement, tiền, số buổi, trạng thái, deadline | `contract_agreement` qua contract-service | Dùng giá trị đã gắn với Agreement, không tính lại ở React |
+| Chữ ký và thời điểm ký | `contract_acceptance` qua contract-service | Không có record thì hiển thị chưa ký; không sinh signature fallback |
+| Lớp học | classroom ID và snapshot trong Agreement; learning-service chỉ dùng để bổ sung dữ liệu còn thiếu cho bản chưa ký | Không được để dữ liệu live làm đổi nội dung Agreement đã ký |
+| Gia sư/học viên | snapshot tên/email/phone/wallet trong Agreement | Không dùng profile của người đang xem thay cho bên còn lại |
+| Blockchain | field của Agreement và cấu hình backend | React không tự chèn địa chỉ/chain mặc định vào văn bản |
+| Chính sách chia tiền | cấu hình/terms đã gắn với Agreement | Nếu backend chưa trả field thì không tuyên bố con số là dữ liệu của hợp đồng |
+
+Đối với Agreement cũ thiếu snapshot: backend có thể đọc bổ sung từ API của service sở hữu dữ liệu
+bằng ID, nhưng phải đánh dấu đây là dữ liệu bổ sung. Không đọc chéo database của microservice và
+không ghi ngược dữ liệu live vào Agreement đã ký.
+
+### 0.4. Kế hoạch triển khai thay thế cho Phase 1–8 cũ
+
+#### Phase A — Khóa phạm vi và lập data matrix, chưa sửa workflow
+
+- Liệt kê từng trường đang hiển thị trong `ContractDocumentModal`.
+- Với từng trường, chỉ ra field/API/DB nguồn và quy tắc khi null.
+- Chụp response thật của `GET /api/contracts/agreements/{id}` và acceptances cho một Agreement đã ký.
+- Xác định trường nào backend chưa trả; không thêm schema mới ở phase này.
+
+#### Phase B — Backend read model dành riêng cho văn bản hợp đồng
+
+- Bổ sung DTO/endpoint đọc, ví dụ `GET /api/contracts/agreements/{id}/document-view`.
+- DTO tổng hợp dữ liệu đã có từ `contract_agreement` và `contract_acceptance`.
+- Kiểm tra người gọi là gia sư, học viên hoặc vai trò được phép xem Agreement.
+- Response phân biệt `null` với giá trị thật; không có fallback giả.
+- Không sửa endpoint initiate/sign/payment hiện có và không tạo migration nếu các bảng hiện tại đủ dữ liệu.
+
+#### Phase C — Sửa modal dùng duy nhất read model
+
+- Xóa toàn bộ PII, ví, chữ ký, chain, escrow, tỷ giá và ngày fallback hard-code.
+- Không lấy `useAuth().user` để điền dữ liệu cho một bên trong hợp đồng.
+- Hiển thị trạng thái ký dựa trên acceptance thật.
+- Hiển thị loading/error/`Chưa cập nhật` rõ ràng.
+- Nút ký tiếp tục gọi đúng API và EIP-712 hiện tại; nút thanh toán tiếp tục mở đúng
+  `EscrowPaymentModal` hiện tại.
+- Nút In/Xuất PDF trước mắt in đúng nội dung read model; Word/PDF server-side làm sau khi HTML đã đúng.
+
+#### Phase D — Kiểm thử hồi quy bắt buộc
+
+- Tutor ký trước, Student ký sau.
+- Chưa ký không được hiện chữ ký giả.
+- `WAITING_PAYMENT` còn đúng deadline và mở luồng approve/deposit MetaMask hiện tại.
+- Agreement `ACTIVE`, `EXPIRED`, `COMPLETED` hiển thị đúng nhưng không bị chuyển trạng thái bởi viewer.
+- Hai Agreement khác nhau không dùng lẫn tên, ví, lớp, số tiền hoặc chữ ký.
+- Refresh/logout/login bằng bên kia vẫn nhìn cùng nội dung hợp đồng.
+- Backend test và frontend lint/build PASS.
+
+#### Phase E — Word/PDF/S3, chỉ thực hiện sau khi Phase D được duyệt
+
+- Template Word được version hóa trong resources của contract-service hoặc kho template có kiểm soát.
+- S3/object storage lưu artifact DOCX/PDF đã sinh theo Agreement/version; không tải template từ S3
+  rồi dựng lại mỗi lần người dùng tải hợp đồng.
+- Preview và download phải trả cùng artifact đã chốt.
+- Phase này có thể cần bảng metadata tài liệu, nhưng chỉ tạo migration sau khi read model và yêu cầu
+  lưu trữ được duyệt; không tạo trước để sửa một lỗi hiển thị.
+
+### 0.5. Compatibility gate trước mọi thay đổi
+
+Mỗi phase phải chứng minh các file sau không bị sửa ngoài yêu cầu đã duyệt:
+
+```text
+backend/contract-service/.../ContractSignatureService.java
+backend/contract-service/.../AgreementRegistrationWorkflowService.java
+frontend-web/src/components/contract/EscrowPaymentModal.tsx
+frontend-web/src/web3/eip712Signer.ts
+frontend-web/src/web3/web3Config.ts
+backend/blockchain/**
+```
+
+Nếu cần thay một file trong danh sách trên, phải tách thành issue/phase khác và được duyệt trước.
+
+### 0.6. Quyết định về các phase cũ bên dưới
+
+- Phase 0 cũ vẫn dùng làm tài liệu audit tham khảo.
+- Phase 1–7 cũ là thiết kế mở rộng Word/PDF bất biến trong tương lai, **không phải việc cần làm ngay**.
+- Phase 8 cũ chỉ áp dụng sau khi backend có PDF thật; hiện tại ưu tiên sửa
+  `ContractDocumentModal.tsx` và read model.
+- Không chạy tuần tự toàn bộ master plan cũ trên code hiện tại.
+
 > Tài liệu điều phối triển khai từ mẫu Word đến hợp đồng PDF, ký EIP-712, lưu trữ và hiển thị trên React.
 >
 > Tài liệu nguồn nghiệp vụ: thong_tin(1).md  

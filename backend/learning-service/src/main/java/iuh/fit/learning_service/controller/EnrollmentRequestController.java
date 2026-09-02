@@ -31,7 +31,8 @@ public class EnrollmentRequestController {
             @PathVariable Long classId,
             @RequestBody(required = false) @Valid EnrollClassRequest request
     ) {
-        EnrollmentRequestResponse response = service.enrollClass(classId, authentication.getName(), request);
+        Long studentId = authentication.getDetails() instanceof Number value ? value.longValue() : null;
+        EnrollmentRequestResponse response = service.enrollClass(classId, studentId, authentication.getName(), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 

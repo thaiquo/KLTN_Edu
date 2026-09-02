@@ -88,7 +88,7 @@ export function ContractAuditTimeline({
   const totalSessions = summary?.totalSessions || 0;
   const settledSessions = summary?.settledSessions || 0;
 
-  const displayClassName = summary?.className || `Lớp học #${summary?.classroomId || 1}`;
+  const displayClassName = summary?.className || 'Chưa cập nhật tên lớp';
 
   // Build Real Timeline Stages
   const events: ContractTimelineEvent[] = [

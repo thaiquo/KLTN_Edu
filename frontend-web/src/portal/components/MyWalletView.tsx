@@ -25,6 +25,7 @@ import { useWeb3Wallet } from "../../web3/useWeb3Wallet";
 import { DEFAULT_CHAIN_ID, SUPPORTED_CHAINS, getContractAddresses } from "../../web3/web3Config";
 import { apiRequest } from "../../api/client";
 import { userApi } from "../../api/user";
+import { contractsApi, AgreementSummary, BlockchainTxDto } from "../../api/contractsApi";
 import { useAuth } from "../../hooks/useAuth";
 
 interface MyWalletViewProps {
@@ -50,8 +51,9 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
 
   const [copied, setCopied] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<"ALL" | "FUND" | "SETTLE" | "REFUND">("ALL");
-  const [agreements, setAgreements] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<"ALL" | "FUND" | "SETTLE">("ALL");
+  const [agreements, setAgreements] = useState<AgreementSummary[]>([]);
+  const [txLogs, setTxLogs] = useState<any[]>([]);
   const [loadingAgreements, setLoadingAgreements] = useState(false);
 
   // Profile Wallet State
@@ -64,7 +66,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
   const activeChain = chainId ? SUPPORTED_CHAINS[chainId] : SUPPORTED_CHAINS[DEFAULT_CHAIN_ID];
   const contracts = getContractAddresses(chainId || DEFAULT_CHAIN_ID);
 
-  const { refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
 
   // Fetch Profile to read linked wallet_address
   useEffect(() => {
@@ -84,43 +86,72 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
     fetchUserProfile();
   }, []);
 
-  // Auto-sync connected Web3 wallet address to Database if DB profile wallet is empty
+  // Fetch Escrow Contracts & Detailed Transactions for User
   useEffect(() => {
-    async function autoSyncWallet() {
-      if (isConnected && address && profileWallet === "" && !savingProfileWallet) {
-        try {
-          setSavingProfileWallet(true);
-          const res: any = await userApi.updateWallet(address);
-          setProfileWallet(res?.walletAddress || address);
-          await refreshUser();
-          setWalletSaveSuccess("Đã tự động lưu địa chỉ ví Web3 này vào hồ sơ tài khoản thành công!");
-          setTimeout(() => setWalletSaveSuccess(null), 4000);
-        } catch (err: any) {
-          console.warn("Auto sync wallet error:", err);
-        } finally {
-          setSavingProfileWallet(false);
-        }
-      }
-    }
-    autoSyncWallet();
-  }, [isConnected, address, profileWallet, savingProfileWallet, refreshUser]);
-
-  // Fetch Escrow Contracts for User to build Financial Overview
-  useEffect(() => {
-    async function fetchUserAgreements() {
-      if (!userEmail) return;
+    async function fetchUserAgreementsAndTxs() {
+      const email = userEmail || user?.email;
+      if (!email && !user?.id) return;
       setLoadingAgreements(true);
       try {
-        const data: any = await apiRequest("/api/contracts/agreements?page=0&size=50").catch(() => null);
-        setAgreements(data?.content || (Array.isArray(data) ? data : []));
+        const data = await contractsApi.listAgreements({
+          page: 0,
+          size: 50,
+          role: isTutor ? "TUTOR" : "STUDENT",
+          userId: user?.id,
+          email: email,
+        }).catch(() => null);
+
+        const list: AgreementSummary[] = data?.content || (Array.isArray(data) ? data : []);
+        setAgreements(list);
+
+        // Fetch detailed blockchain transaction logs for each agreement
+        const allTxEvents: any[] = [];
+        for (const ag of list) {
+          try {
+            const rawTxs = await contractsApi.getAgreementTransactions(ag.id).catch(() => []);
+            if (Array.isArray(rawTxs) && rawTxs.length > 0) {
+              for (const tx of rawTxs) {
+                allTxEvents.push({
+                  id: tx.id || `tx-${tx.transactionHash}`,
+                  agreementId: ag.id,
+                  className: ag.className || `Lớp học #${ag.classroomId}`,
+                  type: tx.action?.includes("DEPOSIT") || tx.action?.includes("FUND") ? "FUND" : tx.action?.includes("SETTLE") ? "SETTLE" : "OTHER",
+                  actionName: tx.action || "Giao dịch Escrow",
+                  txHash: tx.transactionHash,
+                  amountUsdc: ag.totalAmountUsdc,
+                  status: tx.status || "SUCCESS",
+                  createdAt: tx.createdAt || ag.createdAt,
+                });
+              }
+            } else {
+              // Synthetic record from agreement snapshot if backend tx log array is empty
+              if (ag.status === "ACTIVE" || ag.status === "COMPLETED" || (ag as any).fundedTxHash) {
+                allTxEvents.push({
+                  id: `funded-${ag.id}`,
+                  agreementId: ag.id,
+                  className: ag.className || `Lớp học #${ag.classroomId}`,
+                  type: "FUND",
+                  actionName: "Nạp Cọc Escrow (Smart Contract)",
+                  txHash: (ag as any).fundedTxHash || (ag as any).onchainAgreementId,
+                  amountUsdc: ag.totalAmountUsdc,
+                  status: "SUCCESS",
+                  createdAt: ag.createdAt,
+                });
+              }
+            }
+          } catch (e) {
+            console.warn(`Could not load txs for agreement ${ag.id}:`, e);
+          }
+        }
+        setTxLogs(allTxEvents);
       } catch (err) {
         console.warn("Could not load agreements for wallet overview:", err);
       } finally {
         setLoadingAgreements(false);
       }
     }
-    fetchUserAgreements();
-  }, [userEmail]);
+    fetchUserAgreementsAndTxs();
+  }, [userEmail, isTutor, user?.id, user?.email]);
 
   async function handleSaveDefaultWallet() {
     if (!address) return;
@@ -319,7 +350,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
         </div>
       )}
 
-      {/* 2. Default Profile Wallet Management Card */}
+      {/* 2. Profile Linked Web3 Wallet Card */}
       <div className="rounded-3xl border border-slate-200/90 bg-white p-6 shadow-sm hover:shadow-md transition-all space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
@@ -328,10 +359,10 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
             </div>
             <div>
               <h3 className="font-display text-base font-black text-slate-900">
-                Ví Mặc Định Trong Hồ Sơ (Default Profile Wallet)
+                Ví Web3 Liên Kết Với Tài Khoản
               </h3>
               <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                Dùng tự động điền khi tạo/ký hợp đồng mới. Lịch sử các hợp đồng cũ vẫn bảo lưu ví ban đầu.
+                Dùng để ký hợp đồng số EIP-712 và thực hiện các giao dịch ký quỹ / nhận học phí Escrow trên Blockchain.
               </p>
             </div>
           </div>
@@ -351,7 +382,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                   ) : (
                     <CheckCircle2 className="h-3.5 w-3.5" />
                   )}
-                  <span>{profileWallet ? "Cập nhật ví MetaMask này làm mặc định" : "Lưu ví này làm mặc định"}</span>
+                  <span>{profileWallet ? "Cập nhật ví MetaMask này vào hồ sơ" : "Lưu ví MetaMask này vào hồ sơ"}</span>
                 </button>
               ) : (
                 <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold">
@@ -377,7 +408,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
         <div className="rounded-2xl bg-slate-50 p-4 border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
           <div className="space-y-1">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-              Địa chỉ ví mặc định:
+              Địa chỉ ví đã lưu trong Database:
             </span>
             {profileWallet ? (
               <div className="flex items-center gap-2">
@@ -385,14 +416,14 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                 <EtherscanLink address={profileWallet} chainId={chainId || DEFAULT_CHAIN_ID} />
               </div>
             ) : (
-              <span className="text-slate-400 italic font-semibold">Chưa có ví mặc định. Hãy kết nối MetaMask và bấm "Lưu ví này làm mặc định".</span>
+              <span className="text-slate-400 italic font-semibold">Chưa lưu địa chỉ ví. Vui lòng kết nối MetaMask và bấm "Lưu ví MetaMask này vào hồ sơ".</span>
             )}
           </div>
 
           {isConnected && address && profileWallet && profileWallet.toLowerCase() !== address.toLowerCase() && (
             <div className="flex items-center gap-1.5 p-2 px-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 font-bold text-[11px]">
               <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-              <span>Ví MetaMask đang kết nối ({address.slice(0, 6)}...{address.slice(-4)}) khác ví mặc định hồ sơ.</span>
+              <span>Ví MetaMask đang kết nối ({address.slice(0, 6)}...{address.slice(-4)}) khác ví đã lưu ({profileWallet.slice(0, 6)}...{profileWallet.slice(-4)}).</span>
             </div>
           )}
         </div>
@@ -624,46 +655,63 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
               <thead>
                 <tr className="border-b border-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-400">
                   <th className="pb-3">Hợp đồng / Lớp học</th>
-                  <th className="pb-3">Trạng thái Escrow</th>
+                  <th className="pb-3">Loại Giao dịch & Escrow</th>
                   <th className="pb-3">Số tiền</th>
                   <th className="pb-3">Thời gian</th>
-                  <th className="pb-3 text-right">Chi tiết Tx</th>
+                  <th className="pb-3 text-right">Chi tiết Tx Hash</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {agreements.map((item) => (
+                {(txLogs.length > 0
+                  ? txLogs.filter((log) => activeTab === "ALL" || log.type === activeTab)
+                  : agreements.map((ag) => ({
+                      id: ag.id,
+                      agreementId: ag.id,
+                      className: ag.className || `Lớp học #${ag.classroomId}`,
+                      type: ag.onchainFunded || ag.status === "ACTIVE" || ag.status === "COMPLETED" ? "FUND" : "OTHER",
+                      actionName: ag.onchainFunded || ag.status === "ACTIVE" || ag.status === "COMPLETED" ? "Nạp Cọc Smart Contract Escrow" : "Khởi tạo Hợp đồng Chờ nạp cọc",
+                      txHash: (ag as any).fundedTxHash || (ag as any).onchainAgreementId,
+                      amountUsdc: ag.totalAmountUsdc,
+                      status: ag.status,
+                      createdAt: ag.createdAt,
+                    }))
+                ).map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-3.5 pr-3">
-                      <p className="font-bold text-slate-800 text-xs">Mã Hợp đồng #{item.id}</p>
-                      <p className="text-[11px] text-slate-400">Lớp: {item.className || `Lớp học ID #${item.classroomId}`}</p>
+                      <p className="font-bold text-slate-800 text-xs">Mã Hợp đồng #{String(item.agreementId).slice(0, 8)}</p>
+                      <p className="text-[11px] text-slate-500 font-medium">Lớp: {item.className || "Chưa cập nhật tên lớp"}</p>
                     </td>
                     <td className="py-3.5 pr-3">
-                      {item.onchainFunded || item.status === 'ACTIVE' || item.status === 'COMPLETED' ? (
+                      {item.type === "FUND" || item.status === "ACTIVE" || item.status === "COMPLETED" ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-emerald-700 border border-emerald-200">
-                          <CheckCircle2 className="h-3 w-3" /> Đã nạp cọc Smart Contract
+                          <CheckCircle2 className="h-3 w-3 text-emerald-600" /> {item.actionName || "Đã nạp cọc Smart Contract"}
+                        </span>
+                      ) : item.type === "SETTLE" ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-blue-700 border border-blue-200">
+                          <CheckCircle2 className="h-3 w-3 text-blue-600" /> {item.actionName || "Giải ngân buổi học"}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-amber-700 border border-amber-200">
-                          Chờ nạp cọc
+                          Chờ nạp cọc Escrow
                         </span>
                       )}
                     </td>
                     <td className="py-3.5 pr-3 font-mono font-bold text-emerald-700 text-sm">
-                      {(Number(item.totalAmountUsdc ?? item.totalAmount) || 0).toLocaleString("vi-VN")} USDC
+                      {(Number(item.amountUsdc) || 0).toLocaleString("vi-VN")} USDC
                     </td>
                     <td className="py-3.5 pr-3 text-slate-500 font-mono text-[11px]">
                       {item.createdAt ? new Date(item.createdAt).toLocaleString("vi-VN") : "N/A"}
                     </td>
                     <td className="py-3.5 text-right font-mono">
-                      {item.fundedTxHash ? (
+                      {item.txHash ? (
                         <EtherscanLink
-                          txHash={item.fundedTxHash}
+                          txHash={item.txHash}
                           chainId={chainId || DEFAULT_CHAIN_ID}
-                          label={`${item.fundedTxHash.slice(0, 6)}...${item.fundedTxHash.slice(-4)}`}
-                          className="text-blue-600 hover:text-blue-800 underline font-bold"
+                          label={`${String(item.txHash).slice(0, 6)}...${String(item.txHash).slice(-4)}`}
+                          className="text-blue-600 hover:text-blue-800 underline font-bold text-xs"
                         />
                       ) : (
-                        <span className="text-slate-300">Chưa có Tx</span>
+                        <span className="text-slate-400 text-xs italic">Chưa phát sinh Tx</span>
                       )}
                     </td>
                   </tr>

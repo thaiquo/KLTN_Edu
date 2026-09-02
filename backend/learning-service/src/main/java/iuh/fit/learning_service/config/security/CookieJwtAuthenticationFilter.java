@@ -62,7 +62,13 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
                     authorities.add(auth);
                 }
             }
-            SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(email, null, authorities));
+            UsernamePasswordAuthenticationToken authentication =
+                    new UsernamePasswordAuthenticationToken(email, null, authorities);
+            Number userId = claims.get("userId", Number.class);
+            if (userId != null) {
+                authentication.setDetails(userId.longValue());
+            }
+            SecurityContextHolder.getContext().setAuthentication(authentication);
         } catch (RuntimeException ex) {
             SecurityContextHolder.clearContext();
         }

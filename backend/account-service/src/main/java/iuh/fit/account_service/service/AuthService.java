@@ -267,7 +267,7 @@ public class AuthService {
             }
         }
 
-        String token = jwtService.generateToken(user.getEmail(), selectedActiveRole, roles);
+        String token = jwtService.generateToken(user.getId(), user.getEmail(), selectedActiveRole, roles);
 
         return new LoginResult(
                 user.getId(),
@@ -318,7 +318,7 @@ public class AuthService {
             throw new BadRequestException("Invalid target role: " + targetRole);
         }
 
-        String newToken = jwtService.generateToken(user.getEmail(), targetRole, roles);
+        String newToken = jwtService.generateToken(user.getId(), user.getEmail(), targetRole, roles);
 
         return new LoginResult(
                 user.getId(),

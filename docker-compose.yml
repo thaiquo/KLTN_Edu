@@ -42,6 +42,21 @@ services:
       timeout: 5s
       retries: 5
 
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: kltn-gotenberg
+    ports:
+      - "${GOTENBERG_PORT:-3000}:3000"
+    command:
+      - gotenberg
+      - --api-timeout=60s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
   rabbitmq_data:

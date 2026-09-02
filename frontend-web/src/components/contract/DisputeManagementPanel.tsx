@@ -48,49 +48,6 @@ interface DisputeManagementPanelProps {
   userEmail?: string;
 }
 
-// Sample fallback disputes for demonstration if empty
-const SAMPLE_DISPUTES: DisputeItem[] = [
-  {
-    id: 'dsp-101',
-    agreementId: 1,
-    sessionId: 3,
-    studentName: 'Alex Thompson',
-    studentEmail: 'student@educonnect.vn',
-    studentAddress: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-    tutorName: 'Dr. Julian Vance',
-    tutorAddress: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC',
-    classroomReviewerEmail: 'staff@educonnect.vn',
-    sessionTitle: 'Buổi 3: Vi phân hàm nhiều biến & Tích phân mặt',
-    disputeReason: 'Gia sư chỉ dạy 15 phút rồi tắt máy và không quay lại',
-    evidenceSummary: 'File ghi hình Zoom 15 phút + Tin nhắn Zalo xác nhận rời sớm',
-    evidenceHash: '0x4f8b1c4e7a2b9d3e8f1a2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f',
-    status: 'OPEN',
-    createdAt: '2026-08-27 14:30',
-    disputeDeadline: '2026-08-28 14:30 (Còn 18 giờ)',
-    openTxHash: '0x3a1f8b...c9d0',
-  },
-  {
-    id: 'dsp-102',
-    agreementId: 2,
-    sessionId: 1,
-    studentName: 'Sarah Reed',
-    studentEmail: 'sarah.reed@gmail.com',
-    studentAddress: '0x90F79bf6EB2c4f870365E785982E1f101E93b906',
-    tutorName: 'Dr. Sarah Jenkins',
-    tutorAddress: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
-    classroomReviewerEmail: 'staff.reviewer@educonnect.vn',
-    sessionTitle: 'Buổi 1: Tổng quan Prompt Engineering cơ bản',
-    disputeReason: 'Gia sư vắng mặt không lý do nhưng vẫn đánh dấu hoàn thành',
-    evidenceSummary: 'Biên bản log Google Meet 0 participants sau 30 phút chờ',
-    evidenceHash: '0x9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b1a0f9e8d',
-    status: 'APPROVED',
-    createdAt: '2026-08-26 10:00',
-    openTxHash: '0x5b2c1d...f8e9',
-    resolveTxHash: '0x7c3e2f...a1b2',
-    resolutionAuditHash: '0x1a2b3c...4d5e',
-  },
-];
-
 export function DisputeManagementPanel({
   activeRole,
   userEmail = '',
@@ -312,7 +269,6 @@ export function DisputeManagementPanel({
                         ? 'HOÀN TIỀN CHO HỌC VIÊN'
                         : 'BÁC BỎ - TRẢ TIỀN GIA SƯ'}
                     </span>
-                    <span className="text-xs font-bold text-slate-400">ID #{dispute.id}</span>
                   </div>
 
                   <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -344,7 +300,7 @@ export function DisputeManagementPanel({
                         <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                         <span>Lý do khiếu nại:</span>
                       </div>
-                      <p className="text-xs text-slate-700 font-medium pl-5">{dispute.type} — Complainant ID: #{dispute.complainantId}</p>
+                      <p className="text-xs text-slate-700 font-medium pl-5">{dispute.type}</p>
                     </div>
 
                     {dispute.tutorResponse && (

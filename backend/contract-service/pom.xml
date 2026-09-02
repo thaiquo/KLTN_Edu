@@ -29,6 +29,8 @@
 	<properties>
 		<java.version>21</java.version>
 		<web3j.version>4.14.0</web3j.version>
+		<poi-tl.version>1.12.2</poi-tl.version>
+		<aws-sdk-s3.version>2.25.70</aws-sdk-s3.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -61,6 +63,16 @@
 			<artifactId>core</artifactId>
 			<version>${web3j.version}</version>
 		</dependency>
+		<dependency>
+			<groupId>com.deepoove</groupId>
+			<artifactId>poi-tl</artifactId>
+			<version>${poi-tl.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+			<version>${aws-sdk-s3.version}</version>
+		</dependency>
 
 		<dependency>
 			<groupId>org.projectlombok</groupId>
@@ -80,6 +92,18 @@
 	</dependencies>
 
 	<build>
+		<resources>
+			<resource>
+				<directory>src/main/resources</directory>
+			</resource>
+			<resource>
+				<directory>${project.basedir}/../../docs/contract</directory>
+				<includes>
+					<include>EDUCONNECT_HOP_DONG_TEMPLATE_V1.docx</include>
+				</includes>
+				<targetPath>contract-templates</targetPath>
+			</resource>
+		</resources>
 		<plugins>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>

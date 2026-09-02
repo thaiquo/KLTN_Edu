@@ -42,19 +42,20 @@ interface EscrowContractsViewProps {
 // Status display mapping
 const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
   DRAFT: { label: 'Bản nháp', cls: 'bg-slate-100 text-slate-600 border-slate-200' },
-  PENDING_TUTOR_ACCEPTANCE: { label: 'Chờ gia sư đồng ý', cls: 'bg-amber-100 text-amber-800 border-amber-200 animate-pulse' },
-  PENDING_STUDENT_ACCEPTANCE: { label: 'Chờ học viên đồng ý', cls: 'bg-amber-100 text-amber-800 border-amber-200 animate-pulse' },
-  PREPARING_BLOCKCHAIN: { label: 'Đang đăng ký lên Chain', cls: 'bg-blue-100 text-blue-700 border-blue-200 animate-pulse' },
-  WAITING_PAYMENT: { label: 'Chờ học viên ký quỹ', cls: 'bg-orange-100 text-orange-800 border-orange-200 animate-pulse' },
-  PAYMENT_CONFIRMING: { label: 'Đang xác nhận thanh toán', cls: 'bg-indigo-100 text-indigo-700 border-indigo-200 animate-pulse' },
-  ACTIVE: { label: 'Đã ký quỹ (Đang học)', cls: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-  COMPLETED: { label: 'Hoàn tất', cls: 'bg-blue-100 text-blue-800 border-blue-200' },
-  EXPIRED: { label: 'Hết hạn', cls: 'bg-red-100 text-red-700 border-red-200' },
+  PENDING_TUTOR_ACCEPTANCE: { label: '⏳ Chờ gia sư ký số', cls: 'bg-amber-100 text-amber-900 border-amber-200' },
+  PENDING_STUDENT_ACCEPTANCE: { label: '⏳ Chờ học viên ký số', cls: 'bg-amber-100 text-amber-900 border-amber-200' },
+  PREPARING_BLOCKCHAIN: { label: '🔄 Đang xác thực EIP-712', cls: 'bg-blue-100 text-blue-800 border-blue-200' },
+  WAITING_PAYMENT: { label: '💳 Chờ học viên nạp cọc Escrow', cls: 'bg-orange-100 text-orange-900 border-orange-200' },
+  PAYMENT_CONFIRMING: { label: '🔄 Đang xác nhận On-chain', cls: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
+  ACTIVE: { label: '🟢 Đã nạp cọc - Đang học (Chính thức vào lớp)', cls: 'bg-emerald-100 text-emerald-900 border-emerald-200 font-black' },
+  COMPLETED: { label: '🏁 Khóa học hoàn tất & Quyết toán', cls: 'bg-blue-100 text-blue-900 border-blue-200' },
+  EXPIRED: { label: 'Hết hạn thanh toán', cls: 'bg-red-100 text-red-800 border-red-200' },
   CANCELLED: { label: 'Đã hủy', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
 };
 
 const FILTER_TABS = [
   { value: 'ALL', label: 'Tất cả' },
+  { value: 'PENDING_SIGNATURE', label: 'Chờ ký xác nhận' },
   { value: 'WAITING_PAYMENT', label: 'Chờ ký quỹ' },
   { value: 'ACTIVE', label: 'Đang học' },
   { value: 'COMPLETED', label: 'Hoàn tất' },
@@ -91,9 +92,12 @@ export function EscrowContractsView({
     try {
       const [agreementsData, tutorClasses] = await Promise.all([
         contractsApi.listAgreements({
-          status: statusFilter === 'ALL' ? undefined : statusFilter,
+          status: (statusFilter === 'ALL' || statusFilter === 'PENDING_SIGNATURE') ? undefined : statusFilter,
           page: 0,
           size: 100,
+          userId: user?.id,
+          role: activeRole,
+          email: user?.email || userEmail,
         }),
         classApi.getMyClasses().catch(() => []),
       ]);
@@ -166,12 +170,12 @@ export function EscrowContractsView({
         if (cls?.name) {
           resolvedClassName = cls.name;
         } else {
-          resolvedClassName = `Lớp học #${a.classroomId}`;
+          resolvedClassName = 'Chưa cập nhật tên lớp';
         }
       }
 
       // Resolved Tutor Name & Email
-      let resolvedTutorEmail = a.tutorEmail || a.classroomReviewerEmail || cls?.tutorEmail || 'thaiquochuynhngoc.004@gmail.com';
+      let resolvedTutorEmail = a.tutorEmail || cls?.tutorEmail || '';
       let resolvedTutorName = a.tutorName;
       if (
         !resolvedTutorName ||
@@ -183,15 +187,13 @@ export function EscrowContractsView({
           resolvedTutorName = cls.tutorFullName;
         } else if (user?.email?.toLowerCase() === resolvedTutorEmail.toLowerCase() && user?.fullName) {
           resolvedTutorName = user.fullName;
-        } else if (activeRole === 'tutor' && user?.fullName) {
-          resolvedTutorName = user.fullName;
         } else {
-          resolvedTutorName = 'Thái Huỳnh Ngọc Quốc';
+          resolvedTutorName = 'Chưa cập nhật tên gia sư';
         }
       }
 
       // Resolved Student Name & Email
-      let resolvedStudentEmail = a.studentEmail || req?.studentEmail || 'huynhngocquocthai.hkhk@gmail.com';
+      let resolvedStudentEmail = a.studentEmail || req?.studentEmail || '';
       let resolvedStudentName = a.studentName;
       if (
         !resolvedStudentName ||
@@ -203,15 +205,13 @@ export function EscrowContractsView({
           resolvedStudentName = req.studentName;
         } else if (user?.email?.toLowerCase() === resolvedStudentEmail.toLowerCase() && user?.fullName) {
           resolvedStudentName = user.fullName;
-        } else if (activeRole === 'student' && user?.fullName) {
-          resolvedStudentName = user.fullName;
         } else {
-          resolvedStudentName = 'Thái Huỳnh Ngọc Quốc';
+          resolvedStudentName = 'Chưa cập nhật tên học viên';
         }
       }
 
-      const resolvedStudentPhone = a.studentPhone || (user?.email?.toLowerCase() === resolvedStudentEmail.toLowerCase() ? (user?.phone || user?.phoneNumber) : null) || '0733727345';
-      const resolvedTutorPhone = a.tutorPhone || (user?.email?.toLowerCase() === resolvedTutorEmail.toLowerCase() ? (user?.phone || user?.phoneNumber) : null) || '0733727345';
+      const resolvedStudentPhone = a.studentPhone || (user?.email?.toLowerCase() === resolvedStudentEmail.toLowerCase() ? (user?.phone || user?.phoneNumber) : null) || '';
+      const resolvedTutorPhone = a.tutorPhone || (user?.email?.toLowerCase() === resolvedTutorEmail.toLowerCase() ? (user?.phone || user?.phoneNumber) : null) || '';
 
       return {
         ...a,
@@ -231,7 +231,7 @@ export function EscrowContractsView({
     const map = new Map<number, string>();
     enrichedAgreements.forEach((a) => {
       if (a.classroomId) {
-        map.set(a.classroomId, a.className || `Lớp học #${a.classroomId}`);
+        map.set(a.classroomId, a.className || 'Chưa cập nhật tên lớp');
       }
     });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
@@ -240,6 +240,24 @@ export function EscrowContractsView({
   // Filtered agreements list
   const filteredAgreements = useMemo(() => {
     return enrichedAgreements.filter((a) => {
+      // Filter by role/user ownership
+      if (activeRole === 'tutor') {
+        const matchTutor = (user?.id && a.tutorId === user.id) || (user?.email && a.tutorEmail?.toLowerCase() === user.email.toLowerCase());
+        if (!matchTutor) return false;
+      } else if (activeRole === 'student') {
+        const matchStudent = (user?.id && a.studentId === user.id) || (user?.email && a.studentEmail?.toLowerCase() === user.email.toLowerCase());
+        if (!matchStudent) return false;
+      }
+
+      // Filter by status tab
+      if (statusFilter === 'PENDING_SIGNATURE') {
+        if (a.status !== 'PENDING_TUTOR_ACCEPTANCE' && a.status !== 'PENDING_STUDENT_ACCEPTANCE') {
+          return false;
+        }
+      } else if (statusFilter !== 'ALL' && a.status !== statusFilter) {
+        return false;
+      }
+
       // Filter by classroom
       if (selectedClassId !== 'ALL' && String(a.classroomId) !== selectedClassId) {
         return false;
@@ -267,7 +285,7 @@ export function EscrowContractsView({
       }
       return true;
     });
-  }, [enrichedAgreements, selectedClassId, searchTerm]);
+  }, [enrichedAgreements, selectedClassId, searchTerm, statusFilter, activeRole, user]);
 
   // Financial KPIs
   const kpis = useMemo(() => {
@@ -283,8 +301,8 @@ export function EscrowContractsView({
     setSelectedAgreementForPayment({
       agreementId: agreement.id,
       onchainAgreementId: agreement.onchainAgreementId || agreement.id,
-      classTitle: agreement.className || `Hợp đồng #${agreement.id.slice(0, 8)}`,
-      tutorName: agreement.tutorName || `Gia sư #${agreement.tutorId}`,
+      classTitle: agreement.className || 'Hợp đồng điện tử',
+      tutorName: agreement.tutorName || 'Chưa cập nhật tên gia sư',
       tutorAddress: agreement.tutorWallet,
       studentAddress: agreement.studentWallet,
       totalSessions: agreement.totalSessions,
@@ -567,11 +585,11 @@ export function EscrowContractsView({
                   item.studentWallet !== "0x0000000000000000000000000000000000000000" &&
                   address.toLowerCase() !== item.studentWallet.toLowerCase();
 
-                const displayClassName = item.className || `Lớp học #${item.classroomId}`;
-                const displayStudentName = item.studentName || `Học viên #${item.studentId}`;
-                const displayTutorName = item.tutorName || `Gia sư #${item.tutorId}`;
+                const displayClassName = item.className || 'Chưa cập nhật tên lớp';
+                const displayStudentName = item.studentName || 'Chưa cập nhật tên học viên';
+                const displayTutorName = item.tutorName || 'Chưa cập nhật tên gia sư';
                 const displayStudentEmail = item.studentEmail || "Chưa cập nhật email";
-                const displayTutorEmail = item.tutorEmail || item.classroomReviewerEmail || "Chưa cập nhật email";
+                const displayTutorEmail = item.tutorEmail || "Chưa cập nhật email";
 
                 return (
                   <div
@@ -584,7 +602,7 @@ export function EscrowContractsView({
                         <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-bold font-mono">
                           {item.onchainAgreementId
                             ? `On-chain: ${item.onchainAgreementId.slice(0, 10)}...`
-                            : `ID: ${item.id.slice(0, 8)}...`}
+                            : 'Hợp đồng điện tử'}
                         </span>
                         <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider border ${cfg.cls}`}>
                           {cfg.label}
@@ -600,7 +618,7 @@ export function EscrowContractsView({
                             {displayClassName}
                           </h3>
                           <p className="text-xs text-blue-600 font-bold mt-0.5">
-                            Mã HĐ: <span className="font-mono font-semibold text-slate-700">#{item.id.slice(0, 8)}</span> &bull; Lớp #{item.classroomId} &bull; Token: {item.tokenSymbol}
+                            Mã HĐ: <span className="font-mono font-semibold text-slate-700">#{item.id.slice(0, 8)}</span> &bull; Token: {item.tokenSymbol}
                           </p>
                         </div>
                       </div>
