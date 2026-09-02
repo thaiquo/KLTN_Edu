@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, KeyRound, Save, ShieldCheck } from 'lucide-react';
 import { userApi } from '../api/user';
 import { HomeHeader } from '../components/home/HomeHeader';
+import { useFeedback } from '../components/feedback/useFeedback';
 import { FormField } from '../components/FormField';
 import { useAuth } from '../hooks/useAuth';
 
@@ -14,6 +15,7 @@ const INITIAL_FORM = {
 
 export function ChangePasswordPage({ embedded = false, onTabChange = null }) {
   const { refreshUser } = useAuth();
+  const feedback = useFeedback();
   const navigate = useNavigate();
   const [form, setForm] = useState(INITIAL_FORM);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -54,7 +56,11 @@ export function ChangePasswordPage({ embedded = false, onTabChange = null }) {
       });
 
       setForm(INITIAL_FORM);
-      setMessage('Mật khẩu đã được cập nhật thành công.');
+      feedback.showImportantSuccess({
+        title: 'Mật khẩu đã được cập nhật',
+        message: 'Bạn vẫn tiếp tục đăng nhập trên phiên hiện tại.',
+        actionText: 'Đã hiểu'
+      });
     } catch (changeError) {
       if (changeError.status === 401) {
         await refreshUser().catch(() => null);
@@ -78,11 +84,11 @@ export function ChangePasswordPage({ embedded = false, onTabChange = null }) {
     }
 
     if (changeError.status === 403) {
-      setError(changeError.message || 'Bạn không có quyền thực hiện thao tác này.');
+      feedback.error(changeError.message || 'Bạn không có quyền thực hiện thao tác này.');
       return;
     }
 
-    setError(changeError.message || 'Không thể đổi mật khẩu. Vui lòng thử lại.');
+    feedback.error(changeError.message || 'Không thể đổi mật khẩu. Vui lòng thử lại.');
   }
 
   return (

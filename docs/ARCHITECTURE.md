@@ -16,7 +16,7 @@ Do not rename the system to Microservices Architecture unless the user confirms 
 | `account-service` | Authentication, users, roles, active role, student/tutor profiles, tutor applications, staff/admin account operations, S3 file storage, Account/Learning events. | IMPLEMENTED |
 | `learning-service` | Teaching catalog, tutor subject registration, tutor availability, classes, chapters/schedules, enrollment requests, Learning/Account events. | PARTIAL |
 | `contract-service` | Contract agreement data, escrow/payment metadata, dispute/session settlement workflows, blockchain transaction dispatch, event polling/ingestion. | PARTIAL |
-| `notification-service` | Target notification capability. Current source is a service shell. | PLANNED |
+| `notification-service` | Persistent account-owned notifications, REST Bell APIs, RabbitMQ consumers, idempotency, and limited realtime notification delivery. | PARTIAL |
 | `eureka-server` | Service discovery module is present in the Maven/backend structure. Runtime role needs verification before relying on it. | NEEDS_VERIFICATION |
 
 No `ai-service` source module is currently present.
@@ -26,7 +26,7 @@ No `ai-service` source module is currently present.
 - Account Service owns authentication, user identity, roles, active role, student profile, tutor profile, tutor applications, tutor documents, and account-side staff/admin operations.
 - Learning Service owns teaching catalog, tutor subject/expertise registration, tutor availability, class/classroom data, class schedules/chapters, and enrollment/join request data.
 - Contract Service owns contract agreement data, escrow payment metadata, settlement/dispute state, blockchain transaction records, outbox records, and blockchain event cursor/processed event data.
-- Notification is planned as a domain capability but is not currently implemented as a complete business service.
+- Notification is implemented as a partial domain capability: persistent notifications, REST Bell APIs, limited RabbitMQ consumers, and raw WebSocket delivery exist, but not every notification-worthy business event is covered.
 - AI Matching is target/planned. Current search/filter logic lives in existing Account/Learning APIs rather than a dedicated AI service.
 
 ## 4. Data Ownership
@@ -64,7 +64,7 @@ Current evidence shows:
 
 - Account routes under `/api/account/**`, `/api/auth/**`, `/api/users/**`, `/api/admin/**`, `/api/tutors/**`, `/api/tutor-applications/**`, `/api/staff/**`, and `/api/reference/**`.
 - Learning routes under `/api/learning/**`.
-- WebSocket forwarding for `/ws/account` and `/ws/learning`.
+- WebSocket forwarding for `/ws/account`, `/ws/learning`, and `/ws/notifications`.
 - Credentialed CORS for local frontend origins.
 
 Gateway route details belong in source/config and API-specific documentation, not in this architecture baseline.

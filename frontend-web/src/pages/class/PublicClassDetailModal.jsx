@@ -5,6 +5,7 @@ import {
   Users, Video, X, UserRound, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle, XCircle
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useFeedback } from '../../components/feedback/useFeedback';
 
 const VIETNAMESE_DAYS = [
   { value: 2, label: 'T2' },
@@ -37,13 +38,12 @@ function checkProfileCompletion(user) {
 export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const feedback = useFeedback();
 
   const [myRequest, setMyRequest] = React.useState(null);
   const [showInviteKeyForm, setShowInviteKeyForm] = React.useState(false);
   const [joinKey, setJoinKey] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
-  const [enrollSuccess, setEnrollSuccess] = React.useState('');
-  const [enrollError, setEnrollError] = React.useState('');
   const [profileWarning, setProfileWarning] = React.useState(null);
 
   const profileCheck = React.useMemo(() => checkProfileCompletion(user), [user]);
@@ -73,8 +73,6 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
 
   const handleEnrollSubmit = async (e) => {
     if (e) e.preventDefault();
-    setEnrollError('');
-    setEnrollSuccess('');
     setProfileWarning(null);
 
     // Profile Completeness Enforcement Check
@@ -91,12 +89,12 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
         joinKey: classRoom.joinMode === 'INVITE_KEY' ? joinKey.trim() : undefined,
         studentName: studentName
       });
-      setEnrollSuccess('Gửi yêu cầu tham gia thành công! Vui lòng chờ Gia sư duyệt.');
+      feedback.success('Đã gửi yêu cầu tham gia lớp.');
       setShowInviteKeyForm(false);
       await fetchMyRequestStatus();
       if (onRefreshClass) onRefreshClass();
     } catch (err) {
-      setEnrollError(err?.message || 'Không thể gửi yêu cầu. Vui lòng kiểm tra lại!');
+      feedback.error(err?.message || 'Không thể gửi yêu cầu tham gia lớp.');
     } finally {
       setSubmitting(false);
     }
@@ -104,19 +102,24 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
 
   const handleCancelRequest = async () => {
     if (!myRequest) return;
-    if (!window.confirm('Bạn có chắc chắn muốn thu hồi yêu cầu tham gia lớp học này?')) return;
+    const accepted = await feedback.confirm({
+      title: 'Hủy yêu cầu tham gia lớp?',
+      message: 'Bạn có chắc muốn hủy yêu cầu tham gia lớp này?',
+      confirmText: 'Hủy yêu cầu',
+      cancelText: 'Giữ lại',
+      variant: 'destructive'
+    });
+    if (!accepted) return;
     setSubmitting(true);
-    setEnrollError('');
-    setEnrollSuccess('');
     try {
       const { classApi } = await import('../../api/classes');
       await classApi.cancelEnrollmentRequest(myRequest.id);
-      setEnrollSuccess('Đã thu hồi yêu cầu tham gia thành công!');
+      feedback.success('Đã hủy yêu cầu tham gia lớp.');
       setMyRequest(null);
       await fetchMyRequestStatus();
       if (onRefreshClass) onRefreshClass();
     } catch (err) {
-      setEnrollError(err?.message || 'Không thể thu hồi yêu cầu tham gia.');
+      feedback.error(err?.message || 'Không thể hủy yêu cầu tham gia lớp.');
     } finally {
       setSubmitting(false);
     }
@@ -278,18 +281,6 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
                 )}
               </div>
             )}
-          </div>
-        )}
-
-        {/* Global Action Messages */}
-        {enrollSuccess && (
-          <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-xs font-bold">
-            {enrollSuccess}
-          </div>
-        )}
-        {enrollError && (
-          <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs font-bold">
-            {enrollError}
           </div>
         )}
 

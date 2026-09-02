@@ -53,6 +53,7 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
             String email = claims.getSubject();
             List<?> roles = claims.get("roles", List.class);
             String activeRole = claims.get("activeRole", String.class);
+            Long userId = extractUserId(claims.get("userId"));
             boolean approvedTutorContext = isApprovedTutorContext(claims, activeRole);
             List<SimpleGrantedAuthority> authorities = new ArrayList<>();
             if (roles != null) {
@@ -74,7 +75,11 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
                     }
                 }
             }
-            SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(email, null, authorities));
+            SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                    new LearningUserPrincipal(email, userId, activeRole),
+                    null,
+                    authorities
+            ));
         } catch (RuntimeException ex) {
             SecurityContextHolder.clearContext();
         }

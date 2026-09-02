@@ -13,13 +13,15 @@
 
 | Service | Responsibility | Status | Notes |
 |---|---|---|---|
-| `api-gateway` | Spring Cloud Gateway route account-service, learning-service, and WebSocket paths. | IMPLEMENTED | Routes are configured in `backend/api-gateway/src/main/resources/application.properties`. No gateway JWT verification filter found. |
+| `api-gateway` | Spring Cloud Gateway route account-service, learning-service, notification-service, and WebSocket paths. | IMPLEMENTED | Routes are configured in `backend/api-gateway/src/main/resources/application.properties`. No gateway JWT verification filter found. |
 | `account-service` | Auth, short-lived JWT cookie, refresh token rotation/session revocation, OTP, users, roles, student/tutor profile, tutor application, staff approval, admin user operations, S3 avatar/documents, RabbitMQ events. | IMPLEMENTED | Main source under `backend/account-service/src/main/java`. |
-| `learning-service` | Subject/catalog, tutor subject registrations, availability, classes, schedules/chapters, enrollment requests, RabbitMQ integration. | PARTIAL | Core class/join/catalog flows exist; session/attendance/homework are not implemented. |
+| `learning-service` | Subject/catalog, tutor subject registrations, availability, classes, schedules/chapters, enrollment requests, RabbitMQ integration. | PARTIAL | Core class/join/catalog flows exist, including enrollment request notification events; session/attendance/homework are not implemented. |
 | `contract-service` | Contract agreement, escrow payment, settlement, dispute, blockchain transaction dispatch, Web3j read/write/event ingestion. | PARTIAL | Entities/workflows exist; REST controllers and inter-service business API were not found. |
-| `notification-service` | Notification service shell. | PLANNED | Spring Boot app exists, but no domain/API/messaging/persistence found. |
+| `notification-service` | Persistent user notifications, read/unread REST APIs, RabbitMQ event consumers, event idempotency, frontend Bell integration, and limited realtime notification delivery. | PARTIAL | Backend foundation exists with Flyway/JPA persistence, consumers for tutor application reviewed, subject request reviewed, and enrollment request events, plus raw WebSocket delivery for newly persisted notifications. Student and Portal Bell UI use REST list/unread/read APIs with realtime query invalidation. Reviewer-audience notifications remain blocked until producer events carry reviewer recipient ids. |
 | `eureka-server` | Listed in root Maven modules. | NEEDS_VERIFICATION | Directory contains only build output under `target/`; no active source/pom found in current scan. |
 | `ai-service` | Target AI Matching service. | NOT_IMPLEMENTED | No module/source/config found. |
+
+Feedback/notification/realtime architecture rules are maintained in `docs/FEEDBACK_NOTIFICATION_SPEC.md`. That living spec distinguishes local UI feedback, persistent notification, Bell center behavior, RabbitMQ events, WebSocket delivery, and TanStack Query invalidation. `PLANNED` rows in that spec are future requirements only, not implementation requests.
 
 ## 3. Use Case Implementation Status
 
@@ -76,7 +78,7 @@
 | Payment | PARTIAL | Escrow payment entities/workflows exist; public flow incomplete. |
 | Income | PARTIAL | Settlement data supports income concept; no complete tutor income API found. |
 | Complaint | PARTIAL | Contract dispute workflow/evidence exists; full complaint module not found. |
-| Notification | PLANNED | notification-service shell only. |
+| Notification | PARTIAL | Backend Notification Service has persistence, read/unread REST APIs, JWT-cookie recipient ownership checks, RabbitMQ consumers for recipient-available reviewed/enrollment events, idempotency by `eventId` + `recipientUserId`, frontend REST Bell UI, and raw WebSocket delivery for newly persisted notifications in the supported event slice. |
 | AI Matching | NOT_IMPLEMENTED | No ai-service, Qdrant, Spring AI, embedding, or ranking implementation found. |
 | Blockchain | PARTIAL | Solidity + Web3j implemented; frontend ABI conflict and Sepolia deployment evidence missing. |
 | Escrow | PARTIAL | Smart Contract ERC-20 escrow implemented; application flow incomplete. |
@@ -155,7 +157,7 @@ Status: IMPLEMENTED for backend auth/authorization and Web restricted routing. M
 - Contract REST API and Student/Tutor contract management flow.
 - Payment/income APIs and admin payment management.
 - End-to-end Learning session completed -> Contract settlement -> Blockchain flow.
-- Notification service domain and delivery implementation.
+- Reviewer-recipient event payloads, broader producer coverage for all notification-worthy events, and richer Notification WebSocket integration beyond the current persisted-notification creation slice.
 - Mobile expansion beyond auth/home.
 - Sepolia deployment evidence and environment documentation.
 - Frontend ABI/address alignment with Solidity.

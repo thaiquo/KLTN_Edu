@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { HomeHeader } from '../../components/home/HomeHeader';
+import { useFeedback } from '../../components/feedback/useFeedback';
 import { tutorApplicationApi } from '../../api/tutorApplications';
 import { catalogSuggestionApi, teachingCatalogApi, teachingRegistrationApi } from '../../api/teachingRegistrations';
 import { TeachingRegistrationDetailsStep } from './TeachingRegistrationDetailsStep';
@@ -53,6 +54,7 @@ const SKILL_TARGETS = [
 ];
 
 export function TeachingRegistrationPage({ embedded = false }) {
+  const feedback = useFeedback();
   const [form, setForm] = useState(EMPTY_FORM);
   const [catalog, setCatalog] = useState({ programs: [], educationLevels: [], categories: [], subjects: [], levels: [] });
   const [registrations, setRegistrations] = useState([]);
@@ -273,11 +275,12 @@ export function TeachingRegistrationPage({ embedded = false }) {
       setDocuments(Array.isArray(freshDocuments) ? freshDocuments : documents);
       setStagedDocuments([]);
       resetWizard(false);
-      setMessage(form.isProposal
-        ? 'Đề xuất môn mới kèm hồ sơ dạy của bạn đã được gửi. Admin sẽ duyệt và tạo môn mới đồng thời phê duyệt hồ sơ dạy của bạn.'
-        : 'Đăng ký môn dạy đã được gửi. Admin sẽ duyệt riêng quyền dạy này trước khi bạn có thể tạo lớp.');
+      feedback.success(form.isProposal
+        ? 'Đề xuất môn mới kèm hồ sơ dạy đã được gửi.'
+        : 'Đăng ký môn dạy đã được gửi.');
     } catch (saveError) {
       setError(saveError.message || 'Không thể gửi đăng ký dạy.');
+      feedback.error(saveError.message || 'Không thể gửi đăng ký dạy.');
     } finally {
       setBusy(false);
     }
@@ -357,11 +360,12 @@ export function TeachingRegistrationPage({ embedded = false }) {
       setDocuments(Array.isArray(savedDocuments) ? savedDocuments : []);
       await invalidateTutorApplication();
       setDocumentErrors((current) => ({ ...current, [documentType]: '' }));
-      setMessage('Tài liệu đã được lưu và có thể chọn cho quyền dạy này.');
+      feedback.success('Tài liệu đã được lưu.');
     } catch (uploadError) {
       const message = uploadError.message || 'Không thể tải tài liệu lên.';
       setDocumentErrors((current) => ({ ...current, [documentType]: message }));
       setError(message);
+      feedback.error(message);
     } finally {
       setUploadingDocument('');
       pendingDocumentType.current = '';
@@ -399,11 +403,12 @@ export function TeachingRegistrationPage({ embedded = false }) {
       const savedDocuments = await tutorApplicationApi.getMyApplicationDocuments();
       setDocuments(Array.isArray(savedDocuments) ? savedDocuments : []);
       await invalidateTutorApplication();
-      setMessage('Tài liệu đã được lưu và có thể chọn cho quyền dạy này.');
+      feedback.success('Tài liệu đã được lưu.');
     } catch (uploadError) {
       const message = uploadError.message || 'Không thể tải tài liệu lên.';
       setDocumentErrors((current) => ({ ...current, [documentType]: message }));
       setError(message);
+      feedback.error(message);
     } finally {
       setUploadingDocument('');
     }

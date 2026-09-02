@@ -22,6 +22,7 @@ import {
 import { userApi } from '../api/user';
 import { referenceApi } from '../api/reference';
 import { HomeHeader } from '../components/home/HomeHeader';
+import { useFeedback } from '../components/feedback/useFeedback';
 import { useAuth } from '../hooks/useAuth';
 import { useInvalidateTutorApplication, useTutorApplication } from '../hooks/useTutorApplication';
 import {
@@ -58,6 +59,7 @@ const GENDER_OPTIONS = [
 
 export function ProfilePage({ embedded = false, onTabChange = null }) {
   const { user, refreshUser, switchRole } = useAuth();
+  const feedback = useFeedback();
   const navigate = useNavigate();
   const [profile, setProfile] = useState(user);
   const [form, setForm] = useState(toFormState(user));
@@ -285,10 +287,11 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
       setDocuments(Array.isArray(freshDocs) ? freshDocs : []);
       await invalidateTutorApplication();
       setHasUnsubmittedChanges(true);
-      setMessage('Tải lên tài liệu xác minh danh tính thành công!');
+      feedback.success('Tải lên tài liệu xác minh danh tính thành công.');
     } catch (err) {
       console.error('Failed to upload identity document', err);
       setDocError(err.message || 'Không thể tải lên tài liệu xác minh.');
+      feedback.error(err.message || 'Không thể tải lên tài liệu xác minh.');
     } finally {
       setUploadingDocType(null);
     }
@@ -310,9 +313,10 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
         setForm(toFormState(syncedProfile));
       }
       setHasUnsubmittedChanges(false);
-      setMessage('Đã gửi hồ sơ và giấy tờ xác minh danh tính cho Ban quản trị phê duyệt thành công!');
+      feedback.success('Hồ sơ gia sư đã được gửi xét duyệt.');
     } catch (err) {
       setDocError(err.message || 'Không thể gửi duyệt hồ sơ. Vui lòng kiểm tra lại thông tin.');
+      feedback.error(err.message || 'Không thể gửi duyệt hồ sơ. Vui lòng kiểm tra lại thông tin.');
     } finally {
       setSubmittingReview(false);
     }
@@ -385,7 +389,7 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
         await invalidateTutorApplication();
       }
 
-      setMessage('Hồ sơ cá nhân đã được cập nhật.');
+      feedback.success('Thông tin hồ sơ đã được cập nhật.');
     } catch (saveError) {
       if (saveError.status === 401) {
         await refreshUser().catch(() => null);
@@ -417,7 +421,7 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
       const nextProfile = syncedProfile || uploadedProfile;
       setProfile(nextProfile);
       setForm(toFormState(nextProfile));
-      setMessage('Ảnh đại diện đã được cập nhật.');
+      feedback.success('Ảnh đại diện đã được cập nhật.');
     } catch (uploadError) {
       if (uploadError.status === 401) {
         await refreshUser().catch(() => null);
@@ -425,7 +429,7 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
         return;
       }
 
-      setAvatarError(uploadError.message || 'Không thể cập nhật ảnh đại diện.');
+      feedback.error(uploadError.message || 'Không thể cập nhật ảnh đại diện.');
     } finally {
       setUploadingAvatar(false);
     }
@@ -441,7 +445,7 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
       await switchRole('TUTOR');
       navigate('/dashboard');
     } catch (switchError) {
-      setError(switchError.message || 'Không thể chuyển sang Gia sư lúc này. Vui lòng thử lại.');
+      feedback.error(switchError.message || 'Không thể chuyển sang Gia sư lúc này. Vui lòng thử lại.');
     } finally {
       setSwitchingTutor(false);
     }
@@ -456,7 +460,7 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
       return;
     }
 
-    setError(saveError.message || 'Không thể cập nhật hồ sơ. Vui lòng thử lại.');
+    feedback.error(saveError.message || 'Không thể cập nhật hồ sơ. Vui lòng thử lại.');
   }
 
   return (

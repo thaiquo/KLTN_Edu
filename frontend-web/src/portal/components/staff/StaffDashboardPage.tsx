@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { AlertCircle, CheckCircle2, RefreshCw, Eye, FileText, X, BookOpen, GraduationCap, UserCheck } from "lucide-react";
+import { AlertCircle, RefreshCw, Eye, FileText, X, BookOpen, GraduationCap, UserCheck } from "lucide-react";
 import { useAuth } from "../../../hooks/useAuth";
+import { useFeedback } from "../../../components/feedback/useFeedback";
 import { DashboardStats } from "./DashboardStats";
 import { TeachingRegistrationReview } from "./TeachingRegistrationReview";
 import { ClassApprovalReview } from "./ClassApprovalReview";
@@ -9,9 +10,9 @@ import { teachingRegistrationApi } from "../../../api/teachingRegistrations";
 
 export function StaffDashboardPage() {
   const { user } = useAuth();
+  const feedback = useFeedback();
   const isAdmin = user?.activeRole === "ADMIN";
   const [error, setError] = useState("");
-  const [toast, setToast] = useState("");
   const [teachingPendingCount, setTeachingPendingCount] = useState(0);
   const [tutorProfilePendingCount, setTutorProfilePendingCount] = useState(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -130,14 +131,6 @@ export function StaffDashboardPage() {
         </button>
       </div>
 
-      {toast && (
-        <div className="mb-4 flex items-center gap-2 border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-700">
-          <CheckCircle2 className="h-4 w-4" />
-          {toast}
-          <button onClick={() => setToast("")} className="ml-auto text-emerald-900">Dismiss</button>
-        </div>
-      )}
-
       {error && (
         <div className="mb-4 flex items-start gap-2 border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700">
           <AlertCircle className="mt-0.5 h-4 w-4 flex-none" />
@@ -150,8 +143,8 @@ export function StaffDashboardPage() {
       ) : activeTab === "TUTOR_PROFILES" ? (
         <TutorProfileApprovalReview
           key={`tutor-profiles-${refreshTrigger}`}
-          onNotice={setToast}
-          onError={setError}
+          onNotice={feedback.success}
+          onError={feedback.error}
           onPendingCountChange={setTutorProfilePendingCount}
           onActionSuccess={loadHistory}
         />
@@ -166,8 +159,8 @@ export function StaffDashboardPage() {
 
           <TeachingRegistrationReview 
             key={`review-${refreshTrigger}`}
-            onNotice={setToast} 
-            onError={setError} 
+            onNotice={feedback.success} 
+            onError={feedback.error} 
             onPendingCountChange={setTeachingPendingCount} 
             onActionSuccess={loadHistory}
           />

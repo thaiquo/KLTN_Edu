@@ -4,7 +4,9 @@
  */
 
 import React from "react";
-import { Search, Bell, HelpCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Search, HelpCircle } from "lucide-react";
+import { NotificationBell } from "../../components/notifications/NotificationBell";
 import { UserRole } from "../types";
 
 interface HeaderProps {
@@ -17,6 +19,7 @@ interface HeaderProps {
   };
   searchValue: string;
   onSearchChange: (value: string) => void;
+  onNavigate?: (page: string) => void;
 }
 
 export function Header({
@@ -24,7 +27,9 @@ export function Header({
   user,
   searchValue,
   onSearchChange,
+  onNavigate,
 }: HeaderProps) {
+  const navigate = useNavigate();
   // Avatars for different roles
   const avatarMap = {
     student:
@@ -43,6 +48,15 @@ export function Header({
     staff: "Staff Operations",
     admin: "Quản trị viên",
   };
+
+  function handleNotificationNavigate(target: string) {
+    if (target === "/dashboard" && onNavigate) {
+      onNavigate("dashboard");
+      return;
+    }
+
+    navigate(target);
+  }
 
   return (
     <header className="fixed top-0 right-0 left-0 h-16 bg-white border-b border-brand-border/40 z-30 flex items-center justify-between px-6 select-none font-sans">
@@ -86,13 +100,13 @@ export function Header({
 
         {/* Notifications and Help Buttons */}
         <div className="flex items-center gap-1.5 border-r border-brand-border/30 pr-3">
-          <button
-            title="Notifications"
-            className="p-2 text-brand-text-variant hover:bg-brand-low rounded-full transition-colors relative"
-          >
-            <Bell className="w-5 h-5" />
-            <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-brand-error rounded-full border-2 border-white animate-pulse"></span>
-          </button>
+          <NotificationBell
+            activeRole={activeRole}
+            variant="portal"
+            buttonClassName="relative p-2 text-brand-text-variant hover:bg-brand-low rounded-full transition-colors"
+            dropdownClassName="absolute right-0 top-[calc(100%+12px)] z-50"
+            onNavigateTarget={handleNotificationNavigate}
+          />
           <button
             title="Help Desk"
             className="p-2 text-brand-text-variant hover:bg-brand-low rounded-full transition-colors"

@@ -15,7 +15,6 @@ import {
   Trash2,
   SquarePen,
   X,
-  CheckCircle,
   Plus,
   RefreshCw,
   Sparkles,
@@ -27,7 +26,6 @@ import {
   FileText,
   ExternalLink,
   Download,
-  CheckCircle2,
   XCircle,
   Lock,
   Unlock,
@@ -35,12 +33,13 @@ import {
 } from "lucide-react";
 import { adminUsersApi } from "../../api/adminUsers";
 import { staffTutorApi } from "../../api/staffTutors";
+import { useFeedback } from "../../components/feedback/useFeedback";
 
 export function AdminPortal() {
+  const feedback = useFeedback();
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -111,33 +110,45 @@ export function AdminPortal() {
 
   const handleToggleStatus = async (userId: number, currentStatus: string) => {
     const nextStatus = currentStatus === "ACTIVE" ? "LOCKED" : "ACTIVE";
-    const confirmMsg = nextStatus === "LOCKED"
-      ? "Bạn có chắc chắn muốn khóa tài khoản này?"
-      : "Bạn có chắc chắn muốn mở khóa tài khoản này?";
-    if (!window.confirm(confirmMsg)) return;
+    const accepted = await feedback.confirm({
+      title: nextStatus === "LOCKED" ? "Khóa tài khoản?" : "Mở khóa tài khoản?",
+      message: nextStatus === "LOCKED"
+        ? "Bạn có chắc chắn muốn khóa tài khoản này?"
+        : "Bạn có chắc chắn muốn mở khóa tài khoản này?",
+      confirmText: nextStatus === "LOCKED" ? "Khóa tài khoản" : "Mở khóa",
+      cancelText: "Hủy",
+      variant: nextStatus === "LOCKED" ? "destructive" : "default"
+    });
+    if (!accepted) return;
 
     try {
       await adminUsersApi.updateStatus(userId, nextStatus);
-      setNotice(`Đã cập nhật trạng thái tài khoản thành ${nextStatus}!`);
+      feedback.success(`Đã cập nhật trạng thái tài khoản thành ${nextStatus}.`);
       loadUsers();
       if (selectedUserId === userId && userDetail) {
         openDetail(userId);
       }
     } catch (err: any) {
-      setError(err?.message || "Không thể cập nhật trạng thái.");
+      feedback.error(err?.message || "Không thể cập nhật trạng thái.");
     }
   };
 
   const handleApproveTutor = async (applicationId: number) => {
-    if (!window.confirm("Xác nhận phê duyệt hồ sơ cá nhân và CCCD của gia sư này?")) return;
+    const accepted = await feedback.confirm({
+      title: "Phê duyệt hồ sơ gia sư?",
+      message: "Xác nhận phê duyệt hồ sơ cá nhân và CCCD của gia sư này?",
+      confirmText: "Phê duyệt",
+      cancelText: "Hủy"
+    });
+    if (!accepted) return;
     setActionBusy(true);
     try {
       await staffTutorApi.approve(applicationId, "Phê duyệt bởi Admin User Control");
-      setNotice("Đã phê duyệt hồ sơ gia sư thành công!");
+      feedback.success("Đã phê duyệt hồ sơ gia sư.");
       if (selectedUserId) openDetail(selectedUserId);
       loadUsers();
     } catch (err: any) {
-      setError(err?.message || "Không thể phê duyệt gia sư.");
+      feedback.error(err?.message || "Không thể phê duyệt gia sư.");
     } finally {
       setActionBusy(false);
     }
@@ -147,19 +158,19 @@ export function AdminPortal() {
     e.preventDefault();
     if (!rejectingAppId) return;
     if (!rejectReason.trim()) {
-      alert("Vui lòng nhập lý do từ chối.");
+      feedback.warning("Vui lòng nhập lý do từ chối.");
       return;
     }
     setActionBusy(true);
     try {
       await staffTutorApi.reject(rejectingAppId, rejectReason.trim(), undefined);
-      setNotice("Đã từ chối hồ sơ gia sư và gửi phản hồi!");
+      feedback.success("Đã từ chối hồ sơ gia sư.");
       setRejectingAppId(null);
       setRejectReason("");
       if (selectedUserId) openDetail(selectedUserId);
       loadUsers();
     } catch (err: any) {
-      setError(err?.message || "Không thể từ chối hồ sơ.");
+      feedback.error(err?.message || "Không thể từ chối hồ sơ.");
     } finally {
       setActionBusy(false);
     }
@@ -183,16 +194,6 @@ export function AdminPortal() {
   return (
     <div className="font-sans select-none max-w-7xl mx-auto pb-10 space-y-6">
       {/* Notice / Error banners */}
-      {notice && (
-        <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-800">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 size={16} />
-            <span>{notice}</span>
-          </div>
-          <button onClick={() => setNotice("")} className="text-emerald-900 font-extrabold text-sm">✕</button>
-        </div>
-      )}
-
       {error && (
         <div className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-bold text-red-800">
           <div className="flex items-center gap-2">

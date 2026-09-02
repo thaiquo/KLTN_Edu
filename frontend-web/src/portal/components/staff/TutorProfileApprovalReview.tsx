@@ -130,7 +130,7 @@ export function TutorProfileApprovalReview({
     e.preventDefault();
     if (!rejectingId) return;
     if (!rejectReason.trim()) {
-      alert("Vui lòng nhập lý do từ chối.");
+      onError("Vui lòng nhập lý do từ chối.");
       return;
     }
     setSubmitting(true);

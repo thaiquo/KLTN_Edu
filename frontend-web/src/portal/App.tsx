@@ -55,6 +55,7 @@ import { DisputeManagementPanel } from "../components/contract/DisputeManagement
 import { MyWalletView } from "./components/MyWalletView";
 import { TutorRestrictedHome } from "./components/TutorRestrictedHome";
 import { TeachingRegistrationPage } from "../pages/tutor/TeachingRegistrationPage";
+import { useFeedback } from "../components/feedback/useFeedback";
 import { useTutorApplication } from "../hooks/useTutorApplication";
 
 // High Resolution course and avatar placeholders
@@ -283,6 +284,7 @@ interface AppProps {
 }
 
 export default function App({ user, onLogout }: AppProps) {
+  const feedback = useFeedback();
   // Global States holding data consistently across tabs
   const [activeRole] = useState<UserRole>(user.currentRole || user.role || "student");
   const [currentPage, setCurrentPage] = useState<string>(activeRole === "staff" ? "tutor-approval" : "dashboard");
@@ -302,7 +304,6 @@ export default function App({ user, onLogout }: AppProps) {
 
   const [activeConversationId, setActiveConversationId] = useState<string>("vance");
   const [settingsTab, setSettingsTab] = useState<"info" | "password">("info");
-  const [tutorApplicationStatus, setTutorApplicationStatus] = useState<string | null>(null);
   const {
     data: tutorApplication,
     isLoading: tutorApplicationLoading,
@@ -311,22 +312,9 @@ export default function App({ user, onLogout }: AppProps) {
     enabled: activeRole === "tutor"
   });
 
-  useEffect(() => {
-    if (activeRole !== "tutor") {
-      setTutorApplicationStatus(null);
-      return;
-    }
-
-    setTutorApplicationStatus(tutorApplication?.status || null);
-  }, [activeRole, tutorApplication?.status]);
-
+  const tutorApplicationStatus = activeRole === "tutor" ? tutorApplication?.status || null : null;
   const restrictedTutor = activeRole === "tutor" && (tutorApplicationLoading || tutorApplicationFetching || tutorApplicationStatus !== "APPROVED");
   const fullTutorAccess = activeRole === "tutor" && !restrictedTutor;
-
-  const handleTutorStatusChange = React.useCallback((status: string) => {
-    setTutorApplicationStatus(status);
-    setTutorApplicationLoading(false);
-  }, []);
 
   const handleNavigate = React.useCallback((page: string) => {
     if (page === "settings-password") {
@@ -355,7 +343,7 @@ export default function App({ user, onLogout }: AppProps) {
 
   // Interaction handlers
   const handleStartSession = () => {
-    alert("Launching EduConnect Peer Video/Audio Room 4B. Your camera and audio systems are online...");
+    feedback.info("Phòng học trực tuyến sẽ được kết nối khi module video/audio thật sẵn sàng.");
   };
 
   // Messages handlers
@@ -431,8 +419,6 @@ export default function App({ user, onLogout }: AppProps) {
     if (activeRole === "tutor" && restrictedTutor && FULL_TUTOR_PAGE_IDS.has(currentPage)) {
       return (
         <TutorRestrictedHome
-          tutorStatus={tutorApplicationStatus as any}
-          onTutorStatusChange={handleTutorStatusChange as any}
           onNavigate={handleNavigate}
         />
       );
@@ -692,6 +678,7 @@ export default function App({ user, onLogout }: AppProps) {
         user={user}
         searchValue={searchValue}
         onSearchChange={setSearchValue}
+        onNavigate={handleNavigate}
       />
 
       {/* Main Structural Frame Component */}

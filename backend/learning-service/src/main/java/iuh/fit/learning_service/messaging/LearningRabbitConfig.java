@@ -22,6 +22,10 @@ public class LearningRabbitConfig {
     public static final String TUTOR_REJECTED_ROUTING_KEY = "account.tutor.rejected";
     public static final String SUBJECT_REQUEST_APPROVED_ROUTING_KEY = "learning.subject-request.approved";
     public static final String SUBJECT_REQUEST_REJECTED_ROUTING_KEY = "learning.subject-request.rejected";
+    public static final String ENROLLMENT_REQUESTED_ROUTING_KEY = "learning.enrollment.requested";
+    public static final String ENROLLMENT_ACCEPTED_ROUTING_KEY = "learning.enrollment.accepted";
+    public static final String ENROLLMENT_REJECTED_ROUTING_KEY = "learning.enrollment.rejected";
+    public static final String ENROLLMENT_CANCELLED_ROUTING_KEY = "learning.enrollment.cancelled";
 
     @Bean
     DirectExchange eduEventsExchange() {

@@ -1,6 +1,7 @@
 package iuh.fit.learning_service.controller;
 
 import iuh.fit.learning_service.dto.EnrollmentRequestDtos.*;
+import iuh.fit.learning_service.config.security.LearningUserPrincipal;
 import iuh.fit.learning_service.service.EnrollmentRequestService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -31,7 +32,7 @@ public class EnrollmentRequestController {
             @PathVariable Long classId,
             @RequestBody(required = false) @Valid EnrollClassRequest request
     ) {
-        EnrollmentRequestResponse response = service.enrollClass(classId, authentication.getName(), request);
+        EnrollmentRequestResponse response = service.enrollClass(classId, authentication.getName(), currentUserId(authentication), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
@@ -40,7 +41,7 @@ public class EnrollmentRequestController {
             Authentication authentication,
             @PathVariable Long requestId
     ) {
-        EnrollmentRequestResponse response = service.cancelRequest(requestId, authentication.getName());
+        EnrollmentRequestResponse response = service.cancelRequest(requestId, authentication.getName(), currentUserId(authentication));
         return ResponseEntity.ok(response);
     }
 
@@ -59,7 +60,7 @@ public class EnrollmentRequestController {
             Authentication authentication,
             @PathVariable Long requestId
     ) {
-        EnrollmentRequestResponse response = service.acceptRequest(requestId, authentication.getName());
+        EnrollmentRequestResponse response = service.acceptRequest(requestId, authentication.getName(), currentUserId(authentication));
         return ResponseEntity.ok(response);
     }
 
@@ -71,7 +72,7 @@ public class EnrollmentRequestController {
             @RequestBody(required = false) @Valid RejectRequestPayload payload
     ) {
         String reason = payload != null ? payload.reason() : null;
-        EnrollmentRequestResponse response = service.rejectRequest(requestId, authentication.getName(), reason);
+        EnrollmentRequestResponse response = service.rejectRequest(requestId, authentication.getName(), currentUserId(authentication), reason);
         return ResponseEntity.ok(response);
     }
 
@@ -92,5 +93,12 @@ public class EnrollmentRequestController {
     @PreAuthorize("hasRole('TUTOR')")
     public BufferPoolStatusResponse getBufferPoolStatus(Authentication authentication, @PathVariable Long classId) {
         return service.getBufferPoolStatus(classId, authentication.getName());
+    }
+
+    private Long currentUserId(Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof LearningUserPrincipal principal) {
+            return principal.userId();
+        }
+        return null;
     }
 }

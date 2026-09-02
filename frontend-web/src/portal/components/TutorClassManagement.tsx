@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { classApi } from "../../api/classes";
 import { CreateClassWizard } from "./CreateClassWizard";
+import { useFeedback } from "../../components/feedback/useFeedback";
 import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
 import { useTutorApplication } from "../../hooks/useTutorApplication";
 
@@ -64,6 +65,7 @@ const VIETNAMESE_DAYS = [
 ];
 
 export function TutorClassManagement() {
+  const feedback = useFeedback();
   const [viewMode, setViewMode] = useState<"list" | "create">("list");
   const [classes, setClasses] = useState<ClassRoomItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,11 +96,9 @@ export function TutorClassManagement() {
   // Enrollment Requests tab state
   const [enrollmentRequests, setEnrollmentRequests] = useState<any[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
-  const [requestActionMsg, setRequestActionMsg] = useState("");
 
   const loadRequestsForClass = async (classId: number) => {
     setRequestsLoading(true);
-    setRequestActionMsg("");
     try {
       const data = await classApi.getRequestsForClass(classId);
       setEnrollmentRequests(data || []);
@@ -112,33 +112,44 @@ export function TutorClassManagement() {
 
   const handleAcceptRequest = async (requestId: number, studentName?: string) => {
     const name = studentName || "học viên này";
-    if (!window.confirm(`XÁC NHẬN CHẤP NHẬN:\nBạn có chắc chắn muốn nhận ${name} vào lớp học này không?`)) {
+    const accepted = await feedback.confirm({
+      title: "Chấp nhận yêu cầu tham gia?",
+      message: `Bạn có chắc muốn nhận ${name} vào lớp học này không?`,
+      confirmText: "Chấp nhận",
+      cancelText: "Hủy"
+    });
+    if (!accepted) {
       return;
     }
-    setRequestActionMsg("");
     try {
       await classApi.acceptEnrollmentRequest(requestId);
-      setRequestActionMsg("Đã chấp nhận yêu cầu tham gia thành công!");
+      feedback.success("Đã chấp nhận yêu cầu tham gia.");
       if (detailModalClass) loadRequestsForClass(detailModalClass.id);
       loadClasses();
     } catch (err: any) {
-      setRequestActionMsg(err?.message || "Không thể chấp nhận yêu cầu.");
+      feedback.error(err?.message || "Không thể chấp nhận yêu cầu.");
     }
   };
 
   const handleRejectRequest = async (requestId: number, studentName?: string) => {
     const name = studentName || "học viên này";
-    if (!window.confirm(`XÁC NHẬN TỪ CHỐI:\nBạn có chắc chắn muốn từ chối yêu cầu tham gia của ${name} không?`)) {
+    const accepted = await feedback.confirm({
+      title: "Từ chối yêu cầu tham gia?",
+      message: `Bạn có chắc muốn từ chối yêu cầu tham gia của ${name} không?`,
+      confirmText: "Từ chối",
+      cancelText: "Hủy",
+      variant: "destructive"
+    });
+    if (!accepted) {
       return;
     }
-    setRequestActionMsg("");
     try {
       await classApi.rejectEnrollmentRequest(requestId, undefined);
-      setRequestActionMsg("Đã từ chối yêu cầu tham gia!");
+      feedback.success("Đã từ chối yêu cầu tham gia.");
       if (detailModalClass) loadRequestsForClass(detailModalClass.id);
       loadClasses();
     } catch (err: any) {
-      setRequestActionMsg(err?.message || "Không thể từ chối yêu cầu.");
+      feedback.error(err?.message || "Không thể từ chối yêu cầu.");
     }
   };
 
@@ -166,6 +177,12 @@ export function TutorClassManagement() {
   };
 
   useRealtimeRefresh(["CLASS_REVIEWED"], loadClasses);
+  useRealtimeRefresh(["ENROLLMENT_REQUESTED", "ENROLLMENT_CANCELLED"], () => {
+    loadClasses();
+    if (detailModalClass) {
+      loadRequestsForClass(detailModalClass.id);
+    }
+  });
 
   useEffect(() => {
     loadClasses();
@@ -173,22 +190,29 @@ export function TutorClassManagement() {
 
   const handleCreateClick = () => {
     if (tutorApp && tutorApp.status !== "APPROVED") {
-      alert("Hồ sơ cá nhân và xác minh danh tính của bạn đang trong trạng thái " + (tutorApp.status === "PENDING" ? "CHỜ BAN QUẢN TRỊ DUYỆT" : "CHƯA ĐƯỢC PHÊ DUYỆT") + ".\n\nBạn tạm thời chưa thể tạo lớp học mới lúc này. Các lớp học đã tạo trước đó vẫn hoạt động và giảng dạy bình thường.");
+      feedback.warning("Hồ sơ cá nhân và xác minh danh tính của bạn đang trong trạng thái " + (tutorApp.status === "PENDING" ? "chờ Ban quản trị duyệt" : "chưa được phê duyệt") + ". Bạn tạm thời chưa thể tạo lớp học mới.");
       return;
     }
     setViewMode("create");
   };
 
   const handleDeleteClass = async (classRoom: ClassRoomItem) => {
-    const confirmation = classRoom.status === "PENDING_APPROVAL"
-      ? "Lớp đang chờ duyệt. Bạn có chắc muốn rút và xóa lớp này?"
-      : "Bạn có chắc chắn muốn xóa lớp học này?";
-    if (!window.confirm(confirmation)) return;
+    const accepted = await feedback.confirm({
+      title: "Xóa lớp học?",
+      message: classRoom.status === "PENDING_APPROVAL"
+        ? "Lớp đang chờ duyệt. Bạn có chắc muốn rút và xóa lớp này?"
+        : "Bạn có chắc chắn muốn xóa lớp học này?",
+      confirmText: "Xóa lớp",
+      cancelText: "Hủy",
+      variant: "destructive"
+    });
+    if (!accepted) return;
     try {
       await classApi.deleteClass(classRoom.id);
       await loadClasses();
+      feedback.success("Đã xóa lớp học.");
     } catch (err: any) {
-      alert(err?.message || "Không thể xóa lớp học.");
+      feedback.error(err?.message || "Không thể xóa lớp học.");
     }
   };
 
@@ -238,7 +262,7 @@ export function TutorClassManagement() {
   const handleSaveVisibility = async () => {
     if (!detailModalClass) return;
     if (targetJoinMode === "INVITE_KEY" && !targetJoinKey.trim()) {
-      alert("Vui lòng nhập Mã mời (Invite Key) hoặc nhấn 'Tạo ngẫu nhiên'.");
+      feedback.warning("Vui lòng nhập Mã mời hoặc nhấn Tạo ngẫu nhiên.");
       return;
     }
 
@@ -262,8 +286,9 @@ export function TutorClassManagement() {
         maxPendingRequests: Math.ceil(detailModalClass.maxStudents * (targetRatioPercent / 100)),
         bufferPoolRatioPercent: targetRatioPercent
       } as any : null);
+      feedback.success("Cài đặt mở bán đã được cập nhật.");
     } catch (err: any) {
-      alert(err?.message || "Không thể cập nhật trạng thái mở bán.");
+      feedback.error(err?.message || "Không thể cập nhật trạng thái mở bán.");
     } finally {
       setVisibilitySubmitting(false);
     }
@@ -273,7 +298,7 @@ export function TutorClassManagement() {
   const handleSaveDetails = async () => {
     if (!detailModalClass) return;
     if (!editDescription.trim()) {
-      alert("Mô tả chi tiết không được để trống.");
+      feedback.warning("Mô tả chi tiết không được để trống.");
       return;
     }
 
@@ -310,8 +335,9 @@ export function TutorClassManagement() {
           orderIndex: i + 1
         }))
       } : null);
+      feedback.success("Thông tin mô tả và lộ trình đã được cập nhật.");
     } catch (err: any) {
-      alert(err?.message || "Không thể cập nhật thông tin mô tả/lộ trình.");
+      feedback.error(err?.message || "Không thể cập nhật thông tin mô tả/lộ trình.");
     } finally {
       setDetailsSubmitting(false);
     }
@@ -348,6 +374,7 @@ export function TutorClassManagement() {
         onSuccess={() => {
           setViewMode("list");
           loadClasses();
+          feedback.success("Lớp học đã được tạo và gửi duyệt.");
         }} 
       />
     );
@@ -1104,12 +1131,6 @@ export function TutorClassManagement() {
                     Làm mới
                   </button>
                 </div>
-
-                {requestActionMsg && (
-                  <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800 rounded-xl font-bold">
-                    {requestActionMsg}
-                  </div>
-                )}
 
                 {requestsLoading ? (
                   <div className="p-6 text-center text-slate-400 font-medium">Đang tải danh sách...</div>

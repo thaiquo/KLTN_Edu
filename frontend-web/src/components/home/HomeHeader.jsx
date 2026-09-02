@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowUpRight,
-  Bell,
   BookOpen,
   ChevronDown,
   FileText,
@@ -21,19 +20,19 @@ import {
   X
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
+import { useFeedback } from '../feedback/useFeedback';
+import { NotificationBell } from '../notifications/NotificationBell';
 import { useCreateTutorApplication, useTutorApplication } from '../../hooks/useTutorApplication';
 import { homeNavLinks, studentNavLinks } from './homeData';
 
 export function HomeHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  const [notificationOpen, setNotificationOpen] = useState(false);
-  const [mobileNotificationOpen, setMobileNotificationOpen] = useState(false);
   const [roleActionLoading, setRoleActionLoading] = useState(false);
   const [roleActionError, setRoleActionError] = useState('');
   const accountRef = useRef(null);
-  const notificationRef = useRef(null);
   const { user, logout, switchRole, refreshUser } = useAuth();
+  const feedback = useFeedback();
   const navigate = useNavigate();
   const isAuthenticated = Boolean(user);
   const navLinks = isAuthenticated ? navLinksFor(user) : homeNavLinks;
@@ -72,8 +71,6 @@ export function HomeHeader() {
       if (event.key === 'Escape') {
         setMenuOpen(false);
         setAccountOpen(false);
-        setNotificationOpen(false);
-        setMobileNotificationOpen(false);
       }
     }
 
@@ -86,9 +83,6 @@ export function HomeHeader() {
       if (accountRef.current && !accountRef.current.contains(event.target)) {
         setAccountOpen(false);
       }
-      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
-        setNotificationOpen(false);
-      }
     }
 
     document.addEventListener('mousedown', closeOnClickOutside);
@@ -97,7 +91,6 @@ export function HomeHeader() {
 
   const closeMenu = () => {
     setMenuOpen(false);
-    setMobileNotificationOpen(false);
   };
 
   async function handleLogout() {
@@ -143,6 +136,7 @@ export function HomeHeader() {
       if (studentRoleAction.kind === 'create') {
         await createTutorApplication.mutateAsync();
         await refreshUser();
+        feedback.success('Hồ sơ gia sư đã được khởi tạo. Bạn có thể hoàn thiện thông tin xét duyệt.');
         setAccountOpen(false);
         closeMenu();
         navigate('/profile');
@@ -155,6 +149,11 @@ export function HomeHeader() {
     } catch (err) {
       console.error('Không thể xử lý hồ sơ gia sư:', err);
       setRoleActionError(
+        studentRoleAction.kind === 'create'
+          ? 'Không thể khởi tạo hồ sơ gia sư.'
+          : 'Không thể chuyển vai trò lúc này. Vui lòng thử lại.'
+      );
+      feedback.error(
         studentRoleAction.kind === 'create'
           ? 'Không thể khởi tạo hồ sơ gia sư.'
           : 'Không thể chuyển vai trò lúc này. Vui lòng thử lại.'
@@ -202,43 +201,16 @@ export function HomeHeader() {
         <div className="hidden md:flex items-center gap-3">
           {isAuthenticated ? (
             <>
-              <div className="relative" ref={notificationRef}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAccountOpen(false);
-                    setNotificationOpen((current) => !current);
-                  }}
-                  className="relative w-11 h-11 grid place-items-center rounded-[14px] border border-slate-200 bg-white text-slate-700 hover:border-primary/40 hover:text-primary transition-colors"
-                  aria-label="Thông báo"
-                  aria-haspopup="dialog"
-                  aria-expanded={notificationOpen}
-                >
-                  <Bell size={18} />
-                </button>
-
-                {notificationOpen && (
-                  <div className="absolute right-0 top-[calc(100%+12px)] z-50 w-80 rounded-[14px] border border-slate-200 bg-white p-4 shadow-[0_24px_64px_rgba(15,23,42,.16)]">
-                    <div className="flex items-start gap-3">
-                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-blue-50 text-primary">
-                        <Bell size={17} />
-                      </span>
-                      <div>
-                        <p className="text-sm font-extrabold text-slate-950">Chưa có trung tâm thông báo</p>
-                        <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
-                          Realtime toast hiện vẫn được giữ nguyên. Danh sách thông báo và unread count sẽ cần API thật trước khi hiển thị.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
+              <NotificationBell
+                activeRole={user?.activeRole}
+                variant="student"
+                buttonClassName="relative w-11 h-11 grid place-items-center rounded-[14px] border border-slate-200 bg-white text-slate-700 hover:border-primary/40 hover:text-primary transition-colors"
+                dropdownClassName="absolute right-0 top-[calc(100%+12px)] z-50"
+              />
               <div className="relative" ref={accountRef}>
                 <button
                   type="button"
                   onClick={() => {
-                    setNotificationOpen(false);
                     setAccountOpen((current) => !current);
                   }}
                   className="inline-flex min-w-0 items-center gap-3 min-h-[46px] max-w-[250px] rounded-[14px] border border-slate-200 bg-white px-3.5 text-slate-900 hover:border-primary/40 hover:shadow-[0_12px_24px_rgba(15,23,42,.08)] transition-all"
@@ -334,21 +306,13 @@ export function HomeHeader() {
                 </span>
               </Link>
 
-              <button
-                type="button"
-                onClick={() => setMobileNotificationOpen((current) => !current)}
-                className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
-                aria-expanded={mobileNotificationOpen}
-              >
-                <Bell size={17} />
-                Thông báo
-              </button>
-
-              {mobileNotificationOpen && (
-                <div className="rounded-[14px] border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-semibold leading-6 text-slate-600">
-                  Chưa có trung tâm thông báo thật. Realtime toast hiện vẫn được giữ nguyên.
-                </div>
-              )}
+              <NotificationBell
+                activeRole={user?.activeRole}
+                variant="student"
+                buttonClassName="relative inline-flex w-full items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
+                dropdownClassName="mt-2"
+                label="Thông báo"
+              />
 
               {isStudentActive && (
                 <>

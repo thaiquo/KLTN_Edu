@@ -41,7 +41,9 @@ Current source evidence:
 
 - Account Service exposes a CSRF endpoint through Auth Controller.
 - Account and Learning security configs use `CookieCsrfTokenRepository.withHttpOnlyFalse()`.
+- Notification Service uses `CookieCsrfTokenRepository.withHttpOnlyFalse()` for its authenticated REST API.
 - Web API client obtains `XSRF-TOKEN` and sends `X-XSRF-TOKEN` on mutating requests.
+- Notification WebSocket connections use the browser `access_token` cookie during the handshake and are user-targeted server-side; clients must not provide or spoof `recipientUserId`.
 
 Do not disable CSRF just to make a request pass. If an API call fails due to CSRF, audit the frontend credentials/header flow and the relevant Spring Security configuration.
 
@@ -99,6 +101,7 @@ Current JWT extraction policy:
 
 - Account Service JWT filter reads JWT from cookie `access_token`.
 - Learning Service JWT filter reads JWT from cookie `access_token`.
+- Notification Service JWT filter reads JWT from cookie `access_token` and derives notification ownership from the authenticated `userId` claim.
 - Browser requests must not depend on `Authorization: Bearer` or legacy cookie `token`.
 
 Mobile currently uses credentialed API requests, but the CSRF flow is not as complete as Web and should be audited before expanding mobile mutating APIs.
@@ -117,6 +120,7 @@ Mobile currently uses credentialed API requests, but the CSRF flow is not as com
 
 - Account security config/filter/auth: `backend/account-service/src/main/java`.
 - Learning security config/filter: `backend/learning-service/src/main/java`.
+- Notification security config/filter: `backend/notification-service/src/main/java`.
 - Gateway CORS/routing: `backend/api-gateway/src/main/resources/application.properties`.
 - Web API auth/CSRF handling: `frontend-web/src/api`.
 - Mobile API auth behavior: `mobile-app`.

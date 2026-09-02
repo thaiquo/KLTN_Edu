@@ -23,6 +23,7 @@
 | Class/Classroom | `learning-service` | Tutor class management, public class search/detail, staff/admin class monitoring. |
 | Enrollment/Join Request | `learning-service` | Student class enrollment requests and tutor accept/reject flows. |
 | Contract/Escrow/Settlement | `contract-service` | Contract and blockchain workflow logic exists, but public REST Controller evidence is currently not found. |
+| Notification | `notification-service` | Persistent user notifications, unread count, mark one read, mark all read, and limited realtime notification delivery for the authenticated recipient account. |
 | AI Matching | Not implemented as a service | Target/planned support for search/recommendation/ranking. |
 
 ## 3. Current API Groups
@@ -47,9 +48,83 @@ Current large API groups with source evidence:
 - Tutor class management.
 - Public class search/detail and join-key verification.
 - Enrollment request create/cancel/my-requests/accept/reject.
+- Enrollment request events on `kltn.edu.events` for `learning.enrollment.requested`, `learning.enrollment.accepted`, `learning.enrollment.rejected`, and `learning.enrollment.cancelled`.
 - Staff/admin class monitoring.
+- Notification list/count/read state through `notification-service`.
+- Notification realtime delivery through `/ws/notifications` for supported persisted notification events.
 
 Contract Service contains workflow/service logic and persistence, but no public REST controller was found during audit.
+
+## 3.1 Notification API
+
+Current Notification Service endpoints:
+
+| Method | Endpoint | Purpose | Notes |
+| --- | --- | --- | --- |
+| `GET` | `/api/notifications` | List notifications for the authenticated user. | Supports `page`, `size`, `unreadOnly`, and optional `targetRole`. |
+| `GET` | `/api/notifications/unread-count` | Return unread notification count for the authenticated user. | Supports optional `targetRole`. |
+| `PATCH` | `/api/notifications/{id}/read` | Mark one owned notification as read. | Idempotent for already-read rows. |
+| `PATCH` | `/api/notifications/read-all` | Mark all matching owned notifications as read. | Supports optional `targetRole`; returns updated count. |
+
+Current Notification Service WebSocket endpoint:
+
+| Protocol | Endpoint | Purpose | Notes |
+| --- | --- | --- | --- |
+| Raw WebSocket | `/ws/notifications` | Deliver persisted notification creation events to the authenticated recipient while online. | Routed by `api-gateway` to `notification-service`. REST remains authoritative; clients should invalidate/refetch notification queries after receiving a frame. |
+
+Current realtime envelope:
+
+| Field | Purpose |
+| --- | --- |
+| `source` | Event source, currently `notification-service`. |
+| `eventType` | Envelope type, currently `NOTIFICATION_CREATED`. |
+| `notificationId` | Persisted notification id. |
+| `notificationType` | Business notification type. |
+| `recipientUserId` | Authenticated recipient account id. |
+| `targetRole` | Optional role/context hint. |
+| `referenceType` | Referenced business object type. |
+| `referenceId` | Referenced business object id. |
+| `title` | Short UI title. |
+| `message` | UI message without sensitive payload. |
+| `createdAt` | Server timestamp. |
+
+Security and ownership:
+
+- The service reads the current user from the `access_token` cookie JWT.
+- Clients must not send `recipientUserId`; ownership is derived server-side.
+- Mutating endpoints require the normal browser CSRF header.
+- Notification click routing is a frontend concern and should use existing routes from `docs/FEEDBACK_NOTIFICATION_SPEC.md`.
+- WebSocket notification sessions are authenticated through the same browser cookie principal. The server sends user-specific notification frames only to matching `recipientUserId` sessions.
+
+## 3.2 Enrollment Notification Events
+
+Learning Service publishes enrollment events to the shared RabbitMQ exchange `kltn.edu.events` after the enrollment transaction commits.
+
+| Event | Routing Key | Actor | Recipient | Reference |
+| --- | --- | --- | --- | --- |
+| `ENROLLMENT_REQUESTED` | `learning.enrollment.requested` | Student | Tutor | `ENROLLMENT_REQUEST` / enrollment request id |
+| `ENROLLMENT_ACCEPTED` | `learning.enrollment.accepted` | Tutor | Student | `ENROLLMENT_REQUEST` / enrollment request id |
+| `ENROLLMENT_REJECTED` | `learning.enrollment.rejected` | Tutor/system capacity cleanup | Student | `ENROLLMENT_REQUEST` / enrollment request id |
+| `ENROLLMENT_CANCELLED` | `learning.enrollment.cancelled` | Student | Tutor | `ENROLLMENT_REQUEST` / enrollment request id |
+
+Current enrollment event payload shape:
+
+| Field | Purpose |
+| --- | --- |
+| `eventId` | Unique idempotency key for the business event. |
+| `eventType` | One of the enrollment events above. |
+| `occurredAt` | Producer timestamp. |
+| `producer` | Current value: `learning-service`. |
+| `enrollmentRequestId` | Enrollment request id. |
+| `classId` | Class id. |
+| `recipientUserId` | Notification recipient account id resolved by the producer. |
+| `actorUserId` | User id of the actor when available. |
+| `classTitle` | Safe display class name. |
+| `reviewStatus` | Result/status hint such as `PENDING`, `ACCEPTED`, `REJECTED`, or `CANCELLED`. |
+| `rejectReason` | Safe rejection reason when supported. |
+| `studentName` | Safe display student name when submitted. |
+
+Notification Service consumes these events, persists account-owned notifications, and `/ws/notifications` delivers `NOTIFICATION_CREATED` to the recipient while online. Clients must still refetch authoritative REST state.
 
 ## 4. API Status Principle
 

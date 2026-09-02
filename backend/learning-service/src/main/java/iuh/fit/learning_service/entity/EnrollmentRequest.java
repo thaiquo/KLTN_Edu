@@ -23,6 +23,8 @@ public class EnrollmentRequest {
     @Column(nullable = false, length = 255)
     private String studentEmail;
 
+    private Long studentUserId;
+
     @Column(length = 255)
     private String studentName;
 

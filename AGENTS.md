@@ -79,6 +79,9 @@ Read additionally when relevant:
 - REST API / frontend-backend integration -> `docs/API.md`
 - Contract / Blockchain / escrow / settlement / refund / dispute / Web3 -> `docs/BLOCKCHAIN.md`
 - AI Matching / recommendation / embedding / semantic search -> `docs/AI_MATCHING.md`
+- Write/state-change/realtime feedback or notification behavior -> `docs/FEEDBACK_NOTIFICATION_SPEC.md`
+
+Entries marked `PLANNED` in `docs/FEEDBACK_NOTIFICATION_SPEC.md` are future architecture requirements only, not implementation requests.
 
 If a file does not exist, do not fail the task. Continue with source audit for the related domain.
 

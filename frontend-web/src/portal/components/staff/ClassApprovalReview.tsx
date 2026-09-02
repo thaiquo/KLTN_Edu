@@ -6,6 +6,7 @@ import {
   ChevronRight, Calendar, UserCheck, X 
 } from "lucide-react";
 import { classApi } from "../../../api/classes";
+import { useFeedback } from "../../../components/feedback/useFeedback";
 import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
 
 interface ClassItem {
@@ -58,13 +59,13 @@ const VIETNAMESE_DAYS = [
 ];
 
 export function ClassApprovalReview() {
+  const feedback = useFeedback();
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedClass, setSelectedClass] = useState<ClassItem | null>(null);
   const [rejectingClass, setRejectingClass] = useState<ClassItem | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>("PENDING_APPROVAL");
@@ -138,15 +139,21 @@ export function ClassApprovalReview() {
 
   // Actions
   const handleApprove = async (cls: ClassItem) => {
-    if (!window.confirm(`Xác nhận PHÊ DUYỆT lớp học: "${cls.name}"?`)) return;
+    const accepted = await feedback.confirm({
+      title: "Phê duyệt lớp học?",
+      message: `Xác nhận phê duyệt lớp học "${cls.name}"?`,
+      confirmText: "Phê duyệt",
+      cancelText: "Hủy"
+    });
+    if (!accepted) return;
     setActionBusy(true);
     try {
       await classApi.adminApproveClass(cls.id);
-      setToastMessage(`Đã phê duyệt thành công lớp: "${cls.name}"`);
+      feedback.success(`Đã phê duyệt lớp "${cls.name}".`);
       if (selectedClass?.id === cls.id) setSelectedClass(null);
       loadClasses();
     } catch (err: any) {
-      alert(err?.message || "Không thể phê duyệt lớp học.");
+      feedback.error(err?.message || "Không thể phê duyệt lớp học.");
     } finally {
       setActionBusy(false);
     }
@@ -155,19 +162,19 @@ export function ClassApprovalReview() {
   const handleConfirmReject = async () => {
     if (!rejectingClass) return;
     if (!rejectReason.trim()) {
-      alert("Vui lòng nhập lý do từ chối cụ thể.");
+      feedback.warning("Vui lòng nhập lý do từ chối cụ thể.");
       return;
     }
     setActionBusy(true);
     try {
       await classApi.adminRejectClass(rejectingClass.id, rejectReason.trim());
-      setToastMessage(`Đã từ chối lớp: "${rejectingClass.name}"`);
+      feedback.success(`Đã từ chối lớp "${rejectingClass.name}".`);
       setRejectingClass(null);
       setRejectReason("");
       if (selectedClass?.id === rejectingClass.id) setSelectedClass(null);
       loadClasses();
     } catch (err: any) {
-      alert(err?.message || "Không thể từ chối lớp học.");
+      feedback.error(err?.message || "Không thể từ chối lớp học.");
     } finally {
       setActionBusy(false);
     }
@@ -211,19 +218,6 @@ export function ClassApprovalReview() {
 
   return (
     <div className="space-y-5 select-none">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs font-bold text-emerald-800 shadow-sm animate-fade-in">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>{toastMessage}</span>
-          </div>
-          <button onClick={() => setToastMessage(null)} className="text-emerald-600 hover:text-emerald-900">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
       {/* Header & Reload */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#e4e8ee] pb-4">
         <div>

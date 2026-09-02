@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useMemo } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -12,14 +12,10 @@ import { useTutorApplication } from "../../hooks/useTutorApplication";
 import { TutorReviewStatus } from "../types";
 
 interface TutorRestrictedHomeProps {
-  tutorStatus?: TutorReviewStatus | null;
-  onTutorStatusChange?: (status: TutorReviewStatus) => void;
   onNavigate: (page: string) => void;
 }
 
 export function TutorRestrictedHome({
-  tutorStatus,
-  onTutorStatusChange,
   onNavigate,
 }: TutorRestrictedHomeProps) {
   const {
@@ -30,14 +26,8 @@ export function TutorRestrictedHome({
   } = useTutorApplication();
 
   const status = (
-    application?.status ||
-    tutorStatus ||
-    "DRAFT"
+    application?.status || "DRAFT"
   ) as TutorReviewStatus;
-
-  useEffect(() => {
-    onTutorStatusChange?.(status);
-  }, [onTutorStatusChange, status]);
 
   const rejected = status === "REJECTED";
   const pending = status === "PENDING";

@@ -9,8 +9,10 @@ import iuh.fit.learning_service.enums.JoinMode;
 import iuh.fit.learning_service.exception.BadRequestException;
 import iuh.fit.learning_service.exception.ForbiddenException;
 import iuh.fit.learning_service.exception.ResourceNotFoundException;
+import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
+import iuh.fit.learning_service.repository.TutorAuthorizationStateRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,20 +25,26 @@ public class EnrollmentRequestService {
 
     private final ClassRoomRepository classRoomRepository;
     private final EnrollmentRequestRepository enrollmentRequestRepository;
+    private final TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
+    private final LearningEventPublisher eventPublisher;
 
     public EnrollmentRequestService(
             ClassRoomRepository classRoomRepository,
-            EnrollmentRequestRepository enrollmentRequestRepository
+            EnrollmentRequestRepository enrollmentRequestRepository,
+            TutorAuthorizationStateRepository tutorAuthorizationStateRepository,
+            LearningEventPublisher eventPublisher
     ) {
         this.classRoomRepository = classRoomRepository;
         this.enrollmentRequestRepository = enrollmentRequestRepository;
+        this.tutorAuthorizationStateRepository = tutorAuthorizationStateRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
      * Student submits enrollment request for a classroom
      */
     @Transactional
-    public EnrollmentRequestResponse enrollClass(Long classRoomId, String studentEmail, EnrollClassRequest request) {
+    public EnrollmentRequestResponse enrollClass(Long classRoomId, String studentEmail, Long studentUserId, EnrollClassRequest request) {
         // Pessimistic Lock on classroom to avoid race conditions
         ClassRoom classRoom = classRoomRepository.findByIdForUpdate(classRoomId)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + classRoomId));
@@ -86,12 +94,21 @@ public class EnrollmentRequestService {
         EnrollmentRequest req = new EnrollmentRequest();
         req.setClassRoom(classRoom);
         req.setStudentEmail(studentEmail);
+        req.setStudentUserId(studentUserId);
         req.setStudentName(request != null && request.studentName() != null ? request.studentName().trim() : null);
         req.setJoinKey(request != null ? request.joinKey() : null);
         req.setNote(request != null && request.note() != null ? request.note().trim() : null);
         req.setStatus(EnrollmentRequestStatus.PENDING);
 
         EnrollmentRequest saved = enrollmentRequestRepository.save(req);
+        eventPublisher.publishEnrollmentRequested(
+                saved.getId(),
+                classRoom.getId(),
+                tutorUserId(classRoom),
+                studentUserId,
+                classRoom.getName(),
+                saved.getStudentName()
+        );
         return toResponse(saved);
     }
 
@@ -99,7 +116,7 @@ public class EnrollmentRequestService {
      * Tutor accepts enrollment request
      */
     @Transactional
-    public EnrollmentRequestResponse acceptRequest(Long requestId, String tutorEmail) {
+    public EnrollmentRequestResponse acceptRequest(Long requestId, String tutorEmail, Long tutorUserId) {
         EnrollmentRequest req = enrollmentRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResourceNotFoundException("Enrollment request not found: " + requestId));
 
@@ -125,6 +142,14 @@ public class EnrollmentRequestService {
 
         req.setStatus(EnrollmentRequestStatus.ACCEPTED);
         EnrollmentRequest saved = enrollmentRequestRepository.save(req);
+        eventPublisher.publishEnrollmentAccepted(
+                saved.getId(),
+                classRoom.getId(),
+                saved.getStudentUserId(),
+                tutorUserId,
+                classRoom.getName(),
+                saved.getStudentName()
+        );
 
         acceptedCount++;
         // Auto-lock & cleanup if full capacity reached
@@ -139,6 +164,17 @@ public class EnrollmentRequestService {
                 pReq.setRejectReason("Lớp học đã đủ số lượng học viên (Đã khóa tuyển sinh)");
             }
             enrollmentRequestRepository.saveAll(remainingPending);
+            for (EnrollmentRequest pReq : remainingPending) {
+                eventPublisher.publishEnrollmentRejected(
+                        pReq.getId(),
+                        classRoom.getId(),
+                        pReq.getStudentUserId(),
+                        tutorUserId,
+                        classRoom.getName(),
+                        pReq.getRejectReason(),
+                        pReq.getStudentName()
+                );
+            }
         }
 
         return toResponse(saved);
@@ -148,7 +184,7 @@ public class EnrollmentRequestService {
      * Tutor rejects enrollment request
      */
     @Transactional
-    public EnrollmentRequestResponse rejectRequest(Long requestId, String tutorEmail, String reason) {
+    public EnrollmentRequestResponse rejectRequest(Long requestId, String tutorEmail, Long tutorUserId, String reason) {
         EnrollmentRequest req = enrollmentRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResourceNotFoundException("Enrollment request not found: " + requestId));
 
@@ -164,6 +200,15 @@ public class EnrollmentRequestService {
         req.setStatus(EnrollmentRequestStatus.REJECTED);
         req.setRejectReason(reason != null && !reason.trim().isEmpty() ? reason.trim() : "Gia sư từ chối yêu cầu tham gia.");
         EnrollmentRequest saved = enrollmentRequestRepository.save(req);
+        eventPublisher.publishEnrollmentRejected(
+                saved.getId(),
+                classRoom.getId(),
+                saved.getStudentUserId(),
+                tutorUserId,
+                classRoom.getName(),
+                saved.getRejectReason(),
+                saved.getStudentName()
+        );
         return toResponse(saved);
     }
 
@@ -171,7 +216,7 @@ public class EnrollmentRequestService {
      * Student cancels their pending enrollment request
      */
     @Transactional
-    public EnrollmentRequestResponse cancelRequest(Long requestId, String studentEmail) {
+    public EnrollmentRequestResponse cancelRequest(Long requestId, String studentEmail, Long studentUserId) {
         EnrollmentRequest req = enrollmentRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResourceNotFoundException("Enrollment request not found: " + requestId));
 
@@ -185,6 +230,15 @@ public class EnrollmentRequestService {
 
         req.setStatus(EnrollmentRequestStatus.CANCELLED);
         EnrollmentRequest saved = enrollmentRequestRepository.save(req);
+        ClassRoom classRoom = saved.getClassRoom();
+        eventPublisher.publishEnrollmentCancelled(
+                saved.getId(),
+                classRoom.getId(),
+                tutorUserId(classRoom),
+                studentUserId,
+                classRoom.getName(),
+                saved.getStudentName()
+        );
         return toResponse(saved);
     }
 
@@ -259,5 +313,14 @@ public class EnrollmentRequestService {
                 r.getCreatedAt(),
                 r.getUpdatedAt()
         );
+    }
+
+    private Long tutorUserId(ClassRoom classRoom) {
+        if (classRoom == null || classRoom.getTutorProfileId() == null) {
+            return null;
+        }
+        return tutorAuthorizationStateRepository.findByTutorProfileId(classRoom.getTutorProfileId())
+                .map(state -> state.getUserId())
+                .orElse(null);
     }
 }

@@ -9,7 +9,8 @@ export function useRealtimeRefresh(eventTypes, refresh) {
     let timer;
     const types = new Set(typesKey.split('|'));
     const handler = (event) => {
-      if (!types.has(event.detail?.type)) return;
+      const type = event.detail?.type || event.detail?.notificationType;
+      if (!types.has(type)) return;
       clearTimeout(timer);
       timer = setTimeout(() => refreshRef.current(event.detail), 120);
     };

@@ -4,6 +4,7 @@ import {
   Layers3, Pencil, Plus, RefreshCw, RotateCcw, Search, XCircle
 } from "lucide-react";
 import { adminTeachingCatalogApi } from "../../../api/teachingRegistrations";
+import { useFeedback } from "../../../components/feedback/useFeedback";
 
 const LEVEL_TYPES = [
   ["GRADE", "Lớp phổ thông"],
@@ -27,11 +28,11 @@ const emptySubject = { code: "", name: "", description: "", orderIndex: 999, act
 const emptyLevel = { code: "", name: "", type: "GRADE", description: "", orderIndex: 999, active: true };
 
 export function TeachingCatalogManagement() {
+  const feedback = useFeedback();
   const [snapshot, setSnapshot] = useState<any>({ programTypes: [], educationLevels: [], categories: [] });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [query, setQuery] = useState("");
   const [programCode, setProgramCode] = useState("ALL");
   const [includeInactive, setIncludeInactive] = useState(false);
@@ -127,11 +128,12 @@ export function TeachingCatalogManagement() {
       } else if (editor.kind === "LEVEL") {
         await adminTeachingCatalogApi.updateLevel(editor.value.id, levelPayload(form));
       }
-      setNotice("Đã lưu thay đổi danh mục thành công.");
+      feedback.success("Đã lưu thay đổi danh mục thành công.");
       setEditor(null);
       await load();
     } catch (err: any) {
       setError(err?.message || "Không thể lưu thay đổi.");
+      feedback.error(err?.message || "Không thể lưu thay đổi.");
     } finally {
       setBusy(false);
     }
@@ -139,16 +141,24 @@ export function TeachingCatalogManagement() {
 
   async function toggleActive(kind: "CATEGORY" | "SUBJECT" | "LEVEL", value: any) {
     const action = value.active ? "vô hiệu hóa" : "khôi phục";
-    if (!window.confirm(`Xác nhận ${action} “${value.name}”? Dữ liệu lịch sử sẽ không bị xóa.`)) return;
+    const accepted = await feedback.confirm({
+      title: `${value.active ? "Vô hiệu hóa" : "Khôi phục"} danh mục?`,
+      message: `Xác nhận ${action} "${value.name}"? Dữ liệu lịch sử sẽ không bị xóa.`,
+      confirmText: value.active ? "Vô hiệu hóa" : "Khôi phục",
+      cancelText: "Hủy",
+      variant: value.active ? "destructive" : "default"
+    });
+    if (!accepted) return;
     setBusy(true); setError("");
     try {
       if (kind === "CATEGORY") await adminTeachingCatalogApi.updateCategory(value.id, categoryPayload({ ...value, active: !value.active }));
       if (kind === "SUBJECT") await adminTeachingCatalogApi.updateSubject(value.id, subjectPayload({ ...value, active: !value.active }));
       if (kind === "LEVEL") await adminTeachingCatalogApi.updateLevel(value.id, levelPayload({ ...value, active: !value.active }));
-      setNotice(`Đã ${action} “${value.name}”.`);
+      feedback.success(`Đã ${action} "${value.name}".`);
       await load();
     } catch (err: any) {
       setError(err?.message || `Không thể ${action} dữ liệu.`);
+      feedback.error(err?.message || `Không thể ${action} dữ liệu.`);
     } finally { setBusy(false); }
   }
 
@@ -159,11 +169,12 @@ export function TeachingCatalogManagement() {
     setBusy(true); setError("");
     try {
       const result = await adminTeachingCatalogApi.importCsv(file);
-      setNotice(`Import hoàn tất: ${result.successRows}/${result.totalRows} dòng thành công${result.failedRows ? `, ${result.failedRows} dòng lỗi` : ""}.`);
+      feedback.success(`Import hoàn tất: ${result.successRows}/${result.totalRows} dòng thành công${result.failedRows ? `, ${result.failedRows} dòng lỗi` : ""}.`);
       if (result.errors?.length) setError(result.errors.join("\n"));
       await load();
     } catch (err: any) {
       setError(err?.message || "Không thể import CSV.");
+      feedback.error(err?.message || "Không thể import CSV.");
     } finally { setBusy(false); }
   }
 
@@ -199,7 +210,6 @@ export function TeachingCatalogManagement() {
         </div>
       </header>
 
-      {notice && <Message tone="success" onClose={() => setNotice("")}>{notice}</Message>}
       {error && <Message tone="error" onClose={() => setError("")}><span className="whitespace-pre-line">{error}</span></Message>}
 
       <section className="grid gap-3 border border-[#d7dde6] bg-white p-4 md:grid-cols-[1fr_auto_auto]">

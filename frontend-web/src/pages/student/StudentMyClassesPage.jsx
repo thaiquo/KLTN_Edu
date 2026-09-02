@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, BookOpen, Loader2, RotateCcw, Search, XCircle } from 'lucide-react';
 import { classApi } from '../../api/classes';
+import { useFeedback } from '../../components/feedback/useFeedback';
+import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import { StudentEmptyState, StudentPageScaffold } from './StudentPageScaffold';
 
 const STATUS_META = {
@@ -16,6 +18,7 @@ export function StudentMyClassesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [cancellingId, setCancellingId] = useState(null);
+  const feedback = useFeedback();
 
   async function loadRequests() {
     setLoading(true);
@@ -34,6 +37,8 @@ export function StudentMyClassesPage() {
     loadRequests();
   }, []);
 
+  useRealtimeRefresh(['ENROLLMENT_ACCEPTED', 'ENROLLMENT_REJECTED'], loadRequests);
+
   const stats = useMemo(() => {
     return requests.reduce((acc, item) => {
       const status = normalizeStatus(item.status);
@@ -43,13 +48,23 @@ export function StudentMyClassesPage() {
   }, [requests]);
 
   async function handleCancel(requestId) {
+    const accepted = await feedback.confirm({
+      title: 'Hủy yêu cầu học?',
+      message: 'Bạn có chắc muốn hủy yêu cầu tham gia lớp này?',
+      confirmText: 'Hủy yêu cầu',
+      cancelText: 'Giữ lại',
+      variant: 'destructive'
+    });
+    if (!accepted) return;
     setCancellingId(requestId);
     setError('');
     try {
       await classApi.cancelEnrollmentRequest(requestId);
       await loadRequests();
+      feedback.success('Đã hủy yêu cầu học.');
     } catch (err) {
       setError(err?.message || 'Không thể hủy yêu cầu học này.');
+      feedback.error(err?.message || 'Không thể hủy yêu cầu học này.');
     } finally {
       setCancellingId(null);
     }
