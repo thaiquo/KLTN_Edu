@@ -32,6 +32,12 @@ public class EnrollmentRequest {
     @Column(name = "student_phone", length = 50)
     private String studentPhone;
 
+    @Column(name = "student_wallet", length = 42)
+    private String studentWallet;
+
+    @Column(name = "agreement_id", length = 36)
+    private String agreementId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private EnrollmentRequestStatus status = EnrollmentRequestStatus.PENDING;

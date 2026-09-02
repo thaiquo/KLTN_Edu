@@ -65,6 +65,7 @@ public class ContractDocumentArtifactService {
         ContractDocumentViewDto view = queryService.findDocumentView(agreementId)
                 .orElseThrow(() -> new IllegalArgumentException("Hợp đồng không tồn tại"));
         validateFinalizable(view);
+        validateLearningTerms(view);
 
         ContractDocumentArtifact artifact = artifactRepository
                 .findByAgreementIdAndContractVersion(agreementId, view.contractVersion())
@@ -142,6 +143,21 @@ public class ContractDocumentArtifactService {
         }
     }
 
+    private void validateLearningTerms(ContractDocumentViewDto view) {
+        if (view.termsJson() == null || view.termsJson().isBlank()
+                || !view.termsHash().equalsIgnoreCase(Hash.sha3String(view.termsJson()))) {
+            throw new IllegalStateException("Terms Hash does not match the immutable agreement snapshot");
+        }
+        ContractDocumentViewDto.LearningTermsDto learning = view.learningTerms();
+        if (learning == null || !hasText(learning.learningMode()) || !hasText(learning.courseStartDate())
+                || !hasText(learning.courseEndDate()) || learning.durationPerSessionMinutes() == null
+                || learning.durationPerSessionMinutes() <= 0 || learning.schedules() == null || learning.schedules().isEmpty()
+                || ("ONLINE".equalsIgnoreCase(learning.learningMode()) && !hasText(learning.meetingLink()))
+                || ("OFFLINE".equalsIgnoreCase(learning.learningMode()) && !hasText(learning.learningAddress()))) {
+            throw new IllegalStateException("Signed snapshot is missing required classroom terms");
+        }
+    }
+
     private boolean complete(ContractDocumentViewDto.PartyDto party) {
         return hasText(party.fullName()) && hasText(party.email()) && hasText(party.phone())
                 && hasText(party.walletAddress());
@@ -193,14 +209,21 @@ public class ContractDocumentArtifactService {
         m.put("className", view.className());
         m.put("classroomId", privateId);
         m.put("totalSessions", view.financialTerms().totalSessions());
-        m.put("durationPerSessionMinutes", missing);
-        m.put("learningMode", missing);
-        m.put("meetingPlatform", missing);
-        m.put("meetingLink", missing);
-        m.put("learningAddress", missing);
-        m.put("courseStartDate", missing);
-        m.put("courseEndDate", missing);
-        m.put("ss", Collections.emptyList());
+        ContractDocumentViewDto.LearningTermsDto learning = view.learningTerms();
+        m.put("durationPerSessionMinutes", learning.durationPerSessionMinutes());
+        m.put("learningMode", learning.learningMode());
+        m.put("meetingPlatform", value(learning.meetingPlatform(), missing));
+        m.put("meetingLink", value(learning.meetingLink(), missing));
+        m.put("learningAddress", value(learning.learningAddress(), missing));
+        m.put("courseStartDate", learning.courseStartDate());
+        m.put("courseEndDate", learning.courseEndDate());
+        m.put("ss", learning.schedules().stream().map(schedule -> Map.of(
+                "no", String.valueOf(schedule.dayOfWeek()),
+                "topic", "Buổi học định kỳ",
+                "at", vietnameseDay(schedule.dayOfWeek()) + " " + schedule.startTime() + " - " + schedule.endTime(),
+                "min", String.valueOf(learning.durationPerSessionMinutes()),
+                "location", "ONLINE".equalsIgnoreCase(learning.learningMode()) ? learning.meetingLink() : learning.learningAddress(),
+                "state", learning.learningMode())).toList());
 
         m.put("vndPerUsdc", number(view.financialTerms().vndPerUsdc()));
         m.put("pricePerSessionVnd", number(view.financialTerms().pricePerSessionVnd()));
@@ -246,6 +269,19 @@ public class ContractDocumentArtifactService {
 
     private String chainName(Long chainId) {
         return Objects.equals(chainId, 11155111L) ? "Ethereum Sepolia Testnet" : "Mạng EVM";
+    }
+
+    private String vietnameseDay(Integer dayOfWeek) {
+        return switch (dayOfWeek == null ? 0 : dayOfWeek) {
+            case 2 -> "Thứ Hai";
+            case 3 -> "Thứ Ba";
+            case 4 -> "Thứ Tư";
+            case 5 -> "Thứ Năm";
+            case 6 -> "Thứ Sáu";
+            case 7 -> "Thứ Bảy";
+            case 8 -> "Chủ Nhật";
+            default -> "Ngày học";
+        };
     }
 
     private String number(String value) {

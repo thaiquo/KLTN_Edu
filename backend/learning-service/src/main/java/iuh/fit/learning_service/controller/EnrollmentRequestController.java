@@ -58,9 +58,33 @@ public class EnrollmentRequestController {
     @PreAuthorize("hasRole('TUTOR')")
     public ResponseEntity<EnrollmentRequestResponse> acceptRequest(
             Authentication authentication,
-            @PathVariable Long requestId
+            @PathVariable Long requestId,
+            @RequestBody(required = false) AcceptRequestPayload payload
     ) {
-        EnrollmentRequestResponse response = service.acceptRequest(requestId, authentication.getName());
+        String agreementId = payload != null ? payload.agreementId() : null;
+        EnrollmentRequestResponse response = service.acceptRequest(requestId, authentication.getName(), agreementId);
+        return ResponseEntity.ok(response);
+    }
+
+    // -------------------------------------------------------------
+    // Internal Service Endpoints (called by contract-service)
+    // -------------------------------------------------------------
+
+    @PostMapping("/api/learning/internal/enrollment-requests/activate")
+    public ResponseEntity<EnrollmentRequestResponse> internalActivateEnrollment(
+            @RequestBody InternalEnrollmentActivationRequest req
+    ) {
+        EnrollmentRequestResponse response = service.activateEnrollment(
+                req.classRoomId(), req.studentId(), req.agreementId());
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/api/learning/internal/enrollment-requests/expire")
+    public ResponseEntity<EnrollmentRequestResponse> internalExpireEnrollment(
+            @RequestBody InternalEnrollmentActivationRequest req
+    ) {
+        EnrollmentRequestResponse response = service.expireEnrollment(
+                req.classRoomId(), req.studentId(), req.agreementId());
         return ResponseEntity.ok(response);
     }
 

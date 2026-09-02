@@ -36,7 +36,9 @@ interface EnrollmentRequestItem {
   studentEmail: string;
   studentName?: string;
   studentPhone?: string;
-  status: "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED";
+  studentWallet?: string;
+  agreementId?: string;
+  status: "PENDING" | "ACCEPTED" | "ENROLLED" | "EXPIRED" | "REJECTED" | "CANCELLED";
   joinKey?: string;
   note?: string;
   rejectReason?: string;
@@ -69,6 +71,7 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
   const [contractModalReq, setContractModalReq] = useState<EnrollmentRequestItem | null>(null);
   const [pricePerSession, setPricePerSession] = useState(0);
   const [totalSessions, setTotalSessions] = useState(0);
+  const [classSnapshot, setClassSnapshot] = useState<any | null>(null);
   const [isSigningContract, setIsSigningContract] = useState(false);
   const [contractModalTab, setContractModalTab] = useState<"SUMMARY" | "FULL_TEXT">("SUMMARY");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -107,7 +110,11 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
     };
 
     window.addEventListener("realtime:event", handleRealtime);
-    return () => window.removeEventListener("realtime:event", handleRealtime);
+    window.addEventListener("contract-state-updated", handleRealtime);
+    return () => {
+      window.removeEventListener("realtime:event", handleRealtime);
+      window.removeEventListener("contract-state-updated", handleRealtime);
+    };
   }, []);
 
   // Distinct classrooms list for filtering
@@ -144,6 +151,8 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
       total: requests.length,
       pending: requests.filter((r) => r.status === "PENDING").length,
       accepted: requests.filter((r) => r.status === "ACCEPTED").length,
+      enrolled: requests.filter((r) => r.status === "ENROLLED").length,
+      expired: requests.filter((r) => r.status === "EXPIRED").length,
       rejected: requests.filter((r) => r.status === "REJECTED").length,
     };
   }, [requests]);
@@ -181,22 +190,29 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
       }
       setPricePerSession(price);
       setTotalSessions(sessions);
+      setClassSnapshot(classDetail);
       setContractModalReq(req);
       setContractModalTab("SUMMARY");
       setAgreedToTerms(false);
     } catch (err: any) {
       setContractModalReq(null);
+      setClassSnapshot(null);
       setActionMsg({ text: err?.message || "Không thể tải dữ liệu thật của lớp học.", tone: "error" });
     }
   };
 
   const handleConfirmInitiateContract = async () => {
     if (!contractModalReq) return;
-    if (!contractModalReq.studentId || !contractModalReq.studentName || !contractModalReq.studentPhone) {
+    if (!contractModalReq.studentId || !contractModalReq.studentName || !contractModalReq.studentPhone || !contractModalReq.studentWallet) {
       setActionMsg({
         text: "Yêu cầu cũ đang thiếu ID, họ tên hoặc số điện thoại học viên. Học viên cần gửi lại yêu cầu sau khi cập nhật hồ sơ.",
         tone: "error",
       });
+      return;
+    }
+    if (!classSnapshot?.learningMode || !classSnapshot?.startDate || !classSnapshot?.endDate
+        || !classSnapshot?.durationPerSessionMinutes || !Array.isArray(classSnapshot?.schedules) || classSnapshot.schedules.length === 0) {
+      setActionMsg({ text: "Lớp học chưa có đủ hình thức, thời gian hoặc lịch học để đóng băng vào hợp đồng.", tone: "error" });
       return;
     }
     if (!user?.id || !user?.fullName || !user?.email) {
@@ -209,15 +225,12 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
       return;
     }
 
-    const defaultStudentWallet = "0x0000000000000000000000000000000000000000";
+    const studentWallet = contractModalReq.studentWallet;
 
     setActionLoadingId(contractModalReq.id);
     setIsSigningContract(true);
     try {
-      // 1. Accept enrollment request in learning-service
-      await classApi.acceptEnrollmentRequest(contractModalReq.id);
-
-      // 2. Auto-Initiate Contract Agreement in contract-service with classroom data
+      // 1. Create the immutable legal snapshot before the enrollment is accepted.
       const agreementDetail = await contractsApi.initiateAgreement({
         classroomId: contractModalReq.classRoomId,
         className: contractModalReq.className,
@@ -229,12 +242,29 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
         tutorName: user.fullName,
         tutorEmail: user?.email,
         tutorPhone: user?.phone || (user as any)?.phoneNumber || "",
-        studentWallet: defaultStudentWallet,
+        studentWallet,
         tutorWallet: tutorWallet,
         pricePerSessionVnd: pricePerSession,
         totalSessions: totalSessions,
         classroomReviewerEmail: user?.email,
+        classDescription: classSnapshot.description || "",
+        learningMode: classSnapshot.learningMode,
+        meetingLink: classSnapshot.meetingLink || "",
+        learningAddress: classSnapshot.address || "",
+        courseStartDate: classSnapshot.startDate,
+        courseEndDate: classSnapshot.endDate,
+        durationPerSessionMinutes: Number(classSnapshot.durationPerSessionMinutes),
+        schedules: classSnapshot.schedules.map((schedule: any) => ({
+          dayOfWeek: Number(schedule.dayOfWeek), startTime: schedule.startTime, endTime: schedule.endTime,
+        })),
+        syllabus: Array.isArray(classSnapshot.chapters) ? classSnapshot.chapters.map((chapter: any, index: number) => ({
+          order: Number(chapter.orderIndex) || index + 1, title: chapter.title || "", description: chapter.description || "",
+          expectedSessions: Number(chapter.expectedSessions ?? chapter.sessionCount) || 0,
+        })) : [],
       });
+
+      // 2. Reserve the classroom slot only after an agreement snapshot exists and link agreementId.
+      await classApi.acceptEnrollmentRequest(contractModalReq.id, agreementDetail?.summary?.id);
 
       // 3. Prompt MetaMask for EIP-712 Gasless Signing
       let tutorSignature: string | undefined = undefined;
@@ -244,7 +274,7 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
             {
               id: agreementDetail.summary.id,
               tutorWallet: tutorWallet,
-              studentWallet: defaultStudentWallet,
+              studentWallet,
               totalAmountUsdc: agreementDetail.summary.totalAmountUsdc,
               termsHash: agreementDetail.termsHash,
               createdAt: agreementDetail.summary.createdAt,
@@ -255,6 +285,9 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
           );
         } catch (signErr: any) {
           console.warn("MetaMask EIP-712 sign skipped/failed:", signErr);
+        }
+        if (!tutorSignature) {
+          throw new Error("Không nhận được chữ ký EIP-712 từ MetaMask.");
         }
 
         // 4. Submit signature to contract-service
@@ -376,7 +409,9 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
             {[
               { id: "ALL", label: "Tất cả" },
               { id: "PENDING", label: `Chờ duyệt (${stats.pending})` },
-              { id: "ACCEPTED", label: "Đã duyệt" },
+              { id: "ACCEPTED", label: `Đang giữ chỗ (${stats.accepted})` },
+              { id: "ENROLLED", label: `Đã vào lớp (${stats.enrolled})` },
+              { id: "EXPIRED", label: `Hết hạn (${stats.expired})` },
               { id: "REJECTED", label: "Từ chối" },
             ].map((tab) => (
               <button
@@ -450,6 +485,8 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
             const isContractActive = matchingAgr?.status === "ACTIVE" || Boolean(matchingAgr?.onchainFunded);
             const isContractWaitingPayment = matchingAgr?.status === "WAITING_PAYMENT";
             const isContractPendingStudent = matchingAgr?.status === "PENDING_STUDENT_ACCEPTANCE";
+            const isEnrolled = req.status === "ENROLLED" || isContractActive;
+            const isExpired = req.status === "EXPIRED" || matchingAgr?.status === "EXPIRED";
 
             return (
               <div
@@ -466,14 +503,18 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
                         CHỜ DUYỆT
                       </span>
                     )}
-                    {isAccepted && (
-                      isContractActive ? (
-                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> ĐÃ THAM GIA LỚP HỌC (ĐÃ NẠP CỌC ESCROW)
-                        </span>
-                      ) : isContractWaitingPayment ? (
+                    {isEnrolled ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> ĐÃ THAM GIA LỚP HỌC (ĐÃ NẠP CỌC ESCROW)
+                      </span>
+                    ) : isExpired ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-800 border border-slate-300 flex items-center gap-1">
+                        <XCircle className="w-3 h-3 text-slate-500" /> HẾT HẠN NẠP CỌC (QUÁ 24H)
+                      </span>
+                    ) : isAccepted ? (
+                      isContractWaitingPayment ? (
                         <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-800 border border-orange-200 flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-orange-600" /> CHỜ HỌC VIÊN NẠP CỌC ESCROW
+                          <Clock className="w-3 h-3 text-orange-600" /> CHỜ HỌC VIÊN NẠP CỌC ESCROW (HẠN 24H)
                         </span>
                       ) : isContractPendingStudent ? (
                         <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-900 border border-amber-200 flex items-center gap-1">
@@ -481,10 +522,10 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
                         </span>
                       ) : (
                         <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-800 border border-indigo-200">
-                          ĐÃ DUYỆT YÊU CẦU
+                          ĐÃ GIỮ CHỖ (CHỜ HOÀN TẤT HỢP ĐỒNG)
                         </span>
                       )
-                    )}
+                    ) : null}
                     {isRejected && (
                       <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-200">
                         ĐÃ TỪ CHỐI
@@ -559,10 +600,10 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
 
                   {isAccepted && (
                     <div className="flex flex-wrap items-center gap-2">
-                      {matchingAgr && (
+                      {(matchingAgr || req.agreementId) && (
                         <button
                           type="button"
-                          onClick={() => setSelectedDocAgreementId(matchingAgr.id)}
+                          onClick={() => setSelectedDocAgreementId(req.agreementId || matchingAgr?.id)}
                           className="px-3.5 py-1.5 bg-white border border-blue-200 hover:bg-blue-50 text-blue-800 rounded-xl text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5"
                         >
                           <FileText className="w-3.5 h-3.5 text-blue-600" />
@@ -863,9 +904,17 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
                   <div className="space-y-4 font-sans text-xs">
                     <div className="space-y-2">
                       <h4 className="font-bold text-slate-950 uppercase">ĐIỀU 1: ĐỐI TƯỢNG HỌC TẬP VÀ PHẠM VI GIẢNG DẠY</h4>
-                      <p>1.1. Bên A nhận cung cấp dịch vụ giảng dạy trực tuyến cho Bên B theo đúng chương trình môn học <strong>{contractModalReq.className}</strong>.</p>
+                      <p>1.1. Bên A nhận cung cấp dịch vụ giảng dạy cho Bên B theo đúng chương trình môn học <strong>{contractModalReq.className}</strong>.</p>
                       <p>1.2. Tổng số buổi học theo thỏa thuận là <strong>{totalSessions} buổi</strong>, học phí đơn giá <strong>{pricePerSession.toLocaleString("vi-VN")} VNĐ / buổi</strong>.</p>
-                      <p>1.3. Hình thức học tập: Trực tuyến (Online) thông qua phòng học tích hợp trên nền tảng EduConnect.</p>
+                      <p>1.3. Hình thức học tập: <strong>{classSnapshot?.learningMode === "ONLINE" ? "Trực tuyến (Online)" : "Trực tiếp (Offline)"}</strong>; thời lượng <strong>{classSnapshot?.durationPerSessionMinutes} phút/buổi</strong>; từ <strong>{classSnapshot?.startDate}</strong> đến <strong>{classSnapshot?.endDate}</strong>.</p>
+                      {(classSnapshot?.schedules || []).map((schedule: any, index: number) => (
+                        <p key={`${schedule.dayOfWeek}-${schedule.startTime}-${index}`}>Lịch cố định: <strong>Thứ {schedule.dayOfWeek === 8 ? "Chủ Nhật" : schedule.dayOfWeek}, {schedule.startTime} - {schedule.endTime}</strong>.</p>
+                      ))}
+                      {classSnapshot?.learningMode === "ONLINE" ? (
+                        <p>Phòng học trực tuyến: <strong className="break-all">{classSnapshot?.meetingLink}</strong>.</p>
+                      ) : (
+                        <p>Địa điểm học: <strong>{classSnapshot?.address}</strong>.</p>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -966,7 +1015,13 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
       {selectedDocAgreementId && (
         <ContractDocumentModal
           agreementId={selectedDocAgreementId}
-          onClose={() => setSelectedDocAgreementId(null)}
+          onClose={() => {
+            setSelectedDocAgreementId(null);
+            fetchRequests();
+          }}
+          onSignedSuccess={() => {
+            fetchRequests();
+          }}
         />
       )}
     </div>

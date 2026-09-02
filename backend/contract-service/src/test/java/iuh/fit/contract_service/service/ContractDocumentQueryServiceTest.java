@@ -25,7 +25,7 @@ class ContractDocumentQueryServiceTest {
     private final ContractAgreementRepository agreementRepository = mock(ContractAgreementRepository.class);
     private final ContractAcceptanceRepository acceptanceRepository = mock(ContractAcceptanceRepository.class);
     private final ContractDocumentQueryService service = new ContractDocumentQueryService(
-            agreementRepository, acceptanceRepository);
+            agreementRepository, acceptanceRepository, new ContractTermsSnapshotService());
 
     @Test
     void buildsDocumentFromAgreementAndMatchingCurrentAcceptancesOnly() {

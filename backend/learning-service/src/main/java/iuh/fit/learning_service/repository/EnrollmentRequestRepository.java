@@ -43,4 +43,9 @@ public interface EnrollmentRequestRepository extends JpaRepository<EnrollmentReq
     List<EnrollmentRequest> findByTutorEmailWithDetails(@Param("tutorEmail") String tutorEmail);
 
     List<EnrollmentRequest> findByClassRoomIdAndStatus(Long classRoomId, EnrollmentRequestStatus status);
+
+    Optional<EnrollmentRequest> findByAgreementId(String agreementId);
+
+    Optional<EnrollmentRequest> findFirstByClassRoomIdAndStudentIdAndStatusInOrderByCreatedAtDesc(
+            Long classRoomId, Long studentId, Collection<EnrollmentRequestStatus> statuses);
 }

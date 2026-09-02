@@ -14,6 +14,8 @@ public record ContractDocumentViewDto(
         PartyDto student,
         PlatformDto platform,
         FinancialTermsDto financialTerms,
+        LearningTermsDto learningTerms,
+        EscrowPolicyDto escrowPolicy,
         String termsHash,
         String termsJson,
         Integer contractVersion,
@@ -46,6 +48,29 @@ public record ContractDocumentViewDto(
             String pricePerSessionVnd,
             String vndPerUsdc,
             Integer totalSessions
+    ) {}
+
+    public record LearningTermsDto(
+            String learningMode,
+            String meetingPlatform,
+            String meetingLink,
+            String learningAddress,
+            String courseStartDate,
+            String courseEndDate,
+            Integer durationPerSessionMinutes,
+            java.util.List<ScheduleDto> schedules,
+            java.util.List<SyllabusDto> syllabus
+    ) {}
+
+    public record ScheduleDto(Integer dayOfWeek, String startTime, String endTime) {}
+
+    public record SyllabusDto(Integer order, String title, String description, Integer expectedSessions) {}
+
+    public record EscrowPolicyDto(
+            Integer paymentWindowHours,
+            Integer tutorPayoutBps,
+            Integer platformFeeBps,
+            String settlementRule
     ) {}
 
     public record SignatureProofDto(

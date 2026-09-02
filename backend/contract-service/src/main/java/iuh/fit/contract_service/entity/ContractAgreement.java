@@ -157,4 +157,8 @@ public class ContractAgreement {
     public void markCompleted() {
         transitionTo(ContractAgreementStatus.COMPLETED);
     }
+
+    public void markExpired() {
+        transitionTo(ContractAgreementStatus.EXPIRED);
+    }
 }

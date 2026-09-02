@@ -164,7 +164,7 @@ export function EscrowPaymentModal({
           throw new Error('Giao dịch Ký quỹ Escrow thất bại.');
         }
       } catch (onchainErr: any) {
-        console.warn('Smart contract fundAgreement reverted, attempting direct USDC Escrow deposit transfer:', onchainErr);
+        console.warn('Smart contract fundAgreement reverted (có thể do hợp đồng chưa qua đăng ký operator on-chain). Tự động nạp cọc USDC trực tiếp vào Escrow Smart Contract:', onchainErr);
         const usdcContract = escrowService.getUsdcContract(signer);
         const addresses = escrowService.getAddresses();
         const fallbackTx = await usdcContract.transfer(addresses.escrow, totalAmountUnits);
@@ -177,18 +177,18 @@ export function EscrowPaymentModal({
         }
       }
 
-      // Record payment submission & transition agreement to ACTIVE with multi-channel notifications
-      try {
-        await contractsApi.submitPayment(String(agreement.agreementId), txHash);
-      } catch (backendErr) {
-        console.warn("Backend payment recording warning:", backendErr);
-      }
+      await contractsApi.submitPayment(String(agreement.agreementId), txHash);
+
+      window.dispatchEvent(new CustomEvent('contract-state-updated', {
+        detail: { agreementId: agreement.agreementId, action: 'paid', txHash }
+      }));
 
       setCurrentStep('SUCCESS');
       refreshBalances();
       if (onPaymentSuccess) {
         onPaymentSuccess(txHash);
       }
+      return;
     } catch (err: any) {
       console.error('Funding failed:', err);
       setCurrentStep('ERROR');

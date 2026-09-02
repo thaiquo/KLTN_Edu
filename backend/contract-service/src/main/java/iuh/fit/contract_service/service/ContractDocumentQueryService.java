@@ -21,12 +21,15 @@ public class ContractDocumentQueryService {
 
     private final ContractAgreementRepository agreementRepository;
     private final ContractAcceptanceRepository acceptanceRepository;
+    private final ContractTermsSnapshotService termsSnapshotService;
 
     public ContractDocumentQueryService(
             ContractAgreementRepository agreementRepository,
-            ContractAcceptanceRepository acceptanceRepository) {
+            ContractAcceptanceRepository acceptanceRepository,
+            ContractTermsSnapshotService termsSnapshotService) {
         this.agreementRepository = agreementRepository;
         this.acceptanceRepository = acceptanceRepository;
+        this.termsSnapshotService = termsSnapshotService;
     }
 
     @Transactional(readOnly = true)
@@ -35,6 +38,7 @@ public class ContractDocumentQueryService {
     }
 
     private ContractDocumentViewDto toDocumentView(ContractAgreement agreement) {
+        ContractTermsSnapshot snapshot = termsSnapshotService.parse(agreement.getTermsJson()).orElse(null);
         List<ContractAcceptance> currentAcceptances = acceptanceRepository.findByAgreementId(agreement.getId())
                 .stream()
                 .filter(acceptance -> agreement.getContractVersion() == null || acceptance.getContractVersion() == null || agreement.getContractVersion().equals(acceptance.getContractVersion()))
@@ -85,6 +89,8 @@ public class ContractDocumentQueryService {
                         pricePerSessionVnd != null ? pricePerSessionVnd.toPlainString() : null,
                         agreement.getVndPerUsdc().toPlainString(),
                         agreement.getTotalSessions()),
+                toLearningTerms(snapshot),
+                toEscrowPolicy(snapshot),
                 agreement.getTermsHash(),
                 agreement.getTermsJson(),
                 agreement.getContractVersion(),
@@ -93,6 +99,29 @@ public class ContractDocumentQueryService {
                 agreement.getPaymentDeadline(),
                 toSignatureProof(tutorAcceptance, "TUTOR"),
                 toSignatureProof(studentAcceptance, "STUDENT"));
+    }
+
+    private ContractDocumentViewDto.LearningTermsDto toLearningTerms(ContractTermsSnapshot snapshot) {
+        if (snapshot == null || snapshot.classroom() == null) {
+            return new ContractDocumentViewDto.LearningTermsDto(null, null, null, null, null, null, null, List.of(), List.of());
+        }
+        ContractTermsSnapshot.ClassroomTerms classroom = snapshot.classroom();
+        return new ContractDocumentViewDto.LearningTermsDto(
+                classroom.learningMode(), classroom.meetingPlatform(), classroom.meetingLink(), classroom.learningAddress(),
+                classroom.startDate(), classroom.endDate(), classroom.durationPerSessionMinutes(),
+                classroom.schedules() == null ? List.of() : classroom.schedules().stream()
+                        .map(s -> new ContractDocumentViewDto.ScheduleDto(s.dayOfWeek(), s.startTime(), s.endTime())).toList(),
+                classroom.syllabus() == null ? List.of() : classroom.syllabus().stream()
+                        .map(s -> new ContractDocumentViewDto.SyllabusDto(s.order(), s.title(), s.description(), s.expectedSessions())).toList());
+    }
+
+    private ContractDocumentViewDto.EscrowPolicyDto toEscrowPolicy(ContractTermsSnapshot snapshot) {
+        if (snapshot == null || snapshot.escrowPolicy() == null) {
+            return new ContractDocumentViewDto.EscrowPolicyDto(null, null, null, null);
+        }
+        ContractTermsSnapshot.EscrowPolicyTerms policy = snapshot.escrowPolicy();
+        return new ContractDocumentViewDto.EscrowPolicyDto(
+                policy.paymentWindowHours(), policy.tutorPayoutBps(), policy.platformFeeBps(), policy.settlementRule());
     }
 
     private Optional<ContractAcceptance> findAcceptance(

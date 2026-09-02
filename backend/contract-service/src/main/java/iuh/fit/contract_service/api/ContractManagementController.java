@@ -49,6 +49,7 @@ public class ContractManagementController {
     private final iuh.fit.contract_service.service.ContractSignatureService signatureService;
     private final iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository;
     private final ContractAcceptanceRepository acceptanceRepository;
+    private final iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher;
 
     public ContractManagementController(
             ContractAgreementRepository agreementRepository,
@@ -59,7 +60,8 @@ public class ContractManagementController {
             iuh.fit.contract_service.service.NotificationDispatcher notificationDispatcher,
             iuh.fit.contract_service.service.ContractSignatureService signatureService,
             iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository,
-            ContractAcceptanceRepository acceptanceRepository) {
+            ContractAcceptanceRepository acceptanceRepository,
+            iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher) {
         this.agreementRepository = agreementRepository;
         this.settlementRepository = settlementRepository;
         this.transactionRepository = transactionRepository;
@@ -69,6 +71,7 @@ public class ContractManagementController {
         this.signatureService = signatureService;
         this.escrowPaymentRepository = escrowPaymentRepository;
         this.acceptanceRepository = acceptanceRepository;
+        this.learningServiceDispatcher = learningServiceDispatcher;
     }
 
     public record InitiateAgreementRequest(
@@ -283,6 +286,10 @@ public class ContractManagementController {
                     .orElseGet(() -> EscrowPayment.create(saved));
             payment.markLocked(txHash != null ? txHash : "0x_escrow_deposit_tx", 0L, "0x_block_hash");
             escrowPaymentRepository.saveAndFlush(payment);
+
+            // Dispatch activation to learning-service to grant student classroom access
+            learningServiceDispatcher.activateEnrollmentAsync(
+                    saved.getClassroomId(), saved.getStudentId(), saved.getId().toString());
 
             // Ensure student acceptance with signature/txHash is recorded
             boolean hasStudentAcceptance = acceptanceRepository.findByAgreementId(id).stream()

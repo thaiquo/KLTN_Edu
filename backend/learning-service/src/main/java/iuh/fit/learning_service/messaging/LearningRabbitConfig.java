@@ -20,6 +20,10 @@ public class LearningRabbitConfig {
     public static final String TUTOR_REJECTED_ROUTING_KEY = "account.tutor.rejected";
     public static final String SUBJECT_REQUEST_APPROVED_ROUTING_KEY = "learning.subject-request.approved";
     public static final String SUBJECT_REQUEST_REJECTED_ROUTING_KEY = "learning.subject-request.rejected";
+    public static final String CONTRACT_ACTIVATED_QUEUE = "learning.contract-activated";
+    public static final String CONTRACT_EXPIRED_QUEUE = "learning.contract-expired";
+    public static final String CONTRACT_ACTIVATED_ROUTING_KEY = "contract.activated.v1";
+    public static final String CONTRACT_EXPIRED_ROUTING_KEY = "contract.expired.v1";
 
     @Bean
     DirectExchange eduEventsExchange() {
@@ -37,6 +41,16 @@ public class LearningRabbitConfig {
     }
 
     @Bean
+    Queue contractActivatedQueue() {
+        return new Queue(CONTRACT_ACTIVATED_QUEUE, true);
+    }
+
+    @Bean
+    Queue contractExpiredQueue() {
+        return new Queue(CONTRACT_EXPIRED_QUEUE, true);
+    }
+
+    @Bean
     Binding tutorApprovedBinding(Queue tutorApprovedQueue, DirectExchange eduEventsExchange) {
         return BindingBuilder.bind(tutorApprovedQueue).to(eduEventsExchange).with(TUTOR_APPROVED_ROUTING_KEY);
     }
@@ -44,6 +58,16 @@ public class LearningRabbitConfig {
     @Bean
     Binding tutorRejectedBinding(Queue tutorRejectedQueue, DirectExchange eduEventsExchange) {
         return BindingBuilder.bind(tutorRejectedQueue).to(eduEventsExchange).with(TUTOR_REJECTED_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding contractActivatedBinding(Queue contractActivatedQueue, DirectExchange eduEventsExchange) {
+        return BindingBuilder.bind(contractActivatedQueue).to(eduEventsExchange).with(CONTRACT_ACTIVATED_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding contractExpiredBinding(Queue contractExpiredQueue, DirectExchange eduEventsExchange) {
+        return BindingBuilder.bind(contractExpiredQueue).to(eduEventsExchange).with(CONTRACT_EXPIRED_ROUTING_KEY);
     }
 
     @Bean

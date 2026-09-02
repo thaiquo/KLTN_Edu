@@ -12,11 +12,22 @@ public final class EnrollmentRequestDtos {
             @Size(max = 50) String joinKey,
             @Size(max = 1000) String note,
             @Size(max = 255) String studentName,
-            @Size(max = 50) String studentPhone
+            @Size(max = 50) String studentPhone,
+            @Size(min = 42, max = 42) String studentWallet
     ) {}
 
     public record RejectRequestPayload(
             @Size(max = 1000) String reason
+    ) {}
+
+    public record AcceptRequestPayload(
+            String agreementId
+    ) {}
+
+    public record InternalEnrollmentActivationRequest(
+            Long classRoomId,
+            Long studentId,
+            String agreementId
     ) {}
 
     public record EnrollmentRequestResponse(
@@ -28,6 +39,8 @@ public final class EnrollmentRequestDtos {
             String studentEmail,
             String studentName,
             String studentPhone,
+            String studentWallet,
+            String agreementId,
             EnrollmentRequestStatus status,
             String joinKey,
             String note,

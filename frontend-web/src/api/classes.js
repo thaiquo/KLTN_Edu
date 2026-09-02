@@ -84,8 +84,9 @@ export const classApi = {
   getMyEnrollmentRequests: () => apiRequest('/api/learning/v1/enrollment-requests/my-requests'),
   getRequestsForClass: (classId) => apiRequest(`/api/learning/v1/tutor/classes/${classId}/requests`),
   getAllTutorRequests: () => apiRequest('/api/learning/v1/tutor/enrollment-requests'),
-  acceptEnrollmentRequest: (requestId) => apiRequest(`/api/learning/v1/enrollment-requests/${requestId}/accept`, {
-    method: 'POST'
+  acceptEnrollmentRequest: (requestId, agreementId) => apiRequest(`/api/learning/v1/enrollment-requests/${requestId}/accept`, {
+    method: 'POST',
+    body: agreementId ? JSON.stringify({ agreementId }) : undefined
   }),
   rejectEnrollmentRequest: (requestId, reason) => apiRequest(`/api/learning/v1/enrollment-requests/${requestId}/reject`, {
     method: 'POST',

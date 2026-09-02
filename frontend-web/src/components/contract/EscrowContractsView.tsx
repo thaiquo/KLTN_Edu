@@ -90,6 +90,7 @@ export function EscrowContractsView({
     setLoading(true);
     setError('');
     try {
+      const isTutor = activeRole === 'tutor';
       const [agreementsData, tutorClasses] = await Promise.all([
         contractsApi.listAgreements({
           status: (statusFilter === 'ALL' || statusFilter === 'PENDING_SIGNATURE') ? undefined : statusFilter,
@@ -99,7 +100,7 @@ export function EscrowContractsView({
           role: activeRole,
           email: user?.email || userEmail,
         }),
-        classApi.getMyClasses().catch(() => []),
+        isTutor ? classApi.getMyClasses().catch(() => []) : Promise.resolve([]),
       ]);
 
       const content: AgreementSummary[] = agreementsData?.content ?? (Array.isArray(agreementsData) ? agreementsData : []);
@@ -133,7 +134,9 @@ export function EscrowContractsView({
       // Fetch requests to enrich student details
       const reqMap: Record<string, any> = {};
       try {
-        const myRequests = await classApi.getAllTutorRequests().catch(() => []);
+        const myRequests = isTutor
+          ? await classApi.getAllTutorRequests().catch(() => [])
+          : await classApi.getMyEnrollmentRequests().catch(() => []);
         if (Array.isArray(myRequests)) {
           myRequests.forEach((r: any) => {
             if (r && r.classRoomId) {
@@ -155,6 +158,14 @@ export function EscrowContractsView({
 
   useEffect(() => {
     fetchAgreements();
+  }, [fetchAgreements]);
+
+  useEffect(() => {
+    const handleContractUpdate = () => {
+      fetchAgreements();
+    };
+    window.addEventListener('contract-state-updated', handleContractUpdate);
+    return () => window.removeEventListener('contract-state-updated', handleContractUpdate);
   }, [fetchAgreements]);
 
   // Enriched agreements list with resolved names
@@ -327,6 +338,7 @@ export function EscrowContractsView({
     try {
       setLoading(true);
       let tutorSignature: string | undefined = undefined;
+      const agreementDetail = await contractsApi.getAgreement(agreement.id);
 
       try {
         tutorSignature = await signContractAgreementEip712(
@@ -335,6 +347,7 @@ export function EscrowContractsView({
             tutorWallet: tutorWallet,
             studentWallet: agreement.studentWallet || "0x0000000000000000000000000000000000000000",
             totalAmountUsdc: agreement.totalAmountUsdc,
+            termsHash: agreementDetail.termsHash,
             createdAt: agreement.createdAt,
             chainId: agreement.chainId || DEFAULT_CHAIN_ID,
             escrowContractAddress: agreement.escrowContractAddress || undefined,
@@ -343,6 +356,9 @@ export function EscrowContractsView({
         );
       } catch (signErr: any) {
         console.warn('MetaMask EIP-712 tutor sign skipped/failed:', signErr);
+      }
+      if (!tutorSignature) {
+        throw new Error("Không nhận được chữ ký EIP-712 từ MetaMask.");
       }
 
       await contractsApi.signAgreement(agreement.id, {
@@ -369,6 +385,7 @@ export function EscrowContractsView({
     try {
       setLoading(true);
       let studentSignature: string | undefined = undefined;
+      const agreementDetail = await contractsApi.getAgreement(agreement.id);
 
       try {
         studentSignature = await signContractAgreementEip712(
@@ -377,6 +394,7 @@ export function EscrowContractsView({
             tutorWallet: agreement.tutorWallet,
             studentWallet: signingWallet,
             totalAmountUsdc: agreement.totalAmountUsdc,
+            termsHash: agreementDetail.termsHash,
             createdAt: agreement.createdAt,
             chainId: agreement.chainId || DEFAULT_CHAIN_ID,
             escrowContractAddress: agreement.escrowContractAddress || undefined,
@@ -386,6 +404,9 @@ export function EscrowContractsView({
       } catch (signErr: any) {
         console.warn('MetaMask EIP-712 student sign skipped/failed:', signErr);
       }
+      if (!studentSignature) {
+        throw new Error("Không nhận được chữ ký EIP-712 từ MetaMask.");
+      }
 
       await contractsApi.signAgreement(agreement.id, {
         role: 'STUDENT',
@@ -393,6 +414,9 @@ export function EscrowContractsView({
         signature: studentSignature,
         userEmail: userEmail,
       });
+      window.dispatchEvent(new CustomEvent('contract-state-updated', {
+        detail: { agreementId: agreement.id, action: 'signed', role: 'STUDENT' }
+      }));
       await fetchAgreements();
     } catch (err: any) {
       alert(err?.message || 'Không thể ký xác nhận hợp đồng.');
@@ -855,7 +879,13 @@ export function EscrowContractsView({
       {selectedAgreementForDocument && (
         <ContractDocumentModal
           agreementId={selectedAgreementForDocument}
-          onClose={() => setSelectedAgreementForDocument(null)}
+          onClose={() => {
+            setSelectedAgreementForDocument(null);
+            fetchAgreements();
+          }}
+          onSignedSuccess={() => {
+            fetchAgreements();
+          }}
         />
       )}
 
@@ -863,11 +893,13 @@ export function EscrowContractsView({
       {selectedAgreementForPayment && (
         <EscrowPaymentModal
           isOpen={!!selectedAgreementForPayment}
-          onClose={() => setSelectedAgreementForPayment(null)}
+          onClose={() => {
+            setSelectedAgreementForPayment(null);
+            fetchAgreements();
+          }}
           agreement={selectedAgreementForPayment}
           onPaymentSuccess={(txHash) => {
             console.log('Payment completed:', txHash);
-            setSelectedAgreementForPayment(null);
             fetchAgreements();
           }}
         />

@@ -11,39 +11,32 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 class EnrollmentRequestServiceIdentityTest {
-
+    private static final String WALLET = "0x0000000000000000000000000000000000000001";
     private final ClassRoomRepository classRoomRepository = mock(ClassRoomRepository.class);
     private final EnrollmentRequestRepository enrollmentRequestRepository = mock(EnrollmentRequestRepository.class);
-    private final EnrollmentRequestService service =
-            new EnrollmentRequestService(classRoomRepository, enrollmentRequestRepository);
+    private final EnrollmentRequestService service = new EnrollmentRequestService(classRoomRepository, enrollmentRequestRepository);
 
     @Test
     void rejectsEnrollmentWhenJwtDoesNotContainStudentId() {
-        EnrollClassRequest request = new EnrollClassRequest(null, null, "Nguyễn Văn An", "0900000000");
-
+        EnrollClassRequest request = new EnrollClassRequest(null, null, "Nguyen Van An", "0900000000", WALLET);
         assertThatThrownBy(() -> service.enrollClass(1L, null, "student@example.com", request))
                 .isInstanceOf(BadRequestException.class);
-
         verifyNoInteractions(classRoomRepository, enrollmentRequestRepository);
     }
 
     @Test
     void rejectsEnrollmentWithoutRealStudentName() {
-        EnrollClassRequest request = new EnrollClassRequest(null, null, "student@example.com", "0900000000");
-
+        EnrollClassRequest request = new EnrollClassRequest(null, null, "student@example.com", "0900000000", WALLET);
         assertThatThrownBy(() -> service.enrollClass(1L, 10L, "student@example.com", request))
                 .isInstanceOf(BadRequestException.class);
-
         verifyNoInteractions(classRoomRepository, enrollmentRequestRepository);
     }
 
     @Test
     void rejectsEnrollmentWithoutStudentPhone() {
-        EnrollClassRequest request = new EnrollClassRequest(null, null, "Nguyễn Văn An", " ");
-
+        EnrollClassRequest request = new EnrollClassRequest(null, null, "Nguyen Van An", " ", WALLET);
         assertThatThrownBy(() -> service.enrollClass(1L, 10L, "student@example.com", request))
                 .isInstanceOf(BadRequestException.class);
-
         verifyNoInteractions(classRoomRepository, enrollmentRequestRepository);
     }
 }

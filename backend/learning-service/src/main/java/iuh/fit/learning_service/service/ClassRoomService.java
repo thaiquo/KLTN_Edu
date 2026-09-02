@@ -728,7 +728,7 @@ public class ClassRoomService {
                 .toList();
 
         long pendingCount = enrollmentRequestRepository != null ? enrollmentRequestRepository.countByClassRoomIdAndStatus(c.getId(), EnrollmentRequestStatus.PENDING) : 0;
-        long acceptedCount = enrollmentRequestRepository != null ? enrollmentRequestRepository.countByClassRoomIdAndStatus(c.getId(), EnrollmentRequestStatus.ACCEPTED) : 0;
+        long acceptedCount = enrollmentRequestRepository != null ? enrollmentRequestRepository.countByClassRoomIdAndStatusIn(c.getId(), List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED)) : 0;
         int maxPending = c.getMaxPendingRequests() != null ? c.getMaxPendingRequests() : (int) Math.ceil(c.getMaxStudents() * 1.5);
         int ratioPercent = (int) Math.round((maxPending * 100.0) / c.getMaxStudents());
         long availableSlots = Math.max(0, c.getMaxStudents() - acceptedCount);

@@ -82,6 +82,23 @@ export interface ContractDocumentView {
     vndPerUsdc: string;
     totalSessions: number;
   };
+  learningTerms: {
+    learningMode: string | null;
+    meetingPlatform: string | null;
+    meetingLink: string | null;
+    learningAddress: string | null;
+    courseStartDate: string | null;
+    courseEndDate: string | null;
+    durationPerSessionMinutes: number | null;
+    schedules: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+    syllabus: Array<{ order: number; title: string | null; description: string | null; expectedSessions: number | null }>;
+  };
+  escrowPolicy: {
+    paymentWindowHours: number | null;
+    tutorPayoutBps: number | null;
+    platformFeeBps: number | null;
+    settlementRule: string | null;
+  };
   termsHash: string;
   termsJson: string;
   contractVersion: number;
@@ -187,8 +204,13 @@ export const contractsApi = {
     return apiRequest(`/api/contracts/agreements/${id}`);
   },
 
-  getContractDocument(id: string): Promise<ContractDocumentView> {
-    return apiRequest(`/api/contracts/agreements/${id}/document-view`);
+  getContractDocument(id: string, params?: { userId?: number; role?: string; email?: string }): Promise<ContractDocumentView> {
+    const query = new URLSearchParams();
+    if (params?.userId) query.set("userId", String(params.userId));
+    if (params?.role) query.set("role", params.role);
+    if (params?.email) query.set("email", params.email);
+    const qs = query.toString() ? `?${query.toString()}` : "";
+    return apiRequest(`/api/contracts/agreements/${id}/document-view${qs}`);
   },
 
   getContractDocumentArtifact(id: string): Promise<ContractDocumentArtifact> {
@@ -252,6 +274,15 @@ export const contractsApi = {
     pricePerSessionVnd?: number;
     totalSessions?: number;
     classroomReviewerEmail?: string;
+    classDescription?: string;
+    learningMode: "ONLINE" | "OFFLINE";
+    meetingLink?: string;
+    learningAddress?: string;
+    courseStartDate: string;
+    courseEndDate: string;
+    durationPerSessionMinutes: number;
+    schedules: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+    syllabus: Array<{ order: number; title?: string; description?: string; expectedSessions?: number }>;
   }): Promise<AgreementDetail> {
     return apiRequest(`/api/contracts/agreements/initiate`, {
       method: "POST",

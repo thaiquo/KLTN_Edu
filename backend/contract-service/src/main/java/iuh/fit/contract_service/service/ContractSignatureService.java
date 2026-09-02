@@ -58,30 +58,37 @@ public class ContractSignatureService {
             throw new IllegalArgumentException("Địa chỉ ví không hợp lệ.");
         }
 
-        // Verify EIP-712 signature if provided
-        if (signature != null && !signature.isBlank()) {
-            long createdAtSeconds = agreement.getCreatedAt() != null ? agreement.getCreatedAt().toEpochSecond() : 0L;
-            long chainId = agreement.getChainId() != null ? agreement.getChainId() : 11155111L;
-            String escrowContract = agreement.getEscrowContractAddress() != null
-                    ? agreement.getEscrowContractAddress()
-                    : "0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3";
+        if (signature == null || signature.isBlank()) {
+            throw new IllegalArgumentException("Missing EIP-712 signature from wallet.");
+        }
 
-            boolean valid = verificationService.verifySignature(
-                    normalizedWallet,
-                    signature,
-                    agreement.getId().toString(),
-                    agreement.getTutorWallet(),
-                    agreement.getStudentWallet(),
-                    agreement.getTotalAmountUsdcUnits(),
-                    agreement.getTermsHash(),
-                    createdAtSeconds,
-                    chainId,
-                    escrowContract
-            );
+        long createdAtSeconds = agreement.getCreatedAt() != null ? agreement.getCreatedAt().toEpochSecond() : 0L;
+        long chainId = agreement.getChainId() != null ? agreement.getChainId() : 11155111L;
+        String escrowContract = agreement.getEscrowContractAddress() != null
+                ? agreement.getEscrowContractAddress()
+                : "0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3";
+        if ("STUDENT".equals(normalizedRole)
+                && ContractTermsSnapshotService.SCHEMA_VERSION.equals(snapshotVersion(agreement))
+                && !normalizedWallet.equalsIgnoreCase(agreement.getStudentWallet())) {
+            throw new IllegalArgumentException("Ví ký của học viên không khớp ví đã được snapshot trong điều khoản hợp đồng.");
+        }
+        String signedStudentWallet = agreement.getStudentWallet();
 
-            if (!valid) {
-                log.warn("EIP-712 cryptographic signature check failed for wallet {}, proceeding with recorded signature payload", normalizedWallet);
-            }
+        boolean valid = verificationService.verifySignature(
+                normalizedWallet,
+                signature,
+                agreement.getId().toString(),
+                agreement.getTutorWallet(),
+                signedStudentWallet,
+                agreement.getTotalAmountUsdcUnits(),
+                agreement.getTermsHash(),
+                createdAtSeconds,
+                chainId,
+                escrowContract
+        );
+
+        if (!valid) {
+            throw new IllegalArgumentException("Invalid EIP-712 signature for the signing wallet and agreement terms.");
         }
 
         OffsetDateTime now = OffsetDateTime.now();
@@ -130,8 +137,9 @@ public class ContractSignatureService {
                 throw new IllegalStateException("Hợp đồng không ở trạng thái chờ Học viên ký (Hiện tại: " + agreement.getStatus() + ")");
             }
 
-            // Bind student's actual signing wallet address to the agreement
-            if (normalizedWallet != null && normalizedWallet.startsWith("0x") && normalizedWallet.length() == 42) {
+            // Legacy v1 agreements did not require a student wallet at initiation.
+            if (!ContractTermsSnapshotService.SCHEMA_VERSION.equals(snapshotVersion(agreement))
+                    && normalizedWallet.startsWith("0x") && normalizedWallet.length() == 42) {
                 agreement.setStudentWallet(normalizedWallet);
             }
 
@@ -185,16 +193,13 @@ public class ContractSignatureService {
     }
 
     private String extractStudentEmail(ContractAgreement agreement) {
-        if (agreement.getTermsJson() != null && agreement.getTermsJson().contains("\"studentEmail\":\"")) {
-            try {
-                int start = agreement.getTermsJson().indexOf("\"studentEmail\":\"") + 16;
-                int end = agreement.getTermsJson().indexOf("\"", start);
-                if (start > 15 && end > start) {
-                    return agreement.getTermsJson().substring(start, end);
-                }
-            } catch (Exception ignored) {}
-        }
-        return null;
+        return agreement.getStudentEmail();
+    }
+
+    private String snapshotVersion(ContractAgreement agreement) {
+        String terms = agreement.getTermsJson();
+        return terms != null && terms.contains("\"schemaVersion\":\"contract-terms-v2\"")
+                ? ContractTermsSnapshotService.SCHEMA_VERSION : null;
     }
 
     public List<ContractAcceptance> getAcceptances(UUID agreementId) {
