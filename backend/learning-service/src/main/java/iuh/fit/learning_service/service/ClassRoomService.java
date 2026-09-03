@@ -94,6 +94,24 @@ public class ClassRoomService {
         return new ClassRoomDtos.ClassRoomStatsResponse(total, active, pending, privateCount, publishedCount, lockedCount, closedCount, rejected, draft);
     }
 
+    @Transactional(readOnly = true)
+    public List<ClassRoomDtos.ClassRoomResponse> getMyEnrolledClasses(String studentEmail) {
+        List<EnrollmentRequest> requests = enrollmentRequestRepository.findByStudentEmailWithDetails(studentEmail);
+        List<Long> classIds = requests.stream()
+                .filter(r -> r.getStatus() == EnrollmentRequestStatus.ENROLLED || r.getStatus() == EnrollmentRequestStatus.ACCEPTED)
+                .map(r -> r.getClassRoom().getId())
+                .distinct()
+                .toList();
+
+        if (classIds.isEmpty()) {
+            return List.of();
+        }
+
+        return classRoomRepository.findAllById(classIds).stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
     @Transactional
     public ClassRoomDtos.ClassRoomResponse updateClassDetails(String tutorEmail, Long id, ClassRoomDtos.UpdateClassDetailsRequest request) {
         ClassRoom classRoom = classRoomRepository.findByIdWithDetails(id)

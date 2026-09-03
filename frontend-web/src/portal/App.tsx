@@ -67,6 +67,8 @@ import { EscrowContractsView } from "../components/contract/EscrowContractsView"
 import { DisputeManagementPanel } from "../components/contract/DisputeManagementPanel";
 import { MyWalletView } from "./components/MyWalletView";
 import { StudentRequestsView } from "./components/StudentRequestsView";
+import { TutorSessionManagement } from "./components/TutorSessionManagement";
+import { StudentClassManagement } from "./components/StudentClassManagement";
 
 // High Resolution course and avatar placeholders
 const studentAvatar =
@@ -695,7 +697,9 @@ export default function App({ user, onLogout }: AppProps) {
         }
 
       case "courses":
-        return (
+        return activeRole === "student" ? (
+          <StudentClassManagement />
+        ) : (
           <Marketplace
             courses={courses}
             onToggleFavorite={handleToggleFavoriteCourse}
@@ -752,7 +756,10 @@ export default function App({ user, onLogout }: AppProps) {
         return activeRole === "tutor" ? <TutorClassManagement /> : <AdminClassManagement activeRole={activeRole} />;
 
       case "my-classes":
-        return <TutorClassManagement />;
+        return activeRole === "student" ? <StudentClassManagement /> : <TutorClassManagement />;
+
+      case "sessions":
+        return <TutorSessionManagement />;
 
       case "requests":
         return <StudentRequestsView onNavigate={setCurrentPage} />;

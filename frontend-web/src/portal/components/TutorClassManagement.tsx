@@ -5,6 +5,7 @@ import {
   ChevronRight, Trash2, Eye, FileText, Sparkles, Key, Lock, Settings2, Globe, EyeOff, Copy, Check, Info, Layers, RefreshCw
 } from "lucide-react";
 import { classApi } from "../../api/classes";
+import { contractsApi } from "../../api/contractsApi";
 import { CreateClassWizard } from "./CreateClassWizard";
 import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
 
@@ -49,6 +50,8 @@ interface ClassRoomItem {
   rejectReason?: string;
   schedules: Array<{ id: number; dayOfWeek: number; startTime: string; endTime: string }>;
   chapters: Array<{ id: number; title: string; description: string; expectedSessions: number; orderIndex: number }>;
+  acceptedCount?: number;
+  availableSlots?: number;
   createdAt: string;
 }
 
@@ -92,6 +95,7 @@ export function TutorClassManagement() {
 
   // Enrollment Requests tab state
   const [enrollmentRequests, setEnrollmentRequests] = useState<any[]>([]);
+  const [classAgreements, setClassAgreements] = useState<any[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
   const [requestActionMsg, setRequestActionMsg] = useState("");
 
@@ -99,11 +103,18 @@ export function TutorClassManagement() {
     setRequestsLoading(true);
     setRequestActionMsg("");
     try {
-      const data = await classApi.getRequestsForClass(classId);
-      setEnrollmentRequests(data || []);
+      const [reqData, agrData] = await Promise.all([
+        classApi.getRequestsForClass(classId).catch(() => []),
+        contractsApi.listAgreements({ role: "TUTOR", size: 50 }).catch(() => null)
+      ]);
+      setEnrollmentRequests(reqData || []);
+      const agrs = Array.isArray(agrData) ? agrData : agrData?.content || [];
+      const forThisClass = agrs.filter((a: any) => Number(a.classroomId) === Number(classId));
+      setClassAgreements(forThisClass);
     } catch (err: any) {
       console.error("Failed to load requests", err);
       setEnrollmentRequests([]);
+      setClassAgreements([]);
     } finally {
       setRequestsLoading(false);
     }
@@ -1195,12 +1206,52 @@ export function TutorClassManagement() {
             )}
 
             {/* ========================================================= */}
-            {/* TAB 3: MEMBERS TAB (ACCEPTED STUDENTS)                    */}
+            {/* TAB 3: MEMBERS TAB (ACCEPTED & ENROLLED STUDENTS)        */}
             {/* ========================================================= */}
             {modalTab === "MEMBERS" && (
               <div className="space-y-4 text-xs">
                 {(() => {
-                  const acceptedMembers = enrollmentRequests.filter((r) => r.status === "ACCEPTED");
+                  const memberMap = new Map<string, any>();
+
+                  // 1. Từ Enrollment Requests (status ACCEPTED hoặc ENROLLED)
+                  enrollmentRequests
+                    .filter((r) => r.status === "ACCEPTED" || r.status === "ENROLLED")
+                    .forEach((r) => {
+                      const key = (r.studentEmail || "").trim().toLowerCase();
+                      if (key) {
+                        memberMap.set(key, {
+                          id: r.id,
+                          studentName: r.studentName,
+                          studentEmail: r.studentEmail,
+                          studentPhone: r.studentPhone,
+                          status: r.status,
+                          joinedDate: r.updatedAt || r.createdAt
+                        });
+                      }
+                    });
+
+                  // 2. Từ Hợp đồng Escrow on-chain của lớp này (Đã nạp cọc)
+                  classAgreements
+                    .filter((a) => a.status === "ACTIVE" || a.status === "COMPLETED" || (a as any).onchainFunded || a.status === "PENDING_STUDENT_FUNDING")
+                    .forEach((a) => {
+                      const key = (a.studentEmail || "").trim().toLowerCase();
+                      if (key) {
+                        const existing = memberMap.get(key) || {};
+                        memberMap.set(key, {
+                          ...existing,
+                          id: existing.id || a.id,
+                          studentName: existing.studentName || a.studentName || "Học viên",
+                          studentEmail: a.studentEmail,
+                          studentPhone: existing.studentPhone || a.studentPhone,
+                          status: "ENROLLED",
+                          agreementId: a.id,
+                          depositAmount: a.totalAmountUsdc,
+                          joinedDate: existing.joinedDate || a.createdAt
+                        });
+                      }
+                    });
+
+                  const acceptedMembers = Array.from(memberMap.values());
                   return (
                     <>
                       <div className="flex items-center justify-between">

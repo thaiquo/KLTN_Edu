@@ -430,7 +430,7 @@ export function ContractDocumentModal({ agreementId, onClose, onSignedSuccess }:
                 <Clause title="ĐIỀU 1: ĐỐI TƯỢNG HỢP ĐỒNG VÀ NỘI DUNG KHÓA HỌC">
                   <p>1.1. Bên A nhận cung cấp dịch vụ giảng dạy môn học <strong>{displayValue(document.className)}</strong> cho Bên B theo đúng chương trình, tiến độ và thời lượng đã thỏa thuận.</p>
                   <p>1.2. Hình thức học: <strong>{displayValue(document.learningTerms.learningMode)}</strong>. Nền tảng: <strong>{displayValue(document.learningTerms.meetingPlatform)}</strong>. Link / Địa chỉ học: <strong className="break-all">{displayValue(document.learningTerms.meetingLink || document.learningTerms.learningAddress)}</strong>.</p>
-                  <p>1.3. Thời gian khóa học: từ ngày <strong>{formatDate(document.learningTerms.startDate)}</strong> đến ngày <strong>{formatDate(document.learningTerms.endDate)}</strong>. Thời lượng mỗi buổi học: <strong>{displayValue(document.learningTerms.durationPerSessionMinutes)} phút</strong>.</p>
+                  <p>1.3. Thời gian khóa học: từ ngày <strong>{formatDate(document.learningTerms.courseStartDate)}</strong> đến ngày <strong>{formatDate(document.learningTerms.courseEndDate)}</strong>. Thời lượng mỗi buổi học: <strong>{displayValue(document.learningTerms.durationPerSessionMinutes)} phút</strong>.</p>
                   {document.learningTerms.schedules && document.learningTerms.schedules.length > 0 && (
                     <div className="pl-4 border-l-2 border-slate-300 space-y-0.5 pt-1 text-[11px]">
                       <p className="font-bold">Lịch học cố định hàng tuần:</p>

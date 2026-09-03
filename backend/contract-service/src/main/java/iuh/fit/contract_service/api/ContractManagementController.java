@@ -26,6 +26,7 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -50,6 +51,7 @@ public class ContractManagementController {
     private final iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository;
     private final ContractAcceptanceRepository acceptanceRepository;
     private final iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher;
+    private final iuh.fit.contract_service.service.SessionSettlementWorkflowService sessionSettlementWorkflowService;
 
     public ContractManagementController(
             ContractAgreementRepository agreementRepository,
@@ -61,7 +63,8 @@ public class ContractManagementController {
             iuh.fit.contract_service.service.ContractSignatureService signatureService,
             iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository,
             ContractAcceptanceRepository acceptanceRepository,
-            iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher) {
+            iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher,
+            iuh.fit.contract_service.service.SessionSettlementWorkflowService sessionSettlementWorkflowService) {
         this.agreementRepository = agreementRepository;
         this.settlementRepository = settlementRepository;
         this.transactionRepository = transactionRepository;
@@ -72,6 +75,7 @@ public class ContractManagementController {
         this.escrowPaymentRepository = escrowPaymentRepository;
         this.acceptanceRepository = acceptanceRepository;
         this.learningServiceDispatcher = learningServiceDispatcher;
+        this.sessionSettlementWorkflowService = sessionSettlementWorkflowService;
     }
 
     public record InitiateAgreementRequest(
@@ -427,7 +431,7 @@ public class ContractManagementController {
                     ))
                 ).collect(Collectors.toList());
             } else {
-                filtered = all;
+                filtered = Collections.emptyList();
             }
         } else if ("STUDENT".equalsIgnoreCase(role)) {
             if (userId > 0 || !email.isBlank()) {
@@ -436,7 +440,7 @@ public class ContractManagementController {
                     (!email.isBlank() && a.getStudentEmail() != null && email.equalsIgnoreCase(a.getStudentEmail()))
                 ).collect(Collectors.toList());
             } else {
-                filtered = all;
+                filtered = Collections.emptyList();
             }
         } else {
             if (userId > 0 || !email.isBlank()) {
@@ -658,6 +662,113 @@ public class ContractManagementController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
+    }
+
+    public record TutorEvidenceRequest(
+            String responseText,
+            String evidenceFileUrl
+    ) {}
+
+    /**
+     * Gia sư nộp giải trình và bằng chứng đối chất khi nhận được thông báo khiếu nại.
+     */
+    @PutMapping("/disputes/{id}/tutor-evidence")
+    public ResponseEntity<?> submitTutorDisputeEvidence(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-User-Email", defaultValue = "") String tutorEmail,
+            @RequestBody TutorEvidenceRequest body) {
+        Dispute dispute = disputeRepository.findById(id).orElse(null);
+        if (dispute == null) return ResponseEntity.notFound().build();
+
+        dispute.setTutorResponse(body.responseText() + (body.evidenceFileUrl() != null ? " [File: " + body.evidenceFileUrl() + "]" : ""));
+        dispute.setTutorRespondedAt(Instant.now());
+        Dispute saved = disputeRepository.save(dispute);
+        return ResponseEntity.ok(toDisputeDto(saved));
+    }
+
+    public record ProposeSettlementRequest(
+            String outcome, // BOTH_PRESENT, STUDENT_ABSENT_TUTOR_PRESENT, TUTOR_ABSENT
+            String evidenceHash
+    ) {}
+
+    /**
+     * Đề xuất quyết toán buổi học cho 1 agreement cụ thể trên Sepolia Blockchain.
+     */
+    @PostMapping("/agreements/{agreementId}/sessions/{sessionId}/propose")
+    public ResponseEntity<?> proposeSessionSettlement(
+            @PathVariable UUID agreementId,
+            @PathVariable Long sessionId,
+            @RequestBody(required = false) ProposeSettlementRequest body) {
+        try {
+            String outcomeStr = body != null && body.outcome() != null ? body.outcome().toUpperCase() : "BOTH_PRESENT";
+            iuh.fit.contract_service.enums.SettlementOutcome outcome =
+                    iuh.fit.contract_service.enums.SettlementOutcome.valueOf(outcomeStr);
+
+            String evidenceHash = body != null && body.evidenceHash() != null && !body.evidenceHash().isBlank()
+                    ? body.evidenceHash()
+                    : org.web3j.crypto.Hash.sha3String("PROPOSE:" + agreementId + ":" + sessionId);
+
+            BlockchainTransactionIntentResult result = sessionSettlementWorkflowService
+                    .initiateSessionProposal(agreementId, sessionId, outcome, evidenceHash);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "agreementId", agreementId.toString(),
+                    "sessionId", sessionId,
+                    "outcome", outcome.name(),
+                    "transactionStatus", result.status().name(),
+                    "idempotencyKey", result.idempotencyKey()
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Đề xuất quyết toán buổi học theo classroomId cho tất cả các agreement ACTIVE trong lớp đó.
+     */
+    @PostMapping("/classrooms/{classroomId}/sessions/{sessionId}/propose")
+    public ResponseEntity<?> proposeSettlementByClassroom(
+            @PathVariable Long classroomId,
+            @PathVariable Long sessionId,
+            @RequestBody(required = false) ProposeSettlementRequest body) {
+        List<ContractAgreement> agreements = agreementRepository.findAll().stream()
+                .filter(a -> a.getClassroomId().equals(classroomId) && a.getStatus() == ContractAgreementStatus.ACTIVE)
+                .toList();
+
+        if (agreements.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Không tìm thấy hợp đồng ACTIVE nào cho lớp học: " + classroomId));
+        }
+
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (ContractAgreement agreement : agreements) {
+            try {
+                String outcomeStr = body != null && body.outcome() != null ? body.outcome().toUpperCase() : "BOTH_PRESENT";
+                iuh.fit.contract_service.enums.SettlementOutcome outcome =
+                        iuh.fit.contract_service.enums.SettlementOutcome.valueOf(outcomeStr);
+
+                String evidenceHash = body != null && body.evidenceHash() != null && !body.evidenceHash().isBlank()
+                        ? body.evidenceHash()
+                        : org.web3j.crypto.Hash.sha3String("PROPOSE:" + agreement.getId() + ":" + sessionId);
+
+                BlockchainTransactionIntentResult res = sessionSettlementWorkflowService
+                        .initiateSessionProposal(agreement.getId(), sessionId, outcome, evidenceHash);
+
+                results.add(Map.of(
+                        "agreementId", agreement.getId().toString(),
+                        "studentId", agreement.getStudentId(),
+                        "status", res.status().name()
+                ));
+            } catch (Exception e) {
+                results.add(Map.of(
+                        "agreementId", agreement.getId().toString(),
+                        "studentId", agreement.getStudentId(),
+                        "error", e.getMessage()
+                ));
+            }
+        }
+
+        return ResponseEntity.ok(Map.of("classroomId", classroomId, "sessionId", sessionId, "proposals", results));
     }
 
     // ─────────────────────────────────────────────

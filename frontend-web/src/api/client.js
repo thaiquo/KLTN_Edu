@@ -148,7 +148,7 @@ export async function apiRequest(path, options = {}) {
 
   if (!response.ok) {
     const { code, message } = parseErrorPayload(data, response.status);
-    if (response.status === 401 && !path.startsWith('/api/auth/')) {
+    if (response.status === 401 && (path.includes('/users/me') || path.includes('/auth/refresh') || path.includes('/account/me') || path.includes('/auth/me'))) {
       window.dispatchEvent(new CustomEvent('auth:unauthorized'));
     }
     throw new ApiError({

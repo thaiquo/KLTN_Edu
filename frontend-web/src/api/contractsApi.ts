@@ -34,6 +34,10 @@ export interface AgreementSummary {
   chainId: number | null;
   escrowContractAddress: string | null;
   classroomReviewerEmail: string | null;
+  onchainFunded?: boolean;
+  totalAmount?: number;
+  remainingDeposit?: number;
+  fundedTxHash?: string;
 }
 
 export interface AgreementDetail {
@@ -305,20 +309,6 @@ export const contractsApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ txHash }),
     });
-  },
-
-  getAcceptances(id: string): Promise<Array<{
-    id: string;
-    agreementId: string;
-    userId: number;
-    role: string;
-    walletAddress: string;
-    signature: string | null;
-    acceptedAt: string;
-    termsHash: string;
-    contractVersion: number;
-  }>> {
-    return apiRequest(`/api/contracts/agreements/${id}/acceptances`);
   },
 
   listAllTransactions(params?: { page?: number; size?: number }): Promise<PagedResponse<BlockchainTxDto>> {

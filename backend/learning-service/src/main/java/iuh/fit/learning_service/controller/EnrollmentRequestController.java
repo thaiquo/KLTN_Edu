@@ -16,14 +16,29 @@ import java.util.List;
 public class EnrollmentRequestController {
 
     private final EnrollmentRequestService service;
+    private final iuh.fit.learning_service.service.ClassRoomService classRoomService;
 
-    public EnrollmentRequestController(EnrollmentRequestService service) {
+    public EnrollmentRequestController(
+            EnrollmentRequestService service,
+            iuh.fit.learning_service.service.ClassRoomService classRoomService
+    ) {
         this.service = service;
+        this.classRoomService = classRoomService;
     }
 
     // -------------------------------------------------------------
     // Student Endpoints
     // -------------------------------------------------------------
+
+    @GetMapping({"/api/v1/student/classes", "/api/student/classes", "/api/student/my-classes"})
+    public ResponseEntity<List<iuh.fit.learning_service.dto.ClassRoomDtos.ClassRoomResponse>> getMyEnrolledClasses(
+            Authentication authentication
+    ) {
+        if (authentication == null) {
+            return ResponseEntity.ok(List.of());
+        }
+        return ResponseEntity.ok(classRoomService.getMyEnrolledClasses(authentication.getName()));
+    }
 
     @PostMapping({"/api/v1/classes/{classId}/enroll", "/api/classes/{classId}/enroll"})
     public ResponseEntity<EnrollmentRequestResponse> enrollClass(

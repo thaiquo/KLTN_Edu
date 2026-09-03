@@ -48,6 +48,7 @@ export function Sidebar({
         return [
           { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
           { id: "my-classes", label: "My Classes", icon: GraduationCap },
+          { id: "sessions", label: "Quản lý Buổi học", icon: BookOpen },
           { id: "contracts", label: "Hợp đồng & Ký quỹ", icon: ShieldCheck },
           { id: "wallet", label: "Ví của tôi", icon: WalletCards },
           { id: "requests", label: "Student Requests", icon: CheckCircle2 },
