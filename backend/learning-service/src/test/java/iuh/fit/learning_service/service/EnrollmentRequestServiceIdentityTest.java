@@ -1,0 +1,93 @@
+package iuh.fit.learning_service.service;
+
+import iuh.fit.learning_service.dto.EnrollmentRequestDtos.EnrollClassRequest;
+import iuh.fit.learning_service.exception.BadRequestException;
+import iuh.fit.learning_service.messaging.LearningEventPublisher;
+import iuh.fit.learning_service.repository.ClassRoomRepository;
+import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
+import iuh.fit.learning_service.repository.TutorAuthorizationStateRepository;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
+
+class EnrollmentRequestServiceIdentityTest {
+
+    private static final String WALLET = "0x0000000000000000000000000000000000000001";
+
+    private final ClassRoomRepository classRoomRepository = mock(ClassRoomRepository.class);
+
+    private final EnrollmentRequestRepository enrollmentRequestRepository = mock(EnrollmentRequestRepository.class);
+
+    private final TutorAuthorizationStateRepository tutorAuthorizationStateRepository = mock(
+            TutorAuthorizationStateRepository.class);
+
+    private final LearningEventPublisher eventPublisher = mock(LearningEventPublisher.class);
+
+    private final EnrollmentRequestService service = new EnrollmentRequestService(
+            classRoomRepository,
+            enrollmentRequestRepository,
+            tutorAuthorizationStateRepository,
+            eventPublisher);
+
+    @Test
+    void rejectsEnrollmentWhenJwtDoesNotContainStudentId() {
+        EnrollClassRequest request = new EnrollClassRequest(
+                null,
+                null,
+                "Nguyen Van An",
+                "0900000000",
+                WALLET);
+
+        assertThatThrownBy(() -> service.enrollClass(
+                1L,
+                null,
+                "student@example.com",
+                request)).isInstanceOf(BadRequestException.class);
+
+        verifyNoInteractions(
+                classRoomRepository,
+                enrollmentRequestRepository);
+    }
+
+    @Test
+    void rejectsEnrollmentWithoutRealStudentName() {
+        EnrollClassRequest request = new EnrollClassRequest(
+                null,
+                null,
+                "student@example.com",
+                "0900000000",
+                WALLET);
+
+        assertThatThrownBy(() -> service.enrollClass(
+                1L,
+                10L,
+                "student@example.com",
+                request)).isInstanceOf(BadRequestException.class);
+
+        verifyNoInteractions(
+                classRoomRepository,
+                enrollmentRequestRepository);
+    }
+
+    @Test
+    void rejectsEnrollmentWithoutStudentPhone() {
+        EnrollClassRequest request = new EnrollClassRequest(
+                null,
+                null,
+                "Nguyen Van An",
+                " ",
+                WALLET);
+
+        assertThatThrownBy(() -> service.enrollClass(
+                1L,
+                10L,
+                "student@example.com",
+                request)).isInstanceOf(BadRequestException.class);
+
+        verifyNoInteractions(
+                classRoomRepository,
+                enrollmentRequestRepository);
+    }
+}

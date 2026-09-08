@@ -9,9 +9,10 @@ interface ProfileSettingsProps {
   onSaveSettings: (updated: AppProfileSettings) => void;
   activeRole?: string;
   initialTab?: "info" | "password";
+  onQuickNavigate?: (page: string) => void;
 }
 
-export function ProfileSettings({ settings, onSaveSettings, initialTab = "info" }: ProfileSettingsProps) {
+export function ProfileSettings({ settings, onSaveSettings, initialTab = "info", onQuickNavigate }: ProfileSettingsProps) {
   const [activeTab, setActiveTab] = useState<"info" | "password">(initialTab);
   void settings;
   void onSaveSettings;
@@ -51,7 +52,7 @@ export function ProfileSettings({ settings, onSaveSettings, initialTab = "info" 
       </div>
 
       <div className="bg-transparent rounded-2xl">
-        {activeTab === "info" && <ProfilePage embedded={true} onTabChange={setActiveTab} />}
+        {activeTab === "info" && <ProfilePage embedded={true} onTabChange={setActiveTab} onQuickNavigate={onQuickNavigate} />}
         {activeTab === "password" && <ChangePasswordPage embedded={true} onTabChange={setActiveTab} />}
       </div>
     </div>

@@ -6,15 +6,20 @@ import iuh.fit.contract_service.blockchain.OperatorTransactionGateway;
 import iuh.fit.contract_service.blockchain.PreparedOperatorTransaction;
 import iuh.fit.contract_service.command.BlockchainTransactionCommand;
 import iuh.fit.contract_service.config.BlockchainProperties;
+import iuh.fit.contract_service.entity.BlockchainTransaction;
 import iuh.fit.contract_service.enums.BlockchainTransactionAction;
 import iuh.fit.contract_service.enums.BlockchainTransactionStatus;
+import iuh.fit.contract_service.enums.ContractAgreementStatus;
 import iuh.fit.contract_service.repository.BlockchainTransactionRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.web3j.crypto.Hash;
 
 import java.math.BigDecimal;
@@ -23,6 +28,7 @@ import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -68,10 +74,23 @@ class OperatorTransactionPipelineIntegrationTest {
         agreementId = UUID.randomUUID();
         insertAgreement();
         blockchainProperties.setConfirmations(1);
+        blockchainProperties.setDispatchRetryDelayMs(30_000);
+        blockchainProperties.setMaxDispatchAttempts(3);
+        blockchainProperties.setReceiptWatchBatchSize(50);
+        blockchainProperties.setTransactionStaleTimeoutMs(1_800_000);
         gateway = new FakeOperatorGateway();
-        dispatcher = new OperatorTransactionDispatcher(repository, gateway, transactionManager);
+        dispatcher = new OperatorTransactionDispatcher(repository, gateway, blockchainProperties, transactionManager);
         watcher = new BlockchainReceiptWatcher(
                 repository, gateway, blockchainProperties, transactionManager);
+    }
+
+    @AfterEach
+    void resetProperties() {
+        blockchainProperties.setConfirmations(1);
+        blockchainProperties.setDispatchRetryDelayMs(30_000);
+        blockchainProperties.setMaxDispatchAttempts(3);
+        blockchainProperties.setReceiptWatchBatchSize(50);
+        blockchainProperties.setTransactionStaleTimeoutMs(1_800_000);
     }
 
     @Test
@@ -149,6 +168,64 @@ class OperatorTransactionPipelineIntegrationTest {
         assertEquals("On-chain transaction reverted", failed.getErrorMessage());
     }
 
+    @Test
+    void preparationFailureReturnsIntentToCreatedForBoundedRetry() {
+        UUID transactionId = createIntent();
+        gateway.prepareFails = true;
+        blockchainProperties.setDispatchRetryDelayMs(1);
+
+        assertThrows(OperatorTransactionException.class, () -> dispatcher.dispatchNext());
+
+        var retryable = repository.findById(transactionId).orElseThrow();
+        assertEquals(BlockchainTransactionStatus.CREATED, retryable.getStatus());
+        assertEquals(1, retryable.getAttemptCount());
+        assertTrue(retryable.getNextAttemptAt() != null);
+        assertEquals(1, gateway.prepareCalls);
+        assertEquals(0, gateway.broadcastCalls);
+    }
+
+    @Test
+    void staleUnpreparedDispatchIsRecoveredAfterRestart() {
+        UUID transactionId = createIntent();
+        OffsetDateTime staleStartedAt = OffsetDateTime.now().minusMinutes(31);
+
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            BlockchainTransaction transaction = repository
+                    .lockCreatedForDispatch(OffsetDateTime.now(), PageRequest.of(0, 1))
+                    .stream()
+                    .findFirst()
+                    .orElseThrow();
+            transaction.claimForDispatch(staleStartedAt);
+            repository.saveAndFlush(transaction);
+        });
+
+        assertEquals(1, watcher.reconcilePendingReceipts());
+
+        var recovered = repository.findById(transactionId).orElseThrow();
+        assertEquals(BlockchainTransactionStatus.CREATED, recovered.getStatus());
+        assertEquals(1, recovered.getAttemptCount());
+        assertNull(recovered.getTransactionHash());
+        assertTrue(recovered.getNextAttemptAt() != null);
+    }
+
+    @Test
+    void confirmedReceiptDoesNotAdvanceAgreementWithoutContractEvent() {
+        UUID transactionId = createIntent();
+        dispatcher.dispatchNext();
+        gateway.receipt = new BlockchainTransactionReceipt(TX_HASH, true, 100, BLOCK_HASH);
+        gateway.latestBlock = BigInteger.valueOf(100);
+
+        assertEquals(1, watcher.reconcilePendingReceipts());
+
+        assertEquals(BlockchainTransactionStatus.CONFIRMED,
+                repository.findById(transactionId).orElseThrow().getStatus());
+        String agreementStatus = jdbcTemplate.queryForObject(
+                "SELECT status FROM contract_agreement WHERE id = ?",
+                String.class,
+                agreementId);
+        assertEquals(ContractAgreementStatus.PREPARING_BLOCKCHAIN.name(), agreementStatus);
+    }
+
     private UUID createIntent() {
         return commandService.createIntent(new BlockchainTransactionCommand(
                 "REGISTER:31337:" + agreementId,
@@ -181,12 +258,13 @@ class OperatorTransactionPipelineIntegrationTest {
                 FROM, "{}", "0x" + "11".repeat(32), 1,
                 BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(25_000),
                 BigDecimal.valueOf(40_000_000), BigDecimal.valueOf(4_000_000),
-                10, "PENDING_REGISTRATION", OffsetDateTime.now(), OffsetDateTime.now());
+                10, "PREPARING_BLOCKCHAIN", OffsetDateTime.now(), OffsetDateTime.now());
     }
 
     private static final class FakeOperatorGateway implements OperatorTransactionGateway {
         private int prepareCalls;
         private int broadcastCalls;
+        private boolean prepareFails;
         private boolean broadcastUncertain;
         private BlockchainTransactionReceipt receipt;
         private BigInteger latestBlock = BigInteger.ZERO;
@@ -195,6 +273,9 @@ class OperatorTransactionPipelineIntegrationTest {
         public PreparedOperatorTransaction prepare(
                 long chainId, String fromAddress, String toAddress, String calldata) {
             prepareCalls++;
+            if (prepareFails) {
+                throw new OperatorTransactionException("simulated prepare failure");
+            }
             return new PreparedOperatorTransaction(BigInteger.valueOf(7), TX_HASH, "0xdeadbeef");
         }
 

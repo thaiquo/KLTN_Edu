@@ -17,7 +17,6 @@
         <module>backend/learning-service</module>
         <module>backend/contract-service</module>
         <module>backend/notification-service</module>
-        <module>backend/eureka-server</module>
     </modules>
 
     <properties>

@@ -36,5 +36,16 @@ public interface EnrollmentRequestRepository extends JpaRepository<EnrollmentReq
            "ORDER BY r.createdAt DESC")
     List<EnrollmentRequest> findByStudentEmailWithDetails(@Param("studentEmail") String studentEmail);
 
+    @Query("SELECT r FROM EnrollmentRequest r " +
+           "JOIN FETCH r.classRoom c " +
+           "WHERE lower(c.tutorEmail) = lower(:tutorEmail) " +
+           "ORDER BY r.createdAt DESC")
+    List<EnrollmentRequest> findByTutorEmailWithDetails(@Param("tutorEmail") String tutorEmail);
+
     List<EnrollmentRequest> findByClassRoomIdAndStatus(Long classRoomId, EnrollmentRequestStatus status);
+
+    Optional<EnrollmentRequest> findByAgreementId(String agreementId);
+
+    Optional<EnrollmentRequest> findFirstByClassRoomIdAndStudentIdAndStatusInOrderByCreatedAtDesc(
+            Long classRoomId, Long studentId, Collection<EnrollmentRequestStatus> statuses);
 }

@@ -5,16 +5,8 @@
 
 import React, { useEffect, useState } from "react";
 import {
-  LayoutDashboard,
-  GraduationCap,
-  MessageSquare,
-  Calendar,
-  Settings,
   Users,
-  CheckCircle2,
-  BookOpen,
   HelpCircle,
-  LogOut,
   UserCheck
 } from "lucide-react";
 import {
@@ -57,6 +49,7 @@ import { TutorRestrictedHome } from "./components/TutorRestrictedHome";
 import { TeachingRegistrationPage } from "../pages/tutor/TeachingRegistrationPage";
 import { useFeedback } from "../components/feedback/useFeedback";
 import { useTutorApplication } from "../hooks/useTutorApplication";
+import { StudentRequestsView } from "./components/StudentRequestsView";
 
 // High Resolution course and avatar placeholders
 const studentAvatar =
@@ -100,7 +93,7 @@ const INITIAL_SCHEDULE: ScheduleItem[] = [
   {
     id: "sch-1",
     time: "09:00",
-    period: "",
+    period: "AM",
     title: "Buổi học Giải tích II",
     detailType: "students",
     detailValue: "12 học viên đã đăng ký",
@@ -109,7 +102,7 @@ const INITIAL_SCHEDULE: ScheduleItem[] = [
   {
     id: "sch-2",
     time: "13:30",
-    period: "",
+    period: "PM",
     title: "Học 1-1: Nguyễn Hoàng",
     detailType: "virtual",
     detailValue: "Phòng học trực tuyến B",
@@ -118,7 +111,7 @@ const INITIAL_SCHEDULE: ScheduleItem[] = [
   {
     id: "sch-3",
     time: "16:00",
-    period: "",
+    period: "PM",
     title: "Giờ hỗ trợ",
     detailType: "location",
     detailValue: "Phòng 4B",
@@ -287,9 +280,11 @@ export default function App({ user, onLogout }: AppProps) {
   const feedback = useFeedback();
   // Global States holding data consistently across tabs
   const [activeRole] = useState<UserRole>(user.currentRole || user.role || "student");
-  const [currentPage, setCurrentPage] = useState<string>(activeRole === "staff" ? "tutor-approval" : "dashboard");
+  const [currentPage, setCurrentPage] = useState<string>(() => {
+    return activeRole === "staff" ? "tutor-approval" : "dashboard";
+  });
   const [searchValue, setSearchValue] = useState("");
-  
+
   // Custom mock database tables binded in React
   const [requests, setRequests] = useState<StudentRequest[]>(INITIAL_REQUESTS);
   const [schedule, setSchedule] = useState<ScheduleItem[]>(INITIAL_SCHEDULE);
@@ -431,124 +426,16 @@ export default function App({ user, onLogout }: AppProps) {
             <TutorDashboard
               userName={user.fullName}
               requests={requests}
+              schedule={schedule}
               onAcceptRequest={handleAcceptRequest}
               onRejectRequest={handleRejectRequest}
-              schedule={schedule}
               onNavigate={handleNavigate}
             />
           );
+        } else if (activeRole === "admin") {
+          return <AdminPortal />;
         } else if (activeRole === "staff") {
           return <TutorApprovalPanel />;
-        } else if (activeRole === "admin") {
-          // Comprehensive ADMIN DASHBOARD layout compiling active graphs!
-          const colors = ["#0058be", "#6b38d4", "#f43f5e", "#eab308"];
-          const userStatusSummary = [
-            { name: "Active", value: users.filter((u) => u.status === "Active").length },
-            { name: "Pending", value: users.filter((u) => u.status === "Pending").length },
-            { name: "Suspended", value: users.filter((u) => u.status === "Suspended").length },
-          ];
-
-          return (
-            <div className="space-y-8 select-none font-sans max-w-7xl mx-auto">
-              <div>
-                <h2 className="font-display font-black text-2xl lg:text-3xl tracking-tight text-brand-text">
-                  Administrative Analytics Overview
-                </h2>
-                <p className="text-brand-text-variant/60 text-sm mt-1">
-                  Global data streams, license volumes and infrastructure safety parameters.
-                </p>
-              </div>
-
-              {/* Advanced Bento Cards & Charts layout */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                
-                {/* Chart 1: Enrollment stats */}
-                <div className="bg-white p-6 rounded-3xl border border-brand-border/30 shadow-sm flex flex-col md:col-span-2">
-                  <h3 className="font-display font-black text-xs uppercase text-brand-text-variant/50 tracking-wider mb-6">
-                    Dynamic Enrollment Distribution
-                  </h3>
-                  <div className="h-64 select-none w-full">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={100}>
-                      <BarChart data={ENROLLMENTS_DATA}>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="name" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                        <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
-                        <Tooltip />
-                        <Bar dataKey="students" fill="#0058be" radius={[8, 8, 0, 0]} barSize={40} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-
-                {/* Pie Chart Widget */}
-                <div className="bg-white p-6 rounded-3xl border border-brand-border/30 shadow-sm flex flex-col">
-                  <h3 className="font-display font-black text-xs uppercase text-brand-text-variant/50 tracking-wider mb-6">
-                    Account Breakdown Status
-                  </h3>
-                  <div className="h-48 w-full select-none justify-center flex relative">
-                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={100}>
-                      <PieChart>
-                        <Pie
-                          data={userStatusSummary}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={80}
-                          paddingAngle={5}
-                          dataKey="value"
-                        >
-                          {userStatusSummary.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center select-none font-display">
-                      <p className="text-xl font-black text-brand-text leading-none">{users.length}</p>
-                      <p className="text-[9px] font-bold text-brand-text-variant/50 uppercase tracing-wider mt-1">Users</p>
-                    </div>
-                  </div>
-                  <div className="flex justify-center gap-4 text-[10px] font-bold font-display select-none uppercase tracking-wide pt-4">
-                    <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-brand-primary"></span>Active</span>
-                    <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-brand-secondary"></span>Pending</span>
-                    <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>Suspended</span>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Quick Actions Router cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div
-                  onClick={() => handleNavigate("user-management")}
-                  className="bg-brand-low/50 hover:bg-brand-low border border-brand-border/30 p-6 rounded-3xl cursor-pointer transition-colors group"
-                >
-                  <Users className="w-8 h-8 text-brand-primary mb-3 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-display font-black text-sm text-brand-text mb-1">
-                    Manage Accounts
-                  </h4>
-                  <p className="text-xs text-brand-text-variant">
-                    Control permissions, search names, edit status profiles and remove accounts.
-                  </p>
-                </div>
-
-                <div
-                  onClick={() => handleNavigate("tutor-approval")}
-                  className="bg-brand-low/50 hover:bg-brand-low border border-brand-border/30 p-6 rounded-3xl cursor-pointer transition-colors group"
-                >
-                  <UserCheck className="w-8 h-8 text-brand-secondary mb-3 group-hover:scale-110 transition-transform" />
-                  <h4 className="font-display font-black text-sm text-brand-text mb-1">
-                    Tutor Onboarding Approvals
-                  </h4>
-                  <p className="text-xs text-brand-text-variant">
-                    Review academic AWS/IELTS transcripts and pending applications.
-                  </p>
-                </div>
-              </div>
-
-            </div>
-          );
         }
         return null;
 
@@ -563,7 +450,7 @@ export default function App({ user, onLogout }: AppProps) {
         );
 
       case "settings":
-        return <ProfileSettings settings={profileSettings} onSaveSettings={setProfileSettings} activeRole={activeRole} initialTab={settingsTab} />;
+        return <ProfileSettings settings={profileSettings} onSaveSettings={setProfileSettings} activeRole={activeRole} initialTab={settingsTab} onQuickNavigate={handleNavigate} />;
 
       case "subjects":
         return fullTutorAccess ? <TeachingRegistrationPage embedded={true} /> : null;
@@ -573,7 +460,7 @@ export default function App({ user, onLogout }: AppProps) {
 
       case "wallet":
         return activeRole === "tutor"
-          ? <MyWalletView />
+          ? <MyWalletView activeRole="tutor" userEmail={user.email} />
           : null;
 
       case "tutor-approval":
@@ -606,36 +493,7 @@ export default function App({ user, onLogout }: AppProps) {
         return <TutorClassManagement />;
 
       case "requests":
-        return (
-          <div className="space-y-6 select-none font-sans max-w-5xl mx-auto pb-10">
-            <h2 className="font-display font-black text-xl lg:text-2xl text-brand-text">
-              Active Student Lecture Requests
-            </h2>
-            <div className="bg-white border border-brand-border/30 rounded-3xl overflow-hidden shadow-sm">
-              <table className="w-full text-left">
-                <tbody className="divide-y divide-brand-border/10 font-semibold text-xs">
-                  {requests.map((r) => (
-                    <tr key={r.id} className="hover:bg-brand-low/40">
-                      <td className="px-6 py-4 font-bold">{r.studentName}</td>
-                      <td className="px-6 py-4 text-brand-text-variant">{r.subject}</td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          r.status === "approved"
-                            ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                            : r.status === "rejected"
-                            ? "bg-brand-error/5 text-brand-error border-brand-error/10"
-                            : "bg-amber-50 text-amber-700 border border-amber-100"
-                        }`}>
-                          {r.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
+        return <StudentRequestsView onNavigate={handleNavigate} />;
 
       case "schedule":
         return <TutorAvailabilityScheduler />;
@@ -671,7 +529,6 @@ export default function App({ user, onLogout }: AppProps) {
 
   return (
     <div className="min-h-screen bg-brand-surface text-brand-text selection:bg-brand-primary/10 select-none">
-      
       {/* Dynamic Unified Header */}
       <Header
         activeRole={activeRole}
@@ -697,7 +554,6 @@ export default function App({ user, onLogout }: AppProps) {
           {renderMainContent()}
         </main>
       </div>
-
     </div>
   );
 }

@@ -2,7 +2,9 @@ package iuh.fit.notification_service.messaging;
 
 import iuh.fit.notification_service.messaging.event.SubjectRequestApprovedEvent;
 import iuh.fit.notification_service.messaging.event.SubjectRequestRejectedEvent;
+import iuh.fit.notification_service.messaging.event.ClassReviewedNotificationEvent;
 import iuh.fit.notification_service.messaging.event.EnrollmentNotificationEvent;
+import iuh.fit.notification_service.messaging.event.TeachingRegistrationReviewedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApplicationSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApprovedEvent;
 import iuh.fit.notification_service.messaging.event.TutorRejectedEvent;
@@ -181,6 +183,54 @@ public class NotificationEventConsumer {
         ));
     }
 
+    @RabbitListener(queues = NotificationRabbitConfig.CLASS_REVIEWED_QUEUE)
+    public void onClassReviewed(ClassReviewedNotificationEvent event) {
+        if (!isValidClassReviewedEvent(event)) {
+            return;
+        }
+
+        String status = event.reviewStatus().trim().toUpperCase();
+        boolean approved = "APPROVED".equals(status);
+        String title = approved
+                ? "Lớp học đã được duyệt"
+                : "Lớp học chưa được duyệt";
+
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                "CLASS_REVIEWED",
+                title,
+                classReviewedMessage(event, approved),
+                "TUTOR",
+                "CLASS",
+                String.valueOf(event.classId())
+        ));
+    }
+
+    @RabbitListener(queues = NotificationRabbitConfig.TEACHING_REGISTRATION_REVIEWED_QUEUE)
+    public void onTeachingRegistrationReviewed(TeachingRegistrationReviewedEvent event) {
+        if (!isValidTeachingRegistrationReviewedEvent(event)) {
+            return;
+        }
+
+        String status = event.reviewStatus().trim().toUpperCase();
+        boolean approved = "APPROVED".equals(status);
+        String title = approved
+                ? "Đăng ký môn học đã được phê duyệt"
+                : "Đăng ký môn học đã bị từ chối";
+
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                "TEACHING_REGISTRATION_REVIEWED",
+                title,
+                teachingRegistrationReviewedMessage(event, approved),
+                "TUTOR",
+                "TEACHING_REGISTRATION",
+                String.valueOf(event.registrationId())
+        ));
+    }
+
     private String safeReason(String reason) {
         if (!StringUtils.hasText(reason)) {
             return null;
@@ -201,6 +251,50 @@ public class NotificationEventConsumer {
         return true;
     }
 
+    private boolean isValidClassReviewedEvent(ClassReviewedNotificationEvent event) {
+        if (event == null
+                || !StringUtils.hasText(event.eventId())
+                || event.recipientUserId() == null
+                || event.classId() == null
+                || !"CLASS_REVIEWED".equals(event.eventType())
+                || !StringUtils.hasText(event.reviewStatus())) {
+            log.warn("Skipping invalid class reviewed notification event");
+            return false;
+        }
+
+        String status = event.reviewStatus().trim().toUpperCase();
+        if (!"APPROVED".equals(status) && !"REJECTED".equals(status)) {
+            log.warn(
+                    "Skipping class reviewed notification event with unsupported status={} eventId={}",
+                    event.reviewStatus(),
+                    event.eventId());
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isValidTeachingRegistrationReviewedEvent(TeachingRegistrationReviewedEvent event) {
+        if (event == null
+                || !StringUtils.hasText(event.eventId())
+                || event.recipientUserId() == null
+                || event.registrationId() == null
+                || !"TEACHING_REGISTRATION_REVIEWED".equals(event.eventType())
+                || !StringUtils.hasText(event.reviewStatus())) {
+            log.warn("Skipping invalid teaching registration reviewed notification event");
+            return false;
+        }
+
+        String status = event.reviewStatus().trim().toUpperCase();
+        if (!"APPROVED".equals(status) && !"REJECTED".equals(status)) {
+            log.warn(
+                    "Skipping teaching registration reviewed notification event with unsupported status={} eventId={}",
+                    event.reviewStatus(),
+                    event.eventId());
+            return false;
+        }
+        return true;
+    }
+
     private String enrollmentRequestedMessage(EnrollmentNotificationEvent event) {
         String studentName = safeReason(event.studentName());
         if (StringUtils.hasText(studentName)) {
@@ -215,5 +309,40 @@ public class NotificationEventConsumer {
             return prefix + " \"" + classTitle + "\"" + suffix;
         }
         return prefix + suffix;
+    }
+
+    private String teachingRegistrationReviewedMessage(TeachingRegistrationReviewedEvent event, boolean approved) {
+        String subjectName = safeReason(event.subjectName());
+        String prefix = StringUtils.hasText(subjectName)
+                ? "Đăng ký môn học \"" + subjectName + "\" của bạn"
+                : "Đăng ký môn học của bạn";
+
+        if (approved) {
+            return prefix + " đã được phê duyệt.";
+        }
+
+        String reason = safeReason(event.rejectReason());
+        return reason == null
+                ? prefix + " đã bị từ chối."
+                : prefix + " đã bị từ chối. Lý do: " + reason;
+    }
+
+    private String classReviewedMessage(ClassReviewedNotificationEvent event, boolean approved) {
+        String classTitle = safeReason(event.classTitle());
+        String prefix;
+        if (StringUtils.hasText(classTitle)) {
+            prefix = "Lớp \"" + classTitle + "\" của bạn";
+        } else {
+            prefix = "Lớp học của bạn";
+        }
+
+        if (approved) {
+            return prefix + " đã được duyệt.";
+        }
+
+        String reason = safeReason(event.rejectReason());
+        return reason == null
+                ? prefix + " chưa được duyệt."
+                : prefix + " chưa được duyệt. Lý do: " + reason;
     }
 }

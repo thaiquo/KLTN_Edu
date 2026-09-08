@@ -6,9 +6,11 @@ import iuh.fit.learning_service.enums.EvidenceType;
 import iuh.fit.learning_service.enums.LevelType;
 import iuh.fit.learning_service.enums.TutorSubjectRegistrationStatus;
 import iuh.fit.learning_service.exception.BadRequestException;
+import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.repository.CatalogCategoryRepository;
 import iuh.fit.learning_service.repository.CatalogLevelRepository;
 import iuh.fit.learning_service.repository.CatalogSubjectRepository;
+import iuh.fit.learning_service.repository.TutorAuthorizationStateRepository;
 import iuh.fit.learning_service.repository.TutorSubjectRegistrationRepository;
 import iuh.fit.learning_service.realtime.RealtimeEventHub;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,6 +34,8 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
     private CatalogSubjectRepository subjects;
     private CatalogLevelRepository levels;
     private CatalogCategoryRepository categories;
+    private TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
+    private LearningEventPublisher eventPublisher;
     private TutorSubjectRegistrationService service;
 
     @BeforeEach
@@ -40,6 +44,8 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
         subjects = mock(CatalogSubjectRepository.class);
         levels = mock(CatalogLevelRepository.class);
         categories = mock(CatalogCategoryRepository.class);
+        tutorAuthorizationStateRepository = mock(TutorAuthorizationStateRepository.class);
+        eventPublisher = mock(LearningEventPublisher.class);
         TutorIdentityLookup tutorIdentityLookup = mock(TutorIdentityLookup.class);
         when(tutorIdentityLookup.fullName(any(), any())).thenReturn(Optional.empty());
         service = new TutorSubjectRegistrationService(
@@ -49,6 +55,8 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
                 categories,
                 mock(TeachingCatalogService.class),
                 tutorIdentityLookup,
+                tutorAuthorizationStateRepository,
+                eventPublisher,
                 mock(RealtimeEventHub.class)
         );
     }
@@ -181,6 +189,60 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
                 .containsExactly("GRADE_1", "GRADE_3");
     }
 
+    @Test
+    void approvalPublishesPersistentNotificationForTutorUser() {
+        TutorSubjectRegistration registration = pendingStandard(30L);
+        TutorAuthorizationState state = new TutorAuthorizationState();
+        state.setUserId(77L);
+        state.setStatus("APPROVED");
+        state.setTutorProfileId(55L);
+        when(registrations.findById(30L)).thenReturn(Optional.of(registration));
+        when(registrations.save(any(TutorSubjectRegistration.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tutorAuthorizationStateRepository.findByTutorProfileId(55L)).thenReturn(Optional.of(state));
+
+        service.approve(30L, "staff@example.com", null, false);
+
+        verify(eventPublisher).publishTeachingRegistrationReviewed(
+                30L,
+                77L,
+                "tutor@example.com",
+                55L,
+                null,
+                "staff@example.com",
+                99L,
+                "Math",
+                "APPROVED",
+                null
+        );
+    }
+
+    @Test
+    void rejectionPublishesPersistentNotificationWithReason() {
+        TutorSubjectRegistration registration = pendingStandard(31L);
+        TutorAuthorizationState state = new TutorAuthorizationState();
+        state.setUserId(78L);
+        state.setStatus("APPROVED");
+        state.setTutorProfileId(55L);
+        when(registrations.findById(31L)).thenReturn(Optional.of(registration));
+        when(registrations.save(any(TutorSubjectRegistration.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tutorAuthorizationStateRepository.findByTutorProfileId(55L)).thenReturn(Optional.of(state));
+
+        service.reject(31L, "staff@example.com", new TeachingCatalogDtos.RejectRequest("Need certificate", null), false);
+
+        verify(eventPublisher).publishTeachingRegistrationReviewed(
+                31L,
+                78L,
+                "tutor@example.com",
+                55L,
+                null,
+                "staff@example.com",
+                99L,
+                "Math",
+                "REJECTED",
+                "Need certificate"
+        );
+    }
+
 
     private TeachingCatalogDtos.CreateRegistrationBatchRequest proposalRequest(Long categoryId, String levelNames, LevelType type) {
         return new TeachingCatalogDtos.CreateRegistrationBatchRequest(
@@ -218,6 +280,19 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
         registration.setId(id);
         registration.setStatus(TutorSubjectRegistrationStatus.PENDING);
         registration.setProposedSubjectName("New subject");
+        return registration;
+    }
+
+    private TutorSubjectRegistration pendingStandard(Long id) {
+        CatalogSubject subject = new CatalogSubject();
+        subject.setId(99L);
+        subject.setName("Math");
+        TutorSubjectRegistration registration = new TutorSubjectRegistration();
+        registration.setId(id);
+        registration.setTutorEmail("tutor@example.com");
+        registration.setTutorProfileId(55L);
+        registration.setStatus(TutorSubjectRegistrationStatus.PENDING);
+        registration.setSubject(subject);
         return registration;
     }
 }

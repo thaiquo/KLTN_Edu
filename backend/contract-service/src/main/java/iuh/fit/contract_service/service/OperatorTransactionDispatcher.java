@@ -2,6 +2,7 @@ package iuh.fit.contract_service.service;
 
 import iuh.fit.contract_service.blockchain.OperatorTransactionGateway;
 import iuh.fit.contract_service.blockchain.PreparedOperatorTransaction;
+import iuh.fit.contract_service.config.BlockchainProperties;
 import iuh.fit.contract_service.entity.BlockchainTransaction;
 import iuh.fit.contract_service.repository.BlockchainTransactionRepository;
 import org.springframework.data.domain.PageRequest;
@@ -15,18 +16,19 @@ import java.util.Optional;
 import java.util.UUID;
 
 public class OperatorTransactionDispatcher {
-    private static final Duration RECONCILIATION_DELAY = Duration.ofSeconds(5);
-
     private final BlockchainTransactionRepository repository;
     private final OperatorTransactionGateway gateway;
+    private final BlockchainProperties properties;
     private final TransactionTemplate transactionTemplate;
 
     public OperatorTransactionDispatcher(
             BlockchainTransactionRepository repository,
             OperatorTransactionGateway gateway,
+            BlockchainProperties properties,
             PlatformTransactionManager transactionManager) {
         this.repository = repository;
         this.gateway = gateway;
+        this.properties = properties;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -62,7 +64,15 @@ public class OperatorTransactionDispatcher {
         } catch (RuntimeException preparationFailure) {
             transactionTemplate.executeWithoutResult(status -> {
                 BlockchainTransaction locked = lock(transaction.getId());
-                locked.failBeforeBroadcast(safeMessage(preparationFailure), now());
+                OffsetDateTime current = now();
+                if (locked.getAttemptCount() >= properties.getMaxDispatchAttempts()) {
+                    locked.failBeforeBroadcast(safeMessage(preparationFailure), current);
+                } else {
+                    locked.retryBeforeBroadcast(
+                            safeMessage(preparationFailure),
+                            current.plus(Duration.ofMillis(properties.getDispatchRetryDelayMs())),
+                            current);
+                }
                 repository.saveAndFlush(locked);
             });
             throw preparationFailure;
@@ -80,7 +90,9 @@ public class OperatorTransactionDispatcher {
                 BlockchainTransaction locked = lock(transaction.getId());
                 OffsetDateTime current = now();
                 locked.recordUncertainBroadcast(
-                        safeMessage(uncertainBroadcast), current.plus(RECONCILIATION_DELAY), current);
+                        safeMessage(uncertainBroadcast),
+                        current.plus(Duration.ofMillis(properties.getDispatchRetryDelayMs())),
+                        current);
                 repository.saveAndFlush(locked);
             });
         }

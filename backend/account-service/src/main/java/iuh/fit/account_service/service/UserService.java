@@ -69,6 +69,21 @@ public class UserService {
         this(userRepository, userRoleRepository, null, null, passwordEncoder, fileStorageService, filePolicyProperties, null, null, null, null);
     }
 
+    public UserService(
+            UserRepository userRepository,
+            UserRoleRepository userRoleRepository,
+            StudentRepository studentRepository,
+            TutorRepository tutorRepository,
+            PasswordEncoder passwordEncoder,
+            FileStorageService fileStorageService,
+            FilePolicyProperties filePolicyProperties,
+            AdministrativeProvinceRepository provinceRepository,
+            AdministrativeCommuneRepository communeRepository
+    ) {
+        this(userRepository, userRoleRepository, studentRepository, tutorRepository, passwordEncoder, fileStorageService, filePolicyProperties, provinceRepository, communeRepository, null,
+                null);
+    }
+
     @Autowired
     public UserService(
             UserRepository userRepository,
@@ -115,6 +130,10 @@ public class UserService {
         applyStructuredAddress(user, request);
         user.setAddressDetail(normalizeOptional(request.getAddressDetail()));
         user.setBio(normalizeOptional(request.getBio()));
+        if (request.getWalletAddress() != null) {
+            String w = request.getWalletAddress().trim();
+            user.setWalletAddress(w.isBlank() ? null : w.toLowerCase(Locale.ROOT));
+        }
 
         User saved = userRepository.save(user);
 
@@ -131,6 +150,22 @@ public class UserService {
             });
         }
 
+        return toProfileResponse(saved);
+    }
+
+    @Transactional
+    public UserProfileResponse updateCurrentUserWallet(String authenticatedEmail, String walletAddress) {
+        User user = findCurrentUser(authenticatedEmail);
+        if (walletAddress != null && !walletAddress.isBlank()) {
+            String normalized = walletAddress.trim().toLowerCase(Locale.ROOT);
+            if (!normalized.matches("^0x[a-f0-9]{40}$")) {
+                throw new BadRequestException("Địa chỉ ví không hợp lệ (cần đúng chuẩn Ethereum 42 ký tự, bắt đầu bằng 0x)");
+            }
+            user.setWalletAddress(normalized);
+        } else {
+            user.setWalletAddress(null);
+        }
+        User saved = userRepository.save(user);
         return toProfileResponse(saved);
     }
 
@@ -262,6 +297,7 @@ public class UserService {
                 user.getWard(),
                 user.getAddressDetail(),
                 user.getBio(),
+                user.getWalletAddress(),
                 user.isEmailVerified(),
                 user.getAccountStatus(),
                 roles,

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useFeedback } from '../../components/feedback/useFeedback';
+import { ContractDocumentModal } from '../../components/contract/ContractDocumentModal';
 
 const VIETNAMESE_DAYS = [
   { value: 2, label: 'T2' },
@@ -24,6 +25,7 @@ function checkProfileCompletion(user) {
   const hasPhone = Boolean(user.phone && user.phone.trim());
   const hasDob = Boolean(user.dateOfBirth);
   const hasAddress = Boolean(user.province || user.commune || user.ward || user.address);
+  const hasWallet = Boolean(user.walletAddress && /^0x[a-fA-F0-9]{40}$/.test(user.walletAddress));
 
   const missingFields = [];
   if (!hasName) missingFields.push('Họ và tên');
@@ -31,7 +33,9 @@ function checkProfileCompletion(user) {
   if (!hasDob) missingFields.push('Ngày sinh');
   if (!hasAddress) missingFields.push('Địa chỉ');
 
-  const isComplete = hasName && hasPhone && hasDob && hasAddress;
+  if (!hasWallet) missingFields.push('MetaMask wallet');
+
+  const isComplete = hasName && hasPhone && hasDob && hasAddress && hasWallet;
   return { isComplete, missingFields };
 }
 
@@ -41,6 +45,7 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const feedback = useFeedback();
 
   const [myRequest, setMyRequest] = React.useState(null);
+  const [openContractDoc, setOpenContractDoc] = React.useState(false);
   const [showInviteKeyForm, setShowInviteKeyForm] = React.useState(false);
   const [joinKey, setJoinKey] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
@@ -64,6 +69,11 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
 
   React.useEffect(() => {
     fetchMyRequestStatus();
+    const handleUpdate = () => {
+      fetchMyRequestStatus();
+    };
+    window.addEventListener('contract-state-updated', handleUpdate);
+    return () => window.removeEventListener('contract-state-updated', handleUpdate);
   }, [fetchMyRequestStatus]);
 
   if (!classRoom) return null;
@@ -87,7 +97,9 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
       const studentName = user?.fullName || user?.name || user?.email || 'Học viên';
       await classApi.enrollClass(classRoom.id, {
         joinKey: classRoom.joinMode === 'INVITE_KEY' ? joinKey.trim() : undefined,
-        studentName: studentName
+        studentName: studentName,
+        studentPhone: user?.phone,
+        studentWallet: user?.walletAddress
       });
       feedback.success('Đã gửi yêu cầu tham gia lớp.');
       setShowInviteKeyForm(false);
@@ -129,6 +141,13 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const availableSlots = classRoom.availableSlots != null ? classRoom.availableSlots : Math.max(0, classRoom.maxStudents - acceptedCount);
   const isFull = acceptedCount >= classRoom.maxStudents || classRoom.status === 'LOCKED' || classRoom.status === 'CLOSED';
   const isTemporarilyFull = !isFull && classRoom.isBufferPoolFull;
+
+  const pricePerSession = Number(classRoom.pricePerSession) || 0;
+  const totalSessionsFromChapters = Array.isArray(classRoom.chapters)
+    ? classRoom.chapters.reduce((sum, ch) => sum + (Number(ch.sessionCount) || 0), 0)
+    : 0;
+  const totalSessions = classRoom.totalSessions || totalSessionsFromChapters || 0;
+  const totalCoursePriceVnd = pricePerSession * totalSessions;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
@@ -258,16 +277,81 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
             )}
 
             {myRequest.status === 'ACCEPTED' && (
-              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-3">
-                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                <div>
-                  <span className="font-black text-emerald-900 text-xs block">
-                    🎉 Bạn đã được Gia sư chấp nhận tham gia lớp học này!
-                  </span>
-                  <span className="text-[11px] text-emerald-700 font-medium">
-                    Chào mừng bạn đến với lớp học. Vui lòng xem thông tin lịch học và địa điểm bên dưới.
-                  </span>
+              <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl space-y-3">
+                <div className="flex items-start gap-3">
+                  <Clock className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <span className="font-black text-amber-950 text-xs block uppercase tracking-wide">
+                      Gia sư đã duyệt • Suất học đang được giữ chỗ (Hạn nạp cọc 24 giờ)
+                    </span>
+                    <p className="text-[11px] text-amber-800 font-medium leading-relaxed">
+                      Để chính thức được ghi danh và nhận quyền vào lớp học, bạn cần ký số hợp đồng điện tử và nạp cọc Escrow vào Smart Contract trong vòng 24 giờ.
+                    </p>
+                  </div>
                 </div>
+                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200/80">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      navigate('/contracts');
+                    }}
+                    className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-sm"
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    <span>Ký Hợp Đồng & Ký Quỹ Escrow Ngay</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                  {myRequest.agreementId && (
+                    <button
+                      type="button"
+                      onClick={() => setOpenContractDoc(true)}
+                      className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs"
+                    >
+                      Xem văn bản hợp đồng
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {myRequest.status === 'ENROLLED' && (
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <div>
+                    <span className="font-black text-emerald-950 text-xs block">
+                      🎉 Bạn đã là học viên chính thức của lớp học!
+                    </span>
+                    <span className="text-[11px] text-emerald-700 font-medium">
+                      Tiền cọc đã được bảo chứng an toàn bởi Smart Contract Escrow.
+                    </span>
+                  </div>
+                </div>
+                {classRoom.learningMode === 'ONLINE' && classRoom.meetingLink && (
+                  <a
+                    href={classRoom.meetingLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-sm shrink-0"
+                  >
+                    <Video className="w-4 h-4" />
+                    <span>Vào phòng học</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
+            )}
+
+            {myRequest.status === 'EXPIRED' && (
+              <div className="p-4 bg-slate-100 border border-slate-300 rounded-2xl space-y-2">
+                <div className="flex items-center gap-2 text-slate-800 font-bold text-xs">
+                  <XCircle className="w-4 h-4 text-slate-500 shrink-0" />
+                  <span>Suất giữ chỗ đã hết hạn do quá 24 giờ chưa hoàn tất ký quỹ Escrow.</span>
+                </div>
+                <p className="text-[11px] text-slate-600">
+                  Suất học đã được giải phóng cho danh sách chờ. Bạn có thể nộp lại yêu cầu nếu lớp còn chỗ.
+                </p>
               </div>
             )}
 
@@ -285,34 +369,46 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
         )}
 
         {/* Specifications Grid */}
-        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-3">
+        <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-4">
           <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-            <Info className="w-4 h-4 text-brand-primary" /> Thông số chi tiết & Tình trạng slot:
+            <Info className="w-4 h-4 text-brand-primary" /> Thông số cốt lõi đã qua kiểm duyệt:
           </span>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-slate-700">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5 text-slate-700">
             <div>
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Học phí / buổi</span>
-              <strong className="text-brand-primary text-base font-black">{classRoom.pricePerSession?.toLocaleString('vi-VN')} đ</strong>
+              <strong className="text-brand-primary text-base font-black">
+                {pricePerSession.toLocaleString('vi-VN')} đ
+              </strong>
             </div>
             <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-bold">Sĩ số & Chỗ trống</span>
-              <strong className="text-slate-900 font-bold text-xs">
-                {acceptedCount} / {classRoom.maxStudents} HV (Còn {availableSlots} chỗ)
+              <span className="text-slate-400 block text-[10px] uppercase font-bold">Tổng số buổi / Khóa</span>
+              <strong className="text-indigo-900 text-base font-black">
+                {totalSessions} buổi
+                <span className="block text-[11px] text-slate-500 font-bold">
+                  {classRoom.chapters?.length ? `(${classRoom.chapters.length} chương lộ trình)` : 'Theo thỏa thuận'}
+                </span>
+              </strong>
+            </div>
+            <div>
+              <span className="text-slate-400 block text-[10px] uppercase font-bold">Tổng học phí trọn khóa</span>
+              <strong className="text-emerald-700 text-base font-black">
+                {totalCoursePriceVnd.toLocaleString('vi-VN')} đ
               </strong>
             </div>
             <div>
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Tần suất & Thời lượng</span>
-              <strong className="text-slate-900 font-bold text-xs">{classRoom.sessionsPerWeek} buổi/tuần ({classRoom.durationPerSessionMinutes} phút)</strong>
+              <strong className="text-slate-900 font-bold text-xs">
+                {classRoom.sessionsPerWeek} buổi/tuần ({classRoom.durationPerSessionMinutes} phút)
+              </strong>
             </div>
             <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-bold">Hình thức học</span>
-              <strong className="text-slate-900 font-bold text-xs">{classRoom.learningMode === 'ONLINE' ? 'Học Online' : 'Học Offline'}</strong>
-            </div>
-            <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-bold">Thời gian học</span>
-              <strong className="text-slate-900 font-bold text-xs">{classRoom.startDate} ➔ {classRoom.endDate}</strong>
+              <span className="text-slate-400 block text-[10px] uppercase font-bold">Hình thức & Thời gian</span>
+              <strong className="text-slate-900 font-bold text-xs">
+                {classRoom.learningMode === 'ONLINE' ? 'Học Online' : 'Học Offline'} &bull; {classRoom.startDate} ➔ {classRoom.endDate}
+              </strong>
             </div>
           </div>
+
         </div>
 
         {/* Weekly Schedules */}
@@ -492,13 +588,64 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
             >
               <span>{submitting ? 'Đang thu hồi...' : 'Thu hồi yêu cầu'}</span>
             </button>
+          ) : myRequest.status === 'ACCEPTED' ? (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                navigate('/contracts');
+              }}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-black hover:opacity-90 transition-all shadow-md flex items-center gap-2"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>Ký HĐ & Nạp cọc Escrow (Hạn 24h)</span>
+            </button>
+          ) : myRequest.status === 'ENROLLED' ? (
+            <div className="flex items-center gap-2">
+              <span className="px-4 py-2 bg-emerald-100 text-emerald-800 font-extrabold text-xs rounded-xl flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Đã tham gia lớp
+              </span>
+              {classRoom.learningMode === 'ONLINE' && classRoom.meetingLink && (
+                <a
+                  href={classRoom.meetingLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-4 py-2 bg-emerald-600 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 shadow-sm hover:bg-emerald-700"
+                >
+                  <Video className="w-4 h-4" /> Vào phòng học
+                </a>
+              )}
+            </div>
+          ) : myRequest.status === 'EXPIRED' ? (
+            <button
+              type="button"
+              disabled={isFull || isTemporarilyFull || submitting}
+              onClick={() => handleEnrollSubmit()}
+              className="px-6 py-2.5 rounded-xl bg-brand-primary text-white text-xs font-black hover:bg-brand-primary/90 transition-all shadow-md flex items-center gap-2 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              <span>{submitting ? 'Đang gửi lại...' : 'Nộp lại yêu cầu tham gia'}</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
           ) : (
-            <span className="px-4 py-2 bg-emerald-100 text-emerald-800 font-extrabold text-xs rounded-xl flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Đã tham gia lớp
+            <span className="px-4 py-2 bg-rose-100 text-rose-800 font-extrabold text-xs rounded-xl flex items-center gap-1.5">
+              <XCircle className="w-4 h-4 text-rose-600" /> Yêu cầu bị từ chối
             </span>
           )}
         </div>
       </div>
+
+      {openContractDoc && myRequest?.agreementId && (
+        <ContractDocumentModal
+          agreementId={myRequest.agreementId}
+          onClose={() => {
+            setOpenContractDoc(false);
+            fetchMyRequestStatus();
+          }}
+          onSignedSuccess={() => {
+            fetchMyRequestStatus();
+          }}
+        />
+      )}
     </div>
   );
 }

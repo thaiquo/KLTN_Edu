@@ -4,6 +4,7 @@ import iuh.fit.learning_service.dto.ClassRoomDtos;
 import iuh.fit.learning_service.entity.*;
 import iuh.fit.learning_service.enums.ClassRoomStatus;
 import iuh.fit.learning_service.enums.DurationUnit;
+import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.enums.JoinMode;
 import iuh.fit.learning_service.enums.LearningMode;
 import iuh.fit.learning_service.enums.SyllabusMode;
@@ -17,8 +18,11 @@ import iuh.fit.learning_service.repository.CatalogLevelRepository;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
 import iuh.fit.learning_service.repository.TutorAvailabilityRepository;
+import iuh.fit.learning_service.repository.TutorAuthorizationStateRepository;
 import iuh.fit.learning_service.repository.TutorSubjectRegistrationRepository;
 import iuh.fit.learning_service.realtime.RealtimeEventHub;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,11 +40,15 @@ import java.util.UUID;
 @Service
 @Transactional
 public class ClassRoomService {
+    private static final Logger log = LoggerFactory.getLogger(ClassRoomService.class);
+
     private final ClassRoomRepository classRoomRepository;
     private final TutorSubjectRegistrationRepository registrationRepository;
     private final CatalogLevelRepository levelRepository;
     private final TutorAvailabilityRepository availabilityRepository;
     private final EnrollmentRequestRepository enrollmentRequestRepository;
+    private final TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
+    private final LearningEventPublisher eventPublisher;
     private final RealtimeEventHub realtimeEventHub;
 
     public ClassRoomService(
@@ -49,6 +57,8 @@ public class ClassRoomService {
             CatalogLevelRepository levelRepository,
             TutorAvailabilityRepository availabilityRepository,
             EnrollmentRequestRepository enrollmentRequestRepository,
+            TutorAuthorizationStateRepository tutorAuthorizationStateRepository,
+            LearningEventPublisher eventPublisher,
             RealtimeEventHub realtimeEventHub
     ) {
         this.classRoomRepository = classRoomRepository;
@@ -56,6 +66,8 @@ public class ClassRoomService {
         this.levelRepository = levelRepository;
         this.availabilityRepository = availabilityRepository;
         this.enrollmentRequestRepository = enrollmentRequestRepository;
+        this.tutorAuthorizationStateRepository = tutorAuthorizationStateRepository;
+        this.eventPublisher = eventPublisher;
         this.realtimeEventHub = realtimeEventHub;
     }
 
@@ -125,6 +137,7 @@ public class ClassRoomService {
         }
 
         ClassRoom saved = classRoomRepository.save(classRoom);
+        publishClassMutationRealtime(saved, "DETAILS_UPDATED");
         return toResponse(saved);
     }
 
@@ -167,6 +180,7 @@ public class ClassRoomService {
         }
 
         ClassRoom saved = classRoomRepository.save(classRoom);
+        publishClassMutationRealtime(saved, "VISIBILITY_UPDATED");
         return toResponse(saved);
     }
 
@@ -391,6 +405,7 @@ public class ClassRoomService {
         classRoom.setReviewedAt(LocalDateTime.now());
         ClassRoom saved = classRoomRepository.save(classRoom);
         publishClassReviewRealtime(saved, "APPROVED");
+        publishClassReviewNotification(saved, "APPROVED");
         return toResponse(saved);
     }
 
@@ -409,7 +424,39 @@ public class ClassRoomService {
         classRoom.setReviewedAt(LocalDateTime.now());
         ClassRoom saved = classRoomRepository.save(classRoom);
         publishClassReviewRealtime(saved, "REJECTED");
+        publishClassReviewNotification(saved, "REJECTED");
         return toResponse(saved);
+    }
+
+    private void publishClassReviewNotification(ClassRoom classRoom, String action) {
+        Long recipientUserId = resolveTutorUserId(classRoom);
+        if (recipientUserId == null) {
+            log.warn(
+                    "Skipping class review notification: tutor user id not found classId={} tutorProfileId={}",
+                    classRoom.getId(),
+                    classRoom.getTutorProfileId());
+            return;
+        }
+
+        eventPublisher.publishClassReviewed(
+                classRoom.getId(),
+                recipientUserId,
+                classRoom.getTutorEmail(),
+                classRoom.getName(),
+                action,
+                classRoom.getRejectReason(),
+                classRoom.getReviewedByEmail());
+    }
+
+    private Long resolveTutorUserId(ClassRoom classRoom) {
+        if (classRoom == null || classRoom.getTutorProfileId() == null || tutorAuthorizationStateRepository == null) {
+            return null;
+        }
+
+        return tutorAuthorizationStateRepository.findByTutorProfileId(classRoom.getTutorProfileId())
+                .filter(state -> "APPROVED".equalsIgnoreCase(state.getStatus()))
+                .map(TutorAuthorizationState::getUserId)
+                .orElse(null);
     }
 
     private void publishClassReviewRealtime(ClassRoom classRoom, String action) {
@@ -420,6 +467,15 @@ public class ClassRoomService {
         payload.put("action", action);
         payload.put("reason", classRoom.getRejectReason());
         realtimeEventHub.publishToAll("CLASS_REVIEWED", classRoom.getId(), payload);
+    }
+
+    private void publishClassMutationRealtime(ClassRoom classRoom, String action) {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("tutorEmail", classRoom.getTutorEmail());
+        payload.put("className", classRoom.getName());
+        payload.put("status", classRoom.getStatus().name());
+        payload.put("action", action);
+        realtimeEventHub.publishToAll("CLASS_MUTATED", classRoom.getId(), payload);
     }
 
     @Transactional(readOnly = true)
@@ -717,7 +773,7 @@ public class ClassRoomService {
                 .toList();
 
         long pendingCount = enrollmentRequestRepository != null ? enrollmentRequestRepository.countByClassRoomIdAndStatus(c.getId(), EnrollmentRequestStatus.PENDING) : 0;
-        long acceptedCount = enrollmentRequestRepository != null ? enrollmentRequestRepository.countByClassRoomIdAndStatus(c.getId(), EnrollmentRequestStatus.ACCEPTED) : 0;
+        long acceptedCount = enrollmentRequestRepository != null ? enrollmentRequestRepository.countByClassRoomIdAndStatusIn(c.getId(), List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED)) : 0;
         int maxPending = c.getMaxPendingRequests() != null ? c.getMaxPendingRequests() : (int) Math.ceil(c.getMaxStudents() * 1.5);
         int ratioPercent = (int) Math.round((maxPending * 100.0) / c.getMaxStudents());
         long availableSlots = Math.max(0, c.getMaxStudents() - acceptedCount);

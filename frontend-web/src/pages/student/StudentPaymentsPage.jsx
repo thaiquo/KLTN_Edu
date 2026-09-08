@@ -16,7 +16,7 @@ export function StudentPaymentsPage() {
             Chưa có payment/escrow REST API hoàn chỉnh cho Student Web. Không hiển thị transaction history hoặc escrow sample data trong phase này.
           </p>
         </div>
-        <MyWalletView />
+        <MyWalletView activeRole="student" />
       </section>
     </StudentPageScaffold>
   );

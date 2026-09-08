@@ -28,7 +28,8 @@ class UserProfileDtoValidationTest {
                         "district",
                         "ward",
                         "addressDetail",
-                        "bio"
+                        "bio",
+                        "walletAddress"
                 )
                 .doesNotContain("id", "email", "roles", "accountStatus", "emailVerified", "password", "avatarKey", "avatarUrl");
     }

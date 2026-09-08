@@ -22,7 +22,7 @@
 | Availability | `learning-service` | Tutor availability management. |
 | Class/Classroom | `learning-service` | Tutor class management, public class search/detail, staff/admin class monitoring. |
 | Enrollment/Join Request | `learning-service` | Student class enrollment requests and tutor accept/reject flows. |
-| Contract/Escrow/Settlement | `contract-service` | Contract and blockchain workflow logic exists, but public REST Controller evidence is currently not found. |
+| Contract/Escrow/Settlement | `contract-service` | Contract agreement, signing, document, payment submission, transaction, settlement, dispute, expiry, cancellation/refund, and blockchain workflow APIs. Funding/session/lifecycle state transitions require confirmed blockchain events where Solidity emits authoritative events. Deployment/runtime hardening remains partial end-to-end. |
 | Notification | `notification-service` | Persistent user notifications, unread count, mark one read, mark all read, and limited realtime notification delivery for the authenticated recipient account. |
 | AI Matching | Not implemented as a service | Target/planned support for search/recommendation/ranking. |
 
@@ -53,7 +53,9 @@ Current large API groups with source evidence:
 - Notification list/count/read state through `notification-service`.
 - Notification realtime delivery through `/ws/notifications` for supported persisted notification events.
 
-Contract Service contains workflow/service logic and persistence, but no public REST controller was found during audit.
+Contract Service contains workflow/service logic, persistence, and REST controllers for agreement listing/detail, signing, document view/artifacts, payment submission, transactions, settlements, disputes, expiration, and cancellation/refund. Browser payment submission records an escrow `fundAgreement` transaction as `PAYMENT_CONFIRMING`; it must not mark the agreement `ACTIVE`, lock escrow funds, notify activation, or activate the learning enrollment until a confirmed `AgreementFunded` blockchain event is ingested. Session settlement, payout/refund distribution, agreement completion, expiration, cancellation, and unused refund state are likewise driven by confirmed escrow events rather than by receipt-only success.
+
+Contract Service authentication now follows the same browser-cookie baseline as the other protected services: it reads the current account from the `access_token` JWT cookie and derives `userId`, `email`, `activeRole`, and `roles` server-side. Contract list/detail/document/sign/payment/dispute/transaction authorization must not trust frontend-supplied `role`, `userId`, `email`, `X-User-Role`, `X-User-Id`, or `X-User-Email`.
 
 ## 3.1 Notification API
 
@@ -125,6 +127,52 @@ Current enrollment event payload shape:
 | `studentName` | Safe display student name when submitted. |
 
 Notification Service consumes these events, persists account-owned notifications, and `/ws/notifications` delivers `NOTIFICATION_CREATED` to the recipient while online. Clients must still refetch authoritative REST state.
+
+## 3.3 Teaching Registration Notification Event
+
+Learning Service publishes Tutor teaching registration review decisions to `kltn.edu.events` after the approve/reject transaction commits.
+
+| Event | Routing Key | Actor | Recipient | Reference |
+| --- | --- | --- | --- | --- |
+| `TEACHING_REGISTRATION_REVIEWED` | `learning.teaching-registration.reviewed` | Staff/Admin reviewer | Tutor | `TEACHING_REGISTRATION` / registration id |
+
+Current teaching registration reviewed payload shape:
+
+| Field | Purpose |
+| --- | --- |
+| `eventId` | Unique idempotency key for the business event. |
+| `eventType` | Current value: `TEACHING_REGISTRATION_REVIEWED`. |
+| `occurredAt` | Producer timestamp. |
+| `producer` | Current value: `learning-service`. |
+| `registrationId` | Tutor subject registration id. |
+| `recipientUserId` | Tutor account id resolved by Learning Service from trusted tutor authorization state. |
+| `tutorEmail` | Safe display/filter email for the Tutor. |
+| `tutorProfileId` | Tutor profile id used for trusted recipient lookup when available. |
+| `reviewerUserId` | Reviewer account id when safely available; currently nullable. |
+| `reviewerEmail` | Reviewer email from authenticated backend state. |
+| `subjectId` | Catalog subject id when available. |
+| `subjectName` | Safe display subject/proposed-subject name. |
+| `reviewStatus` | `APPROVED` or `REJECTED`. |
+| `rejectReason` | Safe concise rejection reason when rejected. |
+| `referenceType` | Current value: `TEACHING_REGISTRATION`. |
+| `referenceId` | String form of `registrationId`. |
+
+Notification Service consumes this event, persists `TEACHING_REGISTRATION_REVIEWED` notifications for `targetRole=TUTOR`, and `/ws/notifications` delivers `NOTIFICATION_CREATED` to the Tutor Bell while online.
+
+## 3.4 Contract Identity/Auth API Rule
+
+Current Contract Service protected APIs derive identity from the authenticated cookie JWT:
+
+| API Surface | Identity Source | Authorization Rule |
+| --- | --- | --- |
+| Agreement list/detail | `access_token` cookie JWT | Admin sees all; Staff sees agreements for reviewed classes; Student/Tutor sees only agreements for the current active role and account. |
+| Contract document view/artifact/preview/download/finalize | `access_token` cookie JWT | Same agreement visibility rule. |
+| Agreement signing | `access_token` cookie JWT | Signing role is the JWT `activeRole`; frontend role/body/header values are not authoritative. |
+| Payment submitted | `access_token` cookie JWT | Only the agreement Student in active Student role can submit payment while the agreement is `WAITING_PAYMENT` or idempotently `PAYMENT_CONFIRMING`; successful submission records the txHash for confirmation and does not activate the agreement. |
+| Settlement propose/finalize | `access_token` cookie JWT | Agreement Tutor, assigned Staff, or Admin can enqueue backend-owned operator transactions. Session payout/refund status updates only after confirmed escrow events. |
+| Dispute list/detail/open/resolve | `access_token` cookie JWT | Student/Tutor sees owned/participant disputes; Student opens disputes only for owned agreements through Contract Service; Staff/Admin resolution requires matching active staff/admin authority. Browser UI must not directly call operator/arbitrator-only Solidity functions. |
+| Agreement expire/cancel | `access_token` cookie JWT | Assigned Staff/Admin can enqueue lifecycle transactions. Scheduler also queues overdue WAITING_PAYMENT expiry. Local agreement status changes only after confirmed escrow lifecycle events. |
+| Transaction list/detail | `access_token` cookie JWT | Staff/Admin active roles can view administrative transaction lists; Student/Tutor sees own agreement transactions. |
 
 ## 4. API Status Principle
 

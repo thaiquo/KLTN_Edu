@@ -12,7 +12,7 @@ Target capabilities include:
 - refund;
 - dispute handling.
 
-Current implementation is PARTIAL: Solidity contract source exists, Foundry tooling exists, Contract Service has Web3j integration, and Web has wallet code, but ABI/address/API gaps remain.
+Current implementation is PARTIAL: Solidity contract source exists, Foundry tooling exists, Contract Service has Web3j integration, and Web has wallet code. Agreement registration/funding semantics are event-confirmed, but address/deployment/runtime hardening remains incomplete.
 
 ## 2. Technology Baseline
 
@@ -62,6 +62,8 @@ Main responsibilities:
 
 The contract uses OpenZeppelin access control, pausable behavior, reentrancy protection, and safe ERC-20 transfers.
 
+Escrow funding must call the escrow contract's `fundAgreement(bytes32 agreementId)` function after ERC-20 approval. A raw ERC-20 `transfer(...)` to the escrow address is not a valid agreement-funding operation because it bypasses agreement status checks, exact-amount accounting, and the `AgreementFunded` event.
+
 ## 5. Off-chain vs On-chain
 
 Off-chain owns full business data:
@@ -94,7 +96,7 @@ Current Contract Service includes Web3j-oriented components for:
 - blockchain cursor/processed-event persistence;
 - workflow updates from blockchain events.
 
-This does not imply a complete public REST API. Contract REST Controller evidence was not found during audit.
+Funding workflow rule: payment submission records a txHash as `PAYMENT_CONFIRMING`; Contract Service marks the agreement `ACTIVE`, locks escrow payment metadata, sends activation notifications, and activates the linked Learning enrollment only after a confirmed `AgreementFunded` event is ingested.
 
 ## 7. Frontend Web3
 
@@ -106,17 +108,17 @@ Current Web source includes:
 - ERC-20 approval/balance style ABI;
 - escrow contract interaction wrapper.
 
-However, current frontend escrow ABI does not match the Solidity contract and must be corrected before treating the browser Web3 flow as complete.
+Browser funding uses escrow `fundAgreement(bytes32 agreementId)` and should surface `PAYMENT_CONFIRMING` until backend event ingestion confirms `AgreementFunded`. The UI must not present tx submission as already-active escrow funding.
 
 ## 8. Known Conflicts
 
-### Web3 ABI Mismatch
+### Web3 Interface Verification
 
 Solidity uses `bytes32 agreementId` and `bytes32 sessionId` for escrow functions/events.
 
-Current frontend Web3 config uses older `uint256`/`BigInt` agreement and session identifiers, older function names, and event signatures that do not match `IEduConnectEscrow`.
+Current frontend funding config aligns with `fundAgreement(bytes32)`, but the broader Web3 interface should still be verified against Solidity before treating all settlement/refund/dispute browser flows as complete.
 
-Status: KNOWN_CONFLICT.
+Status: PARTIAL.
 
 ### Local Address Mismatch
 

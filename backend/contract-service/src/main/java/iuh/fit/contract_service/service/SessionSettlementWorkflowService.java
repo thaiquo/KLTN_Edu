@@ -22,10 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.web3j.crypto.Hash;
 import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigInteger;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -62,10 +62,23 @@ public class SessionSettlementWorkflowService {
         if (agreement.getStatus() != ContractAgreementStatus.ACTIVE) {
             throw new IllegalStateException("Agreement must be in ACTIVE status to propose session, actual: " + agreement.getStatus());
         }
+        if (sessionId == null || sessionId <= 0 || sessionId > agreement.getTotalSessions()) {
+            throw new IllegalArgumentException("sessionId must be between 1 and totalSessions (" + agreement.getTotalSessions() + ")");
+        }
 
         String onchainSessionId = computeOnchainSessionId(sessionId);
-        SessionSettlement settlement = sessionSettlementRepository
-                .findByAgreementIdAndSessionId(agreementId, sessionId)
+        SessionSettlement settlement = sessionSettlementRepository.findByAgreementIdAndSessionId(agreementId, sessionId)
+                .map(existing -> {
+                    if (existing.getStatus() != SettlementStatus.PREPARING
+                            && existing.getStatus() != SettlementStatus.PROPOSE_PENDING) {
+                        throw new IllegalStateException("Session settlement already moved past proposal: " + existing.getStatus());
+                    }
+                    if (existing.getOutcome() != outcome
+                            || !existing.getProposalEvidenceHash().equalsIgnoreCase(evidenceHash)) {
+                        throw new IllegalStateException("Existing session proposal does not match requested outcome/evidence hash");
+                    }
+                    return existing;
+                })
                 .orElseGet(() -> SessionSettlement.create(
                         agreement,
                         sessionId,
@@ -145,6 +158,9 @@ public class SessionSettlementWorkflowService {
         }
 
         Map<String, String> attrs = decodedEvent.attributes();
+        requireEventValue(attrs.get("outcome"), String.valueOf(settlement.getOutcome().ordinal()), "outcome");
+        requireEventValue(attrs.get("evidenceHash"), settlement.getProposalEvidenceHash(), "evidenceHash");
+
         long deadlineSeconds = Long.parseLong(attrs.get("disputeDeadline"));
         OffsetDateTime disputeDeadline = OffsetDateTime.ofInstant(Instant.ofEpochSecond(deadlineSeconds), ZoneOffset.UTC);
 
@@ -259,12 +275,18 @@ public class SessionSettlementWorkflowService {
         Map<String, String> attrs = decodedEvent.attributes();
         String finalStatusStr = attrs.get("finalStatus"); // 3 = SETTLED, 4 = REFUNDED
         boolean isRefunded = "4".equals(finalStatusStr) || "REFUNDED".equalsIgnoreCase(finalStatusStr);
+        BigInteger tutorAmount = parseUnits(attrs.get("tutorAmount"), "tutorAmount");
+        BigInteger platformAmount = parseUnits(attrs.get("platformAmount"), "platformAmount");
+        BigInteger studentRefund = parseUnits(attrs.get("studentRefund"), "studentRefund");
+
+        validateSettlementDistribution(settlement, isRefunded, tutorAmount, platformAmount, studentRefund);
 
         if (isRefunded) {
             settlement.markRefunded(event.getTransactionHash());
         } else {
             settlement.markSettled(event.getTransactionHash());
         }
+        settlement.recordDistribution(tutorAmount, platformAmount, studentRefund);
         sessionSettlementRepository.saveAndFlush(settlement);
 
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
@@ -289,35 +311,6 @@ public class SessionSettlementWorkflowService {
                 now);
         outboxEventRepository.saveAndFlush(outboxEvent);
 
-        // Check if all sessions for the agreement are completed
-        List<SessionSettlement> allSettlements = sessionSettlementRepository.findByAgreementId(agreement.getId());
-        long settledCount = allSettlements.stream()
-                .filter(s -> s.getStatus() == SettlementStatus.SETTLED || s.getStatus() == SettlementStatus.REFUNDED)
-                .count();
-
-        if (settledCount >= agreement.getTotalSessions()) {
-            agreement.markCompleted();
-            agreementRepository.saveAndFlush(agreement);
-
-            String completedPayload = String.format(
-                    "{\"agreementId\":\"%s\",\"classroomId\":%d,\"studentId\":%d,\"tutorId\":%d,\"completedAt\":\"%s\"}",
-                    agreement.getId(),
-                    agreement.getClassroomId(),
-                    agreement.getStudentId(),
-                    agreement.getTutorId(),
-                    now);
-
-            OutboxEvent completedEvent = OutboxEvent.create(
-                    "contract.completed.v1",
-                    "ContractAgreement",
-                    agreement.getId().toString(),
-                    null,
-                    completedPayload,
-                    now);
-            outboxEventRepository.saveAndFlush(completedEvent);
-            log.info("Agreement {} completed after all {} sessions settled", agreement.getId(), agreement.getTotalSessions());
-        }
-
         log.info("Successfully processed SessionSettled event for settlement {} with status {}",
                 settlement.getId(), settlement.getStatus());
         return true;
@@ -325,5 +318,57 @@ public class SessionSettlementWorkflowService {
 
     public static String computeOnchainSessionId(Long sessionId) {
         return Hash.sha3String("EDUCONNECT:SESSION:" + sessionId);
+    }
+
+    private static void requireEventValue(String actual, String expected, String name) {
+        if (actual == null || expected == null || !actual.equalsIgnoreCase(expected)) {
+            throw new IllegalStateException("Confirmed event " + name + " does not match local command state");
+        }
+    }
+
+    private static BigInteger parseUnits(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("Confirmed event missing " + name);
+        }
+        return new BigInteger(value);
+    }
+
+    private static void validateSettlementDistribution(
+            SessionSettlement settlement,
+            boolean isRefunded,
+            BigInteger tutorAmount,
+            BigInteger platformAmount,
+            BigInteger studentRefund) {
+        BigInteger amount = settlement.getAmount();
+        BigInteger normalTutor = amount.multiply(BigInteger.valueOf(8500)).divide(BigInteger.valueOf(10000));
+        BigInteger normalPlatform = amount.subtract(normalTutor);
+        BigInteger absentTutor = amount.multiply(BigInteger.valueOf(4500)).divide(BigInteger.valueOf(10000));
+        BigInteger absentPlatform = amount.multiply(BigInteger.valueOf(1000)).divide(BigInteger.valueOf(10000));
+        BigInteger absentRefund = amount.subtract(absentTutor).subtract(absentPlatform);
+
+        boolean valid;
+        if (settlement.getStatus() == SettlementStatus.DISPUTED && settlement.getOutcome() == SettlementOutcome.BOTH_PRESENT) {
+            valid = (!isRefunded && tutorAmount.equals(normalTutor) && platformAmount.equals(normalPlatform) && studentRefund.equals(BigInteger.ZERO))
+                    || (isRefunded && tutorAmount.equals(BigInteger.ZERO) && platformAmount.equals(BigInteger.ZERO) && studentRefund.equals(amount));
+        } else if (settlement.getOutcome() == SettlementOutcome.BOTH_PRESENT) {
+            valid = !isRefunded
+                    && tutorAmount.equals(normalTutor)
+                    && platformAmount.equals(normalPlatform)
+                    && studentRefund.equals(BigInteger.ZERO);
+        } else if (settlement.getOutcome() == SettlementOutcome.STUDENT_ABSENT_TUTOR_PRESENT) {
+            valid = !isRefunded
+                    && tutorAmount.equals(absentTutor)
+                    && platformAmount.equals(absentPlatform)
+                    && studentRefund.equals(absentRefund);
+        } else {
+            valid = isRefunded
+                    && tutorAmount.equals(BigInteger.ZERO)
+                    && platformAmount.equals(BigInteger.ZERO)
+                    && studentRefund.equals(amount);
+        }
+
+        if (!valid) {
+            throw new IllegalStateException("Confirmed SessionSettled amounts do not match Solidity distribution semantics");
+        }
     }
 }

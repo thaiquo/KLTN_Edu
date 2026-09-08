@@ -52,4 +52,5 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             @Param("targetRole") String targetRole,
             @Param("readAt") LocalDateTime readAt
     );
+
 }

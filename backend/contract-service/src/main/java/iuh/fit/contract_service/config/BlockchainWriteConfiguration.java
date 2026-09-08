@@ -4,7 +4,11 @@ import iuh.fit.contract_service.blockchain.OperatorTransactionGateway;
 import iuh.fit.contract_service.blockchain.Web3jOperatorTransactionGateway;
 import iuh.fit.contract_service.repository.BlockchainTransactionRepository;
 import iuh.fit.contract_service.service.BlockchainReceiptWatcher;
+import iuh.fit.contract_service.service.BlockchainTransactionRuntimeWorker;
 import iuh.fit.contract_service.service.OperatorTransactionDispatcher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,6 +20,8 @@ import org.web3j.protocol.Web3j;
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(prefix = "blockchain.operator", name = "enabled", havingValue = "true")
 public class BlockchainWriteConfiguration {
+    private static final Logger log = LoggerFactory.getLogger(BlockchainWriteConfiguration.class);
+
     @Bean
     Credentials operatorCredentials(OperatorSignerProperties properties) throws Exception {
         Credentials credentials = WalletUtils.loadCredentials(
@@ -38,8 +44,9 @@ public class BlockchainWriteConfiguration {
     OperatorTransactionDispatcher operatorTransactionDispatcher(
             BlockchainTransactionRepository repository,
             OperatorTransactionGateway gateway,
+            BlockchainProperties blockchainProperties,
             PlatformTransactionManager transactionManager) {
-        return new OperatorTransactionDispatcher(repository, gateway, transactionManager);
+        return new OperatorTransactionDispatcher(repository, gateway, blockchainProperties, transactionManager);
     }
 
     @Bean
@@ -50,5 +57,27 @@ public class BlockchainWriteConfiguration {
             PlatformTransactionManager transactionManager) {
         return new BlockchainReceiptWatcher(
                 repository, gateway, blockchainProperties, transactionManager);
+    }
+
+    @Bean
+    BlockchainTransactionRuntimeWorker blockchainTransactionRuntimeWorker(
+            OperatorTransactionDispatcher dispatcher,
+            BlockchainReceiptWatcher receiptWatcher,
+            BlockchainProperties blockchainProperties) {
+        return new BlockchainTransactionRuntimeWorker(dispatcher, receiptWatcher, blockchainProperties);
+    }
+
+    @Bean
+    ApplicationRunner blockchainWriteRuntimeLogger(
+            BlockchainProperties blockchainProperties,
+            OperatorSignerProperties operatorProperties) {
+        return args -> log.info(
+                "Blockchain write runtime enabled for chainId={} operator={} dispatchBatch={} receiptBatch={} confirmations={} staleTimeoutMs={}",
+                blockchainProperties.getChainId(),
+                operatorProperties.getAddress(),
+                blockchainProperties.getDispatcherBatchSize(),
+                blockchainProperties.getReceiptWatchBatchSize(),
+                blockchainProperties.getConfirmations(),
+                blockchainProperties.getTransactionStaleTimeoutMs());
     }
 }

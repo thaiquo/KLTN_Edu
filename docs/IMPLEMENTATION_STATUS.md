@@ -15,9 +15,9 @@
 |---|---|---|---|
 | `api-gateway` | Spring Cloud Gateway route account-service, learning-service, notification-service, and WebSocket paths. | IMPLEMENTED | Routes are configured in `backend/api-gateway/src/main/resources/application.properties`. No gateway JWT verification filter found. |
 | `account-service` | Auth, short-lived JWT cookie, refresh token rotation/session revocation, OTP, users, roles, student/tutor profile, tutor application, staff approval, admin user operations, S3 avatar/documents, RabbitMQ events. | IMPLEMENTED | Main source under `backend/account-service/src/main/java`. |
-| `learning-service` | Subject/catalog, tutor subject registrations, availability, classes, schedules/chapters, enrollment requests, RabbitMQ integration. | PARTIAL | Core class/join/catalog flows exist, including enrollment request notification events; session/attendance/homework are not implemented. |
-| `contract-service` | Contract agreement, escrow payment, settlement, dispute, blockchain transaction dispatch, Web3j read/write/event ingestion. | PARTIAL | Entities/workflows exist; REST controllers and inter-service business API were not found. |
-| `notification-service` | Persistent user notifications, read/unread REST APIs, RabbitMQ event consumers, event idempotency, frontend Bell integration, and limited realtime notification delivery. | PARTIAL | Backend foundation exists with Flyway/JPA persistence, consumers for tutor application reviewed, subject request reviewed, and enrollment request events, plus raw WebSocket delivery for newly persisted notifications. Student and Portal Bell UI use REST list/unread/read APIs with realtime query invalidation. Reviewer-audience notifications remain blocked until producer events carry reviewer recipient ids. |
+| `learning-service` | Subject/catalog, tutor subject registrations, availability, classes, schedules/chapters, enrollment requests, RabbitMQ integration. | PARTIAL | Core class/join/catalog flows exist, including enrollment request notification events and Tutor teaching-registration reviewed notification events; session/attendance/homework are not implemented. |
+| `contract-service` | Contract agreement, escrow payment, settlement, dispute, lifecycle refund/expiry, blockchain transaction dispatch, Web3j read/write/event ingestion. | PARTIAL | Entities/workflows and REST controllers exist for agreement listing/detail, signing, document view, payment submission, transactions, settlement propose/finalize, student dispute opening, staff/admin dispute resolution, expiry, and cancellation/refund. Protected contract APIs derive caller identity from the `access_token` cookie JWT. Funding, settlement, dispute, completion, expiry, cancellation, and refund business state changes are event-confirmed through escrow events. End-to-end Learning session trigger and Sepolia deployment evidence remain partial. |
+| `notification-service` | Persistent user notifications, read/unread REST APIs, RabbitMQ event consumers, event idempotency, frontend Bell integration, and limited realtime notification delivery. | PARTIAL | Backend foundation exists with Flyway/JPA persistence, consumers for tutor application reviewed, teaching registration reviewed, subject request reviewed, and enrollment request events, plus raw WebSocket delivery for newly persisted notifications. Student and Portal Bell UI use REST list/unread/read APIs with realtime query invalidation and module-level click navigation to existing routes/Portal pages. Reviewer-audience notifications remain blocked until producer events carry reviewer recipient ids. |
 | `eureka-server` | Listed in root Maven modules. | NEEDS_VERIFICATION | Directory contains only build output under `target/`; no active source/pom found in current scan. |
 | `ai-service` | Target AI Matching service. | NOT_IMPLEMENTED | No module/source/config found. |
 
@@ -32,12 +32,12 @@ Feedback/notification/realtime architecture rules are maintained in `docs/FEEDBA
 | UC003 | Tra cứu | PARTIAL | IMPLEMENTED | NOT_IMPLEMENTED | PARTIAL | Tutor/class public search exists; student post search not found. |
 | UC004 | Quản lý yêu cầu tham gia lớp | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Enrollment request send/cancel/list exists. |
 | UC005 | Quản lý thông tin cá nhân | IMPLEMENTED | IMPLEMENTED | PARTIAL | IMPLEMENTED | Profile/password/avatar exist on Web/backend; mobile only restores user basic state. |
-| UC006 | Quản lý hợp đồng | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Contract entities/workflows exist; no REST API found. |
+| UC006 | Quản lý hợp đồng | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Contract entities/workflows and REST APIs exist. Student `/contracts` reuses the shared real contract view; blockchain registration and confirmed funding workflows exist, while deployment/runtime hardening remains partial. |
 | UC007 | Quản lý bài đăng tìm gia sư | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | No backend entity/controller found. |
 | UC008 | Quản lý tin nhắn | NOT_IMPLEMENTED | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Web has mock/in-memory messaging UI; no backend persistence/API found. |
 | UC009 | Xem thông tin lớp học | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Public class list/detail flow exists. |
 | UC010 | Quản lý bài tập | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | No homework/submission/grading source found. |
-| UC011 | Quản lý thanh toán | PARTIAL | KNOWN_CONFLICT | NOT_IMPLEMENTED | KNOWN_CONFLICT | Escrow/payment data exists, but frontend ABI mismatch blocks reliable Web3 flow. |
+| UC011 | Quản lý thanh toán | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Escrow/payment data exists. Student Web keeps `/payments` as the payment/escrow entry point and uses `/student/wallet` as wallet-focused access. Browser funding uses escrow `fundAgreement`; submitted txHash enters `PAYMENT_CONFIRMING`, and backend activation waits for confirmed `AgreementFunded`. Address/deployment verification remains incomplete. |
 | UC012 | Quản lý hồ sơ gia sư | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Tutor application/profile/documents are implemented. |
 | UC013 | Quản lý yêu cầu tham gia lớp | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Tutor accept/reject/list requests exists. |
 | UC014 | Quản lý lịch rảnh | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Tutor availability API/UI exists. |
@@ -52,7 +52,7 @@ Feedback/notification/realtime architecture rules are maintained in `docs/FEEDBA
 | UC023 | Hỗ trợ người dùng | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Admin/staff user management exists; no support ticket module found. |
 | UC024 | Quản lý người dùng | IMPLEMENTED | PARTIAL | NOT_IMPLEMENTED | IMPLEMENTED | Admin/staff user APIs exist. |
 | UC025 | Quản lý danh mục | IMPLEMENTED | PARTIAL | NOT_IMPLEMENTED | IMPLEMENTED | Admin teaching catalog APIs exist. |
-| UC026 | Quản lý Blockchain | PARTIAL | KNOWN_CONFLICT | NOT_IMPLEMENTED | KNOWN_CONFLICT | Backend Web3j exists; frontend ABI mismatch and no public contract API found. |
+| UC026 | Quản lý Blockchain | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Backend Web3j read/write/event ingestion exists; frontend funding/read ABI aligns to current Solidity for active Web3 use, and post-active lifecycle writes are backend-owned durable transactions. Sepolia deployment evidence remains partial. |
 | UC027 | Quản lý thanh toán | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Admin payment monitoring is not complete. |
 | UC028 | Báo cáo thống kê | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Some dashboards/stats exist; no comprehensive reporting flow found. |
 
@@ -71,20 +71,20 @@ Feedback/notification/realtime architecture rules are maintained in `docs/FEEDBA
 | Join Request | IMPLEMENTED | Student request and tutor accept/reject/cancel flows exist. |
 | Student Post | NOT_IMPLEMENTED | No source evidence found. |
 | Messaging | PARTIAL | Web mock UI only; backend persistence/API not found. |
-| Contract | PARTIAL | Contract-service entities/workflows exist; REST/API integration incomplete. |
+| Contract | PARTIAL | Contract-service entities/workflows, REST APIs, Tutor contract flow, and Student `/contracts` shared contract view exist; registration/funding workflows require confirmed blockchain events before state activation. |
 | Session | NOT_IMPLEMENTED | Learning session source not found. |
 | Attendance | NOT_IMPLEMENTED | Attendance source not found. |
 | Homework | NOT_IMPLEMENTED | Homework/submission/grading source not found. |
-| Payment | PARTIAL | Escrow payment entities/workflows exist; public flow incomplete. |
+| Payment | PARTIAL | Escrow payment entities/workflows exist. Student `Thanh toán & Ký quỹ` remains a payment/escrow entry point, while `Ví của tôi` is a wallet-focused Web3 access point reusing `MyWalletView`. Payment submission records a funding txHash as confirmation-pending; it does not activate the agreement until `AgreementFunded` is confirmed. |
 | Income | PARTIAL | Settlement data supports income concept; no complete tutor income API found. |
 | Complaint | PARTIAL | Contract dispute workflow/evidence exists; full complaint module not found. |
-| Notification | PARTIAL | Backend Notification Service has persistence, read/unread REST APIs, JWT-cookie recipient ownership checks, RabbitMQ consumers for recipient-available reviewed/enrollment events, idempotency by `eventId` + `recipientUserId`, frontend REST Bell UI, and raw WebSocket delivery for newly persisted notifications in the supported event slice. |
+| Notification | PARTIAL | Backend Notification Service has persistence, read/unread REST APIs, JWT-cookie recipient ownership checks, RabbitMQ consumers for recipient-available tutor application, teaching registration, subject request, class review, and enrollment events, idempotency by `eventId` + `recipientUserId`, frontend REST Bell UI with mark-read-on-click plus module-level navigation, and raw WebSocket delivery for newly persisted notifications in the supported event slice. Exact-item deep links and archive/delete remain not implemented. |
 | AI Matching | NOT_IMPLEMENTED | No ai-service, Qdrant, Spring AI, embedding, or ranking implementation found. |
-| Blockchain | PARTIAL | Solidity + Web3j implemented; frontend ABI conflict and Sepolia deployment evidence missing. |
-| Escrow | PARTIAL | Smart Contract ERC-20 escrow implemented; application flow incomplete. |
-| Settlement | PARTIAL | Smart Contract and backend workflow exist; learning-triggered E2E flow missing. |
-| Refund | PARTIAL | Smart Contract and backend workflow exist; public API/UI incomplete. |
-| Dispute | PARTIAL | Smart Contract and backend workflow exist; full API/UI incomplete. |
+| Blockchain | PARTIAL | Solidity + Web3j implemented; Web has wallet-focused access through Student `/student/wallet` and Tutor Portal `wallet`, both reusing `MyWalletView`; funding confirmation is event-driven, while address/deployment verification and Sepolia evidence remain partial. |
+| Escrow | PARTIAL | Smart Contract ERC-20 escrow implemented; app funding uses escrow `fundAgreement` and backend activation requires confirmed `AgreementFunded`. |
+| Settlement | PARTIAL | Smart Contract, backend workflow/API, event ingestion, amount persistence, and Audit Timeline UI controls exist; automatic Learning session/attendance trigger is missing. |
+| Refund | PARTIAL | Smart Contract cancellation/unused refund, backend workflow/API/event ingestion, and admin/staff UI action exist; broader accounting/income reporting remains partial. |
+| Dispute | PARTIAL | Smart Contract, backend workflow/API/event ingestion, and UI dispute management exist for tutor-fraud disputes; broader complaint types remain out of scope. |
 | Admin Management | IMPLEMENTED | User/catalog/class review APIs exist in part; reports/payment/blockchain admin are partial. |
 
 ## 5. Infrastructure Status
@@ -96,7 +96,7 @@ Feedback/notification/realtime architecture rules are maintained in `docs/FEEDBA
 | S3 | IMPLEMENTED | Account-service implements avatar and tutor document storage. |
 | Docker | PARTIAL | `docker-compose.yml` provides PostgreSQL and RabbitMQ only. |
 | Qdrant | NOT_IMPLEMENTED | No container/config/source found. |
-| Blockchain | PARTIAL | Foundry/Solidity/Anvil implemented; app integration partial. |
+| Blockchain | PARTIAL | Solidity + Web3j implemented; Web has wallet-focused access through Student `/student/wallet` and Tutor Portal `wallet`, both reusing `MyWalletView`; funding confirmation is event-driven, while address/deployment verification and Sepolia evidence remain partial. |
 | Sepolia | PLANNED | Config exists; no Sepolia deployment evidence found. |
 
 ## 6. Known Conflicts
@@ -129,7 +129,9 @@ Status: `KNOWN_CONFLICT`. Verify current deployment artifact before using Web3 U
 
 ### Security JWT extraction
 
-Account service `JwtAuthenticationFilter` and Learning service `CookieJwtAuthenticationFilter` both read browser JWT from HttpOnly cookie `access_token`.
+Account service `JwtAuthenticationFilter`, Learning service `CookieJwtAuthenticationFilter`, Notification service auth, and Contract service auth read browser JWT from HttpOnly cookie `access_token`.
+
+Contract Service now uses JWT claims (`userId`, subject email, `activeRole`, and `roles`) for agreement/document/sign/payment/dispute/transaction authorization. Frontend `role`, `userId`, `email` query parameters and `X-User-*` headers are not authoritative for Contract Service authorization.
 
 Status: resolved for Account/Learning browser token extraction. Browser architecture remains cookie-based and must not be documented as Bearer-only.
 
@@ -154,10 +156,10 @@ Status: IMPLEMENTED for backend auth/authorization and Web restricted routing. M
 - Student post / tutor-search post domain.
 - Messaging backend persistence/API/realtime delivery.
 - Learning sessions, attendance, homework, submission and grading.
-- Contract REST API and Student/Tutor contract management flow.
+- Complete Contract blockchain registration/funding semantics, settlement/refund/dispute runtime flow, and remaining payment/admin hardening.
 - Payment/income APIs and admin payment management.
 - End-to-end Learning session completed -> Contract settlement -> Blockchain flow.
-- Reviewer-recipient event payloads, broader producer coverage for all notification-worthy events, and richer Notification WebSocket integration beyond the current persisted-notification creation slice.
+- Reviewer-recipient event payloads, broader producer coverage for all notification-worthy events, and richer Notification WebSocket integration beyond the current persisted-notification creation slice. Tutor-recipient teaching registration review notifications are implemented; reviewer-audience teaching registration submission notifications remain future work.
 - Mobile expansion beyond auth/home.
 - Sepolia deployment evidence and environment documentation.
 - Frontend ABI/address alignment with Solidity.

@@ -44,7 +44,27 @@ public class EnrollmentRequestService {
      * Student submits enrollment request for a classroom
      */
     @Transactional
-    public EnrollmentRequestResponse enrollClass(Long classRoomId, String studentEmail, Long studentUserId, EnrollClassRequest request) {
+    public EnrollmentRequestResponse enrollClass(
+        Long classRoomId,
+        Long authenticatedStudentId,
+        String studentEmail,
+        EnrollClassRequest request
+        ) {
+        if (request == null || authenticatedStudentId == null || authenticatedStudentId <= 0) {
+            throw new BadRequestException("Không xác định được tài khoản học viên. Vui lòng đăng nhập lại.");
+        }
+        if (request.studentName() == null || request.studentName().isBlank()
+                || request.studentName().contains("@") || request.studentName().startsWith("Học viên")) {
+            throw new BadRequestException("Học viên cần cập nhật họ tên thật trước khi gửi yêu cầu.");
+        }
+        if (request.studentPhone() == null || request.studentPhone().isBlank()) {
+            throw new BadRequestException("Học viên cần cập nhật số điện thoại trước khi gửi yêu cầu.");
+        }
+        if (request.studentWallet() == null || !request.studentWallet().matches("^0x[a-fA-F0-9]{40}$")
+                || "0x0000000000000000000000000000000000000000".equalsIgnoreCase(request.studentWallet())) {
+            throw new BadRequestException("A connected MetaMask wallet is required before submitting an enrollment request.");
+        }
+
         // Pessimistic Lock on classroom to avoid race conditions
         ClassRoom classRoom = classRoomRepository.findByIdForUpdate(classRoomId)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + classRoomId));
@@ -93,11 +113,13 @@ public class EnrollmentRequestService {
         // Create enrollment request
         EnrollmentRequest req = new EnrollmentRequest();
         req.setClassRoom(classRoom);
+        req.setStudentId(authenticatedStudentId);
         req.setStudentEmail(studentEmail);
-        req.setStudentUserId(studentUserId);
-        req.setStudentName(request != null && request.studentName() != null ? request.studentName().trim() : null);
-        req.setJoinKey(request != null ? request.joinKey() : null);
-        req.setNote(request != null && request.note() != null ? request.note().trim() : null);
+        req.setStudentName(request.studentName().trim());
+        req.setStudentPhone(request.studentPhone().trim());
+        req.setStudentWallet(request.studentWallet().trim().toLowerCase());
+        req.setJoinKey(request.joinKey());
+        req.setNote(request.note() != null ? request.note().trim() : null);
         req.setStatus(EnrollmentRequestStatus.PENDING);
 
         EnrollmentRequest saved = enrollmentRequestRepository.save(req);
@@ -105,10 +127,9 @@ public class EnrollmentRequestService {
                 saved.getId(),
                 classRoom.getId(),
                 tutorUserId(classRoom),
-                studentUserId,
+                authenticatedStudentId,
                 classRoom.getName(),
-                saved.getStudentName()
-        );
+                saved.getStudentName());
         return toResponse(saved);
     }
 
@@ -116,7 +137,30 @@ public class EnrollmentRequestService {
      * Tutor accepts enrollment request
      */
     @Transactional
-    public EnrollmentRequestResponse acceptRequest(Long requestId, String tutorEmail, Long tutorUserId) {
+    public EnrollmentRequestResponse acceptRequest(
+            Long requestId,
+            String tutorEmail) {
+        return acceptRequest(requestId, tutorEmail, null, null);
+    }
+
+    public EnrollmentRequestResponse acceptRequest(
+            Long requestId,
+            String tutorEmail,
+            Long tutorUserId) {
+        return acceptRequest(requestId, tutorEmail, tutorUserId, null);
+    }
+
+    public EnrollmentRequestResponse acceptRequest(
+            Long requestId,
+            String tutorEmail,
+            String agreementId) {
+        return acceptRequest(requestId, tutorEmail, null, agreementId);
+    }
+    public EnrollmentRequestResponse acceptRequest(
+            Long requestId,
+            String tutorEmail,
+            Long tutorUserId,
+            String agreementId) {
         EnrollmentRequest req = enrollmentRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResourceNotFoundException("Enrollment request not found: " + requestId));
 
@@ -133,27 +177,31 @@ public class EnrollmentRequestService {
         classRoom = classRoomRepository.findByIdForUpdate(targetClassId)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + targetClassId));
 
-        long acceptedCount = enrollmentRequestRepository.countByClassRoomIdAndStatus(classRoom.getId(), EnrollmentRequestStatus.ACCEPTED);
-        long availableSlots = classRoom.getMaxStudents() - acceptedCount;
+        long occupiedCount = enrollmentRequestRepository.countByClassRoomIdAndStatusIn(
+                classRoom.getId(), List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED));
+        long availableSlots = classRoom.getMaxStudents() - occupiedCount;
 
         if (availableSlots <= 0) {
             throw new BadRequestException("Lớp đã hết chỗ trống để duyệt thêm.");
         }
 
         req.setStatus(EnrollmentRequestStatus.ACCEPTED);
+        if (agreementId != null && !agreementId.isBlank()) {
+            req.setAgreementId(agreementId.trim());
+        }
         EnrollmentRequest saved = enrollmentRequestRepository.save(req);
         eventPublisher.publishEnrollmentAccepted(
                 saved.getId(),
                 classRoom.getId(),
-                saved.getStudentUserId(),
+                saved.getStudentId(),
                 tutorUserId,
                 classRoom.getName(),
                 saved.getStudentName()
         );
 
-        acceptedCount++;
+        occupiedCount++;
         // Auto-lock & cleanup if full capacity reached
-        if (acceptedCount >= classRoom.getMaxStudents()) {
+        if (occupiedCount >= classRoom.getMaxStudents()) {
             classRoom.setStatus(ClassRoomStatus.LOCKED);
             classRoomRepository.save(classRoom);
 
@@ -168,7 +216,7 @@ public class EnrollmentRequestService {
                 eventPublisher.publishEnrollmentRejected(
                         pReq.getId(),
                         classRoom.getId(),
-                        pReq.getStudentUserId(),
+                        pReq.getStudentId(),
                         tutorUserId,
                         classRoom.getName(),
                         pReq.getRejectReason(),
@@ -203,7 +251,7 @@ public class EnrollmentRequestService {
         eventPublisher.publishEnrollmentRejected(
                 saved.getId(),
                 classRoom.getId(),
-                saved.getStudentUserId(),
+                saved.getStudentId(),
                 tutorUserId,
                 classRoom.getName(),
                 saved.getRejectReason(),
@@ -248,13 +296,19 @@ public class EnrollmentRequestService {
     @Transactional(readOnly = true)
     public List<EnrollmentRequestResponse> getRequestsForClass(Long classRoomId, String tutorEmail) {
         ClassRoom classRoom = classRoomRepository.findById(classRoomId)
-                .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + classRoomId));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy lớp học: " + classRoomId));
 
         if (!classRoom.getTutorEmail().equalsIgnoreCase(tutorEmail)) {
             throw new ForbiddenException("Bạn không có quyền xem yêu cầu của lớp học này");
         }
 
         List<EnrollmentRequest> list = enrollmentRequestRepository.findByClassRoomIdWithDetails(classRoomId);
+        return list.stream().map(this::toResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<EnrollmentRequestResponse> getAllRequestsForTutor(String tutorEmail) {
+        List<EnrollmentRequest> list = enrollmentRequestRepository.findByTutorEmailWithDetails(tutorEmail);
         return list.stream().map(this::toResponse).toList();
     }
 
@@ -279,7 +333,7 @@ public class EnrollmentRequestService {
         }
 
         long pendingCount = enrollmentRequestRepository.countByClassRoomIdAndStatus(classRoomId, EnrollmentRequestStatus.PENDING);
-        long acceptedCount = enrollmentRequestRepository.countByClassRoomIdAndStatus(classRoomId, EnrollmentRequestStatus.ACCEPTED);
+        long acceptedCount = enrollmentRequestRepository.countByClassRoomIdAndStatusIn(classRoomId, List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED));
         long totalInPool = pendingCount + acceptedCount;
         int maxPending = classRoom.getMaxPendingRequests() != null ? classRoom.getMaxPendingRequests() : (int) Math.ceil(classRoom.getMaxStudents() * 1.5);
         long availableSlots = Math.max(0, classRoom.getMaxStudents() - acceptedCount);
@@ -297,6 +351,61 @@ public class EnrollmentRequestService {
         );
     }
 
+    @Transactional
+    public EnrollmentRequestResponse activateEnrollment(Long classRoomId, Long studentId, String agreementId) {
+        EnrollmentRequest req = null;
+        if (agreementId != null && !agreementId.isBlank()) {
+            req = enrollmentRequestRepository.findByAgreementId(agreementId.trim()).orElse(null);
+        }
+        if (req == null && classRoomId != null && studentId != null) {
+            req = enrollmentRequestRepository.findFirstByClassRoomIdAndStudentIdAndStatusInOrderByCreatedAtDesc(
+                    classRoomId, studentId, List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.PENDING)
+            ).orElse(null);
+        }
+        if (req == null) {
+            throw new ResourceNotFoundException("No pending/accepted enrollment request found for activation (classRoomId: " + classRoomId + ", studentId: " + studentId + ", agreementId: " + agreementId + ")");
+        }
+
+        req.setStatus(EnrollmentRequestStatus.ENROLLED);
+        if (agreementId != null && !agreementId.isBlank()) {
+            req.setAgreementId(agreementId.trim());
+        }
+        EnrollmentRequest saved = enrollmentRequestRepository.save(req);
+        return toResponse(saved);
+    }
+
+    @Transactional
+    public EnrollmentRequestResponse expireEnrollment(Long classRoomId, Long studentId, String agreementId) {
+        EnrollmentRequest req = null;
+        if (agreementId != null && !agreementId.isBlank()) {
+            req = enrollmentRequestRepository.findByAgreementId(agreementId.trim()).orElse(null);
+        }
+        if (req == null && classRoomId != null && studentId != null) {
+            req = enrollmentRequestRepository.findFirstByClassRoomIdAndStudentIdAndStatusInOrderByCreatedAtDesc(
+                    classRoomId, studentId, List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.PENDING)
+            ).orElse(null);
+        }
+        if (req == null) {
+            return null;
+        }
+
+        req.setStatus(EnrollmentRequestStatus.EXPIRED);
+        EnrollmentRequest saved = enrollmentRequestRepository.save(req);
+
+        // Unlock classroom if it was previously LOCKED due to full capacity
+        ClassRoom classRoom = req.getClassRoom();
+        if (classRoom.getStatus() == ClassRoomStatus.LOCKED) {
+            long occupiedCount = enrollmentRequestRepository.countByClassRoomIdAndStatusIn(
+                    classRoom.getId(), List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED));
+            if (occupiedCount < classRoom.getMaxStudents()) {
+                classRoom.setStatus(ClassRoomStatus.PUBLISHED);
+                classRoomRepository.save(classRoom);
+            }
+        }
+
+        return toResponse(saved);
+    }
+
     private EnrollmentRequestResponse toResponse(EnrollmentRequest r) {
         ClassRoom c = r.getClassRoom();
         return new EnrollmentRequestResponse(
@@ -304,8 +413,12 @@ public class EnrollmentRequestService {
                 c.getId(),
                 c.getName(),
                 c.getTutorEmail(),
+                r.getStudentId(),
                 r.getStudentEmail(),
                 r.getStudentName(),
+                r.getStudentPhone(),
+                r.getStudentWallet(),
+                r.getAgreementId(),
                 r.getStatus(),
                 r.getJoinKey(),
                 r.getNote(),

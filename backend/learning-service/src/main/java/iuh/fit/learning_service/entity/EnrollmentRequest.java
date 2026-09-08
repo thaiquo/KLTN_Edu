@@ -23,10 +23,20 @@ public class EnrollmentRequest {
     @Column(nullable = false, length = 255)
     private String studentEmail;
 
-    private Long studentUserId;
+    @Column(name = "student_id")
+    private Long studentId;
 
     @Column(length = 255)
     private String studentName;
+
+    @Column(name = "student_phone", length = 50)
+    private String studentPhone;
+
+    @Column(name = "student_wallet", length = 42)
+    private String studentWallet;
+
+    @Column(name = "agreement_id", length = 36)
+    private String agreementId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)

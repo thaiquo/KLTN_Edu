@@ -4,6 +4,7 @@ import iuh.fit.notification_service.messaging.NotificationEventConsumer;
 import iuh.fit.notification_service.messaging.event.SubjectRequestApprovedEvent;
 import iuh.fit.notification_service.messaging.event.SubjectRequestRejectedEvent;
 import iuh.fit.notification_service.messaging.event.EnrollmentNotificationEvent;
+import iuh.fit.notification_service.messaging.event.TeachingRegistrationReviewedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApplicationSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApprovedEvent;
 import iuh.fit.notification_service.messaging.event.TutorRejectedEvent;
@@ -124,6 +125,39 @@ class NotificationEventConsumerTests {
         assertThat(notification).isPresent();
         assertThat(notification.get().getType()).isEqualTo("ENROLLMENT_CANCELLED");
         assertThat(notification.get().getTargetRole()).isEqualTo("TUTOR");
+    }
+
+    @Test
+    void teachingRegistrationReviewedCreatesTutorNotificationAndDeduplicates() {
+        var event = new TeachingRegistrationReviewedEvent(
+                "teaching-reviewed-1",
+                "TEACHING_REGISTRATION_REVIEWED",
+                LocalDateTime.now(),
+                "learning-service",
+                88L,
+                200L,
+                "tutor@example.com",
+                300L,
+                null,
+                "staff@example.com",
+                400L,
+                "ToÃ¡n lá»›p 10",
+                "REJECTED",
+                "Thiáº¿u minh chá»©ng",
+                "TEACHING_REGISTRATION",
+                "88");
+
+        consumer.onTeachingRegistrationReviewed(event);
+        consumer.onTeachingRegistrationReviewed(event);
+
+        var notification = notificationRepository.findByEventIdAndRecipientUserId("teaching-reviewed-1", 200L);
+        assertThat(notification).isPresent();
+        assertThat(notification.get().getType()).isEqualTo("TEACHING_REGISTRATION_REVIEWED");
+        assertThat(notification.get().getTargetRole()).isEqualTo("TUTOR");
+        assertThat(notification.get().getReferenceType()).isEqualTo("TEACHING_REGISTRATION");
+        assertThat(notification.get().getReferenceId()).isEqualTo("88");
+        assertThat(notification.get().getMessage()).contains("Lý do");
+        assertThat(notificationRepository.count()).isEqualTo(1);
     }
 
     private EnrollmentNotificationEvent enrollmentEvent(String eventId, String eventType, Long recipientUserId, Long actorUserId, String reason) {

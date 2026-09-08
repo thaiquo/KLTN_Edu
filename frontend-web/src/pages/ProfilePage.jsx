@@ -17,6 +17,7 @@ import {
   Sparkles,
   Upload,
   UserRound,
+  WalletCards,
   X
 } from 'lucide-react';
 import { userApi } from '../api/user';
@@ -57,7 +58,7 @@ const GENDER_OPTIONS = [
   { value: 'PREFER_NOT_TO_SAY', label: 'Không muốn chia sẻ' }
 ];
 
-export function ProfilePage({ embedded = false, onTabChange = null }) {
+export function ProfilePage({ embedded = false, onTabChange = null, onQuickNavigate = null }) {
   const { user, refreshUser, switchRole } = useAuth();
   const feedback = useFeedback();
   const navigate = useNavigate();
@@ -116,6 +117,41 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
   const showCompactTutorApproved = activeRole === 'STUDENT' && hasTutorContext && tutorStatus === 'APPROVED';
   const showTutorIdentitySection = (activeRole === 'TUTOR' && hasTutorContext) || showTutorOnboardingSection;
   const completion = getCompletion(profile, showTutorIdentitySection, documents, tutorAppForUi);
+  const normalizedActiveRole = String(activeRole || '').toUpperCase();
+  const normalizedTutorStatus = String(tutorStatus || '').toUpperCase();
+  const profileQuickActions = useMemo(() => {
+    if (normalizedActiveRole === 'STUDENT') {
+      return [
+        {
+          id: 'wallet',
+          title: 'Ví của tôi',
+          description: 'Quản lý ví Web3, địa chỉ ví và số dư của bạn.',
+          icon: <WalletCards size={18} />,
+          href: '/student/wallet'
+        }
+      ];
+    }
+
+    if (normalizedActiveRole === 'TUTOR' && normalizedTutorStatus === 'APPROVED') {
+      return [
+        {
+          id: 'wallet',
+          title: 'Ví của tôi',
+          description: 'Quản lý ví Web3, địa chỉ ví và số dư nhận thanh toán.',
+          icon: <WalletCards size={18} />,
+          onSelect: () => {
+            if (onQuickNavigate) {
+              onQuickNavigate('wallet');
+            } else {
+              navigate('/dashboard');
+            }
+          }
+        }
+      ];
+    }
+
+    return [];
+  }, [navigate, normalizedActiveRole, normalizedTutorStatus, onQuickNavigate]);
 
   const loadTutorIdentityState = useCallback(async ({ active = true, showLoading = true } = {}) => {
     if (!hasTutorContext) {
@@ -574,6 +610,7 @@ export function ProfilePage({ embedded = false, onTabChange = null }) {
 
                 <aside className="grid content-start gap-6">
                   <AccountInfoCard profile={profile} roles={roles} />
+                  <ProfileQuickActions items={profileQuickActions} />
                   <CompletionCard completion={completion} />
                   <SecurityCard embedded={embedded} onTabChange={onTabChange} />
                 </aside>
@@ -1021,6 +1058,54 @@ function AccountInfoCard({ profile, roles }) {
           value={profile?.createdAt ? formatJoinedDate(profile.createdAt) : 'Chưa có dữ liệu'}
           tone="neutral"
         />
+      </div>
+    </section>
+  );
+}
+
+function ProfileQuickActions({ items }) {
+  if (!items || items.length === 0) return null;
+
+  return (
+    <section className="rounded-[8px] border border-slate-200 bg-white p-5 shadow-[0_18px_45px_rgba(15,23,42,.06)]">
+      <SectionTitle eyebrow="Quick access" title="Truy cập nhanh" compact />
+      <div className="mt-5 grid gap-3">
+        {items.map((item) => {
+          const content = (
+            <>
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-indigo-50 text-indigo-600">
+                {item.icon}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-extrabold text-slate-900">{item.title}</span>
+                <span className="mt-1 block text-xs font-semibold leading-5 text-slate-500">{item.description}</span>
+              </span>
+            </>
+          );
+
+          if (item.href) {
+            return (
+              <Link
+                key={item.id}
+                to={item.href}
+                className="flex w-full items-start gap-3 rounded-[8px] border border-slate-200 bg-slate-50 p-3 text-left transition-colors hover:border-primary/40 hover:bg-white"
+              >
+                {content}
+              </Link>
+            );
+          }
+
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={item.onSelect}
+              className="flex w-full items-start gap-3 rounded-[8px] border border-slate-200 bg-slate-50 p-3 text-left transition-colors hover:border-primary/40 hover:bg-white"
+            >
+              {content}
+            </button>
+          );
+        })}
       </div>
     </section>
   );

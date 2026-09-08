@@ -192,6 +192,22 @@ public class BlockchainTransaction {
         updatedAt = now;
     }
 
+    public void retryBeforeBroadcast(String message, OffsetDateTime retryAt, OffsetDateTime now) {
+        if (status != BlockchainTransactionStatus.DISPATCHING || transactionHash != null) {
+            throw new IllegalStateException("Only an unprepared DISPATCHING transaction can be retried before broadcast");
+        }
+        BlockchainTransactionStateMachine.requireTransition(status, BlockchainTransactionStatus.FAILED);
+        status = BlockchainTransactionStatus.FAILED;
+        BlockchainTransactionStateMachine.requireTransition(status, BlockchainTransactionStatus.CREATED);
+        status = BlockchainTransactionStatus.CREATED;
+        nonce = null;
+        signedRawTransaction = null;
+        dispatchStartedAt = null;
+        errorMessage = message;
+        nextAttemptAt = retryAt;
+        updatedAt = now;
+    }
+
     public void failBeforeBroadcast(String message, OffsetDateTime now) {
         if (status != BlockchainTransactionStatus.DISPATCHING || transactionHash != null) {
             throw new IllegalStateException("Only an unprepared DISPATCHING transaction can fail before broadcast");
@@ -225,6 +241,18 @@ public class BlockchainTransaction {
         receiptStatus = statusValue;
         blockNumber = failedBlockNumber;
         blockHash = failedBlockHash;
+        signedRawTransaction = null;
+        errorMessage = message;
+        nextAttemptAt = null;
+        updatedAt = now;
+    }
+
+    public void failWithoutReceipt(String message, OffsetDateTime now) {
+        BlockchainTransactionStateMachine.requireTransition(status, BlockchainTransactionStatus.FAILED);
+        status = BlockchainTransactionStatus.FAILED;
+        receiptStatus = null;
+        blockNumber = null;
+        blockHash = null;
         signedRawTransaction = null;
         errorMessage = message;
         nextAttemptAt = null;

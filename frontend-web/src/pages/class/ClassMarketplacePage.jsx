@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import {
   BookOpen, Calendar, Clock, DollarSign, Eye, Filter, Globe, Key, MapPin,
   Search, SlidersHorizontal, Users, Video, ShieldCheck, ArrowRight
@@ -94,39 +95,36 @@ export function ClassMarketplacePage() {
   }, [filters.subjectId]);
 
   // 5. Load Published Classes from DB
-  useEffect(() => {
-    let active = true;
-    async function loadClasses() {
-      setLoading(true);
-      setError('');
-      try {
-        const data = await classApi.getPublicClasses({
-          keyword: filters.keyword.trim(),
-          programTypeId: filters.programTypeId ? Number(filters.programTypeId) : undefined,
-          educationLevelId: filters.educationLevelId ? Number(filters.educationLevelId) : undefined,
-          categoryId: filters.categoryId ? Number(filters.categoryId) : undefined,
-          subjectId: filters.subjectId ? Number(filters.subjectId) : undefined,
-          levelId: filters.levelId ? Number(filters.levelId) : undefined,
-          mode: filters.mode || undefined,
-          tutorEmail: filters.tutorEmail.trim() || undefined
-        });
+  const loadClasses = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await classApi.getPublicClasses({
+        keyword: filters.keyword.trim(),
+        programTypeId: filters.programTypeId ? Number(filters.programTypeId) : undefined,
+        educationLevelId: filters.educationLevelId ? Number(filters.educationLevelId) : undefined,
+        categoryId: filters.categoryId ? Number(filters.categoryId) : undefined,
+        subjectId: filters.subjectId ? Number(filters.subjectId) : undefined,
+        levelId: filters.levelId ? Number(filters.levelId) : undefined,
+        mode: filters.mode || undefined,
+        tutorEmail: filters.tutorEmail.trim() || undefined
+      });
 
-        const filtered = data || [];
-
-        if (active) setClassList(filtered);
-      } catch (err) {
-        if (active) setError(err.message || 'Không thể tải danh sách lớp học.');
-      } finally {
-        if (active) setLoading(false);
-      }
+      setClassList(data || []);
+    } catch (err) {
+      setError(err.message || 'Không thể tải danh sách lớp học.');
+    } finally {
+      setLoading(false);
     }
-
-    const timer = window.setTimeout(loadClasses, 280);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
   }, [filters]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(loadClasses, 280);
+    return () => window.clearTimeout(timer);
+  }, [loadClasses]);
+
+  // Real-time refresh when a class is reviewed (approved/rejected) or mutated (visibility/details changed)
+  useRealtimeRefresh(['CLASS_REVIEWED', 'CLASS_MUTATED'], loadClasses);
 
   const selectedProgram = programTypes.find((p) => String(p.id) === String(filters.programTypeId));
   const isAcademic = selectedProgram?.code === 'ACADEMIC';
@@ -400,6 +398,15 @@ export function ClassMarketplacePage() {
             <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
               {classList.map((cls) => {
                 const tutorName = getTutorDisplayName(cls);
+                const VND_PER_USDC = 25000;
+                const pricePerSession = Number(cls.pricePerSession) || 0;
+                const totalSessionsFromChapters = Array.isArray(cls.chapters)
+                  ? cls.chapters.reduce((sum, ch) => sum + (Number(ch.sessionCount) || 0), 0)
+                  : 0;
+                const totalSessions = cls.totalSessions || totalSessionsFromChapters || 0;
+                const totalCoursePriceVnd = pricePerSession * totalSessions;
+                const totalCoursePriceUsdc = (totalCoursePriceVnd / VND_PER_USDC).toFixed(2);
+
                 return (
                   <article 
                     key={cls.id} 
@@ -481,10 +488,17 @@ export function ClassMarketplacePage() {
 
                     <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
                       <div>
-                        <span className="text-[10px] font-bold uppercase text-slate-400 block">Học phí</span>
-                        <strong className="font-display text-lg font-black text-brand-primary">
-                          {cls.pricePerSession?.toLocaleString('vi-VN')} đ <span className="text-[11px] text-slate-500 font-semibold">/ buổi</span>
+                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                          Học phí {totalSessions > 0 ? `(${totalSessions} buổi)` : '/ buổi'}
+                        </span>
+                        <strong className="font-display text-base font-black text-brand-primary">
+                          {pricePerSession.toLocaleString('vi-VN')} đ <span className="text-[10px] text-slate-500 font-semibold">/ buổi</span>
                         </strong>
+                        {totalCoursePriceVnd > 0 && (
+                          <span className="block text-[10px] font-bold text-emerald-600">
+                            Khóa: {totalCoursePriceVnd.toLocaleString('vi-VN')} đ (~{totalCoursePriceUsdc} USDC)
+                          </span>
+                        )}
                       </div>
 
                       <button

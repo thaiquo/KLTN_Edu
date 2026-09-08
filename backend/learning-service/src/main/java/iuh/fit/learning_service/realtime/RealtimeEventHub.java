@@ -1,6 +1,8 @@
 package iuh.fit.learning_service.realtime;
 
 import tools.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -18,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class RealtimeEventHub extends TextWebSocketHandler {
+    private static final Logger log = LoggerFactory.getLogger(RealtimeEventHub.class);
     private static final Set<String> REVIEWER_ROLES = Set.of("ROLE_STAFF", "ROLE_ADMIN");
 
     private final ObjectMapper objectMapper;
@@ -30,16 +33,19 @@ public class RealtimeEventHub extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         sessions.add(session);
+        log.info("WebSocket connection established. Session ID: {}, Principal: {}", session.getId(), session.getPrincipal());
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         sessions.remove(session);
+        log.info("WebSocket connection closed. Session ID: {}, Status: {}", session.getId(), status);
     }
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
         sessions.remove(session);
+        log.error("WebSocket transport error for Session ID: {}. Error: {}", session.getId(), exception.getMessage());
     }
 
     public void publishToReviewers(String type, Long entityId, Map<String, ?> payload) {
@@ -52,7 +58,7 @@ public class RealtimeEventHub extends TextWebSocketHandler {
     }
 
     public void publishToAll(String type, Long entityId, Map<String, ?> payload) {
-        afterCommit(() -> send(type, entityId, payload, session -> session.getPrincipal() != null));
+        afterCommit(() -> send(type, entityId, payload, session -> true));
     }
 
     private void send(String type, Long entityId, Map<String, ?> payload,

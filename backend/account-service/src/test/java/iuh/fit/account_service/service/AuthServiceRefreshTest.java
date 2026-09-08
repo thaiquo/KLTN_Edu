@@ -34,6 +34,7 @@ class AuthServiceRefreshTest {
     private final TutorRepository tutorRepository = mock(TutorRepository.class);
     private final JwtService jwtService = mock(JwtService.class);
     private final RefreshTokenService refreshTokenService = mock(RefreshTokenService.class);
+
     private AuthService authService;
 
     @BeforeEach
@@ -49,8 +50,7 @@ class AuthServiceRefreshTest {
                 mock(OtpService.class),
                 mock(AuthenticationManager.class),
                 jwtService,
-                refreshTokenService
-        );
+                refreshTokenService);
     }
 
     @Test
@@ -61,25 +61,46 @@ class AuthServiceRefreshTest {
         user.setFullName("Student User");
         user.setEmailVerified(true);
         user.setAccountStatus(AccountStatus.ACTIVE);
+
         UserRole role = new UserRole();
         role.setUser(user);
         role.setRole(Role.STUDENT);
+
         RefreshSession replacement = new RefreshSession();
         replacement.setUser(user);
         replacement.setActiveRole("STUDENT");
 
         when(refreshTokenService.consumeForRefresh("old-refresh-token"))
-                .thenReturn(new RefreshTokenRotation(replacement, "new-refresh-token"));
-        when(userRoleRepository.findByUserId(77L)).thenReturn(List.of(role));
-        when(studentRepository.existsByUserId(77L)).thenReturn(true);
-        when(jwtService.generateToken("student@example.com", 77L, "STUDENT", List.of("STUDENT"), null))
-                .thenReturn("new-access-token");
+                .thenReturn(
+                        new RefreshTokenRotation(
+                                replacement,
+                                "new-refresh-token"));
+
+        when(userRoleRepository.findByUserId(77L))
+                .thenReturn(List.of(role));
+
+        when(studentRepository.existsByUserId(77L))
+                .thenReturn(true);
+
+        when(jwtService.generateToken(
+                77L,
+                "student@example.com",
+                "STUDENT",
+                List.of("STUDENT"),
+                null)).thenReturn("new-access-token");
 
         var result = authService.refresh("old-refresh-token");
 
-        assertThat(result.getToken()).isEqualTo("new-access-token");
-        assertThat(result.getRefreshToken()).isEqualTo("new-refresh-token");
-        assertThat(result.getActiveRole()).isEqualTo("STUDENT");
-        verify(refreshTokenService).consumeForRefresh("old-refresh-token");
+        assertThat(result.getToken())
+                .isEqualTo("new-access-token");
+
+        assertThat(result.getRefreshToken())
+                .isEqualTo("new-refresh-token");
+
+        assertThat(result.getActiveRole())
+                .isEqualTo("STUDENT");
+
+        verify(refreshTokenService)
+                .consumeForRefresh("old-refresh-token");
     }
 }

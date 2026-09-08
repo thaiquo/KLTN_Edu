@@ -26,6 +26,13 @@ public class LearningRabbitConfig {
     public static final String ENROLLMENT_ACCEPTED_ROUTING_KEY = "learning.enrollment.accepted";
     public static final String ENROLLMENT_REJECTED_ROUTING_KEY = "learning.enrollment.rejected";
     public static final String ENROLLMENT_CANCELLED_ROUTING_KEY = "learning.enrollment.cancelled";
+    public static final String CLASS_REVIEWED_ROUTING_KEY = "learning.class.reviewed";
+    public static final String TEACHING_REGISTRATION_REVIEWED_ROUTING_KEY = "learning.teaching-registration.reviewed";
+
+    public static final String CONTRACT_ACTIVATED_QUEUE = "learning.contract-activated";
+    public static final String CONTRACT_EXPIRED_QUEUE = "learning.contract-expired";
+    public static final String CONTRACT_ACTIVATED_ROUTING_KEY = "contract.activated.v1";
+    public static final String CONTRACT_EXPIRED_ROUTING_KEY = "contract.expired.v1";
 
     @Bean
     DirectExchange eduEventsExchange() {
@@ -43,6 +50,16 @@ public class LearningRabbitConfig {
     }
 
     @Bean
+    Queue contractActivatedQueue() {
+        return new Queue(CONTRACT_ACTIVATED_QUEUE, true);
+    }
+
+    @Bean
+    Queue contractExpiredQueue() {
+        return new Queue(CONTRACT_EXPIRED_QUEUE, true);
+    }
+
+    @Bean
     Binding tutorApprovedBinding(Queue tutorApprovedQueue, DirectExchange eduEventsExchange) {
         return BindingBuilder.bind(tutorApprovedQueue).to(eduEventsExchange).with(TUTOR_APPROVED_ROUTING_KEY);
     }
@@ -50,6 +67,16 @@ public class LearningRabbitConfig {
     @Bean
     Binding tutorRejectedBinding(Queue tutorRejectedQueue, DirectExchange eduEventsExchange) {
         return BindingBuilder.bind(tutorRejectedQueue).to(eduEventsExchange).with(TUTOR_REJECTED_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding contractActivatedBinding(Queue contractActivatedQueue, DirectExchange eduEventsExchange) {
+        return BindingBuilder.bind(contractActivatedQueue).to(eduEventsExchange).with(CONTRACT_ACTIVATED_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding contractExpiredBinding(Queue contractExpiredQueue, DirectExchange eduEventsExchange) {
+        return BindingBuilder.bind(contractExpiredQueue).to(eduEventsExchange).with(CONTRACT_EXPIRED_ROUTING_KEY);
     }
 
     @Bean

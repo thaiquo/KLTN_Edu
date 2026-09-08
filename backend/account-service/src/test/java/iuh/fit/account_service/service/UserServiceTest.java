@@ -281,4 +281,26 @@ class UserServiceTest {
         commune.setActive(true);
         return commune;
     }
+
+    @Test
+    void updateCurrentUserWalletSuccess() {
+        when(userRepository.findByEmailIgnoreCase("test@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.save(user)).thenReturn(user);
+        when(userRoleRepository.findByUserId(7L)).thenReturn(List.of(role(user, Role.STUDENT)));
+
+        String validWallet = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
+        var response = userService.updateCurrentUserWallet("test@example.com", validWallet);
+
+        assertThat(user.getWalletAddress()).isEqualTo(validWallet);
+        assertThat(response.getWalletAddress()).isEqualTo(validWallet);
+        verify(userRepository).save(user);
+    }
+
+    @Test
+    void updateCurrentUserWalletRejectsInvalidAddress() {
+        when(userRepository.findByEmailIgnoreCase("test@example.com")).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> userService.updateCurrentUserWallet("test@example.com", "0xinvalid"))
+                .isInstanceOf(BadRequestException.class);
+    }
 }

@@ -9,6 +9,10 @@ import {
   useNotifications
 } from '../../hooks/useNotifications';
 import { NotificationDropdown } from './NotificationDropdown';
+import {
+  getNotificationPortalPage,
+  getNotificationRoute
+} from './notificationNavigation';
 
 export function NotificationBell({
   activeRole,
@@ -65,19 +69,28 @@ export function NotificationBell({
     setOpen(false);
 
     if (notification && !notification.read) {
-      markRead.mutate(notification.id, {
-        onError: (err) => {
-          console.error('Không thể đánh dấu thông báo đã đọc:', err);
-        }
-      });
+      try {
+        await markRead.mutateAsync(notification.id);
+      } catch (err) {
+        console.error('Không thể đánh dấu thông báo đã đọc:', err);
+        feedback.error('Không thể cập nhật thông báo lúc này.');
+      }
     }
 
-    if (!target) return;
+    const portalPage = getNotificationPortalPage(target);
+    const route = getNotificationRoute(target);
+
+    if (!portalPage && !route) {
+      if (import.meta.env.DEV) {
+        console.debug('No navigation target for notification', notification);
+      }
+      return;
+    }
 
     if (onNavigateTarget) {
       onNavigateTarget(target);
-    } else {
-      navigate(target);
+    } else if (route) {
+      navigate(route);
     }
   }
 

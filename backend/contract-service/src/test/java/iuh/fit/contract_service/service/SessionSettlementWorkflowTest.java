@@ -20,6 +20,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.web3j.crypto.Hash;
 import tools.jackson.databind.ObjectMapper;
 
+import java.math.BigInteger;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
@@ -225,16 +226,16 @@ class SessionSettlementWorkflowTest {
         SessionSettlement updatedSettlement = sessionSettlementRepository.findById(settlement.getId()).orElseThrow();
         assertEquals(SettlementStatus.SETTLED, updatedSettlement.getStatus());
 
-        ContractAgreement completedAgreement = agreementRepository.findById(agreementId).orElseThrow();
-        assertEquals(ContractAgreementStatus.COMPLETED, completedAgreement.getStatus());
+        ContractAgreement activeAgreement = agreementRepository.findById(agreementId).orElseThrow();
+        assertEquals(ContractAgreementStatus.ACTIVE, activeAgreement.getStatus());
 
         long settledOutboxCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM outbox_event WHERE event_type = 'session.settled.v1'", Long.class);
         assertEquals(1L, settledOutboxCount);
 
-        long completedOutboxCount = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM outbox_event WHERE event_type = 'contract.completed.v1'", Long.class);
-        assertEquals(1L, completedOutboxCount);
+        assertEquals(BigInteger.valueOf(34_000_000L), updatedSettlement.getTutorAmount());
+        assertEquals(BigInteger.valueOf(6_000_000L), updatedSettlement.getPlatformAmount());
+        assertEquals(BigInteger.ZERO, updatedSettlement.getStudentRefundAmount());
     }
 
     private void insertAgreement(UUID id, String onchainAgreementId, String termsHash, String status, int totalSessions) {

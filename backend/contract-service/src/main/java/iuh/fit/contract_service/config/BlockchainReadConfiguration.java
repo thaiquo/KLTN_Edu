@@ -7,8 +7,13 @@ import iuh.fit.contract_service.blockchain.Web3jBlockchainRpcClient;
 import iuh.fit.contract_service.blockchain.EduConnectEscrowEventDecoder;
 import iuh.fit.contract_service.repository.BlockchainEventCursorRepository;
 import iuh.fit.contract_service.repository.ProcessedEventRepository;
+import iuh.fit.contract_service.service.AgreementFundingWorkflowService;
+import iuh.fit.contract_service.service.AgreementLifecycleWorkflowService;
+import iuh.fit.contract_service.service.AgreementRegistrationWorkflowService;
 import iuh.fit.contract_service.service.BlockchainEventIngestionService;
 import iuh.fit.contract_service.service.BlockchainEventPollingWorker;
+import iuh.fit.contract_service.service.DisputeWorkflowService;
+import iuh.fit.contract_service.service.SessionSettlementWorkflowService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationRunner;
@@ -56,6 +61,11 @@ public class BlockchainReadConfiguration {
             EduConnectEscrowEventDecoder decoder,
             BlockchainEventCursorRepository cursorRepository,
             ProcessedEventRepository eventRepository,
+            AgreementRegistrationWorkflowService registrationWorkflowService,
+            AgreementFundingWorkflowService fundingWorkflowService,
+            SessionSettlementWorkflowService settlementWorkflowService,
+            DisputeWorkflowService disputeWorkflowService,
+            AgreementLifecycleWorkflowService lifecycleWorkflowService,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager) {
         return new BlockchainEventIngestionService(
@@ -64,6 +74,11 @@ public class BlockchainReadConfiguration {
                 decoder,
                 cursorRepository,
                 eventRepository,
+                registrationWorkflowService,
+                fundingWorkflowService,
+                settlementWorkflowService,
+                disputeWorkflowService,
+                lifecycleWorkflowService,
                 objectMapper,
                 transactionManager);
     }

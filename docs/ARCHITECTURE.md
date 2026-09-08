@@ -25,9 +25,15 @@ No `ai-service` source module is currently present.
 
 - Account Service owns authentication, user identity, roles, active role, student profile, tutor profile, tutor applications, tutor documents, and account-side staff/admin operations.
 - Learning Service owns teaching catalog, tutor subject/expertise registration, tutor availability, class/classroom data, class schedules/chapters, and enrollment/join request data.
-- Contract Service owns contract agreement data, escrow payment metadata, settlement/dispute state, blockchain transaction records, outbox records, and blockchain event cursor/processed event data.
+- Contract Service owns contract agreement data, escrow payment metadata, settlement/dispute state, lifecycle cancellation/expiration state, blockchain transaction records, outbox records, and blockchain event cursor/processed event data.
 - Notification is implemented as a partial domain capability: persistent notifications, REST Bell APIs, limited RabbitMQ consumers, and raw WebSocket delivery exist, but not every notification-worthy business event is covered.
 - AI Matching is target/planned. Current search/filter logic lives in existing Account/Learning APIs rather than a dedicated AI service.
+
+Contract funding is event-confirmed: frontend/backend payment submission may record a funding txHash as `PAYMENT_CONFIRMING`, but Contract Service only moves an agreement to `ACTIVE`, locks escrow metadata, sends activation notifications, and dispatches Learning enrollment activation after ingesting a confirmed `AgreementFunded` event.
+
+Contract lifecycle after funding is also event-confirmed. Contract Service enqueues backend-owned operator/arbitrator transactions for session proposals, finalization, tutor-fraud dispute opening/resolution, expiration, and cancellation/refund through the durable blockchain transaction pipeline. It only marks session payout/refund, dispute open/resolved, agreement completed/expired/cancelled, and unused-refund records after the corresponding escrow events are ingested.
+
+Frontend IA separates `Ví của tôi` from `Thanh toán & Ký quỹ`: `Ví của tôi` is wallet-focused Web3 access, while `Thanh toán & Ký quỹ` remains the payment/escrow workflow entry. Current Web UI reuses `MyWalletView` for both access paths until dedicated payment/escrow APIs are complete.
 
 ## 4. Data Ownership
 
@@ -54,7 +60,7 @@ Known implemented event direction:
 | Account Service | Tutor application submitted/approved/rejected. | Learning Service consumes tutor approval/rejection events. |
 | Learning Service | Subject request approved/rejected. | Account Service consumes subject request decision events. |
 
-No proven end-to-end RabbitMQ flow currently connects Learning session completion to Contract settlement/blockchain.
+No proven end-to-end Learning session/attendance flow currently triggers Contract settlement automatically. Manual Contract Service APIs/UI actions can enqueue settlement lifecycle transactions, but learning-session eligibility remains a separate incomplete domain.
 
 ## 6. API Gateway
 
@@ -64,8 +70,10 @@ Current evidence shows:
 
 - Account routes under `/api/account/**`, `/api/auth/**`, `/api/users/**`, `/api/admin/**`, `/api/tutors/**`, `/api/tutor-applications/**`, `/api/staff/**`, and `/api/reference/**`.
 - Learning routes under `/api/learning/**`.
+- Contract routes under `/api/contracts/**`.
 - WebSocket forwarding for `/ws/account`, `/ws/learning`, and `/ws/notifications`.
 - Credentialed CORS for local frontend origins.
+- Gateway forwards authenticated browser cookies to services and is not the identity authority for Contract Service. Contract Service validates the `access_token` cookie itself and ignores spoofable client identity headers/query parameters for authorization.
 
 Gateway route details belong in source/config and API-specific documentation, not in this architecture baseline.
 

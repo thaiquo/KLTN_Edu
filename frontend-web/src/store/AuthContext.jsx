@@ -98,6 +98,7 @@ export function AuthProvider({ children }) {
   async function logout() {
     await authApi.logout().catch(() => {});
     setUser(null);
+    window.dispatchEvent(new Event('auth:logout'));
   }
 
   const value = useMemo(() => ({

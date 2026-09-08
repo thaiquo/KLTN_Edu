@@ -87,6 +87,63 @@ class AgreementFundingWorkflowTest {
     }
 
     @Test
+    void recordPaymentSubmissionIsIdempotentForSameTxHash() {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        String termsHash = Hash.sha3String("terms-v1");
+
+        insertAgreement(agreementId, onchainAgreementId, termsHash, "WAITING_PAYMENT");
+
+        String txHash = "0x" + "a".repeat(64);
+        fundingWorkflowService.recordPaymentSubmission(agreementId, txHash);
+        fundingWorkflowService.recordPaymentSubmission(agreementId, "0x" + "A".repeat(64));
+
+        ContractAgreement agreement = agreementRepository.findById(agreementId).orElseThrow();
+        assertEquals(ContractAgreementStatus.PAYMENT_CONFIRMING, agreement.getStatus());
+
+        long paymentCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM escrow_payment WHERE agreement_id = ?", Long.class, agreementId);
+        assertEquals(1L, paymentCount);
+    }
+
+    @Test
+    void recordPaymentSubmissionRejectsDifferentTxWhileConfirming() {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        String termsHash = Hash.sha3String("terms-v1");
+
+        insertAgreement(agreementId, onchainAgreementId, termsHash, "WAITING_PAYMENT");
+
+        fundingWorkflowService.recordPaymentSubmission(agreementId, "0x" + "a".repeat(64));
+
+        assertThrows(IllegalStateException.class,
+                () -> fundingWorkflowService.recordPaymentSubmission(agreementId, "0x" + "b".repeat(64)));
+    }
+
+    @Test
+    void recordPaymentSubmissionRejectsActiveAgreementRetry() {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        String termsHash = Hash.sha3String("terms-v1");
+
+        insertAgreement(agreementId, onchainAgreementId, termsHash, "ACTIVE");
+
+        assertThrows(IllegalStateException.class,
+                () -> fundingWorkflowService.recordPaymentSubmission(agreementId, "0x" + "a".repeat(64)));
+    }
+
+    @Test
+    void recordPaymentSubmissionRejectsBeforeWaitingPayment() {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        String termsHash = Hash.sha3String("terms-v1");
+
+        insertAgreement(agreementId, onchainAgreementId, termsHash, "PREPARING_BLOCKCHAIN");
+
+        assertThrows(IllegalStateException.class,
+                () -> fundingWorkflowService.recordPaymentSubmission(agreementId, "0x" + "a".repeat(64)));
+    }
+
+    @Test
     void processConfirmedFundingEventTransitionsAgreementToActiveAndPaymentToLocked() throws Exception {
         UUID agreementId = UUID.randomUUID();
         String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
@@ -141,6 +198,43 @@ class AgreementFundingWorkflowTest {
         long outboxCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM outbox_event WHERE event_type = 'contract.activated.v1'", Long.class);
         assertEquals(1L, outboxCount);
+    }
+
+    @Test
+    void processConfirmedFundingEventIsIdempotentAfterActivation() throws Exception {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        String termsHash = Hash.sha3String("terms-v1");
+
+        insertAgreement(agreementId, onchainAgreementId, termsHash, "WAITING_PAYMENT");
+
+        ProcessedEvent event = fundedEvent(onchainAgreementId, STUDENT, "40000000");
+
+        assertTrue(fundingWorkflowService.processConfirmedFundingEvent(event));
+        assertTrue(fundingWorkflowService.processConfirmedFundingEvent(event));
+
+        ContractAgreement updatedAgreement = agreementRepository.findById(agreementId).orElseThrow();
+        assertEquals(ContractAgreementStatus.ACTIVE, updatedAgreement.getStatus());
+        long outboxCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM outbox_event WHERE event_type = 'contract.activated.v1'", Long.class);
+        assertEquals(1L, outboxCount);
+    }
+
+    @Test
+    void processConfirmedFundingEventForUnknownAgreementDoesNotActivateCurrentAgreement() throws Exception {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        String termsHash = Hash.sha3String("terms-v1");
+
+        insertAgreement(agreementId, onchainAgreementId, termsHash, "WAITING_PAYMENT");
+
+        ProcessedEvent event = fundedEvent(Hash.sha3String("other-agreement"), STUDENT, "40000000");
+
+        boolean processed = fundingWorkflowService.processConfirmedFundingEvent(event);
+
+        assertEquals(false, processed);
+        ContractAgreement unchanged = agreementRepository.findById(agreementId).orElseThrow();
+        assertEquals(ContractAgreementStatus.WAITING_PAYMENT, unchanged.getStatus());
     }
 
     @Test
@@ -243,5 +337,35 @@ class AgreementFundingWorkflowTest {
                 """,
                 id, onchainAgreementId, STUDENT, TUTOR, PLATFORM, CHAIN_ID,
                 ESCROW, TOKEN, termsHash, status);
+    }
+
+    private ProcessedEvent fundedEvent(String onchainAgreementId, String student, String amount) throws Exception {
+        Map<String, String> attributes = new LinkedHashMap<>();
+        attributes.put("student", student);
+        attributes.put("amount", amount);
+
+        DecodedEscrowEvent decodedEvent = new DecodedEscrowEvent(
+                EscrowEventType.AGREEMENT_FUNDED,
+                onchainAgreementId,
+                null,
+                attributes);
+
+        String jsonPayload = objectMapper.writeValueAsString(decodedEvent);
+        BlockchainLog log = new BlockchainLog(
+                ESCROW,
+                List.of("0x" + "1".repeat(64)),
+                "0x",
+                105L,
+                "0x" + "b".repeat(64),
+                "0x" + "f".repeat(64),
+                0L);
+
+        return ProcessedEvent.blockchainLog(
+                CHAIN_ID,
+                ESCROW,
+                log,
+                "AGREEMENT_FUNDED",
+                jsonPayload,
+                OffsetDateTime.now(ZoneOffset.UTC));
     }
 }

@@ -148,8 +148,15 @@ public class Phase3ProfileAuthValidationTest {
         sRole.setUser(user);
         sRole.setRole(Role.STUDENT);
         when(userRoleRepository.findByUserId(101L)).thenReturn(List.of(sRole));
-        when(jwtService.generateToken(eq("student1@example.com"), eq(101L), eq("STUDENT"), any(), eq(null))).thenReturn("student-jwt");
-        when(refreshTokenService.createSession(user, "STUDENT")).thenReturn("student-refresh");
+        when(jwtService.generateToken(
+                        eq(101L),
+                        eq("student1@example.com"),
+                        eq("STUDENT"),
+                        any(),
+                        eq(null))).thenReturn("student-jwt");
+
+        when(refreshTokenService.createSession(user, "STUDENT"))
+                        .thenReturn("student-refresh");
 
         LoginRequest loginReq = new LoginRequest();
         loginReq.setEmail("student1@example.com");
@@ -186,8 +193,15 @@ public class Phase3ProfileAuthValidationTest {
         when(userRepository.findByEmailIgnoreCase("pending.tutor@example.com")).thenReturn(Optional.of(user));
         when(tutorRepository.findByUserId(202L)).thenReturn(Optional.of(pendingTutor));
         when(userRoleRepository.findByUserId(202L)).thenReturn(List.of(tRole));
-        when(jwtService.generateToken(eq("pending.tutor@example.com"), eq(202L), eq("TUTOR"), any(), eq("PENDING"))).thenReturn("pending-tutor-jwt");
-        when(refreshTokenService.createSession(user, "TUTOR")).thenReturn("pending-tutor-refresh");
+        when(jwtService.generateToken(
+                        eq(202L),
+                        eq("pending.tutor@example.com"),
+                        eq("TUTOR"),
+                        any(),
+                        eq("PENDING"))).thenReturn("pending-tutor-jwt");
+
+        when(refreshTokenService.createSession(user, "TUTOR"))
+                        .thenReturn("pending-tutor-refresh");
 
         LoginRequest loginReq = new LoginRequest();
         loginReq.setEmail("pending.tutor@example.com");
@@ -226,8 +240,15 @@ public class Phase3ProfileAuthValidationTest {
         when(userRepository.findByEmailIgnoreCase("approved.tutor@example.com")).thenReturn(Optional.of(user));
         when(tutorRepository.findByUserId(303L)).thenReturn(Optional.of(approvedTutor));
         when(userRoleRepository.findByUserId(303L)).thenReturn(List.of(tRole));
-        when(jwtService.generateToken(eq("approved.tutor@example.com"), eq(303L), eq("TUTOR"), any(), eq("APPROVED"))).thenReturn("approved-tutor-jwt");
-        when(refreshTokenService.createSession(user, "TUTOR")).thenReturn("approved-tutor-refresh");
+        when(jwtService.generateToken(
+                        eq(303L),
+                        eq("approved.tutor@example.com"),
+                        eq("TUTOR"),
+                        any(),
+                        eq("APPROVED"))).thenReturn("approved-tutor-jwt");
+
+        when(refreshTokenService.createSession(user, "TUTOR"))
+                        .thenReturn("approved-tutor-refresh");
 
         LoginRequest loginReq = new LoginRequest();
         loginReq.setEmail("approved.tutor@example.com");
@@ -267,8 +288,15 @@ public class Phase3ProfileAuthValidationTest {
         when(userRepository.findByEmailIgnoreCase("rejected.tutor@example.com")).thenReturn(Optional.of(user));
         when(tutorRepository.findByUserId(404L)).thenReturn(Optional.of(rejectedTutor));
         when(userRoleRepository.findByUserId(404L)).thenReturn(List.of(tRole));
-        when(jwtService.generateToken(eq("rejected.tutor@example.com"), eq(404L), eq("TUTOR"), any(), eq("REJECTED"))).thenReturn("rejected-tutor-jwt");
-        when(refreshTokenService.createSession(user, "TUTOR")).thenReturn("rejected-tutor-refresh");
+        when(jwtService.generateToken(
+                        eq(404L),
+                        eq("rejected.tutor@example.com"),
+                        eq("TUTOR"),
+                        any(),
+                        eq("REJECTED"))).thenReturn("rejected-tutor-jwt");
+
+        when(refreshTokenService.createSession(user, "TUTOR"))
+                        .thenReturn("rejected-tutor-refresh");
 
         LoginRequest loginReq = new LoginRequest();
         loginReq.setEmail("rejected.tutor@example.com");
@@ -340,12 +368,23 @@ public class Phase3ProfileAuthValidationTest {
         SwitchRoleRequest switchReq = new SwitchRoleRequest();
         switchReq.setTargetRole("TUTOR");
 
-        when(jwtService.generateToken(eq("dual.user@example.com"), eq(606L), eq("TUTOR"), any(), eq("APPROVED"))).thenReturn("jwt-tutor");
+        when(jwtService.generateToken(
+                eq(606L),
+                eq("dual.user@example.com"),
+                eq("TUTOR"),
+                any(),
+                eq("APPROVED")
+        )).thenReturn("jwt-tutor");
         LoginResult res1 = authService.switchRole("dual.user@example.com", switchReq);
         assertThat(res1.getActiveRole()).isEqualTo("TUTOR");
 
         switchReq.setTargetRole("STUDENT");
-        when(jwtService.generateToken(eq("dual.user@example.com"), eq(606L), eq("STUDENT"), any(), eq("APPROVED"))).thenReturn("jwt-student");
+        when(jwtService.generateToken(
+                        eq(606L),
+                        eq("dual.user@example.com"),
+                        eq("STUDENT"),
+                        any(),
+                        eq("APPROVED"))).thenReturn("jwt-student");
         LoginResult res2 = authService.switchRole("dual.user@example.com", switchReq);
         assertThat(res2.getActiveRole()).isEqualTo("STUDENT");
     }

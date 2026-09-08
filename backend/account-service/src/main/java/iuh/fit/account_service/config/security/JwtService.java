@@ -19,21 +19,53 @@ public class JwtService {
 
     public JwtService(
             @Value("${jwt.secret}") String secret,
-            @Value("${jwt.expiration}") long expiration
-    ) {
+            @Value("${jwt.expiration}") long expiration) {
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.expiration = expiration;
     }
 
     public String generateToken(String email, List<String> roles) {
-        return generateToken(email, roles.isEmpty() ? null : roles.get(0), roles);
+        return generateToken(
+                null,
+                email,
+                roles.isEmpty() ? null : roles.get(0),
+                roles,
+                null);
     }
 
-    public String generateToken(String email, String activeRole, List<String> roles) {
-        return generateToken(email, null, activeRole, roles, null);
+    public String generateToken(
+            String email,
+            String activeRole,
+            List<String> roles) {
+        return generateToken(
+                null,
+                email,
+                activeRole,
+                roles,
+                null);
     }
 
-    public String generateToken(String email, Long userId, String activeRole, List<String> roles, String tutorStatus) {
+    // Tương thích với code của quocthai1
+    public String generateToken(
+            Long userId,
+            String email,
+            String activeRole,
+            List<String> roles) {
+        return generateToken(
+                userId,
+                email,
+                activeRole,
+                roles,
+                null);
+    }
+
+    // Method đầy đủ
+    public String generateToken(
+            Long userId,
+            String email,
+            String activeRole,
+            List<String> roles,
+            String tutorStatus) {
         Date now = new Date();
         Date expirationDate = new Date(now.getTime() + expiration);
 
@@ -47,11 +79,14 @@ public class JwtService {
         if (userId != null) {
             builder.claim("userId", userId);
         }
+
         if (tutorStatus != null && !tutorStatus.isBlank()) {
             builder.claim("tutorStatus", tutorStatus);
         }
 
-        return builder.signWith(secretKey).compact();
+        return builder
+                .signWith(secretKey)
+                .compact();
     }
 
     public String extractEmail(String token) {

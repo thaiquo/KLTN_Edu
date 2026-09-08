@@ -30,6 +30,11 @@ public class BlockchainEventIngestionService {
     private final EduConnectEscrowEventDecoder decoder;
     private final BlockchainEventCursorRepository cursorRepository;
     private final ProcessedEventRepository eventRepository;
+    private final AgreementRegistrationWorkflowService registrationWorkflowService;
+    private final AgreementFundingWorkflowService fundingWorkflowService;
+    private final SessionSettlementWorkflowService settlementWorkflowService;
+    private final DisputeWorkflowService disputeWorkflowService;
+    private final AgreementLifecycleWorkflowService lifecycleWorkflowService;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
@@ -39,6 +44,11 @@ public class BlockchainEventIngestionService {
             EduConnectEscrowEventDecoder decoder,
             BlockchainEventCursorRepository cursorRepository,
             ProcessedEventRepository eventRepository,
+            AgreementRegistrationWorkflowService registrationWorkflowService,
+            AgreementFundingWorkflowService fundingWorkflowService,
+            SessionSettlementWorkflowService settlementWorkflowService,
+            DisputeWorkflowService disputeWorkflowService,
+            AgreementLifecycleWorkflowService lifecycleWorkflowService,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager) {
         this.properties = properties;
@@ -46,6 +56,11 @@ public class BlockchainEventIngestionService {
         this.decoder = decoder;
         this.cursorRepository = cursorRepository;
         this.eventRepository = eventRepository;
+        this.registrationWorkflowService = registrationWorkflowService;
+        this.fundingWorkflowService = fundingWorkflowService;
+        this.settlementWorkflowService = settlementWorkflowService;
+        this.disputeWorkflowService = disputeWorkflowService;
+        this.lifecycleWorkflowService = lifecycleWorkflowService;
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -97,13 +112,15 @@ public class BlockchainEventIngestionService {
                     properties.getChainId(), log.transactionHash(), log.logIndex())) {
                 continue;
             }
-            eventRepository.save(ProcessedEvent.blockchainLog(
+            ProcessedEvent processedEvent = ProcessedEvent.blockchainLog(
                     properties.getChainId(),
                     properties.getEscrowAddress(),
                     log,
                     event.type().name(),
                     serialize(event),
-                    now));
+                    now);
+            eventRepository.save(processedEvent);
+            processPersistedEvent(processedEvent);
             persisted++;
         }
         eventRepository.flush();
@@ -163,6 +180,29 @@ public class BlockchainEventIngestionService {
             return objectMapper.writeValueAsString(event);
         } catch (JacksonException exception) {
             throw new IllegalStateException("Cannot serialize decoded escrow event", exception);
+        }
+    }
+
+    private void processPersistedEvent(ProcessedEvent event) {
+        if (registrationWorkflowService != null) {
+            registrationWorkflowService.processConfirmedRegistrationEvent(event);
+        }
+        if (fundingWorkflowService != null) {
+            fundingWorkflowService.processConfirmedFundingEvent(event);
+        }
+        if (settlementWorkflowService != null) {
+            settlementWorkflowService.processConfirmedSessionProposalEvent(event);
+            settlementWorkflowService.processConfirmedSessionSettledEvent(event);
+        }
+        if (disputeWorkflowService != null) {
+            disputeWorkflowService.processConfirmedDisputeOpenedEvent(event);
+            disputeWorkflowService.processConfirmedDisputeResolvedEvent(event);
+        }
+        if (lifecycleWorkflowService != null) {
+            lifecycleWorkflowService.processCompletedEvent(event);
+            lifecycleWorkflowService.processExpiredEvent(event);
+            lifecycleWorkflowService.processCancelledEvent(event);
+            lifecycleWorkflowService.processUnusedAmountRefundedEvent(event);
         }
     }
 }

@@ -26,6 +26,8 @@ public class NotificationRabbitConfig {
     public static final String ENROLLMENT_ACCEPTED_QUEUE = "notification.enrollment-accepted";
     public static final String ENROLLMENT_REJECTED_QUEUE = "notification.enrollment-rejected";
     public static final String ENROLLMENT_CANCELLED_QUEUE = "notification.enrollment-cancelled";
+    public static final String CLASS_REVIEWED_QUEUE = "notification.class-reviewed";
+    public static final String TEACHING_REGISTRATION_REVIEWED_QUEUE = "notification.teaching-registration-reviewed";
 
     public static final String TUTOR_APPLICATION_SUBMITTED_ROUTING_KEY = "account.tutor-application.submitted";
     public static final String TUTOR_APPROVED_ROUTING_KEY = "account.tutor.approved";
@@ -36,6 +38,8 @@ public class NotificationRabbitConfig {
     public static final String ENROLLMENT_ACCEPTED_ROUTING_KEY = "learning.enrollment.accepted";
     public static final String ENROLLMENT_REJECTED_ROUTING_KEY = "learning.enrollment.rejected";
     public static final String ENROLLMENT_CANCELLED_ROUTING_KEY = "learning.enrollment.cancelled";
+    public static final String CLASS_REVIEWED_ROUTING_KEY = "learning.class.reviewed";
+    public static final String TEACHING_REGISTRATION_REVIEWED_ROUTING_KEY = "learning.teaching-registration.reviewed";
 
     @Bean
     DirectExchange eduEventsExchange() {
@@ -88,6 +92,16 @@ public class NotificationRabbitConfig {
     }
 
     @Bean
+    Queue notificationClassReviewedQueue() {
+        return new Queue(CLASS_REVIEWED_QUEUE, true);
+    }
+
+    @Bean
+    Queue notificationTeachingRegistrationReviewedQueue() {
+        return new Queue(TEACHING_REGISTRATION_REVIEWED_QUEUE, true);
+    }
+
+    @Bean
     Binding notificationTutorApplicationSubmittedBinding(Queue notificationTutorApplicationSubmittedQueue, DirectExchange eduEventsExchange) {
         return BindingBuilder.bind(notificationTutorApplicationSubmittedQueue).to(eduEventsExchange).with(TUTOR_APPLICATION_SUBMITTED_ROUTING_KEY);
     }
@@ -130,6 +144,16 @@ public class NotificationRabbitConfig {
     @Bean
     Binding notificationEnrollmentCancelledBinding(Queue notificationEnrollmentCancelledQueue, DirectExchange eduEventsExchange) {
         return BindingBuilder.bind(notificationEnrollmentCancelledQueue).to(eduEventsExchange).with(ENROLLMENT_CANCELLED_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding notificationClassReviewedBinding(Queue notificationClassReviewedQueue, DirectExchange eduEventsExchange) {
+        return BindingBuilder.bind(notificationClassReviewedQueue).to(eduEventsExchange).with(CLASS_REVIEWED_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding notificationTeachingRegistrationReviewedBinding(Queue notificationTeachingRegistrationReviewedQueue, DirectExchange eduEventsExchange) {
+        return BindingBuilder.bind(notificationTeachingRegistrationReviewedQueue).to(eduEventsExchange).with(TEACHING_REGISTRATION_REVIEWED_ROUTING_KEY);
     }
 
     @Bean

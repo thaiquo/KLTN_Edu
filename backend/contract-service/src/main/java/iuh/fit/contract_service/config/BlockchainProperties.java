@@ -34,6 +34,23 @@ public class BlockchainProperties {
     @Max(10_000)
     private int eventBlockBatchSize = 500;
 
+    @Min(1)
+    @Max(100)
+    private int dispatcherBatchSize = 5;
+
+    @Min(1)
+    private long dispatchRetryDelayMs = 30_000;
+
+    @Min(1)
+    private int maxDispatchAttempts = 3;
+
+    @Min(1)
+    @Max(500)
+    private int receiptWatchBatchSize = 50;
+
+    @Min(1)
+    private long transactionStaleTimeoutMs = 1_800_000;
+
     @AssertTrue(message = "enabled blockchain configuration requires chain ID, HTTP(S) RPC URL, and valid distinct contract/token addresses")
     public boolean isCompleteWhenEnabled() {
         if (!enabled) {
@@ -128,5 +145,45 @@ public class BlockchainProperties {
 
     public void setEventBlockBatchSize(int eventBlockBatchSize) {
         this.eventBlockBatchSize = eventBlockBatchSize;
+    }
+
+    public int getDispatcherBatchSize() {
+        return dispatcherBatchSize;
+    }
+
+    public void setDispatcherBatchSize(int dispatcherBatchSize) {
+        this.dispatcherBatchSize = dispatcherBatchSize;
+    }
+
+    public long getDispatchRetryDelayMs() {
+        return dispatchRetryDelayMs;
+    }
+
+    public void setDispatchRetryDelayMs(long dispatchRetryDelayMs) {
+        this.dispatchRetryDelayMs = dispatchRetryDelayMs;
+    }
+
+    public int getMaxDispatchAttempts() {
+        return maxDispatchAttempts;
+    }
+
+    public void setMaxDispatchAttempts(int maxDispatchAttempts) {
+        this.maxDispatchAttempts = maxDispatchAttempts;
+    }
+
+    public int getReceiptWatchBatchSize() {
+        return receiptWatchBatchSize;
+    }
+
+    public void setReceiptWatchBatchSize(int receiptWatchBatchSize) {
+        this.receiptWatchBatchSize = receiptWatchBatchSize;
+    }
+
+    public long getTransactionStaleTimeoutMs() {
+        return transactionStaleTimeoutMs;
+    }
+
+    public void setTransactionStaleTimeoutMs(long transactionStaleTimeoutMs) {
+        this.transactionStaleTimeoutMs = transactionStaleTimeoutMs;
     }
 }

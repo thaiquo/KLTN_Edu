@@ -148,6 +148,29 @@ public final class EduConnectEscrowCalldataEncoder {
         return FunctionEncoder.encode(function);
     }
 
+    public static String encodeExpireAgreement(String agreementIdHex) {
+        String cleanAgreementId = validateHex(agreementIdHex, "agreementIdHex", BYTES32_PATTERN);
+
+        Function function = new Function(
+                "expireAgreement",
+                List.of(new Bytes32(Numeric.hexStringToByteArray(cleanAgreementId))),
+                List.of());
+        return FunctionEncoder.encode(function);
+    }
+
+    public static String encodeCancelAgreementAndRefundUnused(String agreementIdHex, String reasonHashHex) {
+        String cleanAgreementId = validateHex(agreementIdHex, "agreementIdHex", BYTES32_PATTERN);
+        String cleanReasonHash = validateHex(reasonHashHex, "reasonHashHex", BYTES32_PATTERN);
+
+        Function function = new Function(
+                "cancelAgreementAndRefundUnused",
+                List.of(
+                        new Bytes32(Numeric.hexStringToByteArray(cleanAgreementId)),
+                        new Bytes32(Numeric.hexStringToByteArray(cleanReasonHash))),
+                List.of());
+        return FunctionEncoder.encode(function);
+    }
+
     private static String validateHex(String value, String name, Pattern pattern) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(name + " must not be blank");

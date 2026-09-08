@@ -110,7 +110,7 @@ class DisputeWorkflowTest {
         assertEquals(101L, dispute.getComplainantId());
 
         SessionSettlement updatedSettlement = sessionSettlementRepository.findById(settlement.getId()).orElseThrow();
-        assertEquals(SettlementStatus.DISPUTED, updatedSettlement.getStatus());
+        assertEquals(SettlementStatus.DISPUTE_OPENING, updatedSettlement.getStatus());
     }
 
     @Test
@@ -283,7 +283,7 @@ class DisputeWorkflowTest {
     }
 
     @Test
-    void processConfirmedDisputeResolvedEventMarksSettlementRefundedAndCompletesAgreement() throws Exception {
+    void processConfirmedDisputeResolvedEventMarksOnlyDisputeUntilSessionSettledEvent() throws Exception {
         UUID agreementId = UUID.randomUUID();
         String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
         String termsHash = Hash.sha3String("terms-v1");
@@ -349,10 +349,10 @@ class DisputeWorkflowTest {
         assertEquals(txHash, resolvedDispute.getResolveTxHash());
 
         SessionSettlement refundedSettlement = sessionSettlementRepository.findById(settlement.getId()).orElseThrow();
-        assertEquals(SettlementStatus.REFUNDED, refundedSettlement.getStatus());
+        assertEquals(SettlementStatus.DISPUTE_OPENING, refundedSettlement.getStatus());
 
-        ContractAgreement completedAgreement = agreementRepository.findById(agreementId).orElseThrow();
-        assertEquals(ContractAgreementStatus.COMPLETED, completedAgreement.getStatus());
+        ContractAgreement activeAgreement = agreementRepository.findById(agreementId).orElseThrow();
+        assertEquals(ContractAgreementStatus.ACTIVE, activeAgreement.getStatus());
     }
 
     private void insertAgreement(UUID id, String onchainAgreementId, String termsHash, String status, int totalSessions, String reviewerEmail) {

@@ -73,7 +73,12 @@ class AuthServiceSwitchRoleHardeningTest {
         when(tutorRepository.findByUserId(1L)).thenReturn(Optional.empty());
         when(tutorApplicationRepository.findByUserId(1L)).thenReturn(Optional.empty());
         when(userRoleRepository.findByUserId(1L)).thenReturn(List.of(role(user, Role.STUDENT)));
-        when(jwtService.generateToken("student@example.com", 1L, "STUDENT", List.of("STUDENT"), null))
+        when(jwtService.generateToken(
+                1L,
+                "student@example.com",
+                "STUDENT",
+                List.of("STUDENT"),
+                null))
                 .thenReturn("student-token");
 
         LoginResult studentResult = authService.switchRole("student@example.com", request("STUDENT"));
@@ -112,7 +117,12 @@ class AuthServiceSwitchRoleHardeningTest {
         when(tutorRepository.findByUserId(5L)).thenReturn(Optional.of(tutor));
         when(tutorApplicationRepository.findByUserId(5L)).thenReturn(Optional.of(application));
         when(userRoleRepository.findByUserId(5L)).thenReturn(List.of(role(user, Role.STUDENT), role(user, Role.TUTOR)));
-        when(jwtService.generateToken("approved@example.com", 5L, "TUTOR", roles, "APPROVED"))
+        when(jwtService.generateToken(
+                5L,
+                "approved@example.com",
+                "TUTOR",
+                roles,
+                "APPROVED"))
                 .thenReturn("approved-token");
 
         LoginResult result = authService.switchRole("approved@example.com", request("TUTOR"), "refresh-token");
@@ -135,7 +145,12 @@ class AuthServiceSwitchRoleHardeningTest {
         when(tutorRepository.findByUserId(6L)).thenReturn(Optional.of(tutor));
         when(tutorApplicationRepository.findByUserId(6L)).thenReturn(Optional.of(application));
         when(userRoleRepository.findByUserId(6L)).thenReturn(List.of(role(user, Role.STUDENT), role(user, Role.TUTOR)));
-        when(jwtService.generateToken("dual@example.com", 6L, "STUDENT", roles, "APPROVED"))
+        when(jwtService.generateToken(
+                6L,
+                "dual@example.com",
+                "STUDENT",
+                roles,
+                "APPROVED"))
                 .thenReturn("student-token");
 
         LoginResult result = authService.switchRole("dual@example.com", request("STUDENT"));

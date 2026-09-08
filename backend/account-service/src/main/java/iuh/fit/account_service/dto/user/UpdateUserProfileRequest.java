@@ -49,6 +49,12 @@ public class UpdateUserProfileRequest {
     @Size(max = 300, message = "Bio must not exceed 300 characters")
     private String bio;
 
+    @Pattern(
+            regexp = "^(0x[a-fA-F0-9]{40})?$",
+            message = "Wallet address must be a valid 42-character Ethereum address (e.g. 0x...)"
+    )
+    private String walletAddress;
+
     public String getFullName() {
         return fullName;
     }
@@ -143,5 +149,13 @@ public class UpdateUserProfileRequest {
 
     public void setBio(String bio) {
         this.bio = bio;
+    }
+
+    public String getWalletAddress() {
+        return walletAddress;
+    }
+
+    public void setWalletAddress(String walletAddress) {
+        this.walletAddress = walletAddress;
     }
 }

@@ -31,8 +31,6 @@ set -a
 source "$ENV_FILE"
 set +a
 
-export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-dev}"
-
 mapfile -t required_vars < <(
   grep -hoE '\$\{[A-Za-z_][A-Za-z0-9_]*\}' "$APPLICATION_PROPERTIES" \
     | sed -E 's/^\$\{//; s/\}$//' \
@@ -40,6 +38,7 @@ mapfile -t required_vars < <(
 )
 
 missing_vars=()
+
 for name in "${required_vars[@]}"; do
   if [[ -z "${!name:-}" ]]; then
     missing_vars+=("$name")
@@ -48,9 +47,11 @@ done
 
 if (( ${#missing_vars[@]} > 0 )); then
   echo "Missing required environment variable(s):"
+
   for name in "${missing_vars[@]}"; do
     echo " - $name"
   done
+
   echo "Please configure them in the root .env file."
   exit 1
 fi

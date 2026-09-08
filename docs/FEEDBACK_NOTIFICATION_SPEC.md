@@ -142,7 +142,7 @@ A single User may have both `STUDENT` and `TUTOR` roles. The UI can filter or ro
 | Timestamp | `IMPLEMENTED` | Bell renders backend `createdAt` with compact relative formatting. |
 | Mark one read | `IMPLEMENTED` | Bell calls `PATCH /api/notifications/{id}/read` and invalidates notification queries. |
 | Mark all read | `IMPLEMENTED` | Bell calls `PATCH /api/notifications/read-all` and invalidates notification queries. |
-| Click notification | `PARTIAL` | Bell routes only to existing known targets. Unknown notification targets do not navigate. |
+| Click notification | `IMPLEMENTED` | Bell row click closes the dropdown, marks unread items read, and routes only to existing module-level targets. Unknown notification targets are marked read only and do not navigate. |
 | Realtime insert while online | `PARTIAL` | `/ws/notifications` sends `NOTIFICATION_CREATED`; frontend invalidates notification queries and refetches through REST instead of treating the socket payload as authoritative state. |
 | REST refetch on reconnect/focus | `IMPLEMENTED` | Notification queries refetch on window focus, and notification WebSocket reconnect invalidates notification queries for REST reconciliation. |
 | Empty state | `IMPLEMENTED` | Shared Bell dropdown shows an empty state when the backend returns no notifications. |
@@ -192,7 +192,7 @@ These are event names verified in current source.
 | `TUTOR_APPLICATION_SUBMITTED` | `IMPLEMENTED` | Account Service | Staff/Admin reviewers | Submitter gets toast in FE flow | `PLANNED` | `IMPLEMENTED` through `/ws/account` reviewers | `PLANNED` | `/staff/tutors` | Durable Rabbit event exists, but reviewer recipient ids are not available in the payload, so Notification Service skips persistent creation. |
 | `TUTOR_APPLICATION_REVIEWED` | `IMPLEMENTED` | Account Service | Applicant and Staff/Admin reviewers | Reviewer gets action feedback | `PARTIAL` | `IMPLEMENTED` through `/ws/account`; persisted applicant notifications also deliver through `/ws/notifications` | `IMPLEMENTED` | `/profile`, `/tutor-next-step`, or `/staff/tutors` depending context | Notification Service consumes durable approved/rejected events, creates applicant notifications, emits `NOTIFICATION_CREATED`, and frontend invalidates Bell plus `["tutorApplication","me"]` and refreshes auth user. |
 | `TEACHING_REGISTRATION_SUBMITTED` | `IMPLEMENTED` | Learning Service | Staff/Admin reviewers | Submitter gets toast in FE flow | `PLANNED` | `IMPLEMENTED` through `/ws/learning` reviewers | `PLANNED` | `/staff/tutors` | Business submit and realtime exist; notification DB/Bell missing. |
-| `TEACHING_REGISTRATION_REVIEWED` | `IMPLEMENTED` | Learning Service | Tutor and Staff/Admin reviewers | Reviewer gets action feedback | `PLANNED` | `IMPLEMENTED` through `/ws/learning` broadcast plus FE filtering | `PLANNED` | `/tutor/teaching-registrations` or `/staff/tutors` | Business review and realtime exist; notification DB/Bell missing. |
+| `TEACHING_REGISTRATION_REVIEWED` | `IMPLEMENTED` | Learning Service | Tutor and Staff/Admin reviewers | Reviewer gets action feedback | `IMPLEMENTED` for Tutor recipient | `IMPLEMENTED` through `/ws/learning` broadcast plus `/ws/notifications` for persisted Tutor notification | `IMPLEMENTED` for Tutor recipient | `/tutor/teaching-registrations` or `/staff/tutors` | Review publishes durable `learning.teaching-registration.reviewed` after commit when tutor account id is resolved from `tutor_authorization_states`; Notification Service persists approved/rejected Tutor Bell notifications. |
 | `SUBJECT_REQUEST_SUBMITTED` | `IMPLEMENTED` | Learning Service | Admin reviewers | Submitter gets toast in FE flow | `PLANNED` | `IMPLEMENTED` through `/ws/learning` reviewers | `PLANNED` | `/staff/tutors` | Subject proposal submit realtime exists, but no durable notification event with reviewer recipients is implemented. |
 | `SUBJECT_REQUEST_REVIEWED` | `IMPLEMENTED` | Learning Service | Requesting user and reviewers | Reviewer gets action feedback | `PARTIAL` | `IMPLEMENTED` through `/ws/learning`; persisted requester notifications also deliver through `/ws/notifications` | `IMPLEMENTED` | `/tutor/teaching-registrations` or `/staff/tutors` | Notification Service consumes durable approved/rejected events, creates requester notifications, emits `NOTIFICATION_CREATED`, and frontend invalidates Bell queries. |
 | `CLASS_SUBMITTED` | `IMPLEMENTED` | Learning Service | Staff/Admin reviewers | Tutor gets toast in FE flow | `PLANNED` | `IMPLEMENTED` through `/ws/learning` reviewers | `PLANNED` | `/staff/tutors` | Class submit and realtime exist; notification DB/Bell missing. |
@@ -244,7 +244,7 @@ These are target events derived from current project scope and docs. They are no
 | Tutor | Tutor application create/update/submit | `IMPLEMENTED` | Submission has realtime reviewer event; persistent notification planned. |
 | Tutor | Tutor document upload/delete | `IMPLEMENTED` | Local feedback; query invalidation where TutorApplication completeness/status can change. |
 | Tutor | Staff tutor review | `IMPLEMENTED` | Realtime applicant/reviewer event exists; persistent applicant notification exists for durable approved/rejected Rabbit events; Bell REST UI is implemented. |
-| Teaching | Teaching registration submit/review | `IMPLEMENTED` | Realtime events exist; persistent notification planned. |
+| Teaching | Teaching registration submit/review | `IMPLEMENTED` | Submit realtime exists for reviewers; review now creates persistent Tutor notifications and Bell realtime through Notification Service. |
 | Teaching | Subject proposal/review | `IMPLEMENTED` | Realtime events exist; RabbitMQ decision integration creates requester notifications for approved/rejected subject requests; Bell REST UI is implemented. |
 | Class | Create/update/delete/visibility | `PARTIAL` | Create/review realtime exists; local self-edits need local feedback only unless another user is affected. |
 | Class | Staff approve/reject | `IMPLEMENTED` | Realtime event exists; persistent notification planned. |
@@ -296,11 +296,11 @@ These are target events derived from current project scope and docs. They are no
 | `TUTOR_APPLICATION_SUBMITTED` | `PARTIAL` | Account Service | Staff/Admin | Planned persistent notification; current durable payload lacks reviewer recipient ids | Implemented | `STAFF`/`ADMIN` | `/staff/tutors` |
 | `TUTOR_APPLICATION_REVIEWED` | `PARTIAL` | Account Service | Applicant | Backend persistent notification and Bell REST UI implemented for approved/rejected events | Implemented through account realtime and notification WebSocket | `TUTOR` or account context | `/profile` or `/tutor-next-step` |
 | `TEACHING_REGISTRATION_SUBMITTED` | `PARTIAL` | Learning Service | Staff/Admin | Planned persistent notification | Implemented | `STAFF`/`ADMIN` | `/staff/tutors` |
-| `TEACHING_REGISTRATION_REVIEWED` | `PARTIAL` | Learning Service | Tutor | Planned persistent notification | Implemented | `TUTOR` | `/tutor/teaching-registrations` |
+| `TEACHING_REGISTRATION_REVIEWED` | `IMPLEMENTED` | Learning Service | Tutor | Backend persistent notification and Bell REST UI implemented for approved/rejected events | Implemented through learning realtime and Notification Service WebSocket | `TUTOR` | `/tutor/teaching-registrations` |
 | `SUBJECT_REQUEST_SUBMITTED` | `PARTIAL` | Learning Service | Admin | Planned persistent notification; no durable reviewer-recipient event yet | Implemented | `ADMIN` | `/staff/tutors` |
 | `SUBJECT_REQUEST_REVIEWED` | `PARTIAL` | Learning Service | Requester | Backend persistent notification and Bell REST UI implemented for approved/rejected events | Implemented through learning realtime and notification WebSocket | `TUTOR` | `/tutor/teaching-registrations` |
 | `CLASS_SUBMITTED` | `PARTIAL` | Learning Service | Staff/Admin | Planned persistent notification | Implemented | `STAFF`/`ADMIN` | `/staff/tutors` |
-| `CLASS_REVIEWED` | `PARTIAL` | Learning Service | Tutor | Planned persistent notification | Implemented | `TUTOR` | `/dashboard` |
+| `CLASS_REVIEWED` | `IMPLEMENTED` | Learning Service | Tutor | Backend persistent notification and Bell REST UI implemented for approved/rejected events | Implemented through learning realtime and Notification Service WebSocket | `TUTOR` | `/dashboard` or Portal `my-classes` |
 | `ENROLLMENT_REQUESTED` | `IMPLEMENTED` | Learning Service | Tutor | Persistent notification implemented | Implemented through Notification Service WebSocket | `TUTOR` | `/dashboard` |
 | `ENROLLMENT_ACCEPTED` | `IMPLEMENTED` | Learning Service | Student | Persistent notification implemented | Implemented through Notification Service WebSocket | `STUDENT` | `/my-classes` |
 | `ENROLLMENT_REJECTED` | `IMPLEMENTED` | Learning Service | Student | Persistent notification implemented | Implemented through Notification Service WebSocket | `STUDENT` | `/my-classes` |
@@ -328,7 +328,7 @@ These are target events derived from current project scope and docs. They are no
 | --- | --- | --- |
 | `TUTOR_APPLICATION_SUBMITTED` | `IMPLEMENTED` | Staff queue refresh benefits from realtime. |
 | `TEACHING_REGISTRATION_SUBMITTED` | `IMPLEMENTED` | Review queue refresh benefits from realtime. |
-| `TEACHING_REGISTRATION_REVIEWED` | `IMPLEMENTED` | Tutor status can refresh promptly. |
+| `TEACHING_REGISTRATION_REVIEWED` | `IMPLEMENTED` | Tutor status can refresh promptly; `/ws/notifications` also syncs Bell for persisted approved/rejected registration notifications. |
 | `SUBJECT_REQUEST_SUBMITTED` | `IMPLEMENTED` | Admin review queue refresh benefits from realtime. |
 | `SUBJECT_REQUEST_REVIEWED` | `IMPLEMENTED` | Requester can update proposal state promptly; `/ws/notifications` also syncs Bell for persisted requester notifications. |
 | `CLASS_SUBMITTED` | `IMPLEMENTED` | Staff queue refresh benefits from realtime. |
@@ -459,6 +459,10 @@ Avoid duplicate concepts:
 
 Notification click targets must use existing routes when the target feature exists.
 
+Bell row click behavior is module-level: mark unread notification read, close the dropdown, then navigate to the resolved existing route or Portal page. Exact-item deep links using `referenceId` are not implemented yet.
+
+Notification archive/delete is not implemented. Do not hard delete notification rows for Bell UX cleanup.
+
 Current route targets that may be used:
 
 | Target | Status | Notes |
@@ -468,7 +472,7 @@ Current route targets that may be used:
 | `/profile/password` | `IMPLEMENTED` | Change password. |
 | `/my-classes` | `IMPLEMENTED` | Student enrollment/request page. |
 | `/messages` | `PARTIAL` | Student shell; backend messaging missing. |
-| `/contracts` | `PARTIAL` | Student shell; contract REST incomplete. |
+| `/contracts` | `PARTIAL` | Student contract page reuses the shared real contract view and Contract Service APIs; blockchain registration/funding semantics remain incomplete end-to-end. |
 | `/payments` | `PARTIAL` | Student shell; Web3/payment partial. |
 | `/matching` | `PLANNED` | Student shell exists; AI service missing. |
 | `/dashboard` | `IMPLEMENTED` | Tutor/Staff/Admin portal shell depending role. |

@@ -29,9 +29,7 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -136,7 +134,7 @@ public class DisputeWorkflowService {
                 .build();
         disputeEvidenceRepository.save(evidence);
 
-        settlement.markDisputed();
+        settlement.markDisputeOpening();
         sessionSettlementRepository.saveAndFlush(settlement);
 
         log.info("Initiated dispute opening for settlement {} on agreement {}", settlementId, agreement.getId());
@@ -168,6 +166,19 @@ public class DisputeWorkflowService {
             return false;
         }
 
+        if (dispute.getStatus() == DisputeStatus.OPEN
+                || dispute.getStatus() == DisputeStatus.RESOLUTION_PENDING
+                || dispute.getStatus() == DisputeStatus.APPROVED
+                || dispute.getStatus() == DisputeStatus.REJECTED) {
+            log.info("Dispute {} already moved past opening with status {}", dispute.getId(), dispute.getStatus());
+            return true;
+        }
+
+        String eventEvidenceHash = decodedEvent.attributes().get("evidenceHash");
+        if (eventEvidenceHash == null || eventEvidenceHash.isBlank()) {
+            throw new IllegalStateException("Confirmed dispute event missing evidenceHash");
+        }
+
         dispute.markOpen(event.getTransactionHash());
         disputeRepository.saveAndFlush(dispute);
 
@@ -184,7 +195,7 @@ public class DisputeWorkflowService {
                 settlement.getId(),
                 settlement.getAgreement().getId(),
                 dispute.getComplainantId(),
-                decodedEvent.attributes().get("evidenceHash"),
+                eventEvidenceHash,
                 event.getTransactionHash());
 
         OutboxEvent outboxEvent = OutboxEvent.create(
@@ -213,7 +224,7 @@ public class DisputeWorkflowService {
         Dispute dispute = disputeRepository.findById(disputeId)
                 .orElseThrow(() -> new IllegalArgumentException("Dispute not found: " + disputeId));
 
-        if (dispute.getStatus() != DisputeStatus.OPEN && dispute.getStatus() != DisputeStatus.OPENING) {
+        if (dispute.getStatus() != DisputeStatus.OPEN) {
             throw new IllegalStateException("Cannot resolve dispute in status: " + dispute.getStatus());
         }
 
@@ -296,6 +307,16 @@ public class DisputeWorkflowService {
             return false;
         }
 
+        if (dispute.getStatus() == DisputeStatus.APPROVED || dispute.getStatus() == DisputeStatus.REJECTED) {
+            log.info("Dispute {} already resolved with status {}", dispute.getId(), dispute.getStatus());
+            return true;
+        }
+
+        String resolutionHash = decodedEvent.attributes().get("resolutionHash");
+        if (resolutionHash == null || resolutionHash.isBlank()) {
+            throw new IllegalStateException("Confirmed dispute resolution event missing resolutionHash");
+        }
+
         dispute.markResolved(
                 complaintApproved,
                 dispute.getResolutionReason(),
@@ -306,44 +327,8 @@ public class DisputeWorkflowService {
         disputeRepository.saveAndFlush(dispute);
 
         SessionSettlement settlement = dispute.getSettlement();
-        if (complaintApproved) {
-            settlement.markRefunded(event.getTransactionHash());
-        } else {
-            settlement.markSettled(event.getTransactionHash());
-        }
-        sessionSettlementRepository.saveAndFlush(settlement);
-
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         ContractAgreement agreement = settlement.getAgreement();
-
-        // Check if all sessions for the agreement are completed
-        List<SessionSettlement> allSettlements = sessionSettlementRepository.findByAgreementId(agreement.getId());
-        long settledCount = allSettlements.stream()
-                .filter(s -> s.getStatus() == SettlementStatus.SETTLED || s.getStatus() == SettlementStatus.REFUNDED)
-                .count();
-
-        if (settledCount >= agreement.getTotalSessions()) {
-            agreement.markCompleted();
-            agreementRepository.saveAndFlush(agreement);
-
-            String completedPayload = String.format(
-                    "{\"agreementId\":\"%s\",\"classroomId\":%d,\"studentId\":%d,\"tutorId\":%d,\"completedAt\":\"%s\"}",
-                    agreement.getId(),
-                    agreement.getClassroomId(),
-                    agreement.getStudentId(),
-                    agreement.getTutorId(),
-                    now);
-
-            OutboxEvent completedEvent = OutboxEvent.create(
-                    "contract.completed.v1",
-                    "ContractAgreement",
-                    agreement.getId().toString(),
-                    null,
-                    completedPayload,
-                    now);
-            outboxEventRepository.saveAndFlush(completedEvent);
-            log.info("Agreement {} completed after resolving all {} sessions", agreement.getId(), agreement.getTotalSessions());
-        }
 
         String resolvedPayload = String.format(
                 "{\"disputeId\":\"%s\",\"settlementId\":\"%s\",\"agreementId\":\"%s\",\"complaintApproved\":%b,\"resolutionHash\":\"%s\",\"resolvedByUserId\":%d,\"resolvedByEmail\":\"%s\",\"resolvedByRole\":\"%s\",\"resolveTxHash\":\"%s\"}",
@@ -351,7 +336,7 @@ public class DisputeWorkflowService {
                 settlement.getId(),
                 agreement.getId(),
                 complaintApproved,
-                decodedEvent.attributes().get("resolutionHash"),
+                resolutionHash,
                 dispute.getResolvedByUserId() != null ? dispute.getResolvedByUserId() : 0,
                 dispute.getResolvedByEmail() != null ? dispute.getResolvedByEmail() : "",
                 dispute.getResolvedByRole() != null ? dispute.getResolvedByRole() : "",

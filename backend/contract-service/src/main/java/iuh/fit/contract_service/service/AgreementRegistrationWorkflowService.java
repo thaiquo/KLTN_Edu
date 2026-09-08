@@ -28,6 +28,7 @@ import java.util.UUID;
 @Service
 public class AgreementRegistrationWorkflowService {
     private static final Logger log = LoggerFactory.getLogger(AgreementRegistrationWorkflowService.class);
+    private static final String ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
     private final ContractAgreementRepository agreementRepository;
     private final BlockchainTransactionCommandService commandService;
@@ -53,6 +54,8 @@ public class AgreementRegistrationWorkflowService {
         if (agreement.getStatus() != ContractAgreementStatus.PREPARING_BLOCKCHAIN) {
             throw new IllegalStateException("Agreement must be in PREPARING_BLOCKCHAIN status to initiate registration, actual: " + agreement.getStatus());
         }
+
+        validateRegistrationCommandSource(agreement);
 
         String calldata = EduConnectEscrowCalldataEncoder.encodeRegisterAgreement(
                 agreement.getOnchainAgreementId(),
@@ -155,6 +158,19 @@ public class AgreementRegistrationWorkflowService {
         if (actual == null || !expected.equalsIgnoreCase(actual)) {
             throw new IllegalStateException(String.format(
                     "Event attribute mismatch for field '%s': expected '%s', got '%s'", fieldName, expected, actual));
+        }
+    }
+
+    private void validateRegistrationCommandSource(ContractAgreement agreement) {
+        requireUsableAddress("studentWallet", agreement.getStudentWallet());
+        requireUsableAddress("tutorWallet", agreement.getTutorWallet());
+        requireUsableAddress("platformWallet", agreement.getPlatformWallet());
+        requireUsableAddress("escrowContractAddress", agreement.getEscrowContractAddress());
+    }
+
+    private void requireUsableAddress(String fieldName, String address) {
+        if (address == null || !address.matches("^0x[0-9a-fA-F]{40}$") || ZERO_ADDRESS.equalsIgnoreCase(address)) {
+            throw new IllegalStateException(fieldName + " must be a non-zero EVM address before registering agreement on-chain");
         }
     }
 }

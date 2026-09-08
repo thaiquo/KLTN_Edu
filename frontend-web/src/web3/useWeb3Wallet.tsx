@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, createContext, useContext, ReactNode } from 'react';
 import { ethers } from 'ethers';
-import { SUPPORTED_CHAINS, DEFAULT_CHAIN_ID, getContractAddresses, ERC20_ABI } from './web3Config';
+import { SUPPORTED_CHAINS, DEFAULT_CHAIN_ID, getContractAddresses, ERC20_ABI, openWeb3Modal } from './web3Config';
 
 export interface Web3WalletState {
   address: string | null;
@@ -13,6 +13,7 @@ export interface Web3WalletState {
   provider: ethers.BrowserProvider | null;
   signer: ethers.JsonRpcSigner | null;
   connectWallet: () => Promise<void>;
+  openWeb3Modal: () => void;
   disconnectWallet: () => void;
   switchNetwork: (targetChainId: number) => Promise<void>;
   refreshBalances: () => Promise<void>;
@@ -83,9 +84,11 @@ export function Web3WalletProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const connectWallet = useCallback(async () => {
+    // Open Web3Modal (Reown / WalletConnect) popup first
+    openWeb3Modal();
+
     if (typeof window === 'undefined' || !window.ethereum) {
-      setError('Vui lòng cài đặt MetaMask hoặc ví Web3 để tiếp tục!');
-      window.open('https://metamask.io/download/', '_blank');
+      setError('Đang mở ví Web3/WalletConnect...');
       return;
     }
 
@@ -159,9 +162,18 @@ export function Web3WalletProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Listen to provider events (accountsChanged, chainChanged)
+  // Listen to provider events (accountsChanged, chainChanged, auth:logout)
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.ethereum) return;
+    const handleAuthLogout = () => {
+      disconnectWallet();
+    };
+    window.addEventListener('auth:logout', handleAuthLogout);
+
+    if (typeof window === 'undefined' || !window.ethereum) {
+      return () => {
+        window.removeEventListener('auth:logout', handleAuthLogout);
+      };
+    }
 
     const handleAccountsChanged = (accounts: string[]) => {
       if (accounts.length === 0) {
@@ -189,6 +201,7 @@ export function Web3WalletProvider({ children }: { children: ReactNode }) {
     }).catch(() => {});
 
     return () => {
+      window.removeEventListener('auth:logout', handleAuthLogout);
       window.ethereum?.removeListener?.('accountsChanged', handleAccountsChanged);
       window.ethereum?.removeListener?.('chainChanged', handleChainChanged);
     };
@@ -214,6 +227,7 @@ export function Web3WalletProvider({ children }: { children: ReactNode }) {
     provider,
     signer,
     connectWallet,
+    openWeb3Modal,
     disconnectWallet,
     switchNetwork,
     refreshBalances,

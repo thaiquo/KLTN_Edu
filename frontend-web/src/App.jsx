@@ -22,6 +22,7 @@ import { StudentMatchingPage } from './pages/student/StudentMatchingPage';
 import { StudentMessagesPage } from './pages/student/StudentMessagesPage';
 import { StudentMyClassesPage } from './pages/student/StudentMyClassesPage';
 import { StudentPaymentsPage } from './pages/student/StudentPaymentsPage';
+import { StudentWalletPage } from './pages/student/StudentWalletPage';
 import { useTutorApplication } from './hooks/useTutorApplication';
 
 const DashboardPage = lazy(() =>
@@ -189,32 +190,95 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <RealtimeProvider><Routes>
-          <Route path="/" element={<HomeEntry />} />
-          <Route path="/login" element={<Gate guest><LoginPage /></Gate>} />
-          <Route path="/register" element={<Gate guest><RegisterPage /></Gate>} />
-          <Route path="/verify-email" element={<Gate guest><VerifyEmailPage /></Gate>} />
-          <Route path="/forgot-password" element={<Gate guest><ForgotPasswordPage /></Gate>} />
-          <Route path="/reset-password" element={<Gate guest><ResetPasswordPage /></Gate>} />
-          <Route path="/tutors" element={<TutorMarketplacePage />} />
-          <Route path="/tutors/:id" element={<PublicTutorProfilePage />} />
-          <Route path="/classes" element={<ClassMarketplacePage />} />
-          <Route path="/my-classes" element={<ProtectedStudentPage><StudentMyClassesPage /></ProtectedStudentPage>} />
-          <Route path="/matching" element={<ProtectedStudentPage><StudentMatchingPage /></ProtectedStudentPage>} />
-          <Route path="/messages" element={<ProtectedStudentPage><StudentMessagesPage /></ProtectedStudentPage>} />
-          <Route path="/contracts" element={<ProtectedStudentPage><StudentContractsPage /></ProtectedStudentPage>} />
-          <Route path="/payments" element={<ProtectedStudentPage><StudentPaymentsPage /></ProtectedStudentPage>} />
-          <Route path="/profile" element={<ProtectedProfile />} />
-          <Route path="/profile/password" element={<ProtectedChangePassword />} />
-          <Route path="/become-tutor" element={<ProtectedBecomeTutor />} />
-          <Route path="/tutor/complete-profile" element={<ProtectedCompleteProfile />} />
-          <Route path="/tutor-next-step" element={<TutorNextStepPage />} />
-          <Route path="/tutor/profile" element={<ProtectedTutorProfile />} />
-          <Route path="/tutor/teaching-registrations" element={<ProtectedTeachingRegistration />} />
-          <Route path="/staff/tutors" element={<ProtectedStaffDashboard />} />
-          <Route path="/dashboard" element={<ProtectedDashboard />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes></RealtimeProvider>
+        <RealtimeProvider>
+          <Routes>
+            <Route path="/" element={<HomeEntry />} />
+
+            <Route path="/login" element={<Gate guest><LoginPage /></Gate>} />
+            <Route path="/register" element={<Gate guest><RegisterPage /></Gate>} />
+            <Route path="/verify-email" element={<Gate guest><VerifyEmailPage /></Gate>} />
+            <Route path="/forgot-password" element={<Gate guest><ForgotPasswordPage /></Gate>} />
+            <Route path="/reset-password" element={<Gate guest><ResetPasswordPage /></Gate>} />
+
+            {/* Public marketplace */}
+            <Route path="/tutors" element={<TutorMarketplacePage />} />
+            <Route path="/tutors/:id" element={<PublicTutorProfilePage />} />
+            <Route path="/classes" element={<ClassMarketplacePage />} />
+
+            {/* Student */}
+            <Route
+              path="/my-classes"
+              element={
+                <ProtectedStudentPage>
+                  <StudentMyClassesPage />
+                </ProtectedStudentPage>
+              }
+            />
+            <Route
+              path="/matching"
+              element={
+                <ProtectedStudentPage>
+                  <StudentMatchingPage />
+                </ProtectedStudentPage>
+              }
+            />
+            <Route
+              path="/messages"
+              element={
+                <ProtectedStudentPage>
+                  <StudentMessagesPage />
+                </ProtectedStudentPage>
+              }
+            />
+            <Route
+              path="/contracts"
+              element={
+                <ProtectedStudentPage>
+                  <StudentContractsPage />
+                </ProtectedStudentPage>
+              }
+            />
+            <Route
+              path="/payments"
+              element={
+                <ProtectedStudentPage>
+                  <StudentPaymentsPage />
+                </ProtectedStudentPage>
+              }
+            />
+            <Route
+              path="/student/wallet"
+              element={
+                <ProtectedStudentPage>
+                  <StudentWalletPage />
+                </ProtectedStudentPage>
+              }
+            />
+
+            {/* Backward-compatible Student aliases */}
+            <Route path="/student/contracts" element={<Navigate to="/contracts" replace />} />
+            <Route path="/student/classes" element={<Navigate to="/my-classes" replace />} />
+            <Route path="/student/messages" element={<Navigate to="/messages" replace />} />
+
+            {/* Account / Tutor */}
+            <Route path="/profile" element={<ProtectedProfile />} />
+            <Route path="/profile/password" element={<ProtectedChangePassword />} />
+            <Route path="/become-tutor" element={<ProtectedBecomeTutor />} />
+            <Route path="/tutor/complete-profile" element={<ProtectedCompleteProfile />} />
+            <Route path="/tutor-next-step" element={<TutorNextStepPage />} />
+            <Route path="/tutor/profile" element={<ProtectedTutorProfile />} />
+            <Route
+              path="/tutor/teaching-registrations"
+              element={<ProtectedTeachingRegistration />}
+            />
+
+            {/* Staff / Tutor portal */}
+            <Route path="/staff/tutors" element={<ProtectedStaffDashboard />} />
+            <Route path="/dashboard" element={<ProtectedDashboard />} />
+
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </RealtimeProvider>
       </AuthProvider>
     </BrowserRouter>
   );

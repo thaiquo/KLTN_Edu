@@ -7,6 +7,7 @@ import iuh.fit.learning_service.enums.LevelType;
 import iuh.fit.learning_service.exception.BadRequestException;
 import iuh.fit.learning_service.exception.ConflictException;
 import iuh.fit.learning_service.exception.ResourceNotFoundException;
+import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.repository.*;
 import iuh.fit.learning_service.realtime.RealtimeEventHub;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -42,6 +43,8 @@ public class TutorSubjectRegistrationService {
     private final CatalogCategoryRepository categories;
     private final TeachingCatalogService catalogMapper;
     private final TutorIdentityLookup tutorIdentityLookup;
+    private final TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
+    private final LearningEventPublisher eventPublisher;
     private final RealtimeEventHub realtimeEventHub;
 
     public TutorSubjectRegistrationService(TutorSubjectRegistrationRepository registrations,
@@ -50,6 +53,8 @@ public class TutorSubjectRegistrationService {
                                            CatalogCategoryRepository categories,
                                            TeachingCatalogService catalogMapper,
                                            TutorIdentityLookup tutorIdentityLookup,
+                                           TutorAuthorizationStateRepository tutorAuthorizationStateRepository,
+                                           LearningEventPublisher eventPublisher,
                                            RealtimeEventHub realtimeEventHub) {
         this.registrations = registrations;
         this.subjects = subjects;
@@ -57,6 +62,8 @@ public class TutorSubjectRegistrationService {
         this.categories = categories;
         this.catalogMapper = catalogMapper;
         this.tutorIdentityLookup = tutorIdentityLookup;
+        this.tutorAuthorizationStateRepository = tutorAuthorizationStateRepository;
+        this.eventPublisher = eventPublisher;
         this.realtimeEventHub = realtimeEventHub;
     }
 
@@ -254,6 +261,7 @@ public class TutorSubjectRegistrationService {
         registration.setReviewNote(request == null ? null : normalize(request.note()));
         registration.setRejectReason(null);
         TutorSubjectRegistration saved = registrations.save(registration);
+        publishReviewNotification(saved, "APPROVED");
         publishReviewRealtime(saved, "APPROVED");
         return response(saved);
     }
@@ -270,8 +278,41 @@ public class TutorSubjectRegistrationService {
         registration.setRejectReason(request.reason().trim());
         registration.setReviewNote(normalize(request.note()));
         TutorSubjectRegistration saved = registrations.save(registration);
+        publishReviewNotification(saved, "REJECTED");
         publishReviewRealtime(saved, "REJECTED");
         return response(saved);
+    }
+
+    private void publishReviewNotification(TutorSubjectRegistration registration, String status) {
+        if (eventPublisher == null) {
+            return;
+        }
+
+        Long recipientUserId = resolveTutorUserId(registration);
+        CatalogSubject subject = registration.getSubject();
+        eventPublisher.publishTeachingRegistrationReviewed(
+                registration.getId(),
+                recipientUserId,
+                registration.getTutorEmail(),
+                registration.getTutorProfileId(),
+                null,
+                registration.getReviewedByEmail(),
+                subject == null ? null : subject.getId(),
+                subject == null ? registration.getProposedSubjectName() : subject.getName(),
+                status,
+                registration.getRejectReason()
+        );
+    }
+
+    private Long resolveTutorUserId(TutorSubjectRegistration registration) {
+        if (registration == null || registration.getTutorProfileId() == null || tutorAuthorizationStateRepository == null) {
+            return null;
+        }
+
+        return tutorAuthorizationStateRepository.findByTutorProfileId(registration.getTutorProfileId())
+                .filter(state -> "APPROVED".equalsIgnoreCase(state.getStatus()))
+                .map(TutorAuthorizationState::getUserId)
+                .orElse(null);
     }
 
     private void publishReviewRealtime(TutorSubjectRegistration registration, String status) {

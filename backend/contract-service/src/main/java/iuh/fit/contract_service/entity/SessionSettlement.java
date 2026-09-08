@@ -61,6 +61,15 @@ public class SessionSettlement {
     @Column(name = "proposal_evidence_hash", length = 66)
     private String proposalEvidenceHash;
 
+    @Column(name = "tutor_amount", precision = 78, scale = 0)
+    private BigInteger tutorAmount;
+
+    @Column(name = "platform_amount", precision = 78, scale = 0)
+    private BigInteger platformAmount;
+
+    @Column(name = "student_refund_amount", precision = 78, scale = 0)
+    private BigInteger studentRefundAmount;
+
     @Version
     @Column(nullable = false)
     private Long version;
@@ -124,6 +133,18 @@ public class SessionSettlement {
         if (finalizeTxHash != null) {
             this.finalizeTxHash = finalizeTxHash;
         }
+        this.updatedAt = OffsetDateTime.now();
+    }
+
+    public void recordDistribution(BigInteger tutorAmount, BigInteger platformAmount, BigInteger studentRefundAmount) {
+        this.tutorAmount = tutorAmount;
+        this.platformAmount = platformAmount;
+        this.studentRefundAmount = studentRefundAmount;
+        this.updatedAt = OffsetDateTime.now();
+    }
+
+    public void markDisputeOpening() {
+        this.status = SettlementStatus.DISPUTE_OPENING;
         this.updatedAt = OffsetDateTime.now();
     }
 

@@ -24,6 +24,7 @@ public class UserProfileResponse {
     private String ward;
     private String addressDetail;
     private String bio;
+    private String walletAddress;
     private boolean emailVerified;
     private AccountStatus accountStatus;
     private List<String> roles;
@@ -44,7 +45,7 @@ public class UserProfileResponse {
             AccountStatus accountStatus,
             List<String> roles
     ) {
-        this(id, fullName, email, phone, dateOfBirth, null, null, null, null, null, null, null, null, null, null, null,
+        this(id, fullName, email, phone, dateOfBirth, null, null, null, null, null, null, null, null, null, null, null, null,
                 emailVerified, accountStatus, roles, null, false, false, null, null, null);
     }
 
@@ -65,6 +66,7 @@ public class UserProfileResponse {
             String ward,
             String addressDetail,
             String bio,
+            String walletAddress,
             boolean emailVerified,
             AccountStatus accountStatus,
             List<String> roles,
@@ -72,7 +74,7 @@ public class UserProfileResponse {
             LocalDateTime updatedAt
     ) {
         this(id, fullName, email, phone, dateOfBirth, avatarKey, avatarUrl, gender, provinceCode, province,
-                communeCode, commune, district, ward, addressDetail, bio, emailVerified, accountStatus, roles,
+                communeCode, commune, district, ward, addressDetail, bio, walletAddress, emailVerified, accountStatus, roles,
                 null, false, false, null, createdAt, updatedAt);
     }
 
@@ -93,6 +95,7 @@ public class UserProfileResponse {
             String ward,
             String addressDetail,
             String bio,
+            String walletAddress,
             boolean emailVerified,
             AccountStatus accountStatus,
             List<String> roles,
@@ -119,6 +122,7 @@ public class UserProfileResponse {
         this.ward = ward;
         this.addressDetail = addressDetail;
         this.bio = bio;
+        this.walletAddress = walletAddress;
         this.emailVerified = emailVerified;
         this.accountStatus = accountStatus;
         this.roles = roles;
@@ -192,6 +196,10 @@ public class UserProfileResponse {
 
     public String getBio() {
         return bio;
+    }
+
+    public String getWalletAddress() {
+        return walletAddress;
     }
 
     public boolean isEmailVerified() {

@@ -290,8 +290,16 @@ public class AuthService {
             }
         }
 
-        String token = jwtService.generateToken(user.getEmail(), user.getId(), selectedActiveRole, roles, tutorStatusStr);
-        String refreshToken = refreshTokenService.createSession(user, selectedActiveRole);
+        String token = jwtService.generateToken(
+                user.getId(),
+                user.getEmail(),
+                selectedActiveRole,
+                roles,
+                tutorStatusStr);
+
+        String refreshToken = refreshTokenService.createSession(
+                user,
+                selectedActiveRole);
 
         return new LoginResult(
                 user.getId(),
@@ -360,8 +368,18 @@ public class AuthService {
             throw new BadRequestException("Invalid target role: " + targetRole);
         }
 
-        String newToken = jwtService.generateToken(user.getEmail(), user.getId(), targetRole, roles, tutorStatusStr);
-        refreshTokenService.updateActiveRoleIfPresent(rawRefreshToken, targetRole);
+        String newToken = jwtService.generateToken(
+        user.getId(),
+        user.getEmail(),
+        targetRole,
+        roles,
+        tutorStatusStr
+        );
+
+        refreshTokenService.updateActiveRoleIfPresent(
+        rawRefreshToken,
+        targetRole
+        );
 
         return new LoginResult(
                 user.getId(),
@@ -399,7 +417,12 @@ public class AuthService {
         boolean hasTutor = tutorOpt.isPresent();
         String tutorStatusStr = resolveTutorStatusForClient(user.getId(), tutorOpt);
         String activeRole = rotation.getRefreshSession().getActiveRole();
-        String accessToken = jwtService.generateToken(user.getEmail(), user.getId(), activeRole, roles, tutorStatusStr);
+        String accessToken = jwtService.generateToken(
+                user.getId(),
+                user.getEmail(),
+                activeRole,
+                roles,
+                tutorStatusStr);
 
         return new LoginResult(
                 user.getId(),

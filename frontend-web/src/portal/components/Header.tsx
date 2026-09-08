@@ -7,6 +7,10 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { Search, HelpCircle } from "lucide-react";
 import { NotificationBell } from "../../components/notifications/NotificationBell";
+import {
+  getNotificationPortalPage,
+  getNotificationRoute,
+} from "../../components/notifications/notificationNavigation";
 import { UserRole } from "../types";
 
 interface HeaderProps {
@@ -49,13 +53,17 @@ export function Header({
     admin: "Quản trị viên",
   };
 
-  function handleNotificationNavigate(target: string) {
-    if (target === "/dashboard" && onNavigate) {
-      onNavigate("dashboard");
+  function handleNotificationNavigate(target: unknown) {
+    const portalPage = getNotificationPortalPage(target);
+    if (portalPage && onNavigate) {
+      onNavigate(portalPage);
       return;
     }
 
-    navigate(target);
+    const route = getNotificationRoute(target);
+    if (route) {
+      navigate(route);
+    }
   }
 
   return (

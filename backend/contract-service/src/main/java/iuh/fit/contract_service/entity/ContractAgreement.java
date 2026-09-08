@@ -9,9 +9,11 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
-import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -19,9 +21,12 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Getter
+@Setter
+@Builder
+@AllArgsConstructor
 @Entity
 @Table(name = "contract_agreement")
-@NoArgsConstructor(access = AccessLevel.PROTECTED)
+@NoArgsConstructor
 public class ContractAgreement {
     @Id
     private UUID id;
@@ -40,6 +45,27 @@ public class ContractAgreement {
 
     @Column(name = "classroom_reviewer_email")
     private String classroomReviewerEmail;
+
+    @Column(name = "student_email", length = 255)
+    private String studentEmail;
+
+    @Column(name = "tutor_email", length = 255)
+    private String tutorEmail;
+
+    @Column(name = "student_name", length = 255)
+    private String studentName;
+
+    @Column(name = "tutor_name", length = 255)
+    private String tutorName;
+
+    @Column(name = "class_name", length = 500)
+    private String className;
+
+    @Column(name = "student_phone", length = 50)
+    private String studentPhone;
+
+    @Column(name = "tutor_phone", length = 50)
+    private String tutorPhone;
 
     @Column(name = "student_wallet", nullable = false, length = 42)
     private String studentWallet;
@@ -130,5 +156,13 @@ public class ContractAgreement {
 
     public void markCompleted() {
         transitionTo(ContractAgreementStatus.COMPLETED);
+    }
+
+    public void markExpired() {
+        transitionTo(ContractAgreementStatus.EXPIRED);
+    }
+
+    public void markCancelled() {
+        transitionTo(ContractAgreementStatus.CANCELLED);
     }
 }

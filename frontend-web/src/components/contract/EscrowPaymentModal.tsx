@@ -18,6 +18,7 @@ import { EscrowContractService } from '../../web3/escrowContractService';
 import { EtherscanLink } from '../common/EtherscanLink';
 import { DEFAULT_CHAIN_ID } from '../../web3/web3Config';
 import { ethers } from 'ethers';
+import { contractsApi } from '../../api/contractsApi';
 
 export interface AgreementPaymentDetails {
   agreementId: number | string;
@@ -30,6 +31,9 @@ export interface AgreementPaymentDetails {
   pricePerSession: number;
   totalAmount: number; // in USDC (e.g. 100)
   platformFeePercent?: number; // e.g. 5%
+  status?: string;
+  paymentDeadline?: string | null;
+  chainId?: number | null;
 }
 
 interface EscrowPaymentModalProps {
@@ -105,6 +109,11 @@ export function EscrowPaymentModal({
 
   const hasEnoughAllowance = allowance >= totalAmountUnits;
   const userHasEnoughBalance = parseFloat(usdcBalance) >= agreement.totalAmount;
+  const walletMatchesAgreement = !agreement.studentAddress
+    || !address
+    || agreement.studentAddress.toLowerCase() === address.toLowerCase();
+  const isAgreementWaitingPayment = agreement.status === 'WAITING_PAYMENT';
+  const isDeadlineExpired = !!agreement.paymentDeadline && Date.now() > new Date(agreement.paymentDeadline).getTime();
 
   // Step 1: Approve USDC spending
   const handleApproveUsdc = async () => {
@@ -152,19 +161,43 @@ export function EscrowPaymentModal({
       setCurrentStep('FUNDING');
       setErrorMessage(null);
 
-      const tx = await escrowService.fundAgreement(signer, agreement.onchainAgreementId);
-      setFundingTxHash(tx.hash);
-
-      const receipt = await tx.wait(1);
-      if (receipt && receipt.status === 1) {
-        setCurrentStep('SUCCESS');
-        refreshBalances();
-        if (onPaymentSuccess) {
-          onPaymentSuccess(tx.hash);
-        }
-      } else {
-        throw new Error('Giao dịch Ký quỹ Escrow thất bại.');
+      if (!isAgreementWaitingPayment) {
+        throw new Error('Hợp đồng chưa ở trạng thái chờ ký quỹ.');
       }
+      if (!walletMatchesAgreement) {
+        throw new Error('Ví đang kết nối không khớp với ví học viên trong hợp đồng.');
+      }
+      if (isDeadlineExpired) {
+        throw new Error('Hạn thanh toán của hợp đồng đã hết.');
+      }
+
+      let txHash = '';
+      try {
+        const tx = await escrowService.fundAgreement(signer, agreement.onchainAgreementId);
+        setFundingTxHash(tx.hash);
+        const receipt = await tx.wait(1);
+        if (receipt && receipt.status === 1) {
+          txHash = tx.hash;
+        } else {
+          throw new Error('Giao dịch Ký quỹ Escrow thất bại.');
+        }
+      } catch (onchainErr: any) {
+        console.warn('Smart contract fundAgreement failed; raw USDC transfer fallback is not supported:', onchainErr);
+        throw onchainErr;
+      }
+
+      await contractsApi.submitPayment(String(agreement.agreementId), txHash);
+
+      window.dispatchEvent(new CustomEvent('contract-state-updated', {
+        detail: { agreementId: agreement.agreementId, action: 'payment-confirming', txHash }
+      }));
+
+      setCurrentStep('SUCCESS');
+      refreshBalances();
+      if (onPaymentSuccess) {
+        onPaymentSuccess(txHash);
+      }
+      return;
     } catch (err: any) {
       console.error('Funding failed:', err);
       setCurrentStep('ERROR');
@@ -210,8 +243,8 @@ export function EscrowPaymentModal({
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Khóa học</span>
                 <h4 className="font-bold text-slate-900 text-sm">{agreement.classTitle}</h4>
               </div>
-              <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 text-[11px] font-extrabold">
-                ID #{agreement.onchainAgreementId}
+              <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 text-[11px] font-extrabold font-mono" title={String(agreement.onchainAgreementId)}>
+                ID #{String(agreement.onchainAgreementId).length > 12 ? `${String(agreement.onchainAgreementId).slice(0, 10)}...` : agreement.onchainAgreementId}
               </span>
             </div>
 
@@ -242,8 +275,8 @@ export function EscrowPaymentModal({
                 <span className="text-lg font-black text-emerald-600 font-mono">
                   ${agreement.totalAmount.toLocaleString()} USDC
                 </span>
-                <span className="text-[11px] text-slate-400 block">
-                  (Phí nền tảng: {agreement.platformFeePercent || 5}%)
+                <span className="text-[11px] text-slate-500 font-medium block">
+                  (Giải ngân khi học xong: Gia sư 85% • Sàn 15%)
                 </span>
               </div>
             </div>
@@ -278,6 +311,32 @@ export function EscrowPaymentModal({
               </div>
             </div>
           ) : null}
+
+          {isConnected && !walletMatchesAgreement && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-xs text-red-900">Ví kết nối không khớp hợp đồng</p>
+                <p className="text-xs text-red-700 mt-0.5">
+                  Vui lòng chuyển sang đúng ví học viên trước khi ký quỹ.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {(!isAgreementWaitingPayment || isDeadlineExpired) && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-xs text-amber-900">
+                  {!isAgreementWaitingPayment ? 'Hợp đồng chưa sẵn sàng ký quỹ' : 'Hạn thanh toán đã hết'}
+                </p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  Chỉ hợp đồng ở trạng thái chờ ký quỹ còn hạn thanh toán mới được gửi giao dịch fundAgreement.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Progress / Step Indicators */}
           <div className="grid grid-cols-2 gap-3">
@@ -335,7 +394,7 @@ export function EscrowPaymentModal({
               </div>
               <p className="text-[11px] leading-tight text-slate-500">
                 {currentStep === 'SUCCESS'
-                  ? 'Khóa học đã được ký quỹ an toàn!'
+                  ? 'Giao dịch ký quỹ đã gửi, hệ thống đang xác nhận on-chain.'
                   : 'Khóa tiền vào Smart Contract cho đến khi hoàn thành buổi học.'}
               </p>
               {fundingTxHash && (
@@ -364,11 +423,11 @@ export function EscrowPaymentModal({
                 <Sparkles className="w-5 h-5" />
               </div>
               <h4 className="font-display font-black text-emerald-900 text-sm">
-                Ký Quỹ Thành Công Vào Smart Contract!
+                Đã Gửi Giao Dịch Ký Quỹ
               </h4>
               <p className="text-xs text-emerald-700 max-w-sm mx-auto">
-                Hợp đồng #{agreement.onchainAgreementId} đã chuyển sang trạng thái <strong>FUNDED</strong>.
-                Học viên và gia sư có thể bắt đầu các buổi học ngay lập tức.
+                Hợp đồng #{agreement.onchainAgreementId} đang ở trạng thái <strong>PAYMENT_CONFIRMING</strong>.
+                Hệ thống sẽ tự chuyển sang ACTIVE sau khi nhận event AgreementFunded đã xác nhận.
               </p>
             </div>
           )}
@@ -396,7 +455,7 @@ export function EscrowPaymentModal({
             {!hasEnoughAllowance ? (
               <button
                 onClick={handleApproveUsdc}
-                disabled={!isConnected || !userHasEnoughBalance || isProcessing}
+                disabled={!isConnected || !userHasEnoughBalance || !isAgreementWaitingPayment || !walletMatchesAgreement || isDeadlineExpired || isProcessing}
                 className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-display font-black rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50"
               >
                 {isProcessing && currentStep === 'APPROVING' ? (
@@ -409,7 +468,7 @@ export function EscrowPaymentModal({
             ) : currentStep !== 'SUCCESS' ? (
               <button
                 onClick={handleFundEscrow}
-                disabled={!isConnected || !userHasEnoughBalance || isProcessing}
+                disabled={!isConnected || !userHasEnoughBalance || !isAgreementWaitingPayment || !walletMatchesAgreement || isDeadlineExpired || isProcessing}
                 className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-display font-black rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50"
               >
                 {isProcessing && currentStep === 'FUNDING' ? (
@@ -424,7 +483,7 @@ export function EscrowPaymentModal({
                 onClick={onClose}
                 className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-display font-black rounded-xl shadow-md transition-all"
               >
-                Hoàn tất
+                Đóng
               </button>
             )}
           </div>

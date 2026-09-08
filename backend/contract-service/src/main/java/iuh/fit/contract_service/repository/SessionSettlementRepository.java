@@ -1,6 +1,7 @@
 package iuh.fit.contract_service.repository;
 
 import iuh.fit.contract_service.entity.SessionSettlement;
+import iuh.fit.contract_service.enums.SettlementStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -13,4 +14,6 @@ public interface SessionSettlementRepository extends JpaRepository<SessionSettle
     Optional<SessionSettlement> findByAgreementIdAndOnchainSessionId(UUID agreementId, String onchainSessionId);
 
     List<SessionSettlement> findByAgreementId(UUID agreementId);
+
+    boolean existsByAgreementIdAndStatusIn(UUID agreementId, List<SettlementStatus> statuses);
 }

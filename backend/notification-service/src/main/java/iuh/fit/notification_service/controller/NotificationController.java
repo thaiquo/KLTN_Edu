@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/notifications")
 public class NotificationController {
+
     private final NotificationService notificationService;
 
     public NotificationController(NotificationService notificationService) {
@@ -29,32 +30,39 @@ public class NotificationController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "false") boolean unreadOnly,
-            @RequestParam(required = false) String targetRole
-    ) {
-        return notificationService.list(principal.userId(), page, size, unreadOnly, targetRole);
+            @RequestParam(required = false) String targetRole) {
+        return notificationService.list(
+                principal.userId(),
+                page,
+                size,
+                unreadOnly,
+                targetRole);
     }
 
     @GetMapping("/unread-count")
     public UnreadCountResponse unreadCount(
             @AuthenticationPrincipal NotificationPrincipal principal,
-            @RequestParam(required = false) String targetRole
-    ) {
-        return notificationService.unreadCount(principal.userId(), targetRole);
+            @RequestParam(required = false) String targetRole) {
+        return notificationService.unreadCount(
+                principal.userId(),
+                targetRole);
     }
 
     @PatchMapping("/{id}/read")
     public NotificationResponse markRead(
             @AuthenticationPrincipal NotificationPrincipal principal,
-            @PathVariable Long id
-    ) {
-        return notificationService.markRead(principal.userId(), id);
+            @PathVariable Long id) {
+        return notificationService.markRead(
+                principal.userId(),
+                id);
     }
 
     @PatchMapping("/read-all")
     public MarkAllReadResponse markAllRead(
             @AuthenticationPrincipal NotificationPrincipal principal,
-            @RequestParam(required = false) String targetRole
-    ) {
-        return notificationService.markAllRead(principal.userId(), targetRole);
+            @RequestParam(required = false) String targetRole) {
+        return notificationService.markAllRead(
+                principal.userId(),
+                targetRole);
     }
 }
