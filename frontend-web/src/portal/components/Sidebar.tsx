@@ -77,6 +77,7 @@ export function Sidebar({
           { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
           { id: "subjects", label: "Môn học", icon: BookOpen },
           { id: "my-classes", label: "Lớp học", icon: GraduationCap },
+          { id: "sessions", label: "Quản lý Buổi học", icon: Calendar },
           { id: "contracts", label: "Hợp đồng & Ký quỹ", icon: ShieldCheck },
           { id: "wallet", label: "Ví của tôi", icon: WalletCards },
           { id: "requests", label: "Yêu cầu học", icon: CheckCircle2 },

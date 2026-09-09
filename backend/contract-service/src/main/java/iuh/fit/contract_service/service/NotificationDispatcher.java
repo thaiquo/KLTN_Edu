@@ -20,7 +20,7 @@ public class NotificationDispatcher {
     private final String notificationServiceUrl;
 
     public NotificationDispatcher(
-            @Value("${NOTIFICATION_SERVICE_URL:http://localhost:8085}") String notificationServiceUrl) {
+            @Value("${NOTIFICATION_SERVICE_URL:http://localhost:8084}") String notificationServiceUrl) {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(3))
                 .build();

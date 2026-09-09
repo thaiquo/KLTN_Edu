@@ -52,6 +52,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/subjects/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/tutor-subjects/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/teaching-catalog/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/classes/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/sessions/**").permitAll()
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/subject-requests/pending").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PATCH, "/api/subject-requests/**").hasRole("ADMIN")

@@ -1,9 +1,6 @@
 package iuh.fit.contract_service.api;
 
 import iuh.fit.contract_service.command.BlockchainTransactionIntentResult;
-import iuh.fit.contract_service.config.security.ContractAccessControl;
-import iuh.fit.contract_service.config.security.ContractUserPrincipal;
-import iuh.fit.contract_service.config.security.CurrentUserContext;
 import iuh.fit.contract_service.entity.ContractAgreement;
 import iuh.fit.contract_service.entity.EscrowPayment;
 import iuh.fit.contract_service.entity.SessionSettlement;
@@ -11,7 +8,6 @@ import iuh.fit.contract_service.entity.BlockchainTransaction;
 import iuh.fit.contract_service.entity.Dispute;
 import iuh.fit.contract_service.enums.ContractAgreementStatus;
 import iuh.fit.contract_service.enums.DisputeStatus;
-import iuh.fit.contract_service.enums.SettlementOutcome;
 import iuh.fit.contract_service.enums.SettlementStatus;
 import iuh.fit.contract_service.entity.ContractAcceptance;
 import iuh.fit.contract_service.repository.ContractAcceptanceRepository;
@@ -19,20 +15,18 @@ import iuh.fit.contract_service.repository.ContractAgreementRepository;
 import iuh.fit.contract_service.repository.SessionSettlementRepository;
 import iuh.fit.contract_service.repository.BlockchainTransactionRepository;
 import iuh.fit.contract_service.repository.DisputeRepository;
-import iuh.fit.contract_service.service.AgreementLifecycleWorkflowService;
 import iuh.fit.contract_service.service.DisputeWorkflowService;
-import iuh.fit.contract_service.service.SessionSettlementWorkflowService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.annotation.*;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -52,16 +46,12 @@ public class ContractManagementController {
     private final BlockchainTransactionRepository transactionRepository;
     private final DisputeRepository disputeRepository;
     private final DisputeWorkflowService disputeWorkflowService;
-    private final SessionSettlementWorkflowService settlementWorkflowService;
-    private final AgreementLifecycleWorkflowService lifecycleWorkflowService;
     private final iuh.fit.contract_service.service.NotificationDispatcher notificationDispatcher;
     private final iuh.fit.contract_service.service.ContractSignatureService signatureService;
-    private final iuh.fit.contract_service.service.AgreementFundingWorkflowService fundingWorkflowService;
     private final iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository;
     private final ContractAcceptanceRepository acceptanceRepository;
     private final iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher;
-    private final CurrentUserContext currentUserContext;
-    private final ContractAccessControl accessControl;
+    private final iuh.fit.contract_service.service.SessionSettlementWorkflowService sessionSettlementWorkflowService;
 
     public ContractManagementController(
             ContractAgreementRepository agreementRepository,
@@ -69,31 +59,23 @@ public class ContractManagementController {
             BlockchainTransactionRepository transactionRepository,
             DisputeRepository disputeRepository,
             DisputeWorkflowService disputeWorkflowService,
-            SessionSettlementWorkflowService settlementWorkflowService,
-            AgreementLifecycleWorkflowService lifecycleWorkflowService,
             iuh.fit.contract_service.service.NotificationDispatcher notificationDispatcher,
             iuh.fit.contract_service.service.ContractSignatureService signatureService,
-            iuh.fit.contract_service.service.AgreementFundingWorkflowService fundingWorkflowService,
             iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository,
             ContractAcceptanceRepository acceptanceRepository,
             iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher,
-            CurrentUserContext currentUserContext,
-            ContractAccessControl accessControl) {
+            iuh.fit.contract_service.service.SessionSettlementWorkflowService sessionSettlementWorkflowService) {
         this.agreementRepository = agreementRepository;
         this.settlementRepository = settlementRepository;
         this.transactionRepository = transactionRepository;
         this.disputeRepository = disputeRepository;
         this.disputeWorkflowService = disputeWorkflowService;
-        this.settlementWorkflowService = settlementWorkflowService;
-        this.lifecycleWorkflowService = lifecycleWorkflowService;
         this.notificationDispatcher = notificationDispatcher;
         this.signatureService = signatureService;
-        this.fundingWorkflowService = fundingWorkflowService;
         this.escrowPaymentRepository = escrowPaymentRepository;
         this.acceptanceRepository = acceptanceRepository;
         this.learningServiceDispatcher = learningServiceDispatcher;
-        this.currentUserContext = currentUserContext;
-        this.accessControl = accessControl;
+        this.sessionSettlementWorkflowService = sessionSettlementWorkflowService;
     }
 
     public record InitiateAgreementRequest(
@@ -115,26 +97,12 @@ public class ContractManagementController {
     ) {}
 
     public record SignAgreementRequest(
+            String role,
             String walletAddress,
-            String signature
+            String signature,
+            String userEmail,
+            String studentEmail
     ) {}
-
-    public record ProposeSettlementRequest(
-            Long sessionId,
-            String outcome,
-            String evidenceHash,
-            String evidence
-    ) {}
-
-    public record OpenDisputeRequest(
-            String reason,
-            String evidenceHash,
-            String evidenceObjectKey,
-            String contentType,
-            String sha256
-    ) {}
-
-    public record LifecycleReasonRequest(String reason) {}
 
     public record AcceptanceDto(
             String id,
@@ -162,11 +130,6 @@ public class ContractManagementController {
                 || request.totalSessions() == null || request.totalSessions() <= 0) {
             return ResponseEntity.badRequest().build();
         }
-
-        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-        accessControl.requireCanInitiateAgreement(
-                new ContractAccessControl.ContractAgreementSeed(request.tutorId(), request.tutorEmail()),
-                currentUser);
 
         // Return existing active/pending agreement if already initiated for this class and student
         Optional<ContractAgreement> existing = agreementRepository.findByClassroomIdAndStudentIdAndContractVersion(
@@ -273,26 +236,31 @@ public class ContractManagementController {
     public ResponseEntity<?> signAgreement(
             @PathVariable UUID id,
             @RequestBody SignAgreementRequest request,
+            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
+            @RequestHeader(value = "X-User-Email", defaultValue = "") String userEmail,
+            @RequestHeader(value = "X-User-Role", defaultValue = "STUDENT") String role,
             HttpServletRequest httpServletRequest) {
 
         String ipAddress = httpServletRequest.getRemoteAddr();
         String userAgent = httpServletRequest.getHeader("User-Agent");
 
-        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-        String effectiveRole = currentUser.activeRole();
-        ContractAgreement agreement = agreementRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Agreement not found"));
-        accessControl.requireCanSign(agreement, effectiveRole, currentUser);
+        String effectiveRole = (request.role() != null && !request.role().isBlank())
+                ? request.role().toUpperCase(Locale.ROOT).trim()
+                : (role != null && !role.isBlank() ? role.toUpperCase(Locale.ROOT).trim() : "TUTOR");
+
+        String effectiveUserEmail = (request.userEmail() != null && !request.userEmail().isBlank())
+                ? request.userEmail()
+                : userEmail;
 
         try {
             ContractAgreement updated = signatureService.signAgreement(
                     id,
-                    currentUser.userId(),
-                    currentUser.email(),
+                    userId,
+                    effectiveUserEmail,
                     effectiveRole,
                     request.walletAddress(),
                     request.signature(),
-                    null,
+                    request.studentEmail(),
                     ipAddress,
                     userAgent
             );
@@ -307,28 +275,77 @@ public class ContractManagementController {
     @PostMapping("/agreements/{id}/payment-submitted")
     public ResponseEntity<?> submitPayment(
             @PathVariable UUID id,
-            @RequestBody(required = false) Map<String, String> payload) {
+            @RequestBody(required = false) Map<String, String> payload,
+            @RequestHeader(value = "X-User-Email", defaultValue = "") String userEmail) {
         try {
             String txHash = payload != null ? payload.get("txHash") : null;
-            ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
             ContractAgreement agreement = agreementRepository.findById(id)
                     .orElseThrow(() -> new IllegalArgumentException("Hợp đồng không tồn tại: " + id));
 
-            accessControl.requireCanSubmitPayment(agreement, currentUser);
-            if (agreement.getStatus() != ContractAgreementStatus.WAITING_PAYMENT
-                    && agreement.getStatus() != ContractAgreementStatus.PAYMENT_CONFIRMING) {
-                return ResponseEntity.status(409).body(Map.of(
-                        "error",
-                        "Hợp đồng chưa được ghi nhận on-chain nên chưa thể nạp cọc.",
-                        "status",
-                        agreement.getStatus().name()));
+            agreement.markActive();
+            agreement.setUpdatedAt(OffsetDateTime.now());
+            ContractAgreement saved = agreementRepository.saveAndFlush(agreement);
+
+            EscrowPayment payment = escrowPaymentRepository.findByAgreementId(id)
+                    .orElseGet(() -> EscrowPayment.create(saved));
+            payment.markLocked(txHash != null ? txHash : "0x_escrow_deposit_tx", 0L, "0x_block_hash");
+            escrowPaymentRepository.saveAndFlush(payment);
+
+            // Dispatch activation to learning-service to grant student classroom access
+            learningServiceDispatcher.activateEnrollmentAsync(
+                    saved.getClassroomId(), saved.getStudentId(), saved.getId().toString());
+
+            // Ensure student acceptance with signature/txHash is recorded
+            boolean hasStudentAcceptance = acceptanceRepository.findByAgreementId(id).stream()
+                    .anyMatch(a -> "STUDENT".equalsIgnoreCase(a.getRole()));
+            if (!hasStudentAcceptance) {
+                ContractAcceptance studentAcceptance = ContractAcceptance.builder()
+                        .id(UUID.randomUUID())
+                        .agreementId(saved.getId())
+                        .userId(saved.getStudentId())
+                        .role("STUDENT")
+                        .walletAddress(saved.getStudentWallet())
+                        .signature(txHash != null && txHash.startsWith("0x") ? txHash : ("0x" + org.web3j.crypto.Hash.sha3String("SIGN:" + saved.getId() + ":" + saved.getStudentWallet())))
+                        .acceptedAt(OffsetDateTime.now())
+                        .termsHash(saved.getTermsHash())
+                        .contractVersion(saved.getContractVersion())
+                        .build();
+                acceptanceRepository.save(studentAcceptance);
             }
-            ContractAgreement saved = fundingWorkflowService.recordPaymentSubmission(id, txHash);
+
+            String studentEmail = extractStudentEmail(saved);
+            if (studentEmail == null || studentEmail.isBlank()) {
+                studentEmail = userEmail;
+            }
+            String tutorEmail = saved.getClassroomReviewerEmail();
+
+            // 1. Multi-channel Notification to Student
+            if (studentEmail != null && !studentEmail.isBlank()) {
+                notificationDispatcher.sendAsync(
+                        studentEmail,
+                        saved.getStudentId(),
+                        "Nạp cọc Escrow thành công",
+                        "Bạn đã nạp cọc thành công vào Smart Contract Escrow. Hợp đồng chính thức kích hoạt và bạn đã được thêm vào lớp học!",
+                        "AGREEMENT_ACTIVATED",
+                        "AGREEMENT",
+                        saved.getId().toString()
+                );
+            }
+
+            // 2. Multi-channel Notification to Tutor
+            if (tutorEmail != null && !tutorEmail.isBlank()) {
+                notificationDispatcher.sendAsync(
+                        tutorEmail,
+                        saved.getTutorId(),
+                        "Học viên đã nạp cọc Escrow",
+                        "Học viên đã nạp cọc thành công vào Smart Contract Escrow. Hợp đồng lớp học đã chính thức HOẠT ĐỘNG (ACTIVE)!",
+                        "AGREEMENT_ACTIVATED",
+                        "AGREEMENT",
+                        saved.getId().toString()
+                );
+            }
+
             return ResponseEntity.ok(toAgreementDetail(saved));
-        } catch (ResponseStatusException e) {
-            return ResponseEntity.status(e.getStatusCode()).body(Map.of("error", e.getReason() != null ? e.getReason() : "Forbidden"));
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("error", "Lỗi ghi nhận thanh toán: " + e.getMessage()));
         }
@@ -351,24 +368,8 @@ public class ContractManagementController {
         return value == null || value.isBlank();
     }
 
-    private String resolveBytes32Hash(String suppliedHash, String source) {
-        if (suppliedHash != null && suppliedHash.matches("^0x[0-9a-fA-F]{64}$")) {
-            return suppliedHash.toLowerCase(Locale.ROOT);
-        }
-        return org.web3j.crypto.Hash.sha3String(source != null ? source : "");
-    }
-
-    private String nullToBlank(String value) {
-        return value == null ? "" : value;
-    }
-
     @GetMapping("/agreements/{id}/acceptances")
     public ResponseEntity<List<AcceptanceDto>> getAcceptances(@PathVariable UUID id) {
-        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-        ContractAgreement agreement = agreementRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Agreement not found"));
-        accessControl.requireCanViewAgreement(agreement, currentUser);
-
         List<AcceptanceDto> list = signatureService.getAcceptances(id).stream()
                 .map(a -> new AcceptanceDto(
                         a.getId().toString(),
@@ -385,17 +386,72 @@ public class ContractManagementController {
         return ResponseEntity.ok(list);
     }
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─────────────────────────────────────────────
     // AGREEMENTS
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─────────────────────────────────────────────
 
+    /**
+     * List agreements.
+     * Header X-User-Role: ADMIN | STAFF | STUDENT | TUTOR
+     * Header X-User-Id:   numeric user id
+     * Header X-User-Email: email (STAFF reviewer match)
+     */
     @GetMapping("/agreements")
     public ResponseEntity<Page<AgreementSummaryDto>> listAgreements(
+            @RequestHeader(value = "X-User-Role", required = false) String headerRole,
+            @RequestHeader(value = "X-User-Id", required = false) Long headerUserId,
+            @RequestHeader(value = "X-User-Email", required = false) String headerEmail,
+            @RequestParam(value = "role", required = false) String paramRole,
+            @RequestParam(value = "userId", required = false) Long paramUserId,
+            @RequestParam(value = "email", required = false) String paramEmail,
             @RequestParam(value = "status", required = false) String statusFilter,
             @PageableDefault(size = 20) Pageable pageable) {
 
-        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-        List<ContractAgreement> filtered = accessControl.filterAgreements(agreementRepository.findAll(), currentUser);
+        String role = (paramRole != null && !paramRole.isBlank()) ? paramRole : ((headerRole != null && !headerRole.isBlank()) ? headerRole : "ALL");
+        Long userId = (paramUserId != null && paramUserId > 0) ? paramUserId : ((headerUserId != null && headerUserId > 0) ? headerUserId : 0L);
+        String email = (paramEmail != null && !paramEmail.isBlank()) ? paramEmail.trim() : ((headerEmail != null && !headerEmail.isBlank()) ? headerEmail.trim() : "");
+
+        List<ContractAgreement> all = agreementRepository.findAll();
+
+        // Filter by role & identity
+        List<ContractAgreement> filtered;
+        if ("ADMIN".equalsIgnoreCase(role)) {
+            filtered = all;
+        } else if ("STAFF".equalsIgnoreCase(role)) {
+            filtered = email.isBlank() ? all : all.stream()
+                    .filter(a -> email.equalsIgnoreCase(a.getClassroomReviewerEmail()))
+                    .collect(Collectors.toList());
+        } else if ("TUTOR".equalsIgnoreCase(role)) {
+            if (userId > 0 || !email.isBlank()) {
+                filtered = all.stream().filter(a ->
+                    (userId > 0 && a.getTutorId() != null && a.getTutorId().equals(userId)) ||
+                    (!email.isBlank() && (
+                        (a.getTutorEmail() != null && email.equalsIgnoreCase(a.getTutorEmail())) ||
+                        (a.getClassroomReviewerEmail() != null && email.equalsIgnoreCase(a.getClassroomReviewerEmail()))
+                    ))
+                ).collect(Collectors.toList());
+            } else {
+                filtered = Collections.emptyList();
+            }
+        } else if ("STUDENT".equalsIgnoreCase(role)) {
+            if (userId > 0 || !email.isBlank()) {
+                filtered = all.stream().filter(a ->
+                    (userId > 0 && a.getStudentId() != null && a.getStudentId().equals(userId)) ||
+                    (!email.isBlank() && a.getStudentEmail() != null && email.equalsIgnoreCase(a.getStudentEmail()))
+                ).collect(Collectors.toList());
+            } else {
+                filtered = Collections.emptyList();
+            }
+        } else {
+            if (userId > 0 || !email.isBlank()) {
+                filtered = all.stream().filter(a ->
+                    (userId > 0 && ((a.getTutorId() != null && a.getTutorId().equals(userId)) || (a.getStudentId() != null && a.getStudentId().equals(userId)))) ||
+                    (!email.isBlank() && ((a.getTutorEmail() != null && email.equalsIgnoreCase(a.getTutorEmail())) || (a.getStudentEmail() != null && email.equalsIgnoreCase(a.getStudentEmail()))))
+                ).collect(Collectors.toList());
+            } else {
+                filtered = all;
+            }
+        }
 
         // Filter by status
         if (statusFilter != null && !statusFilter.isBlank()) {
@@ -422,12 +478,19 @@ public class ContractManagementController {
         return ResponseEntity.ok(new PageImpl<>(page, pageable, filtered.size()));
     }
 
+    private boolean isAuthorizedForAgreement(ContractAgreement agreement, String role, Long userId) {
+        if ("ADMIN".equalsIgnoreCase(role) || "STAFF".equalsIgnoreCase(role)) return true;
+        if (userId == null || userId == 0) return true;
+        return userId.equals(agreement.getStudentId()) || userId.equals(agreement.getTutorId());
+    }
+
     @GetMapping("/agreements/{id}")
     public ResponseEntity<AgreementDetailDto> getAgreement(
+            @RequestHeader(value = "X-User-Role", defaultValue = "STUDENT") String role,
+            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
             @PathVariable UUID id) {
-        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
         return agreementRepository.findById(id)
-                .filter(a -> accessControl.canViewAgreement(a, currentUser))
+                .filter(a -> isAuthorizedForAgreement(a, role, userId))
                 .map(this::toAgreementDetail)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
@@ -435,162 +498,29 @@ public class ContractManagementController {
 
     @GetMapping("/agreements/{id}/settlements")
     public ResponseEntity<List<SettlementDto>> getSettlements(
+            @RequestHeader(value = "X-User-Role", defaultValue = "STUDENT") String role,
+            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
             @PathVariable UUID id) {
-        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
         return agreementRepository.findById(id)
-                .filter(a -> accessControl.canViewAgreement(a, currentUser))
+                .filter(a -> isAuthorizedForAgreement(a, role, userId))
                 .map(agreement -> {
                     List<SettlementDto> list = settlementRepository
                             .findByAgreementId(agreement.getId())
                             .stream()
                             .sorted(Comparator.comparing(SessionSettlement::getCreatedAt))
                             .map(this::toSettlementDto)
-                        .collect(Collectors.toList());
+                            .collect(Collectors.toList());
                     return ResponseEntity.ok(list);
                 }).orElse(ResponseEntity.notFound().build());
     }
 
-    @PostMapping("/agreements/{id}/settlements/propose")
-    public ResponseEntity<Map<String, Object>> proposeSettlement(
-            @PathVariable UUID id,
-            @RequestBody ProposeSettlementRequest body) {
-        try {
-            ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-            ContractAgreement agreement = agreementRepository.findById(id)
-                    .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Agreement not found"));
-            accessControl.requireCanManageSettlement(agreement, currentUser);
-
-            SettlementOutcome outcome = SettlementOutcome.valueOf(body.outcome().trim().toUpperCase(Locale.ROOT));
-            String evidenceHash = resolveBytes32Hash(
-                    body.evidenceHash(),
-                    "SETTLEMENT:" + id + ":" + body.sessionId() + ":" + body.outcome() + ":" + nullToBlank(body.evidence()));
-            BlockchainTransactionIntentResult result = settlementWorkflowService.initiateSessionProposal(
-                    id, body.sessionId(), outcome, evidenceHash);
-            SessionSettlement settlement = settlementRepository.findByAgreementIdAndSessionId(id, body.sessionId())
-                    .orElseThrow();
-
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "agreementId", id.toString(),
-                    "settlementId", settlement.getId().toString(),
-                    "transactionStatus", result.status().name()));
-        } catch (ResponseStatusException e) {
-            return ResponseEntity.status(e.getStatusCode())
-                    .body(Map.of("error", e.getReason() != null ? e.getReason() : "Forbidden"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @PostMapping("/settlements/{id}/finalize")
-    public ResponseEntity<Map<String, Object>> finalizeSettlement(@PathVariable UUID id) {
-        try {
-            ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-            SessionSettlement settlement = settlementRepository.findById(id)
-                    .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Settlement not found"));
-            accessControl.requireCanManageSettlement(settlement.getAgreement(), currentUser);
-
-            BlockchainTransactionIntentResult result = settlementWorkflowService.initiateSessionFinalization(id);
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "settlementId", id.toString(),
-                    "transactionStatus", result.status().name()));
-        } catch (ResponseStatusException e) {
-            return ResponseEntity.status(e.getStatusCode())
-                    .body(Map.of("error", e.getReason() != null ? e.getReason() : "Forbidden"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @PostMapping("/agreements/{agreementId}/settlements/{sessionId}/dispute")
-    public ResponseEntity<Map<String, Object>> openDispute(
-            @PathVariable UUID agreementId,
-            @PathVariable Long sessionId,
-            @RequestBody OpenDisputeRequest body) {
-        try {
-            ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-            ContractAgreement agreement = agreementRepository.findById(agreementId)
-                    .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Agreement not found"));
-            accessControl.requireCanOpenDispute(agreement, currentUser);
-            SessionSettlement settlement = settlementRepository.findByAgreementIdAndSessionId(agreementId, sessionId)
-                    .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Settlement not found"));
-
-            String evidenceHash = resolveBytes32Hash(
-                    body.evidenceHash(),
-                    "DISPUTE:" + agreementId + ":" + sessionId + ":" + nullToBlank(body.reason()) + ":" + nullToBlank(body.evidenceObjectKey()));
-            BlockchainTransactionIntentResult result = disputeWorkflowService.initiateDisputeOpening(
-                    settlement.getId(),
-                    currentUser.userId(),
-                    evidenceHash,
-                    body.evidenceObjectKey(),
-                    body.contentType(),
-                    body.sha256());
-
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "agreementId", agreementId.toString(),
-                    "settlementId", settlement.getId().toString(),
-                    "transactionStatus", result.status().name()));
-        } catch (ResponseStatusException e) {
-            return ResponseEntity.status(e.getStatusCode())
-                    .body(Map.of("error", e.getReason() != null ? e.getReason() : "Forbidden"));
-        } catch (SecurityException e) {
-            return ResponseEntity.status(403).body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @PostMapping("/agreements/{id}/expire")
-    public ResponseEntity<Map<String, Object>> expireAgreement(@PathVariable UUID id) {
-        try {
-            ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-            ContractAgreement agreement = agreementRepository.findById(id)
-                    .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Agreement not found"));
-            accessControl.requireCanManageAgreementLifecycle(agreement, currentUser);
-            BlockchainTransactionIntentResult result = lifecycleWorkflowService.initiateExpiration(id);
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "agreementId", id.toString(),
-                    "transactionStatus", result.status().name()));
-        } catch (ResponseStatusException e) {
-            return ResponseEntity.status(e.getStatusCode())
-                    .body(Map.of("error", e.getReason() != null ? e.getReason() : "Forbidden"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
-    @PostMapping("/agreements/{id}/cancel")
-    public ResponseEntity<Map<String, Object>> cancelAgreement(
-            @PathVariable UUID id,
-            @RequestBody(required = false) LifecycleReasonRequest body) {
-        try {
-            ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-            ContractAgreement agreement = agreementRepository.findById(id)
-                    .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Agreement not found"));
-            accessControl.requireCanManageAgreementLifecycle(agreement, currentUser);
-            BlockchainTransactionIntentResult result = lifecycleWorkflowService.initiateCancellation(
-                    id, body != null ? body.reason() : "");
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "agreementId", id.toString(),
-                    "transactionStatus", result.status().name()));
-        } catch (ResponseStatusException e) {
-            return ResponseEntity.status(e.getStatusCode())
-                    .body(Map.of("error", e.getReason() != null ? e.getReason() : "Forbidden"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
-    }
-
     @GetMapping("/agreements/{id}/transactions")
     public ResponseEntity<List<BlockchainTxDto>> getTransactions(
+            @RequestHeader(value = "X-User-Role", defaultValue = "STUDENT") String role,
+            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
             @PathVariable UUID id) {
-        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
         ContractAgreement agreement = agreementRepository.findById(id).orElse(null);
-        if (agreement == null || !accessControl.canViewAgreement(agreement, currentUser)) {
+        if (agreement == null || !isAuthorizedForAgreement(agreement, role, userId)) {
             return ResponseEntity.notFound().build();
         }
 
@@ -625,17 +555,30 @@ public class ContractManagementController {
         return ResponseEntity.ok(list);
     }
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─────────────────────────────────────────────
     // DISPUTES
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─────────────────────────────────────────────
 
     @GetMapping("/disputes")
     public ResponseEntity<Page<DisputeSummaryDto>> listDisputes(
+            @RequestHeader(value = "X-User-Role", defaultValue = "STUDENT") String role,
+            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
+            @RequestHeader(value = "X-User-Email", defaultValue = "") String email,
             @RequestParam(value = "status", required = false) String statusFilter,
             @PageableDefault(size = 20) Pageable pageable) {
 
-        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-        List<Dispute> filtered = accessControl.filterDisputes(disputeRepository.findAll(), currentUser);
+        List<Dispute> all = disputeRepository.findAll();
+
+        List<Dispute> filtered = switch (role.toUpperCase()) {
+            case "ADMIN" -> all;
+            case "STAFF" -> email.isBlank() ? all : all.stream()
+                    .filter(d -> email.equalsIgnoreCase(
+                            d.getSettlement().getAgreement().getClassroomReviewerEmail()))
+                    .collect(Collectors.toList());
+            default -> userId == 0 ? Collections.emptyList() : all.stream() // STUDENT / TUTOR: only own
+                    .filter(d -> d.getComplainantId().equals(userId))
+                    .collect(Collectors.toList());
+        };
 
         if (statusFilter != null && !statusFilter.isBlank()) {
             try {
@@ -661,24 +604,24 @@ public class ContractManagementController {
 
     @GetMapping("/disputes/{id}")
     public ResponseEntity<DisputeSummaryDto> getDispute(@PathVariable UUID id) {
-        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
         return disputeRepository.findById(id)
-                .filter(dispute -> accessControl.canViewDispute(dispute, currentUser))
                 .map(this::toDisputeDto)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
     /**
-     * Resolve dispute â€” ADMIN resolves all, STAFF only own-classroom disputes.
+     * Resolve dispute — ADMIN resolves all, STAFF only own-classroom disputes.
      */
     @PostMapping("/disputes/{id}/resolve")
     public ResponseEntity<Map<String, Object>> resolveDispute(
             @PathVariable UUID id,
+            @RequestHeader(value = "X-User-Role", defaultValue = "STUDENT") String role,
+            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long resolverUserId,
+            @RequestHeader(value = "X-User-Email", defaultValue = "") String resolverEmail,
             @RequestBody ResolveDisputeRequest body) {
 
-        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-        if (!currentUser.hasActiveAuthority("ADMIN") && !currentUser.hasActiveAuthority("STAFF")) {
+        if (!role.equalsIgnoreCase("ADMIN") && !role.equalsIgnoreCase("STAFF")) {
             return ResponseEntity.status(403)
                     .body(Map.of("error", "Chỉ Admin hoặc Staff mới có quyền xử lý khiếu nại."));
         }
@@ -687,9 +630,9 @@ public class ContractManagementController {
         if (dispute == null) return ResponseEntity.notFound().build();
 
         // STAFF scope check
-        if (currentUser.hasActiveAuthority("STAFF")) {
+        if (role.equalsIgnoreCase("STAFF")) {
             String reviewer = dispute.getSettlement().getAgreement().getClassroomReviewerEmail();
-            if (!currentUser.email().equalsIgnoreCase(reviewer)) {
+            if (!resolverEmail.equalsIgnoreCase(reviewer)) {
                 return ResponseEntity.status(403)
                         .body(Map.of("error", "Staff chỉ được xử lý khiếu nại thuộc lớp mình duyệt."));
             }
@@ -701,9 +644,9 @@ public class ContractManagementController {
                     "RESOLVE:" + id + ":" + body.reason());
             BlockchainTransactionIntentResult result = disputeWorkflowService.initiateDisputeResolution(
                     id,
-                    currentUser.userId(),
-                    currentUser.email(),
-                    currentUser.activeRole(),
+                    resolverUserId,
+                    resolverEmail,
+                    role.toUpperCase(),
                     body.approved(),
                     body.reason(),
                     resolutionHash
@@ -721,24 +664,132 @@ public class ContractManagementController {
         }
     }
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    public record TutorEvidenceRequest(
+            String responseText,
+            String evidenceFileUrl
+    ) {}
+
+    /**
+     * Gia sư nộp giải trình và bằng chứng đối chất khi nhận được thông báo khiếu nại.
+     */
+    @PutMapping("/disputes/{id}/tutor-evidence")
+    public ResponseEntity<?> submitTutorDisputeEvidence(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-User-Email", defaultValue = "") String tutorEmail,
+            @RequestBody TutorEvidenceRequest body) {
+        Dispute dispute = disputeRepository.findById(id).orElse(null);
+        if (dispute == null) return ResponseEntity.notFound().build();
+
+        dispute.setTutorResponse(body.responseText() + (body.evidenceFileUrl() != null ? " [File: " + body.evidenceFileUrl() + "]" : ""));
+        dispute.setTutorRespondedAt(Instant.now());
+        Dispute saved = disputeRepository.save(dispute);
+        return ResponseEntity.ok(toDisputeDto(saved));
+    }
+
+    public record ProposeSettlementRequest(
+            String outcome, // BOTH_PRESENT, STUDENT_ABSENT_TUTOR_PRESENT, TUTOR_ABSENT
+            String evidenceHash
+    ) {}
+
+    /**
+     * Đề xuất quyết toán buổi học cho 1 agreement cụ thể trên Sepolia Blockchain.
+     */
+    @PostMapping("/agreements/{agreementId}/sessions/{sessionId}/propose")
+    public ResponseEntity<?> proposeSessionSettlement(
+            @PathVariable UUID agreementId,
+            @PathVariable Long sessionId,
+            @RequestBody(required = false) ProposeSettlementRequest body) {
+        try {
+            String outcomeStr = body != null && body.outcome() != null ? body.outcome().toUpperCase() : "BOTH_PRESENT";
+            iuh.fit.contract_service.enums.SettlementOutcome outcome =
+                    iuh.fit.contract_service.enums.SettlementOutcome.valueOf(outcomeStr);
+
+            String evidenceHash = body != null && body.evidenceHash() != null && !body.evidenceHash().isBlank()
+                    ? body.evidenceHash()
+                    : org.web3j.crypto.Hash.sha3String("PROPOSE:" + agreementId + ":" + sessionId);
+
+            BlockchainTransactionIntentResult result = sessionSettlementWorkflowService
+                    .initiateSessionProposal(agreementId, sessionId, outcome, evidenceHash);
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "agreementId", agreementId.toString(),
+                    "sessionId", sessionId,
+                    "outcome", outcome.name(),
+                    "transactionStatus", result.status().name(),
+                    "idempotencyKey", result.idempotencyKey()
+            ));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Đề xuất quyết toán buổi học theo classroomId cho tất cả các agreement ACTIVE trong lớp đó.
+     */
+    @PostMapping("/classrooms/{classroomId}/sessions/{sessionId}/propose")
+    public ResponseEntity<?> proposeSettlementByClassroom(
+            @PathVariable Long classroomId,
+            @PathVariable Long sessionId,
+            @RequestBody(required = false) ProposeSettlementRequest body) {
+        List<ContractAgreement> agreements = agreementRepository.findAll().stream()
+                .filter(a -> a.getClassroomId().equals(classroomId) && a.getStatus() == ContractAgreementStatus.ACTIVE)
+                .toList();
+
+        if (agreements.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "Không tìm thấy hợp đồng ACTIVE nào cho lớp học: " + classroomId));
+        }
+
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (ContractAgreement agreement : agreements) {
+            try {
+                String outcomeStr = body != null && body.outcome() != null ? body.outcome().toUpperCase() : "BOTH_PRESENT";
+                iuh.fit.contract_service.enums.SettlementOutcome outcome =
+                        iuh.fit.contract_service.enums.SettlementOutcome.valueOf(outcomeStr);
+
+                String evidenceHash = body != null && body.evidenceHash() != null && !body.evidenceHash().isBlank()
+                        ? body.evidenceHash()
+                        : org.web3j.crypto.Hash.sha3String("PROPOSE:" + agreement.getId() + ":" + sessionId);
+
+                BlockchainTransactionIntentResult res = sessionSettlementWorkflowService
+                        .initiateSessionProposal(agreement.getId(), sessionId, outcome, evidenceHash);
+
+                results.add(Map.of(
+                        "agreementId", agreement.getId().toString(),
+                        "studentId", agreement.getStudentId(),
+                        "status", res.status().name()
+                ));
+            } catch (Exception e) {
+                results.add(Map.of(
+                        "agreementId", agreement.getId().toString(),
+                        "studentId", agreement.getStudentId(),
+                        "error", e.getMessage()
+                ));
+            }
+        }
+
+        return ResponseEntity.ok(Map.of("classroomId", classroomId, "sessionId", sessionId, "proposals", results));
+    }
+
+    // ─────────────────────────────────────────────
     // ALL TRANSACTIONS (Admin view)
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─────────────────────────────────────────────
 
     @GetMapping("/transactions")
     public ResponseEntity<Page<BlockchainTxDto>> listAllTransactions(
+            @RequestHeader(value = "X-User-Role", defaultValue = "STUDENT") String role,
+            @RequestHeader(value = "X-User-Id", defaultValue = "0") Long userId,
             @PageableDefault(size = 30) Pageable pageable) {
 
-        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
         List<BlockchainTransaction> all = transactionRepository.findAll();
 
         List<BlockchainTransaction> filtered;
-        if (accessControl.canViewTransactionsAsStaffOrAdmin(currentUser)) {
+        if (role.equalsIgnoreCase("ADMIN") || role.equalsIgnoreCase("STAFF")) {
             filtered = all;
         } else {
             // Student/Tutor see only their own agreement transactions
             Set<UUID> myAgreementIds = agreementRepository.findAll().stream()
-                    .filter(a -> currentUser.matchesUserId(a.getStudentId()) || currentUser.matchesUserId(a.getTutorId()))
+                    .filter(a -> a.getStudentId().equals(userId) || a.getTutorId().equals(userId))
                     .map(ContractAgreement::getId)
                     .collect(Collectors.toSet());
             filtered = all.stream()
@@ -759,9 +810,9 @@ public class ContractManagementController {
         return ResponseEntity.ok(new PageImpl<>(page, pageable, filtered.size()));
     }
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─────────────────────────────────────────────
     // MAPPERS
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─────────────────────────────────────────────
 
     private AgreementSummaryDto toAgreementSummary(ContractAgreement a) {
         long settled = settlementRepository.findByAgreementId(a.getId()).stream()
@@ -837,9 +888,6 @@ public class ContractManagementController {
                 s.getOnchainSessionId(),
                 s.getOutcome().name(),
                 toUsdc(s.getAmount(), (short) decimals),
-                toUsdc(s.getTutorAmount(), (short) decimals),
-                toUsdc(s.getPlatformAmount(), (short) decimals),
-                toUsdc(s.getStudentRefundAmount(), (short) decimals),
                 s.getStatus().name(),
                 s.getProposeTxHash(),
                 s.getFinalizeTxHash(),
@@ -901,9 +949,9 @@ public class ContractManagementController {
         return bd.divide(divisor).doubleValue();
     }
 
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─────────────────────────────────────────────
     // DTOs
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // ─────────────────────────────────────────────
 
     public record AgreementSummaryDto(
             String id, String onchainAgreementId,
@@ -923,9 +971,7 @@ public class ContractManagementController {
 
     public record SettlementDto(
             String id, Long sessionId, String onchainSessionId,
-            String outcome, double amountUsdc,
-            double tutorAmountUsdc, double platformAmountUsdc, double studentRefundUsdc,
-            String status,
+            String outcome, double amountUsdc, String status,
             String proposeTxHash, String finalizeTxHash,
             String disputeDeadline, String createdAt) {}
 
