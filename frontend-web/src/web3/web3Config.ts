@@ -85,7 +85,7 @@ export const CONTRACT_ADDRESSES: Record<number, { escrow: string; usdc: string }
     usdc: import.meta.env.VITE_USDC_CONTRACT_ADDRESS || '0x5FbDB2315678afecb367f032d93f642f64180aa3',
   },
   11155111: {
-    escrow: import.meta.env.VITE_ESCROW_CONTRACT_ADDRESS || '0x0000000000000000000000000000000000000000',
+    escrow: import.meta.env.VITE_ESCROW_CONTRACT_ADDRESS || '0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3',
     usdc: import.meta.env.VITE_USDC_CONTRACT_ADDRESS || '0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238', // Circle Sepolia Mock USDC
   },
 };
