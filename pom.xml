@@ -17,6 +17,7 @@
         <module>backend/learning-service</module>
         <module>backend/contract-service</module>
         <module>backend/notification-service</module>
+        <module>backend/ai-service</module>
     </modules>
 
     <properties>
