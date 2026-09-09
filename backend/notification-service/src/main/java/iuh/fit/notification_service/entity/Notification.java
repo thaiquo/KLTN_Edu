@@ -1,76 +1,148 @@
 package iuh.fit.notification_service.entity;
 
-import iuh.fit.notification_service.enums.NotificationStatus;
-import iuh.fit.notification_service.enums.NotificationType;
-import jakarta.persistence.*;
-import lombok.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
-import java.time.OffsetDateTime;
-import java.util.UUID;
+import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "notifications")
-@Getter
-@Setter
-@NoArgsConstructor
-@AllArgsConstructor
-@Builder
+@Table(
+        name = "notifications",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_notifications_event_recipient",
+                columnNames = {"event_id", "recipient_user_id"}
+        )
+)
 public class Notification {
-
     @Id
-    @Column(name = "id", nullable = false, updatable = false)
-    private UUID id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
-    @Column(name = "recipient_email", nullable = false, length = 255)
-    private String recipientEmail;
+    @Column(name = "event_id", nullable = false, length = 120)
+    private String eventId;
 
-    @Column(name = "recipient_id")
-    private Long recipientId;
+    @Column(name = "recipient_user_id", nullable = false)
+    private Long recipientUserId;
 
-    @Column(name = "title", nullable = false, length = 255)
+    @Column(name = "target_role", length = 40)
+    private String targetRole;
+
+    @Column(nullable = false, length = 80)
+    private String type;
+
+    @Column(nullable = false, length = 180)
     private String title;
 
-    @Column(name = "content", nullable = false, columnDefinition = "TEXT")
-    private String content;
+    @Column(nullable = false, length = 1000)
+    private String message;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "type", nullable = false, length = 64)
-    private NotificationType type;
-
-    @Column(name = "reference_type", length = 64)
+    @Column(name = "reference_type", length = 80)
     private String referenceType;
 
-    @Column(name = "reference_id", length = 255)
+    @Column(name = "reference_id", length = 120)
     private String referenceId;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "status", nullable = false, length = 32)
-    @Builder.Default
-    private NotificationStatus status = NotificationStatus.UNREAD;
-
-    @Column(name = "is_read", nullable = false)
-    @Builder.Default
-    private boolean isRead = false;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private OffsetDateTime createdAt;
-
     @Column(name = "read_at")
-    private OffsetDateTime readAt;
+    private LocalDateTime readAt;
 
-    @Column(name = "metadata_json", columnDefinition = "TEXT")
-    private String metadataJson;
+    @Column(name = "created_at", nullable = false)
+    private LocalDateTime createdAt;
 
     @PrePersist
-    public void prePersist() {
-        if (this.id == null) {
-            this.id = UUID.randomUUID();
-        }
-        if (this.createdAt == null) {
-            this.createdAt = OffsetDateTime.now();
-        }
-        if (this.status == null) {
-            this.status = NotificationStatus.UNREAD;
+    void prePersist() {
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
         }
     }
+
+    public Long getId() {
+        return id;
+    }
+
+    public String getEventId() {
+        return eventId;
+    }
+
+    public void setEventId(String eventId) {
+        this.eventId = eventId;
+    }
+
+    public Long getRecipientUserId() {
+        return recipientUserId;
+    }
+
+    public void setRecipientUserId(Long recipientUserId) {
+        this.recipientUserId = recipientUserId;
+    }
+
+    public String getTargetRole() {
+        return targetRole;
+    }
+
+    public void setTargetRole(String targetRole) {
+        this.targetRole = targetRole;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    public String getReferenceType() {
+        return referenceType;
+    }
+
+    public void setReferenceType(String referenceType) {
+        this.referenceType = referenceType;
+    }
+
+    public String getReferenceId() {
+        return referenceId;
+    }
+
+    public void setReferenceId(String referenceId) {
+        this.referenceId = referenceId;
+    }
+
+    public LocalDateTime getReadAt() {
+        return readAt;
+    }
+
+    public void setReadAt(LocalDateTime readAt) {
+        this.readAt = readAt;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
 }

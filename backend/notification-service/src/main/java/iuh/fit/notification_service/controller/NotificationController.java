@@ -1,17 +1,18 @@
 package iuh.fit.notification_service.controller;
 
-import iuh.fit.notification_service.dto.NotificationDto;
-import iuh.fit.notification_service.dto.SendNotificationRequest;
+import iuh.fit.notification_service.config.security.NotificationPrincipal;
+import iuh.fit.notification_service.dto.NotificationDtos.MarkAllReadResponse;
+import iuh.fit.notification_service.dto.NotificationDtos.NotificationPageResponse;
+import iuh.fit.notification_service.dto.NotificationDtos.NotificationResponse;
+import iuh.fit.notification_service.dto.NotificationDtos.UnreadCountResponse;
 import iuh.fit.notification_service.service.NotificationService;
-import jakarta.validation.Valid;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.web.PageableDefault;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
-import java.util.UUID;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/notifications")
@@ -23,69 +24,45 @@ public class NotificationController {
         this.notificationService = notificationService;
     }
 
-    /**
-     * Get paginated notifications for current user.
-     * Header X-User-Email is passed from API Gateway JWT claims.
-     */
     @GetMapping
-    public ResponseEntity<Page<NotificationDto>> getUserNotifications(
-            @RequestHeader(value = "X-User-Email", defaultValue = "") String userEmail,
-            @RequestParam(value = "email", required = false) String emailParam,
-            @PageableDefault(size = 20) Pageable pageable) {
-
-        String email = !userEmail.isBlank() ? userEmail : emailParam;
-        if (email == null || email.isBlank()) {
-            return ResponseEntity.ok(Page.empty(pageable));
-        }
-        return ResponseEntity.ok(notificationService.getUserNotifications(email, pageable));
+    public NotificationPageResponse list(
+            @AuthenticationPrincipal NotificationPrincipal principal,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "false") boolean unreadOnly,
+            @RequestParam(required = false) String targetRole) {
+        return notificationService.list(
+                principal.userId(),
+                page,
+                size,
+                unreadOnly,
+                targetRole);
     }
 
     @GetMapping("/unread-count")
-    public ResponseEntity<Map<String, Long>> getUnreadCount(
-            @RequestHeader(value = "X-User-Email", defaultValue = "") String userEmail,
-            @RequestParam(value = "email", required = false) String emailParam) {
-
-        String email = !userEmail.isBlank() ? userEmail : emailParam;
-        if (email == null || email.isBlank()) {
-            return ResponseEntity.ok(Map.of("unreadCount", 0L));
-        }
-        long count = notificationService.getUnreadCount(email);
-        return ResponseEntity.ok(Map.of("unreadCount", count));
+    public UnreadCountResponse unreadCount(
+            @AuthenticationPrincipal NotificationPrincipal principal,
+            @RequestParam(required = false) String targetRole) {
+        return notificationService.unreadCount(
+                principal.userId(),
+                targetRole);
     }
 
     @PatchMapping("/{id}/read")
-    public ResponseEntity<NotificationDto> markAsRead(
-            @PathVariable UUID id,
-            @RequestHeader(value = "X-User-Email", defaultValue = "") String userEmail,
-            @RequestParam(value = "email", required = false) String emailParam) {
-
-        String email = !userEmail.isBlank() ? userEmail : emailParam;
-        if (email == null || email.isBlank()) {
-            return ResponseEntity.badRequest().build();
-        }
-        return ResponseEntity.ok(notificationService.markAsRead(id, email));
+    public NotificationResponse markRead(
+            @AuthenticationPrincipal NotificationPrincipal principal,
+            @PathVariable Long id) {
+        return notificationService.markRead(
+                principal.userId(),
+                id);
     }
 
     @PatchMapping("/read-all")
-    public ResponseEntity<Map<String, Integer>> markAllAsRead(
-            @RequestHeader(value = "X-User-Email", defaultValue = "") String userEmail,
-            @RequestParam(value = "email", required = false) String emailParam) {
-
-        String email = !userEmail.isBlank() ? userEmail : emailParam;
-        if (email == null || email.isBlank()) {
-            return ResponseEntity.badRequest().build();
-        }
-        int count = notificationService.markAllAsRead(email);
-        return ResponseEntity.ok(Map.of("updatedCount", count));
-    }
-
-    /**
-     * Internal endpoint for other microservices (contract-service, learning-service, account-service)
-     * to dispatch notifications.
-     */
-    @PostMapping("/internal/send")
-    public ResponseEntity<NotificationDto> sendNotification(@Valid @RequestBody SendNotificationRequest request) {
-        NotificationDto created = notificationService.createAndSendNotification(request);
-        return ResponseEntity.ok(created);
+    public MarkAllReadResponse markAllRead(
+            @AuthenticationPrincipal NotificationPrincipal principal,
+            @RequestParam(required = false) String targetRole) {
+        return notificationService.markAllRead(
+                principal.userId(),
+                targetRole);
     }
 }

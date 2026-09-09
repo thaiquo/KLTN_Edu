@@ -1,116 +1,285 @@
 package iuh.fit.notification_service.service;
 
-import iuh.fit.notification_service.dto.NotificationDto;
-import iuh.fit.notification_service.dto.SendNotificationRequest;
+import iuh.fit.notification_service.dto.NotificationDtos.MarkAllReadResponse;
+import iuh.fit.notification_service.dto.NotificationDtos.NotificationPageResponse;
+import iuh.fit.notification_service.dto.NotificationDtos.NotificationResponse;
+import iuh.fit.notification_service.dto.NotificationDtos.UnreadCountResponse;
 import iuh.fit.notification_service.entity.Notification;
-import iuh.fit.notification_service.enums.NotificationStatus;
-import iuh.fit.notification_service.realtime.NotificationEventHub;
+import iuh.fit.notification_service.exception.ResourceNotFoundException;
 import iuh.fit.notification_service.repository.NotificationRepository;
+import iuh.fit.notification_service.realtime.NotificationRealtimePublisher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
-import java.time.OffsetDateTime;
-import java.util.UUID;
+import java.time.LocalDateTime;
 
 @Service
 public class NotificationService {
 
+    private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
+
+    private static final int MAX_PAGE_SIZE = 100;
+
     private final NotificationRepository notificationRepository;
-    private final NotificationEventHub notificationEventHub;
-    private final EmailNotificationService emailNotificationService;
+    private final NotificationRealtimePublisher realtimePublisher;
 
     public NotificationService(
             NotificationRepository notificationRepository,
-            NotificationEventHub notificationEventHub,
-            EmailNotificationService emailNotificationService) {
+            NotificationRealtimePublisher realtimePublisher) {
         this.notificationRepository = notificationRepository;
-        this.notificationEventHub = notificationEventHub;
-        this.emailNotificationService = emailNotificationService;
+        this.realtimePublisher = realtimePublisher;
     }
 
     @Transactional
-    public NotificationDto createAndSendNotification(SendNotificationRequest request) {
-        Notification notification = Notification.builder()
-                .recipientEmail(request.getRecipientEmail().trim())
-                .recipientId(request.getRecipientId())
-                .title(request.getTitle().trim())
-                .content(request.getContent().trim())
-                .type(request.getType())
-                .referenceType(request.getReferenceType())
-                .referenceId(request.getReferenceId())
-                .metadataJson(request.getMetadataJson())
-                .status(NotificationStatus.UNREAD)
-                .isRead(false)
-                .build();
+    public Notification createIfAbsent(NotificationCommand command) {
+        validate(command);
 
-        Notification saved = notificationRepository.save(notification);
-        NotificationDto dto = toDto(saved);
-
-        // Push real-time to user session via WebSocket
-        notificationEventHub.pushNotification(dto);
-
-        // Send email notification asynchronously
-        emailNotificationService.sendNotificationEmailAsync(
-                saved.getRecipientEmail(),
-                saved.getTitle(),
-                saved.getContent(),
-                saved.getType() != null ? saved.getType().name() : "",
-                saved.getReferenceId()
-        );
-
-        return dto;
+        return notificationRepository
+                .findByEventIdAndRecipientUserId(
+                        command.eventId(),
+                        command.recipientUserId())
+                .orElseGet(() -> insert(command));
     }
 
     @Transactional(readOnly = true)
-    public Page<NotificationDto> getUserNotifications(String userEmail, Pageable pageable) {
-        return notificationRepository.findByRecipientEmailIgnoreCaseOrderByCreatedAtDesc(userEmail.trim(), pageable)
-                .map(this::toDto);
-    }
+    public NotificationPageResponse list(
+            Long userId,
+            int page,
+            int size,
+            boolean unreadOnly,
+            String targetRole) {
+        var pageable = PageRequest.of(
+                Math.max(page, 0),
+                normalizeSize(size),
+                Sort.by(Sort.Direction.DESC, "createdAt")
+                        .and(Sort.by(Sort.Direction.DESC, "id")));
 
-    @Transactional(readOnly = true)
-    public long getUnreadCount(String userEmail) {
-        return notificationRepository.countByRecipientEmailIgnoreCaseAndIsReadFalse(userEmail.trim());
-    }
+        String normalizedRole = normalizeNullable(targetRole);
 
-    @Transactional
-    public NotificationDto markAsRead(UUID notificationId, String userEmail) {
-        Notification notification = notificationRepository.findById(notificationId)
-                .orElseThrow(() -> new IllegalArgumentException("Notification not found: " + notificationId));
+        Page<Notification> notifications;
 
-        if (!notification.getRecipientEmail().equalsIgnoreCase(userEmail.trim())) {
-            throw new IllegalArgumentException("Unauthorized to access this notification");
+        if (StringUtils.hasText(normalizedRole) && unreadOnly) {
+
+            notifications = notificationRepository
+                    .findByRecipientUserIdAndTargetRoleIgnoreCaseAndReadAtIsNull(
+                            userId,
+                            normalizedRole,
+                            pageable);
+
+        } else if (StringUtils.hasText(normalizedRole)) {
+
+            notifications = notificationRepository
+                    .findByRecipientUserIdAndTargetRoleIgnoreCase(
+                            userId,
+                            normalizedRole,
+                            pageable);
+
+        } else if (unreadOnly) {
+
+            notifications = notificationRepository
+                    .findByRecipientUserIdAndReadAtIsNull(
+                            userId,
+                            pageable);
+
+        } else {
+
+            notifications = notificationRepository
+                    .findByRecipientUserId(
+                            userId,
+                            pageable);
         }
 
-        notification.setRead(true);
-        notification.setStatus(NotificationStatus.READ);
-        notification.setReadAt(OffsetDateTime.now());
+        return new NotificationPageResponse(
+                notifications.getContent()
+                        .stream()
+                        .map(this::toResponse)
+                        .toList(),
+                notifications.getTotalElements(),
+                notifications.getTotalPages(),
+                notifications.getNumber(),
+                notifications.getSize());
+    }
 
-        Notification saved = notificationRepository.save(notification);
-        return toDto(saved);
+    @Transactional(readOnly = true)
+    public UnreadCountResponse unreadCount(
+            Long userId,
+            String targetRole) {
+        String normalizedRole = normalizeNullable(targetRole);
+
+        long count = StringUtils.hasText(normalizedRole)
+                ? notificationRepository
+                        .countByRecipientUserIdAndTargetRoleIgnoreCaseAndReadAtIsNull(
+                                userId,
+                                normalizedRole)
+                : notificationRepository
+                        .countByRecipientUserIdAndReadAtIsNull(userId);
+
+        return new UnreadCountResponse(count);
     }
 
     @Transactional
-    public int markAllAsRead(String userEmail) {
-        return notificationRepository.markAllAsReadForEmail(userEmail.trim(), OffsetDateTime.now());
+    public NotificationResponse markRead(
+            Long userId,
+            Long notificationId) {
+        Notification notification = notificationRepository
+                .findById(notificationId)
+                .orElseThrow(
+                        () -> new ResourceNotFoundException(
+                                "Notification not found"));
+
+        ensureOwner(userId, notification);
+
+        if (notification.getReadAt() == null) {
+            notification.setReadAt(LocalDateTime.now());
+        }
+
+        return toResponse(notification);
     }
 
-    private NotificationDto toDto(Notification entity) {
-        return NotificationDto.builder()
-                .id(entity.getId())
-                .recipientEmail(entity.getRecipientEmail())
-                .recipientId(entity.getRecipientId())
-                .title(entity.getTitle())
-                .content(entity.getContent())
-                .type(entity.getType())
-                .referenceType(entity.getReferenceType())
-                .referenceId(entity.getReferenceId())
-                .status(entity.getStatus())
-                .isRead(entity.isRead())
-                .createdAt(entity.getCreatedAt())
-                .readAt(entity.getReadAt())
-                .metadataJson(entity.getMetadataJson())
-                .build();
+    @Transactional
+    public MarkAllReadResponse markAllRead(
+            Long userId,
+            String targetRole) {
+        String normalizedRole = normalizeNullable(targetRole);
+
+        int count = StringUtils.hasText(normalizedRole)
+                ? notificationRepository
+                        .markAllUnreadAsReadForTargetRole(
+                                userId,
+                                normalizedRole,
+                                LocalDateTime.now())
+                : notificationRepository
+                        .markAllUnreadAsRead(
+                                userId,
+                                LocalDateTime.now());
+
+        return new MarkAllReadResponse(count);
     }
+
+    private Notification insert(NotificationCommand command) {
+        try {
+            Notification notification = new Notification();
+
+            notification.setEventId(command.eventId().trim());
+            notification.setRecipientUserId(command.recipientUserId());
+            notification.setType(command.type().trim());
+            notification.setTitle(command.title().trim());
+            notification.setMessage(command.message().trim());
+
+            notification.setTargetRole(
+                    normalizeNullable(command.targetRole()));
+
+            notification.setReferenceType(
+                    normalizeNullable(command.referenceType()));
+
+            notification.setReferenceId(
+                    normalizeNullable(command.referenceId()));
+
+            Notification saved = notificationRepository.saveAndFlush(notification);
+
+            log.info(
+                    "Created notification eventId={} type={} recipientUserId={}",
+                    saved.getEventId(),
+                    saved.getType(),
+                    saved.getRecipientUserId());
+
+            realtimePublisher.publishCreated(saved);
+
+            return saved;
+
+        } catch (DataIntegrityViolationException ex) {
+
+            log.info(
+                    "Skipped duplicate notification eventId={} recipientUserId={}",
+                    command.eventId(),
+                    command.recipientUserId());
+
+            return notificationRepository
+                    .findByEventIdAndRecipientUserId(
+                            command.eventId(),
+                            command.recipientUserId())
+                    .orElseThrow(() -> ex);
+        }
+    }
+
+    private void validate(NotificationCommand command) {
+        if (command == null) {
+            throw new IllegalArgumentException(
+                    "Notification command is required");
+        }
+
+        if (!StringUtils.hasText(command.eventId())) {
+            throw new IllegalArgumentException(
+                    "Notification eventId is required");
+        }
+
+        if (command.recipientUserId() == null) {
+            throw new IllegalArgumentException(
+                    "Notification recipientUserId is required");
+        }
+
+        if (!StringUtils.hasText(command.type())) {
+            throw new IllegalArgumentException(
+                    "Notification type is required");
+        }
+
+        if (!StringUtils.hasText(command.title())) {
+            throw new IllegalArgumentException(
+                    "Notification title is required");
+        }
+
+        if (!StringUtils.hasText(command.message())) {
+            throw new IllegalArgumentException(
+                    "Notification message is required");
+        }
+    }
+
+    private void ensureOwner(
+            Long userId,
+            Notification notification) {
+        if (!notification.getRecipientUserId().equals(userId)) {
+            throw new AccessDeniedException(
+                    "You do not have access to this notification");
+        }
+    }
+
+    private int normalizeSize(int size) {
+        if (size <= 0) {
+            return 20;
+        }
+
+        return Math.min(size, MAX_PAGE_SIZE);
+    }
+
+    private String normalizeNullable(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+
+        return value.trim();
+    }
+
+    private NotificationResponse toResponse(
+            Notification notification) {
+        return new NotificationResponse(
+                notification.getId(),
+                notification.getType(),
+                notification.getTitle(),
+                notification.getMessage(),
+                notification.getReferenceType(),
+                notification.getReferenceId(),
+                notification.getTargetRole(),
+                notification.getReadAt() != null,
+                notification.getReadAt(),
+                notification.getCreatedAt());
+    }
+
 }

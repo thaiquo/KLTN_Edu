@@ -11,15 +11,54 @@ else
 fi
 
 ENV_FILE="$PROJECT_ROOT/.env"
+APPLICATION_PROPERTIES="$SERVICE_DIR/src/main/resources/application.properties"
 
-if [[ -f "$ENV_FILE" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
+echo "Loading local environment..."
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Root .env not found."
+  echo "Please create it from .env.example and configure local values."
+  exit 1
 fi
 
+if [[ ! -f "$APPLICATION_PROPERTIES" ]]; then
+  echo "application.properties not found at: $APPLICATION_PROPERTIES"
+  exit 1
+fi
+
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+
+mapfile -t required_vars < <(
+  grep -hoE '\$\{[A-Za-z_][A-Za-z0-9_]*\}' "$APPLICATION_PROPERTIES" \
+    | sed -E 's/^\$\{//; s/\}$//' \
+    | sort -u
+)
+
+missing_vars=()
+
+for name in "${required_vars[@]}"; do
+  if [[ -z "${!name:-}" ]]; then
+    missing_vars+=("$name")
+  fi
+done
+
+if (( ${#missing_vars[@]} > 0 )); then
+  echo "Missing required environment variable(s):"
+
+  for name in "${missing_vars[@]}"; do
+    echo " - $name"
+  done
+
+  echo "Please configure them in the root .env file."
+  exit 1
+fi
+
+echo "Environment configuration loaded."
 echo "Starting notification-service..."
+
 cd "$SERVICE_DIR"
 
 if [[ -f ./mvnw ]]; then

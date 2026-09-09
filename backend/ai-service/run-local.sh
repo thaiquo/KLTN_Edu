@@ -20,7 +20,7 @@ if [[ -f "$ENV_FILE" ]]; then
   set +a
 fi
 
-echo "Starting ai-service on port ${AI_SERVICE_PORT:-8084}..."
+echo "Starting ai-service on port ${AI_SERVICE_PORT:-8085}..."
 cd "$SERVICE_DIR"
 
 if [[ -f ./mvnw ]]; then

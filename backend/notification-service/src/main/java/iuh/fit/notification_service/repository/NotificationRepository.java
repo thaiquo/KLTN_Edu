@@ -7,19 +7,50 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
-import org.springframework.stereotype.Repository;
 
-import java.time.OffsetDateTime;
-import java.util.UUID;
+import java.time.LocalDateTime;
+import java.util.Optional;
 
-@Repository
-public interface NotificationRepository extends JpaRepository<Notification, UUID> {
+public interface NotificationRepository extends JpaRepository<Notification, Long> {
+    Optional<Notification> findByEventIdAndRecipientUserId(String eventId, Long recipientUserId);
 
-    Page<Notification> findByRecipientEmailIgnoreCaseOrderByCreatedAtDesc(String email, Pageable pageable);
+    Page<Notification> findByRecipientUserId(Long recipientUserId, Pageable pageable);
 
-    long countByRecipientEmailIgnoreCaseAndIsReadFalse(String email);
+    Page<Notification> findByRecipientUserIdAndReadAtIsNull(Long recipientUserId, Pageable pageable);
+
+    Page<Notification> findByRecipientUserIdAndTargetRoleIgnoreCase(Long recipientUserId, String targetRole, Pageable pageable);
+
+    Page<Notification> findByRecipientUserIdAndTargetRoleIgnoreCaseAndReadAtIsNull(
+            Long recipientUserId,
+            String targetRole,
+            Pageable pageable
+    );
+
+    long countByRecipientUserIdAndReadAtIsNull(Long recipientUserId);
+
+    long countByRecipientUserIdAndTargetRoleIgnoreCaseAndReadAtIsNull(Long recipientUserId, String targetRole);
 
     @Modifying
-    @Query("UPDATE Notification n SET n.isRead = true, n.status = iuh.fit.notification_service.enums.NotificationStatus.READ, n.readAt = :now WHERE LOWER(n.recipientEmail) = LOWER(:email) AND n.isRead = false")
-    int markAllAsReadForEmail(@Param("email") String email, @Param("now") OffsetDateTime now);
+    @Query("""
+            update Notification n
+               set n.readAt = :readAt
+             where n.recipientUserId = :recipientUserId
+               and n.readAt is null
+            """)
+    int markAllUnreadAsRead(@Param("recipientUserId") Long recipientUserId, @Param("readAt") LocalDateTime readAt);
+
+    @Modifying
+    @Query("""
+            update Notification n
+               set n.readAt = :readAt
+             where n.recipientUserId = :recipientUserId
+               and lower(n.targetRole) = lower(:targetRole)
+               and n.readAt is null
+            """)
+    int markAllUnreadAsReadForTargetRole(
+            @Param("recipientUserId") Long recipientUserId,
+            @Param("targetRole") String targetRole,
+            @Param("readAt") LocalDateTime readAt
+    );
+
 }

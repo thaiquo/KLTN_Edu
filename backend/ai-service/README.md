@@ -3,8 +3,8 @@
 Service xử lý AI cho nền tảng EduConnect (AI Chatbot, RAG, Tutor Recommendation & Ranking, Natural Language Search).
 
 ## 📌 Thông tin cấu hình
-* **Port mặc định:** `8084`
-* **Route qua API Gateway:** `/api/ai/**` -> `http://localhost:8084`
+* **Port mặc định:** `8085`
+* **Route qua API Gateway:** `/api/ai/**` -> `http://localhost:8085`
 * **Quản lý biến môi trường:** Load trực tiếp từ root `.env` (`AI_SERVICE_PORT`, `GEMINI_API_KEY`, `QDRANT_HOST`, ...)
 
 ## 🚀 Cách khởi chạy cục bộ
