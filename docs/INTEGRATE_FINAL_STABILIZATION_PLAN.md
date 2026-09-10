@@ -224,10 +224,10 @@ Trước main:
 - [x] Chạy typecheck, ghi nhận 13 lỗi cần sửa.
 - [x] Chạy backend test-compile bằng JDK 21, ghi nhận 3 lỗi Contract controller/test.
 - [x] Kiểm tra main và quocthai2 đều là ancestor của HEAD hiện tại.
-- [ ] Hoàn tất build/test và sửa source tích hợp.
-- [ ] Migration tương thích, đã thử trên DB clone và DB mới.
-- [ ] API/authorization/session/settlement/realtime regression.
-- [ ] Kiểm thử ví và luồng end-to-end.
+- [x] Hoàn tất build/test và sửa source tích hợp (Đợt 1: commit dab0b10).
+- [x] Migration tương thích, đã thử trên DB clone và DB mới (Đợt 2: commit bbcd6e2).
+- [x] API/authorization/session/settlement/realtime regression (Đợt 3 & 4: commit 3106178, 458db96, 6c52f18).
+- [ ] Kiểm thử ví và luồng end-to-end trên Sepolia / runtime.
 - [ ] Đồng bộ trạng thái các docs cũ với bằng chứng mới.
 - [ ] PR và merge main.
 
