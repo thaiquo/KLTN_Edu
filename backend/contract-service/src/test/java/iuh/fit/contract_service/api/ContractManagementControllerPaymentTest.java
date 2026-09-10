@@ -95,6 +95,28 @@ class ContractManagementControllerPaymentTest {
     }
 
     @Test
+    void listsEmptyAgreementsForAuthenticatedStudentWithoutMutatingAccessControlResult() {
+        var user = new ContractUserPrincipal(1L, "student@example.com", "STUDENT", List.of("STUDENT"));
+        when(currentUserContext.requireCurrentUser()).thenReturn(user);
+        when(agreementRepository.findAll()).thenReturn(List.of());
+        when(accessControl.filterAgreements(List.of(), user))
+                .thenReturn(new ContractAccessControl().filterAgreements(List.of(), user));
+        var response = controller.listAgreements(null, org.springframework.data.domain.PageRequest.of(0, 50));
+        assertThat(response.getBody().getTotalElements()).isZero();
+    }
+
+    @Test
+    void listsEmptyDisputesForAuthenticatedTutorWithoutMutatingAccessControlResult() {
+        var user = new ContractUserPrincipal(2L, "tutor@example.com", "TUTOR", List.of("TUTOR"));
+        when(currentUserContext.requireCurrentUser()).thenReturn(user);
+        when(disputeRepository.findAll()).thenReturn(List.of());
+        when(accessControl.filterDisputes(List.of(), user))
+                .thenReturn(new ContractAccessControl().filterDisputes(List.of(), user));
+        var response = controller.listDisputes(null, org.springframework.data.domain.PageRequest.of(0, 50));
+        assertThat(response.getBody().getTotalElements()).isZero();
+    }
+
+    @Test
     void paymentSubmittedBeforeWaitingPaymentReturnsConflict() {
         UUID agreementId = UUID.randomUUID();
         ContractAgreement agreement = agreement(agreementId, ContractAgreementStatus.PREPARING_BLOCKCHAIN);

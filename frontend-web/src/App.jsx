@@ -21,7 +21,6 @@ import { StudentContractsPage } from './pages/student/StudentContractsPage';
 import { StudentMatchingPage } from './pages/student/StudentMatchingPage';
 import { StudentMessagesPage } from './pages/student/StudentMessagesPage';
 import { StudentMyClassesPage } from './pages/student/StudentMyClassesPage';
-import { StudentPaymentsPage } from './pages/student/StudentPaymentsPage';
 import { StudentWalletPage } from './pages/student/StudentWalletPage';
 import { useTutorApplication } from './hooks/useTutorApplication';
 
@@ -238,14 +237,7 @@ export default function App() {
                 </ProtectedStudentPage>
               }
             />
-            <Route
-              path="/payments"
-              element={
-                <ProtectedStudentPage>
-                  <StudentPaymentsPage />
-                </ProtectedStudentPage>
-              }
-            />
+            <Route path="/payments" element={<Navigate to="/student/wallet" replace />} />
             <Route
               path="/student/wallet"
               element={

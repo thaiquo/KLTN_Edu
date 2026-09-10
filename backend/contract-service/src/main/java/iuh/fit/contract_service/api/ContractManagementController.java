@@ -409,7 +409,9 @@ public class ContractManagementController {
         }
 
         // Sort by createdAt desc
-        filtered.sort(Comparator.comparing(ContractAgreement::getCreatedAt).reversed());
+        filtered = filtered.stream()
+                .sorted(Comparator.comparing(ContractAgreement::getCreatedAt).reversed())
+                .toList();
 
         // Manual pagination
         int start = (int) pageable.getOffset();
@@ -647,7 +649,9 @@ public class ContractManagementController {
             } catch (IllegalArgumentException ignored) {}
         }
 
-        filtered.sort(Comparator.comparing(Dispute::getCreatedAt).reversed());
+        filtered = filtered.stream()
+                .sorted(Comparator.comparing(Dispute::getCreatedAt).reversed())
+                .toList();
 
         int start = (int) pageable.getOffset();
         int end = Math.min(start + pageable.getPageSize(), filtered.size());

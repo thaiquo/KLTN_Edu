@@ -231,6 +231,12 @@ export function HomeHeader() {
                 {link.icon === 'sparkles' && (
                   <Sparkles size={14} className={active ? 'text-white' : 'text-slate-400'} />
                 )}
+                {link.icon === 'shield' && (
+                  <ShieldCheck size={14} className={active ? 'text-white' : 'text-emerald-600'} />
+                )}
+                {link.icon === 'wallet' && (
+                  <WalletCards size={14} className={active ? 'text-white' : 'text-indigo-600'} />
+                )}
 
                 {link.label}
               </NavItem>
@@ -373,14 +379,6 @@ export function HomeHeader() {
                     Hợp đồng của tôi
                   </Link>
                   <Link
-                    to="/payments"
-                    onClick={closeMenu}
-                    className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
-                  >
-                    <WalletCards size={17} />
-                    Thanh toán & Ký quỹ
-                  </Link>
-                  <Link
                     to="/student/wallet"
                     onClick={closeMenu}
                     className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
@@ -487,10 +485,6 @@ function AccountMenu({ user, roleAction, roleActionError, onStudentTutorAction, 
 
           <MenuLink to="/contracts" icon={<FileText size={16} />} onClick={onClose}>
             Hợp đồng của tôi
-          </MenuLink>
-
-          <MenuLink to="/payments" icon={<WalletCards size={16} />} onClick={onClose}>
-            Thanh toán & Ký quỹ
           </MenuLink>
 
           <MenuLink to="/student/wallet" icon={<WalletCards size={16} />} onClick={onClose}>

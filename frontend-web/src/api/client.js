@@ -53,23 +53,37 @@ function shouldAttemptRefresh(path) {
   return !path.startsWith('/api/auth/');
 }
 
+let refreshPromise = null;
+
 async function refreshAccessToken() {
-  await ensureCsrfToken();
-
-  const response = await fetch(buildUrl('/api/auth/refresh'), {
-    method: 'POST',
-    credentials: 'include',
-    headers: buildHeaders({ headers: {} }, true, false)
-  });
-
-  if (!response.ok) {
-    throw new ApiError({
-      status: response.status,
-      message: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
-    });
+  if (refreshPromise) {
+    return refreshPromise;
   }
 
-  await parseResponseBody(response);
+  refreshPromise = (async () => {
+    try {
+      await ensureCsrfToken();
+
+      const response = await fetch(buildUrl('/api/auth/refresh'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: buildHeaders({ headers: {} }, true, false)
+      });
+
+      if (!response.ok) {
+        throw new ApiError({
+          status: response.status,
+          message: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'
+        });
+      }
+
+      return await parseResponseBody(response);
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
 }
 
 async function parseResponseBody(response) {
