@@ -32,6 +32,7 @@ public class SessionAttendanceService {
     private final ClassRoomRepository classRoomRepository;
     private final RollingSessionService rollingSessionService;
     private final SessionAccessControl sessionAccessControl;
+    private final ContractServiceDispatcher contractServiceDispatcher;
 
     /**
      * Lấy danh sách các buổi học của một lớp học. Tự động sinh tuần đầu tiên nếu lớp chưa có buổi học nào.
@@ -283,6 +284,23 @@ public class SessionAttendanceService {
                 } catch (Exception e) {
                     log.warn("Auto rolling generation failed after auto-finalizing session #{}: {}", session.getId(), e.getMessage());
                 }
+
+                // Tự động kích hoạt đề xuất quyết toán (settlement proposal) và mở hạn khiếu nại 24h qua contract-service
+                try {
+                    List<ContractServiceDispatcher.StudentAttendanceOutcomeItem> outcomeItems = attendances.stream()
+                            .map(a -> new ContractServiceDispatcher.StudentAttendanceOutcomeItem(
+                                    a.getStudentId(),
+                                    a.getFinalOutcome() != null ? a.getFinalOutcome().name() : AttendanceOutcome.BOTH_PRESENT.name()
+                            ))
+                            .toList();
+                    contractServiceDispatcher.dispatchAutoProposeAsync(
+                            session.getClassRoom().getId(),
+                            session.getId(),
+                            outcomeItems
+                    );
+                } catch (Exception e) {
+                    log.warn("Failed to dispatch auto settlement proposal for session #{}: {}", session.getId(), e.getMessage());
+                }
             } catch (Exception e) {
                 log.error("Failed to auto-finalize Session #{}: {}", session.getId(), e.getMessage(), e);
             }
@@ -329,7 +347,7 @@ public class SessionAttendanceService {
     }
 
     private ClassSessionDtos.ClassSessionResponse toSessionResponse(ClassSession session, Long studentId) {
-        List<SessionAttendance> attendances = session.getAttendances() != null
+        List<SessionAttendance> attendances = (session.getAttendances() != null && !session.getAttendances().isEmpty())
                 ? session.getAttendances() : sessionAttendanceRepository.findBySessionId(session.getId());
 
         int total = attendances.size();

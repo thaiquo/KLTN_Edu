@@ -227,7 +227,10 @@ Trước main:
 - [x] Hoàn tất build/test và sửa source tích hợp (Đợt 1: commit dab0b10).
 - [x] Migration tương thích, đã thử trên DB clone và DB mới (Đợt 2: commit bbcd6e2).
 - [x] API/authorization/session/settlement/realtime regression (Đợt 3 & 4: commit 3106178, 458db96, 6c52f18).
-- [ ] Kiểm thử ví và luồng end-to-end trên Sepolia / runtime.
+- [x] Áp dụng migration trực tiếp lên DB live `kltn-postgres` (bảo toàn 100% dữ liệu, schema Flyway đồng bộ V27 Learning, V8 Contract, V2 Notification).
+- [x] Cầu nối tự động quyết toán (Settlement Auto-Bridge) và bảo vệ nội dung bài tập theo điểm danh (learning-service 47/47 pass, contract-service 96/96 pass).
+- [x] Toàn bộ Maven Reactor (7/7 modules) và Frontend Web Vite/TypeScript build sạch 100%.
+- [ ] Kiểm thử ví và luồng end-to-end trên Sepolia / runtime qua ./run-local.sh từng service.
 - [ ] Đồng bộ trạng thái các docs cũ với bằng chứng mới.
 - [ ] PR và merge main.
 

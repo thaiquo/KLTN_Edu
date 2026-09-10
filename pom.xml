@@ -41,8 +41,8 @@
                         <configuration>
                             <rules>
                                 <requireJavaVersion>
-                                    <version>[21,22)</version>
-                                    <message>KLTN_Edu must be built with JDK 21. Set JAVA_HOME to a Java 21 JDK.</message>
+                                    <version>[21,)</version>
+                                    <message>KLTN_Edu must be built with JDK 21 or higher. Set JAVA_HOME to a Java 21+ JDK.</message>
                                 </requireJavaVersion>
                             </rules>
                         </configuration>

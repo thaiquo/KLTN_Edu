@@ -845,6 +845,103 @@ public class ContractManagementController {
         return ResponseEntity.ok(Map.of("classroomId", classroomId, "sessionId", sessionId, "proposals", results));
     }
 
+    public record StudentAttendanceOutcome(Long studentId, String outcome) {}
+    public record InternalAutoProposeRequest(List<StudentAttendanceOutcome> attendances) {}
+
+    /**
+     * Internal endpoint called by learning-service when a session is finalized/completed.
+     * Automatically initiates settlement proposals for all ACTIVE agreements in the classroom.
+     */
+    @PostMapping("/internal/classrooms/{classroomId}/sessions/{sessionId}/auto-propose")
+    public ResponseEntity<?> internalAutoProposeSettlement(
+            @PathVariable Long classroomId,
+            @PathVariable Long sessionId,
+            @RequestBody(required = false) InternalAutoProposeRequest body) {
+        List<ContractAgreement> agreements = agreementRepository.findAll().stream()
+                .filter(a -> a.getClassroomId().equals(classroomId) && a.getStatus() == ContractAgreementStatus.ACTIVE)
+                .toList();
+
+        if (agreements.isEmpty()) {
+            return ResponseEntity.ok(Map.of("classroomId", classroomId, "sessionId", sessionId, "proposals", List.of(), "message", "No active agreements"));
+        }
+
+        Map<Long, String> outcomeByStudent = new HashMap<>();
+        if (body != null && body.attendances() != null) {
+            for (StudentAttendanceOutcome att : body.attendances()) {
+                if (att.studentId() != null && att.outcome() != null) {
+                    outcomeByStudent.put(att.studentId(), att.outcome().trim().toUpperCase(Locale.ROOT));
+                }
+            }
+        }
+
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (ContractAgreement agreement : agreements) {
+            try {
+                var existingOpt = settlementRepository.findByAgreementIdAndSessionId(agreement.getId(), sessionId);
+                if (existingOpt.isPresent() && existingOpt.get().getStatus() != SettlementStatus.PREPARING && existingOpt.get().getStatus() != SettlementStatus.PROPOSE_PENDING) {
+                    results.add(Map.of(
+                            "agreementId", agreement.getId().toString(),
+                            "studentId", agreement.getStudentId(),
+                            "status", existingOpt.get().getStatus().name(),
+                            "skipped", true
+                    ));
+                    continue;
+                }
+
+                String outcomeStr = outcomeByStudent.getOrDefault(agreement.getStudentId(), "BOTH_PRESENT");
+                SettlementOutcome outcome;
+                try {
+                    outcome = SettlementOutcome.valueOf(outcomeStr);
+                } catch (Exception ex) {
+                    outcome = SettlementOutcome.BOTH_PRESENT;
+                }
+
+                String evidenceHash = org.web3j.crypto.Hash.sha3String("PROPOSE:" + agreement.getId() + ":" + sessionId);
+                BlockchainTransactionIntentResult res = settlementWorkflowService
+                        .initiateSessionProposal(agreement.getId(), sessionId, outcome, evidenceHash);
+
+                try {
+                    notificationDispatcher.sendAsync(
+                            agreement.getTutorEmail(),
+                            agreement.getTutorId(),
+                            "Đề xuất quyết toán Buổi #" + sessionId,
+                            "Buổi học #" + sessionId + " đã hoàn thành. Hệ thống đã mở đề xuất quyết toán (" + outcome.name() + ").",
+                            "SETTLEMENT_PROPOSED",
+                            "CONTRACT_AGREEMENT",
+                            agreement.getId().toString()
+                    );
+                    notificationDispatcher.sendAsync(
+                            agreement.getStudentEmail(),
+                            agreement.getStudentId(),
+                            "Quyết toán Buổi #" + sessionId,
+                            "Buổi học #" + sessionId + " đã hoàn thành (" + outcome.name() + "). Thời hạn khiếu nại 24h đã được kích hoạt.",
+                            "SETTLEMENT_PROPOSED",
+                            "CONTRACT_AGREEMENT",
+                            agreement.getId().toString()
+                    );
+                } catch (Exception ex) {
+                    // ignore notification failure
+                }
+
+                results.add(Map.of(
+                        "agreementId", agreement.getId().toString(),
+                        "studentId", agreement.getStudentId(),
+                        "status", res.status().name(),
+                        "outcome", outcome.name()
+                ));
+            } catch (Exception e) {
+                results.add(Map.of(
+                        "agreementId", agreement.getId().toString(),
+                        "studentId", agreement.getStudentId(),
+                        "error", e.getMessage()
+                ));
+            }
+        }
+
+        return ResponseEntity.ok(Map.of("classroomId", classroomId, "sessionId", sessionId, "proposals", results));
+    }
+
+
 
     @GetMapping("/transactions")
     public ResponseEntity<Page<BlockchainTxDto>> listAllTransactions(
