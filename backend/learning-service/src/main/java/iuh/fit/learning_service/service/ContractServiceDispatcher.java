@@ -23,13 +23,12 @@ public class ContractServiceDispatcher {
     private final ObjectMapper objectMapper;
 
     public ContractServiceDispatcher(
-            @Value("${CONTRACT_SERVICE_URL:http://localhost:8083}") String contractServiceUrl,
-            ObjectMapper objectMapper) {
+            @Value("${CONTRACT_SERVICE_URL:http://localhost:8083}") String contractServiceUrl) {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(3))
                 .build();
         this.contractServiceUrl = contractServiceUrl;
-        this.objectMapper = objectMapper;
+        this.objectMapper = new ObjectMapper();
     }
 
     public record StudentAttendanceOutcomeItem(Long studentId, String outcome) {}

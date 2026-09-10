@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -e
+
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_DIR="$SCRIPT_DIR"
@@ -28,7 +29,11 @@ fi
 
 set -a
 # shellcheck disable=SC1090
-source "$ENV_FILE"
+if command -v tr >/dev/null 2>&1; then
+  source <(tr -d '\r' < "$ENV_FILE")
+else
+  source "$ENV_FILE"
+fi
 set +a
 
 export SPRING_PROFILES_ACTIVE="${SPRING_PROFILES_ACTIVE:-dev}"
@@ -38,7 +43,9 @@ echo "Starting api-gateway..."
 
 cd "$SERVICE_DIR"
 
-if [[ -f ./mvnw ]]; then
+if command -v powershell.exe >/dev/null 2>&1 && [[ -f ./mvnw.cmd ]]; then
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "./mvnw.cmd spring-boot:run" "$@"
+elif [[ -f ./mvnw ]]; then
   if [[ -x ./mvnw ]]; then
     ./mvnw spring-boot:run "$@"
   else
