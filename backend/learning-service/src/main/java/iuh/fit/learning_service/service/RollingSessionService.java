@@ -35,7 +35,7 @@ public class RollingSessionService {
      */
     @Transactional
     public List<ClassSession> generateInitialWeekSessions(Long classroomId) {
-        ClassRoom classRoom = classRoomRepository.findById(classroomId)
+        ClassRoom classRoom = classRoomRepository.findByIdForUpdate(classroomId)
                 .orElseThrow(() -> new IllegalArgumentException("ClassRoom not found: " + classroomId));
 
         long existingCount = classSessionRepository.countByClassRoomId(classroomId);
@@ -52,6 +52,11 @@ public class RollingSessionService {
 
         // Map schedules by dayOfWeek (Java DayOfWeek: MONDAY(1) ... SUNDAY(7))
         // Note: Project convention day_of_week: 2 = Mon, 3 = Tue, ..., 8 = Sun
+        if (schedules == null || schedules.isEmpty()) return Collections.emptyList();
+        if (schedules.stream().anyMatch(schedule -> schedule.getDayOfWeek() == null
+                || schedule.getDayOfWeek() < 2 || schedule.getDayOfWeek() > 8)) {
+            throw new IllegalArgumentException("Invalid schedule day of week");
+        }
         Map<Integer, ClassSchedule> scheduleMap = new HashMap<>();
         for (ClassSchedule cs : schedules) {
             scheduleMap.put(cs.getDayOfWeek(), cs);
@@ -100,7 +105,7 @@ public class RollingSessionService {
      */
     @Transactional
     public List<ClassSession> generateNextBatchIfNeeded(Long classroomId) {
-        ClassRoom classRoom = classRoomRepository.findById(classroomId)
+        ClassRoom classRoom = classRoomRepository.findByIdForUpdate(classroomId)
                 .orElseThrow(() -> new IllegalArgumentException("ClassRoom not found: " + classroomId));
 
         List<ClassSession> existingSessions = classSessionRepository.findByClassRoomIdOrderBySequenceNumberAsc(classroomId);
@@ -115,9 +120,17 @@ public class RollingSessionService {
         }
 
         ClassSession lastSession = existingSessions.get(existingSessions.size() - 1);
+        if (existingSessions.stream().anyMatch(session -> session.getStatus() != ClassSessionStatus.COMPLETED)) {
+            return Collections.emptyList();
+        }
         int nextBatchSize = Math.min(classRoom.getSessionsPerWeek(), classRoom.getTotalSessions() - currentCount);
 
         List<ClassSchedule> schedules = classRoom.getSchedules();
+        if (schedules == null || schedules.isEmpty()) return Collections.emptyList();
+        if (schedules.stream().anyMatch(schedule -> schedule.getDayOfWeek() == null
+                || schedule.getDayOfWeek() < 2 || schedule.getDayOfWeek() > 8)) {
+            throw new IllegalArgumentException("Invalid schedule day of week");
+        }
         Map<Integer, ClassSchedule> scheduleMap = new HashMap<>();
         for (ClassSchedule cs : schedules) {
             scheduleMap.put(cs.getDayOfWeek(), cs);
@@ -127,7 +140,8 @@ public class RollingSessionService {
         List<ClassSession> nextBatch = new ArrayList<>();
         int seq = currentCount + 1;
 
-        while (nextBatch.size() < nextBatchSize && seq <= classRoom.getTotalSessions()) {
+        int daysChecked = 0;
+        while (nextBatch.size() < nextBatchSize && seq <= classRoom.getTotalSessions() && daysChecked++ < 365) {
             int dayOfWeekConvention = toProjectDayOfWeek(currentDate.getDayOfWeek());
             if (scheduleMap.containsKey(dayOfWeekConvention)) {
                 ClassSchedule matchedSchedule = scheduleMap.get(dayOfWeekConvention);
@@ -156,12 +170,6 @@ public class RollingSessionService {
     private void createAttendancesForEnrolledStudents(ClassSession session, ClassRoom classRoom) {
         List<EnrollmentRequest> enrolledRequests = enrollmentRequestRepository.findByClassRoomIdAndStatus(
                 classRoom.getId(), EnrollmentRequestStatus.ENROLLED);
-
-        // Fallback: If no ENROLLED yet, check ACCEPTED (students who reserved)
-        if (enrolledRequests.isEmpty()) {
-            enrolledRequests = enrollmentRequestRepository.findByClassRoomIdAndStatus(
-                    classRoom.getId(), EnrollmentRequestStatus.ACCEPTED);
-        }
 
         Long tutorProfileId = classRoom.getTutorProfileId() != null ? classRoom.getTutorProfileId() : 0L;
 

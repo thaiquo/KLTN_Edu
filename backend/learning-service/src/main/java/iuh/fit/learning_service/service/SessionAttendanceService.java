@@ -31,21 +31,17 @@ public class SessionAttendanceService {
     private final SessionAttendanceRepository sessionAttendanceRepository;
     private final ClassRoomRepository classRoomRepository;
     private final RollingSessionService rollingSessionService;
+    private final SessionAccessControl sessionAccessControl;
 
     /**
      * Lấy danh sách các buổi học của một lớp học. Tự động sinh tuần đầu tiên nếu lớp chưa có buổi học nào.
      */
     @Transactional
     public List<ClassSessionDtos.ClassSessionResponse> getSessionsByClassRoomId(Long classRoomId) {
+        ClassRoom room = classRoomRepository.findById(classRoomId)
+                .orElseThrow(() -> new ResourceNotFoundException("Classroom not found"));
+        sessionAccessControl.requireCanView(room);
         List<ClassSession> sessions = classSessionRepository.findByClassRoomIdOrderBySequenceNumberAsc(classRoomId);
-        if (sessions.isEmpty()) {
-            try {
-                sessions = rollingSessionService.generateInitialWeekSessions(classRoomId);
-            } catch (Exception e) {
-                log.warn("Auto-generation of initial week sessions for ClassRoom #{} failed: {}", classRoomId, e.getMessage());
-                sessions = classSessionRepository.findByClassRoomIdOrderBySequenceNumberAsc(classRoomId);
-            }
-        }
         return sessions.stream().map(this::toSessionResponse).toList();
     }
 
@@ -54,6 +50,9 @@ public class SessionAttendanceService {
      */
     @Transactional
     public List<ClassSessionDtos.ClassSessionResponse> generateInitialWeekSessions(Long classRoomId) {
+        ClassRoom room = classRoomRepository.findById(classRoomId)
+                .orElseThrow(() -> new ResourceNotFoundException("Classroom not found"));
+        sessionAccessControl.requireTutor(room);
         rollingSessionService.generateInitialWeekSessions(classRoomId);
         List<ClassSession> sessions = classSessionRepository.findByClassRoomIdOrderBySequenceNumberAsc(classRoomId);
         return sessions.stream().map(this::toSessionResponse).toList();
@@ -66,6 +65,7 @@ public class SessionAttendanceService {
     public ClassSessionDtos.ClassSessionResponse getSessionById(Long sessionId) {
         ClassSession session = classSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Buổi học không tồn tại: " + sessionId));
+        sessionAccessControl.requireCanView(session.getClassRoom());
         return toSessionResponse(session);
     }
 
@@ -77,6 +77,7 @@ public class SessionAttendanceService {
         ClassSession session = classSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Buổi học không tồn tại: " + sessionId));
 
+        sessionAccessControl.requireTutor(session.getClassRoom());
         List<SessionAttendance> attendances = sessionAttendanceRepository.findBySessionId(sessionId);
         return attendances.stream().map(this::toAttendanceResponse).toList();
     }
@@ -94,6 +95,7 @@ public class SessionAttendanceService {
                 .orElseThrow(() -> new ResourceNotFoundException("Buổi học không tồn tại: " + sessionId));
 
         ClassRoom classRoom = session.getClassRoom();
+        sessionAccessControl.requireTutor(classRoom);
         if (!classRoom.getTutorEmail().equalsIgnoreCase(tutorEmail.trim())) {
             throw new ForbiddenException("Bạn không có quyền chỉnh sửa buổi học của lớp này");
         }
@@ -127,6 +129,7 @@ public class SessionAttendanceService {
             throw new ForbiddenException("Bạn không có quyền chỉnh sửa link phòng học của lớp này");
         }
 
+        sessionAccessControl.requireTutor(classRoom);
         if (meetingLink == null || meetingLink.trim().isEmpty()) {
             throw new BadRequestException("Link phòng học không được để trống");
         }
@@ -144,6 +147,7 @@ public class SessionAttendanceService {
         ClassSession session = classSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Buổi học không tồn tại: " + sessionId));
 
+        sessionAccessControl.requireStudent(session.getClassRoom(), studentId);
         validateStrictSessionTimeWindow(session);
 
         SessionAttendance attendance = sessionAttendanceRepository.findBySessionIdAndStudentId(sessionId, studentId)
@@ -180,6 +184,7 @@ public class SessionAttendanceService {
                 .orElseThrow(() -> new ResourceNotFoundException("Buổi học không tồn tại: " + sessionId));
 
         ClassRoom classRoom = session.getClassRoom();
+        sessionAccessControl.requireTutor(classRoom);
         if (!classRoom.getTutorEmail().equalsIgnoreCase(tutorEmail.trim())) {
             throw new ForbiddenException("Bạn không có quyền điểm danh lớp học này");
         }
@@ -288,6 +293,9 @@ public class SessionAttendanceService {
      * Kiểm tra nghiêm ngặt thời gian điểm danh: CHỈ CHO PHÉP TRONG ĐÚNG KHUNG GIỜ [start_time, end_time] CỦA NGÀY HỌC.
      */
     private void validateStrictSessionTimeWindow(ClassSession session) {
+        if (session.getStatus() != ClassSessionStatus.SCHEDULED && session.getStatus() != ClassSessionStatus.IN_PROGRESS) {
+            throw new BadRequestException("Session has already been finalized or cancelled");
+        }
         LocalDate today = LocalDate.now();
         LocalTime now = LocalTime.now();
 
@@ -310,14 +318,14 @@ public class SessionAttendanceService {
                     session.getStartTime(), session.getEndTime()));
         }
 
-        if (now.isAfter(endTime)) {
+        if (!now.isBefore(endTime)) {
             throw new BadRequestException(String.format(
                     "Buổi học đã kết thúc lúc %s. Quá thời gian điểm danh.", session.getEndTime()));
         }
     }
 
     private ClassSessionDtos.ClassSessionResponse toSessionResponse(ClassSession session) {
-        return toSessionResponse(session, null);
+        return toSessionResponse(session, sessionAccessControl.currentStudentId());
     }
 
     private ClassSessionDtos.ClassSessionResponse toSessionResponse(ClassSession session, Long studentId) {
@@ -344,8 +352,8 @@ public class SessionAttendanceService {
                 session.getStartTime(),
                 session.getEndTime(),
                 session.getAssignmentTitle(),
-                session.getAssignmentDescription(),
-                session.getAssignmentFileUrl(),
+                studentId == null || Boolean.TRUE.equals(myCheckedIn) ? session.getAssignmentDescription() : null,
+                studentId == null || Boolean.TRUE.equals(myCheckedIn) ? session.getAssignmentFileUrl() : null,
                 session.getStatus(),
                 session.getCreatedAt(),
                 session.getUpdatedAt(),
