@@ -56,8 +56,6 @@ interface ClassRoomItem {
   rejectReason?: string;
   schedules: Array<{ id: number; dayOfWeek: number; startTime: string; endTime: string }>;
   chapters: Array<{ id: number; title: string; description: string; expectedSessions: number; orderIndex: number }>;
-  acceptedCount?: number;
-  availableSlots?: number;
   createdAt: string;
 }
 
@@ -110,7 +108,7 @@ export function TutorClassManagement() {
     try {
       const [reqData, agrData] = await Promise.all([
         classApi.getRequestsForClass(classId).catch(() => []),
-        contractsApi.listAgreements({ role: "TUTOR", size: 50 }).catch(() => null)
+        contractsApi.listAgreements({ size: 50 }).catch(() => null)
       ]);
       setEnrollmentRequests(reqData || []);
       const agrs = Array.isArray(agrData) ? agrData : agrData?.content || [];

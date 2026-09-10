@@ -2,12 +2,14 @@ import React from "react";
 import { TutorApprovalStatus } from "../../types";
 
 const STATUS_LABEL: Record<TutorApprovalStatus, string> = {
+  DRAFT: "Draft",
   PENDING: "Pending Review",
   APPROVED: "Approved",
   REJECTED: "Rejected",
 };
 
 const STATUS_CLASS: Record<TutorApprovalStatus, string> = {
+  DRAFT: "bg-slate-50 text-slate-700 border-slate-200",
   PENDING: "bg-[#fff4df] text-[#8a5a00] border-[#ffd98a]",
   APPROVED: "bg-emerald-50 text-emerald-700 border-emerald-200",
   REJECTED: "bg-rose-50 text-rose-700 border-rose-200",

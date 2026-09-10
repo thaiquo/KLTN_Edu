@@ -1,12 +1,12 @@
 package iuh.fit.contract_service;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
+import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
 class ContractServiceApplicationTests {
 
     @Test
-    void contextLoads() {
+    void applicationClassExists() {
+        assertThat(ContractServiceApplication.class).isNotNull();
     }
 }

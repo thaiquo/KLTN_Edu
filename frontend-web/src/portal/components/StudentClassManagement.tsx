@@ -38,9 +38,6 @@ export const StudentClassManagement: React.FC = () => {
       // 1. Lấy từ Hợp đồng & Ký quỹ Escrow (Chính xác nhất theo ví & tiền cọc của Học viên)
       try {
         const contractsData = await contractsApi.listAgreements({
-          role: "STUDENT",
-          email: studentEmail,
-          userId: studentId,
           size: 50
         });
         const agreements = Array.isArray(contractsData)

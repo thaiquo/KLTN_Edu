@@ -445,12 +445,7 @@ export default function App({ user, onLogout }: AppProps) {
         return activeRole === "student" ? (
           <StudentClassManagement />
         ) : (
-          <Marketplace
-            courses={courses}
-            onToggleFavorite={handleToggleFavoriteCourse}
-            onTutorChat={handleTutorChat}
-            searchTerm={searchValue}
-          />
+          activeRole === "tutor" ? <TutorClassManagement /> : <AdminClassManagement activeRole={activeRole} />
         );
 
       case "messages":

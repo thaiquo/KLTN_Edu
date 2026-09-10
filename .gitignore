@@ -7,3 +7,7 @@ educonnect/node_modules/
 .env.*
 !.env.example
 backend/.env
+
+# Local database/Git recovery artifacts; may contain private data and secrets.
+/.local-backups/
+**/target/

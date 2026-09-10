@@ -20,7 +20,7 @@ Write-Host "5. Khởi động Notification Service (Port 8084)..." -ForegroundCo
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$root\backend\notification-service'; .\mvnw.cmd spring-boot:run"
 
 Write-Host "6. Khởi động AI Service (Port 8085)..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$root\backend\ai-service'; if (Test-Path .\mvnw.cmd) { .\mvnw.cmd spring-boot:run } else { mvn spring-boot:run }"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$root\backend\ai-service'; if (Test-Path .\mvnw.cmd) { .\mvnw.cmd spring-boot:run } else { ..\account-service\mvnw.cmd spring-boot:run }"
 
 Write-Host "`nĐã bật tất cả 6 Core Backend Services!" -ForegroundColor Green
 Write-Host "Để chạy Frontend: cd frontend-web && npm run dev" -ForegroundColor Cyan

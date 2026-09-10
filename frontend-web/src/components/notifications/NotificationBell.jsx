@@ -20,7 +20,7 @@ export function NotificationBell({
   buttonClassName = '',
   dropdownClassName = '',
   onNavigateTarget,
-  label
+  label = ""
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
