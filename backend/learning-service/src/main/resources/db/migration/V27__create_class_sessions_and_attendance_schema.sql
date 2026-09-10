@@ -1,4 +1,4 @@
--- V26: Create class_sessions and session_attendances schema for rolling sessions and attendance
+-- Create class_sessions and session_attendances schema for rolling sessions and attendance
 
 CREATE TABLE IF NOT EXISTS class_sessions (
     id BIGSERIAL PRIMARY KEY,
