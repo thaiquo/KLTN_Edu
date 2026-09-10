@@ -11,7 +11,8 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.io.IOException;
-import java.net.URI;
+import org.springframework.security.core.Authentication;
+import iuh.fit.notification_service.config.security.NotificationPrincipal;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
@@ -30,18 +31,18 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        String userEmail = extractEmailFromQuery(session.getUri());
+        String userEmail = authenticatedEmail(session);
         if (userEmail != null && !userEmail.isBlank()) {
             userSessions.computeIfAbsent(userEmail.toLowerCase(Locale.ROOT), k -> new CopyOnWriteArraySet<>()).add(session);
             log.info("WebSocket /ws/chat connected for user: {} (session: {})", userEmail, session.getId());
         } else {
-            log.info("WebSocket /ws/chat connected anonymous (session: {})", session.getId());
+            try { session.close(CloseStatus.POLICY_VIOLATION); } catch (IOException ignored) { }
         }
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        String userEmail = extractEmailFromQuery(session.getUri());
+        String userEmail = authenticatedEmail(session);
         if (userEmail != null && !userEmail.isBlank()) {
             Set<WebSocketSession> set = userSessions.get(userEmail.toLowerCase(Locale.ROOT));
             if (set != null) {
@@ -80,7 +81,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             for (WebSocketSession session : sessions) {
                 if (session.isOpen()) {
                     try {
-                        session.sendMessage(textMessage);
+                        synchronized (session) { session.sendMessage(textMessage); }
                     } catch (IOException e) {
                         log.warn("Failed to send chat message to session {}: {}", session.getId(), e.getMessage());
                     }
@@ -91,15 +92,11 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    private String extractEmailFromQuery(URI uri) {
-        if (uri == null || uri.getQuery() == null) return null;
-        for (String param : uri.getQuery().split("&")) {
-            String[] pair = param.split("=");
-            if (pair.length == 2 && ("email".equalsIgnoreCase(pair[0]) || "userEmail".equalsIgnoreCase(pair[0]))) {
-                try {
-                    return java.net.URLDecoder.decode(pair[1], java.nio.charset.StandardCharsets.UTF_8);
-                } catch (Exception ignored) {}
-            }
+    private String authenticatedEmail(WebSocketSession session) {
+        if (session.getPrincipal() instanceof Authentication authentication
+                && authentication.isAuthenticated()
+                && authentication.getPrincipal() instanceof NotificationPrincipal principal) {
+            return principal.email();
         }
         return null;
     }

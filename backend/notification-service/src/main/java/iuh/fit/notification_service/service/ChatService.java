@@ -9,6 +9,8 @@ import iuh.fit.notification_service.realtime.ChatWebSocketHandler;
 import iuh.fit.notification_service.repository.ChatMessageRepository;
 import iuh.fit.notification_service.repository.ConversationRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
@@ -36,17 +38,24 @@ public class ChatService {
         Conversation conversation;
         if (request.getConversationId() != null) {
             conversation = conversationRepository.findById(request.getConversationId())
-                    .orElseGet(() -> getOrCreateConversation(senderId, senderEmail, request.getRecipientId(), request.getRecipientEmail()));
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found"));
         } else {
             conversation = getOrCreateConversation(senderId, senderEmail, request.getRecipientId(), request.getRecipientEmail());
         }
 
+        requireParticipant(conversation, senderEmail);
+        boolean firstParticipant = senderEmail.equalsIgnoreCase(conversation.getParticipant1Email());
+        String recipientEmail = firstParticipant ? conversation.getParticipant2Email() : conversation.getParticipant1Email();
+        Long recipientId = firstParticipant ? conversation.getParticipant2Id() : conversation.getParticipant1Id();
+        if (!recipientEmail.equalsIgnoreCase(request.getRecipientEmail())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Recipient does not belong to this conversation");
+        }
         ChatMessage message = ChatMessage.builder()
                 .conversationId(conversation.getId())
                 .senderId(senderId)
                 .senderEmail(senderEmail)
-                .recipientId(request.getRecipientId())
-                .recipientEmail(request.getRecipientEmail())
+                .recipientId(recipientId)
+                .recipientEmail(recipientEmail)
                 .content(request.getContent().trim())
                 .isRead(false)
                 .build();
@@ -71,7 +80,7 @@ public class ChatService {
     public List<ConversationDto> getUserConversations(String userEmail) {
         return conversationRepository.findByUserEmail(userEmail).stream()
                 .map(c -> {
-                    long unread = messageRepository.countByRecipientEmailIgnoreCaseAndIsReadFalse(userEmail);
+                    long unread = messageRepository.countByConversationIdAndRecipientEmailIgnoreCaseAndIsReadFalse(c.getId(), userEmail);
                     return ConversationDto.builder()
                             .id(c.getId())
                             .participant1Id(c.getParticipant1Id())
@@ -90,12 +99,22 @@ public class ChatService {
 
     @Transactional
     public List<ChatMessageDto> getConversationMessages(UUID conversationId, String currentUserEmail) {
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found"));
+        requireParticipant(conversation, currentUserEmail);
         // Mark unread messages in conversation as read
         messageRepository.markMessagesAsRead(conversationId, currentUserEmail);
 
         return messageRepository.findByConversationIdOrderByCreatedAtAsc(conversationId).stream()
                 .map(this::toMessageDto)
                 .collect(Collectors.toList());
+    }
+
+    private void requireParticipant(Conversation conversation, String email) {
+        if (email == null || (!email.equalsIgnoreCase(conversation.getParticipant1Email())
+                && !email.equalsIgnoreCase(conversation.getParticipant2Email()))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Conversation belongs to other users");
+        }
     }
 
     private Conversation getOrCreateConversation(Long p1Id, String p1Email, Long p2Id, String p2Email) {

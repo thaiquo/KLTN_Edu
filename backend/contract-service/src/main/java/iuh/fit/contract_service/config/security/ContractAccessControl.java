@@ -37,8 +37,7 @@ public class ContractAccessControl {
         }
         if (user.hasActiveAuthority("TUTOR")) {
             return user.matchesUserId(agreement.getTutorId())
-                    || user.matchesEmail(agreement.getTutorEmail())
-                    || user.matchesEmail(agreement.getClassroomReviewerEmail());
+                    || user.matchesEmail(agreement.getTutorEmail());
         }
         if (user.hasActiveAuthority("STUDENT")) {
             return user.matchesUserId(agreement.getStudentId())
@@ -63,8 +62,7 @@ public class ContractAccessControl {
     public void requireCanSign(ContractAgreement agreement, String signingRole, ContractUserPrincipal user) {
         if ("TUTOR".equalsIgnoreCase(signingRole)) {
             if (!user.hasActiveAuthority("TUTOR")
-                    || (!user.matchesUserId(agreement.getTutorId()) && !user.matchesEmail(agreement.getTutorEmail())
-                    && !user.matchesEmail(agreement.getClassroomReviewerEmail()))) {
+                    || (!user.matchesUserId(agreement.getTutorId()) && !user.matchesEmail(agreement.getTutorEmail()))) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the agreement tutor can sign as tutor.");
             }
             return;

@@ -21,6 +21,8 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> 
 
     long countByRecipientEmailIgnoreCaseAndIsReadFalse(String email);
 
+    long countByConversationIdAndRecipientEmailIgnoreCaseAndIsReadFalse(UUID conversationId, String email);
+
     @Modifying
     @Query("UPDATE ChatMessage m SET m.isRead = true WHERE m.conversationId = :conversationId AND LOWER(m.recipientEmail) = LOWER(:email) AND m.isRead = false")
     int markMessagesAsRead(@Param("conversationId") UUID conversationId, @Param("email") String email);

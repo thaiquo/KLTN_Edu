@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -72,5 +73,29 @@ class ChatServiceTest {
         verify(messageRepository).save(any(ChatMessage.class));
         verify(conversationRepository).save(any(Conversation.class));
         verify(chatWebSocketHandler).pushChatMessage(any(ChatMessageDto.class));
+    }
+
+    @Test
+    void outsiderCannotReadOrMarkConversationMessages() {
+        UUID id = UUID.randomUUID();
+        when(conversationRepository.findById(id)).thenReturn(Optional.of(Conversation.builder()
+                .id(id).participant1Email("student@test.com").participant2Email("tutor@test.com").build()));
+        assertThatThrownBy(() -> chatService.getConversationMessages(id, "outsider@test.com"))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("403");
+        verifyNoInteractions(messageRepository, chatWebSocketHandler);
+    }
+
+    @Test
+    void outsiderCannotAppendToKnownConversation() {
+        UUID id = UUID.randomUUID();
+        when(conversationRepository.findById(id)).thenReturn(Optional.of(Conversation.builder()
+                .id(id).participant1Email("student@test.com").participant2Email("tutor@test.com").build()));
+        SendMessageRequest request = SendMessageRequest.builder().conversationId(id)
+                .recipientId(2L).recipientEmail("tutor@test.com").content("spoof").build();
+        assertThatThrownBy(() -> chatService.sendMessage(3L, "outsider@test.com", request))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
+                .hasMessageContaining("403");
+        verifyNoInteractions(messageRepository, chatWebSocketHandler);
     }
 }
