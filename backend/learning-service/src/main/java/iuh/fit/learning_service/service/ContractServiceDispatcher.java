@@ -21,21 +21,24 @@ public class ContractServiceDispatcher {
     private final HttpClient httpClient;
     private final String contractServiceUrl;
     private final ObjectMapper objectMapper;
+    private final javax.crypto.SecretKey serviceKey;
 
     public ContractServiceDispatcher(
-            @Value("${CONTRACT_SERVICE_URL:http://localhost:8083}") String contractServiceUrl) {
+            @Value("${CONTRACT_SERVICE_URL:http://localhost:8083}") String contractServiceUrl,
+            @Value("${jwt.secret}") String jwtSecret) {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(3))
                 .build();
         this.contractServiceUrl = contractServiceUrl;
         this.objectMapper = new ObjectMapper();
+        this.serviceKey = io.jsonwebtoken.security.Keys.hmacShaKeyFor(jwtSecret.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     public record StudentAttendanceOutcomeItem(Long studentId, String outcome) {}
 
-    public void dispatchAutoProposeAsync(Long classroomId, Long sessionId, List<StudentAttendanceOutcomeItem> outcomes) {
+    public boolean dispatchAutoPropose(Long classroomId, Long sessionId, List<StudentAttendanceOutcomeItem> outcomes) {
         if (classroomId == null || sessionId == null) {
-            return;
+            return false;
         }
 
         try {
@@ -49,23 +52,27 @@ public class ContractServiceDispatcher {
                     .uri(URI.create(url))
                     .timeout(Duration.ofSeconds(5))
                     .header("Content-Type", "application/json")
+                    .header("X-Service-Token", io.jsonwebtoken.Jwts.builder()
+                            .subject("learning-service").claim("serviceScope", "contract-settlement")
+                            .expiration(java.util.Date.from(java.time.Instant.now().plusSeconds(60)))
+                            .signWith(serviceKey).compact())
                     .POST(HttpRequest.BodyPublishers.ofString(bodyJson))
                     .build();
 
-            httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding())
-                    .thenAccept(res -> {
-                        if (res.statusCode() >= 200 && res.statusCode() < 300) {
-                            log.info("Successfully dispatched auto-propose to contract-service for classroom #{} session #{}", classroomId, sessionId);
-                        } else {
-                            log.warn("Contract-service auto-propose call returned status {} for classroom #{} session #{}", res.statusCode(), classroomId, sessionId);
-                        }
-                    })
-                    .exceptionally(ex -> {
-                        log.warn("Failed to reach contract-service auto-propose at {}: {}", url, ex.getMessage());
-                        return null;
-                    });
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) return false;
+            var proposals = objectMapper.readTree(response.body()).get("proposals");
+            if (proposals == null || !proposals.isArray()) return false;
+            for (var proposal : proposals) {
+                if (proposal.has("error")) return false;
+            }
+            return true;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return false;
         } catch (Exception ex) {
             log.warn("Error initiating auto-propose call to contract-service: {}", ex.getMessage());
+            return false;
         }
     }
 }

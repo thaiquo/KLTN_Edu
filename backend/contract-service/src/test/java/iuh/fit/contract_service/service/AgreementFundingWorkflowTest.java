@@ -132,6 +132,23 @@ class AgreementFundingWorkflowTest {
     }
 
     @Test
+    void recordPaymentSubmissionAcceptsMatchingHashWhenFundingEventWonTheRace() throws Exception {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        String termsHash = Hash.sha3String("terms-v1");
+        String txHash = "0x" + "f".repeat(64);
+
+        insertAgreement(agreementId, onchainAgreementId, termsHash, "WAITING_PAYMENT");
+        fundingWorkflowService.processConfirmedFundingEvent(
+                fundedEvent(onchainAgreementId, STUDENT, "40000000"));
+
+        ContractAgreement result = fundingWorkflowService.recordPaymentSubmission(agreementId, txHash);
+
+        assertEquals(ContractAgreementStatus.ACTIVE, result.getStatus());
+        assertEquals(txHash, escrowPaymentRepository.findByAgreementId(agreementId).orElseThrow().getFundTxHash());
+    }
+
+    @Test
     void recordPaymentSubmissionRejectsBeforeWaitingPayment() {
         UUID agreementId = UUID.randomUUID();
         String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);

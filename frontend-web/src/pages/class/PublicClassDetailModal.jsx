@@ -2,11 +2,12 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   BookOpen, Calendar, Clock, DollarSign, Globe, Info, Key, MapPin,
-  Users, Video, X, UserRound, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle, XCircle
+  Users, Video, X, UserRound, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle, XCircle, AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useFeedback } from '../../components/feedback/useFeedback';
 import { ContractDocumentModal } from '../../components/contract/ContractDocumentModal';
+import { checkClassScheduleConflict } from '../../utils/scheduleUtils';
 
 const VIETNAMESE_DAYS = [
   { value: 2, label: 'T2' },
@@ -50,8 +51,24 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const [joinKey, setJoinKey] = React.useState('');
   const [submitting, setSubmitting] = React.useState(false);
   const [profileWarning, setProfileWarning] = React.useState(null);
+  const [studentSchedule, setStudentSchedule] = React.useState({ recurringSchedules: [], upcomingSessions: [] });
 
   const profileCheck = React.useMemo(() => checkProfileCompletion(user), [user]);
+
+  React.useEffect(() => {
+    if (user?.activeRole === 'STUDENT') {
+      import('../../api/classes').then(({ classApi }) => {
+        classApi.getStudentSchedule()
+          .then((data) => setStudentSchedule(data || { recurringSchedules: [], upcomingSessions: [] }))
+          .catch(() => {});
+      });
+    }
+  }, [user]);
+
+  const scheduleConflict = React.useMemo(() => {
+    if (user?.activeRole !== 'STUDENT') return null;
+    return checkClassScheduleConflict(classRoom, studentSchedule?.recurringSchedules);
+  }, [user, classRoom, studentSchedule]);
 
   const fetchMyRequestStatus = React.useCallback(async () => {
     if (!user || !classRoom?.id) return;
@@ -487,6 +504,19 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
           )}
         </div>
 
+        {/* Schedule Conflict Warning (for students) */}
+        {scheduleConflict && (!myRequest || myRequest.status === 'CANCELLED' || myRequest.status === 'REJECTED') && (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 space-y-1 animate-in fade-in">
+            <div className="flex items-center gap-2 font-black text-xs">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Cảnh báo trùng thời khóa biểu:</span>
+            </div>
+            <p className="text-xs font-semibold text-amber-800">
+              Lớp học này có lịch vào <strong>{scheduleConflict.dayLabel} ({scheduleConflict.targetTime})</strong> bị trùng với lớp <strong>'{scheduleConflict.conflictingClassTitle}' ({scheduleConflict.activeTime})</strong> mà bạn đang theo học. Bạn không thể gửi yêu cầu tham gia lớp này.
+            </p>
+          </div>
+        )}
+
         {/* Invite Key Form Dropdown (only shown when class has INVITE_KEY mode) */}
         {showInviteKeyForm && classRoom.joinMode === 'INVITE_KEY' && (
           <form onSubmit={handleEnrollSubmit} className="p-4 bg-sky-50 border border-sky-200 rounded-2xl space-y-3 animate-in fade-in">
@@ -516,7 +546,7 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
               </button>
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || Boolean(scheduleConflict)}
                 className="px-5 py-2 text-xs font-black text-white bg-sky-600 hover:bg-sky-700 rounded-xl shadow-sm disabled:opacity-50"
               >
                 {submitting ? 'Đang xác minh...' : 'Xác nhận nộp đơn'}
@@ -540,7 +570,7 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
               !showInviteKeyForm && (
                 <button
                   type="button"
-                  disabled={isFull || isTemporarilyFull || submitting}
+                  disabled={isFull || isTemporarilyFull || submitting || Boolean(scheduleConflict)}
                   onClick={() => {
                     if (!profileCheck.isComplete) {
                       setProfileWarning(profileCheck.missingFields);
@@ -552,7 +582,9 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
                 >
                   <Key className="w-4 h-4" />
                   <span>
-                    {isFull
+                    {scheduleConflict
+                      ? 'Bị trùng lịch học'
+                      : isFull
                       ? 'Lớp đã đủ sĩ số'
                       : isTemporarilyFull
                       ? 'Tạm đủ số lượng'
@@ -563,12 +595,14 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
             ) : (
               <button
                 type="button"
-                disabled={isFull || isTemporarilyFull || submitting}
+                disabled={isFull || isTemporarilyFull || submitting || Boolean(scheduleConflict)}
                 onClick={() => handleEnrollSubmit()}
                 className="px-6 py-2.5 rounded-xl bg-brand-primary text-white text-xs font-black hover:bg-brand-primary/90 transition-all shadow-md flex items-center gap-2 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
               >
                 <span>
-                  {isFull
+                  {scheduleConflict
+                    ? 'Bị trùng lịch học'
+                    : isFull
                     ? 'Lớp đã đủ sĩ số'
                     : isTemporarilyFull
                     ? 'Tạm đủ số lượng'

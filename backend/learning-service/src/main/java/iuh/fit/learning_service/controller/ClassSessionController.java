@@ -111,4 +111,18 @@ public class ClassSessionController {
         ClassSessionResponse response = sessionAttendanceService.tutorCheckIn(sessionId, authentication != null ? authentication.getName() : null, request);
         return ResponseEntity.ok(response);
     }
+
+    /**
+     * Học viên nộp bài tập về nhà cho buổi học (nội dung text và file/ảnh đính kèm).
+     */
+    @PostMapping("/sessions/{sessionId}/homework-submission")
+    public ResponseEntity<SessionAttendanceResponse> submitHomework(
+            Authentication authentication,
+            @PathVariable Long sessionId,
+            @RequestBody SubmitHomeworkRequest request
+    ) {
+        Long studentId = authentication != null && authentication.getDetails() instanceof Number value ? value.longValue() : null;
+        SessionAttendanceResponse response = sessionAttendanceService.submitHomework(sessionId, studentId, request);
+        return ResponseEntity.ok(response);
+    }
 }

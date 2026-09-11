@@ -109,10 +109,7 @@ public class ContractAccessControl {
         if (isActiveAdmin(user)) {
             return;
         }
-        if (isActiveStaff(user) && user.matchesEmail(agreement.getClassroomReviewerEmail())) {
-            return;
-        }
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only assigned staff or admin can manage agreement lifecycle.");
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only admin can expire or cancel an agreement lifecycle.");
     }
 
     public List<Dispute> filterDisputes(List<Dispute> disputes, ContractUserPrincipal user) {

@@ -25,7 +25,10 @@ public class ClassSessionDtos {
             LocalDateTime updatedAt,
             Integer totalAttendees,
             Integer presentCount,
-            Boolean myCheckedIn
+            Boolean myCheckedIn,
+            String mySubmissionText,
+            String mySubmissionFileUrl,
+            LocalDateTime mySubmittedAt
     ) {}
 
     public record UpdateSessionDetailsRequest(
@@ -46,7 +49,15 @@ public class ClassSessionDtos {
             LocalDateTime tutorCheckedAt,
             Boolean studentChecked,
             LocalDateTime studentCheckedAt,
-            AttendanceOutcome finalOutcome
+            AttendanceOutcome finalOutcome,
+            String submissionText,
+            String submissionFileUrl,
+            LocalDateTime submittedAt
+    ) {}
+
+    public record SubmitHomeworkRequest(
+            String submissionText,
+            String submissionFileUrl
     ) {}
 
     public record TutorAttendanceRequest(

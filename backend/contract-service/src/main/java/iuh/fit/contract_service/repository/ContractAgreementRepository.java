@@ -21,6 +21,8 @@ public interface ContractAgreementRepository extends JpaRepository<ContractAgree
 
     Optional<ContractAgreement> findByChainIdAndOnchainAgreementId(Long chainId, String onchainAgreementId);
 
+    List<ContractAgreement> findByStatus(ContractAgreementStatus status);
+
     List<ContractAgreement> findByStatusAndPaymentDeadlineBefore(
             ContractAgreementStatus status,
             OffsetDateTime deadline);

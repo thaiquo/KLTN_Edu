@@ -9,6 +9,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface SessionSettlementRepository extends JpaRepository<SessionSettlement, UUID> {
+    List<SessionSettlement> findTop50ByStatusAndDisputeDeadlineBeforeOrderByDisputeDeadlineAsc(
+            SettlementStatus status, java.time.OffsetDateTime deadline);
     Optional<SessionSettlement> findByAgreementIdAndSessionId(UUID agreementId, Long sessionId);
 
     Optional<SessionSettlement> findByAgreementIdAndOnchainSessionId(UUID agreementId, String onchainSessionId);

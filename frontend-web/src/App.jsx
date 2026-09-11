@@ -21,6 +21,7 @@ import { StudentContractsPage } from './pages/student/StudentContractsPage';
 import { StudentMatchingPage } from './pages/student/StudentMatchingPage';
 import { StudentMessagesPage } from './pages/student/StudentMessagesPage';
 import { StudentMyClassesPage } from './pages/student/StudentMyClassesPage';
+import { StudentSchedulePage } from './pages/student/StudentSchedulePage';
 import { StudentWalletPage } from './pages/student/StudentWalletPage';
 import { useTutorApplication } from './hooks/useTutorApplication';
 
@@ -214,6 +215,14 @@ export default function App() {
               }
             />
             <Route
+              path="/my-schedule"
+              element={
+                <ProtectedStudentPage>
+                  <StudentSchedulePage />
+                </ProtectedStudentPage>
+              }
+            />
+            <Route
               path="/matching"
               element={
                 <ProtectedStudentPage>
@@ -248,6 +257,8 @@ export default function App() {
             />
 
             {/* Backward-compatible Student aliases */}
+            <Route path="/student/schedule" element={<Navigate to="/my-schedule" replace />} />
+            <Route path="/student/my-schedule" element={<Navigate to="/my-schedule" replace />} />
             <Route path="/student/contracts" element={<Navigate to="/contracts" replace />} />
             <Route path="/student/classes" element={<Navigate to="/my-classes" replace />} />
             <Route path="/student/messages" element={<Navigate to="/messages" replace />} />

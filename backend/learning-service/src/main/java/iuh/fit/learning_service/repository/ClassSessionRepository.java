@@ -8,11 +8,13 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 @Repository
 public interface ClassSessionRepository extends JpaRepository<ClassSession, Long> {
+    List<ClassSession> findTop50ByStatusAndSettlementDispatchedFalseOrderByIdAsc(ClassSessionStatus status);
 
     List<ClassSession> findByClassRoomIdOrderBySequenceNumberAsc(Long classRoomId);
 
@@ -27,4 +29,6 @@ public interface ClassSessionRepository extends JpaRepository<ClassSession, Long
 
     @Query("SELECT MAX(s.sequenceNumber) FROM ClassSession s WHERE s.classRoom.id = :classRoomId")
     Integer findMaxSequenceNumberByClassRoomId(@Param("classRoomId") Long classRoomId);
+
+    List<ClassSession> findByClassRoomIdInOrderBySessionDateAscStartTimeAsc(Collection<Long> classRoomIds);
 }

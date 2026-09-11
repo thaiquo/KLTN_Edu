@@ -24,10 +24,20 @@ public class BlockchainWriteConfiguration {
 
     @Bean
     Credentials operatorCredentials(OperatorSignerProperties properties) throws Exception {
-        Credentials credentials = WalletUtils.loadCredentials(
-                properties.getKeystorePassword(), properties.getKeystorePath().toFile());
+        Credentials credentials;
+        if (properties.getPrivateKey() != null && !properties.getPrivateKey().isBlank()) {
+            String pk = properties.getPrivateKey().trim();
+            if (pk.startsWith("0x") || pk.startsWith("0X")) {
+                pk = pk.substring(2);
+            }
+            credentials = Credentials.create(pk);
+        } else {
+            credentials = WalletUtils.loadCredentials(
+                    properties.resolveKeystorePassword(), properties.getKeystorePath().toFile());
+        }
         if (!credentials.getAddress().equalsIgnoreCase(properties.getAddress())) {
-            throw new IllegalStateException("Operator keystore address does not match blockchain.operator.address");
+            throw new IllegalStateException("Operator address " + credentials.getAddress()
+                    + " does not match blockchain.operator.address " + properties.getAddress());
         }
         return credentials;
     }

@@ -40,6 +40,9 @@ class EnrollmentRequestServiceNotificationTest {
     private EnrollmentRequestRepository enrollmentRequestRepository;
 
     @Mock
+    private iuh.fit.learning_service.repository.ClassSessionRepository classSessionRepository;
+
+    @Mock
     private TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
 
     @Mock
@@ -225,6 +228,7 @@ class EnrollmentRequestServiceNotificationTest {
         return new EnrollmentRequestService(
                 classRoomRepository,
                 enrollmentRequestRepository,
+                classSessionRepository,
                 tutorAuthorizationStateRepository,
                 eventPublisher);
     }

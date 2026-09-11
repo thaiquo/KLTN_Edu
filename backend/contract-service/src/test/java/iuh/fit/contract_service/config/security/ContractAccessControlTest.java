@@ -97,6 +97,36 @@ class ContractAccessControlTest {
                 .hasMessageContaining("403");
     }
 
+    @Test
+    void onlyAdminCanManageAgreementLifecycle() {
+        ContractAgreement agreement = agreement(1L, "student@example.com", 2L, "tutor@example.com", "staff@example.com");
+        ContractUserPrincipal admin = user(10L, "admin@example.com", "ADMIN", "ADMIN");
+        ContractUserPrincipal assignedStaff = user(9L, "staff@example.com", "STAFF", "STAFF");
+        ContractUserPrincipal otherStaff = user(8L, "other-staff@example.com", "STAFF", "STAFF");
+
+        accessControl.requireCanManageAgreementLifecycle(agreement, admin);
+
+        assertThatThrownBy(() -> accessControl.requireCanManageAgreementLifecycle(agreement, assignedStaff))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("403");
+        assertThatThrownBy(() -> accessControl.requireCanManageAgreementLifecycle(agreement, otherStaff))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("403");
+    }
+
+    @Test
+    void assignedStaffCanStillManageSettlementAndResolveDisputeScope() {
+        ContractAgreement agreement = agreement(1L, "student@example.com", 2L, "tutor@example.com", "staff@example.com");
+        ContractUserPrincipal assignedStaff = user(9L, "staff@example.com", "STAFF", "STAFF");
+        ContractUserPrincipal otherStaff = user(8L, "other-staff@example.com", "STAFF", "STAFF");
+
+        accessControl.requireCanManageSettlement(agreement, assignedStaff);
+
+        assertThatThrownBy(() -> accessControl.requireCanManageSettlement(agreement, otherStaff))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("403");
+    }
+
     private ContractUserPrincipal user(Long userId, String email, String activeRole, String... roles) {
         return new ContractUserPrincipal(userId, email, activeRole, List.of(roles));
     }

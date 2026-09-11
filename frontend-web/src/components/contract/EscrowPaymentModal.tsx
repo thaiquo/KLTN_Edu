@@ -70,8 +70,9 @@ export function EscrowPaymentModal({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  const activeChainId = chainId || DEFAULT_CHAIN_ID;
-  const escrowService = new EscrowContractService(activeChainId);
+  const requiredChainId = agreement.chainId || DEFAULT_CHAIN_ID;
+  const walletOnRequiredChain = chainId === requiredChainId;
+  const escrowService = new EscrowContractService(requiredChainId);
 
   // Convert human USDC amount to 6 decimals units
   const totalAmountUnits = ethers.parseUnits(
@@ -82,7 +83,7 @@ export function EscrowPaymentModal({
   // Check allowance when modal opens or address/chain changes
   useEffect(() => {
     async function checkAllowance() {
-      if (isOpen && address && signer) {
+      if (isOpen && address && signer && walletOnRequiredChain) {
         try {
           setIsCheckingAllowance(true);
           const currentAllowance = await escrowService.getUsdcAllowance(signer, address);
@@ -101,9 +102,13 @@ export function EscrowPaymentModal({
       setFundingTxHash(null);
       setErrorMessage(null);
       setIsProcessing(false);
-      checkAllowance();
+      if (walletOnRequiredChain) {
+        checkAllowance();
+      } else {
+        setAllowance(0n);
+      }
     }
-  }, [isOpen, address, signer, activeChainId]);
+  }, [isOpen, address, signer, requiredChainId, walletOnRequiredChain]);
 
   if (!isOpen) return null;
 
@@ -123,6 +128,9 @@ export function EscrowPaymentModal({
     }
 
     try {
+      if (!walletOnRequiredChain) {
+        throw new Error(`Vui lòng chuyển ví sang đúng mạng chain ID ${requiredChainId} trước khi phê duyệt USDC.`);
+      }
       setIsProcessing(true);
       setCurrentStep('APPROVING');
       setErrorMessage(null);
@@ -157,6 +165,9 @@ export function EscrowPaymentModal({
     }
 
     try {
+      if (!walletOnRequiredChain) {
+        throw new Error(`Vui lòng chuyển ví sang đúng mạng chain ID ${requiredChainId} trước khi ký quỹ.`);
+      }
       setIsProcessing(true);
       setCurrentStep('FUNDING');
       setErrorMessage(null);
@@ -255,7 +266,7 @@ export function EscrowPaymentModal({
                 <div className="mt-0.5">
                   <EtherscanLink
                     address={agreement.tutorAddress}
-                    chainId={activeChainId}
+                    chainId={requiredChainId}
                     truncateLength={4}
                   />
                 </div>
@@ -324,6 +335,28 @@ export function EscrowPaymentModal({
             </div>
           )}
 
+          {isConnected && !walletOnRequiredChain && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-xs text-amber-900">Ví đang kết nối sai mạng</p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    Hợp đồng này yêu cầu chain ID {requiredChainId}. Hệ thống sẽ không cho phép approve hoặc ký quỹ trên mạng khác.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => switchNetwork(requiredChainId)}
+                disabled={isProcessing}
+                className="shrink-0 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl disabled:opacity-50"
+              >
+                Chuyển mạng
+              </button>
+            </div>
+          )}
+
           {(!isAgreementWaitingPayment || isDeadlineExpired) && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
@@ -367,7 +400,7 @@ export function EscrowPaymentModal({
               </p>
               {approvalTxHash && (
                 <div className="mt-2">
-                  <EtherscanLink txHash={approvalTxHash} chainId={activeChainId} label="Xem Tx Approve" />
+                <EtherscanLink txHash={approvalTxHash} chainId={requiredChainId} label="Xem Tx Approve" />
                 </div>
               )}
             </div>
@@ -399,7 +432,7 @@ export function EscrowPaymentModal({
               </p>
               {fundingTxHash && (
                 <div className="mt-2">
-                  <EtherscanLink txHash={fundingTxHash} chainId={activeChainId} label="Xem Tx Ký quỹ" />
+                <EtherscanLink txHash={fundingTxHash} chainId={requiredChainId} label="Xem Tx Ký quỹ" />
                 </div>
               )}
             </div>
@@ -455,7 +488,7 @@ export function EscrowPaymentModal({
             {!hasEnoughAllowance ? (
               <button
                 onClick={handleApproveUsdc}
-                disabled={!isConnected || !userHasEnoughBalance || !isAgreementWaitingPayment || !walletMatchesAgreement || isDeadlineExpired || isProcessing}
+                disabled={!isConnected || !walletOnRequiredChain || !userHasEnoughBalance || !isAgreementWaitingPayment || !walletMatchesAgreement || isDeadlineExpired || isProcessing}
                 className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-display font-black rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50"
               >
                 {isProcessing && currentStep === 'APPROVING' ? (
@@ -468,7 +501,7 @@ export function EscrowPaymentModal({
             ) : currentStep !== 'SUCCESS' ? (
               <button
                 onClick={handleFundEscrow}
-                disabled={!isConnected || !userHasEnoughBalance || !isAgreementWaitingPayment || !walletMatchesAgreement || isDeadlineExpired || isProcessing}
+                disabled={!isConnected || !walletOnRequiredChain || !userHasEnoughBalance || !isAgreementWaitingPayment || !walletMatchesAgreement || isDeadlineExpired || isProcessing}
                 className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-display font-black rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50"
               >
                 {isProcessing && currentStep === 'FUNDING' ? (

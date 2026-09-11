@@ -1,4 +1,4 @@
-import{_ as e,c as t,f as n,l as r,m as i,x as a,y as o}from"./wui-text-BTwUa-zK.js";import"./index-CuEwLK8C.js";var s=e`
+import{_ as e,c as t,f as n,l as r,m as i,x as a,y as o}from"./wui-text-BTwUa-zK.js";import"./index-mm4Y9lSC.js";var s=e`
   button {
     display: block;
     display: flex;

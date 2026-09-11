@@ -68,4 +68,29 @@ class CookieJwtAuthenticationFilterTest {
                 .signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)))
                 .compact();
     }
+
+    @Test
+    void rejectsInternalCallsWithoutServiceIdentityEvenWithUserCookie() throws Exception {
+        var request = new MockHttpServletRequest("POST", "/api/contracts/internal/classrooms/1/sessions/1/auto-propose");
+        request.setCookies(new Cookie("access_token", jwt(7L, "admin@example.com", "ADMIN", List.of("ADMIN"))));
+        var response = new MockHttpServletResponse();
+        var chain = new MockFilterChain();
+        filter.doFilter(request, response, chain);
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(chain.getRequest()).isNull();
+    }
+
+    @Test
+    void acceptsShortLivedLearningServiceToken() throws Exception {
+        var request = new MockHttpServletRequest("POST", "/api/contracts/internal/classrooms/1/sessions/1/auto-propose");
+        request.addHeader("X-Service-Token", Jwts.builder().subject("learning-service")
+                .claim("serviceScope", "contract-settlement")
+                .expiration(Date.from(Instant.now().plusSeconds(60)))
+                .signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8))).compact());
+        var chain = new MockFilterChain();
+        filter.doFilter(request, new MockHttpServletResponse(), chain);
+        assertThat(chain.getRequest()).isNotNull();
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities())
+                .extracting("authority").containsExactly("ROLE_INTERNAL_LEARNING");
+    }
 }

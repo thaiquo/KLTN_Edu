@@ -19,6 +19,7 @@ import iuh.fit.contract_service.repository.ContractAgreementRepository;
 import iuh.fit.contract_service.repository.SessionSettlementRepository;
 import iuh.fit.contract_service.repository.BlockchainTransactionRepository;
 import iuh.fit.contract_service.repository.DisputeRepository;
+import iuh.fit.contract_service.repository.ProcessedEventRepository;
 import iuh.fit.contract_service.service.AgreementLifecycleWorkflowService;
 import iuh.fit.contract_service.service.DisputeWorkflowService;
 import iuh.fit.contract_service.service.SessionSettlementWorkflowService;
@@ -58,11 +59,14 @@ public class ContractManagementController {
     private final iuh.fit.contract_service.service.NotificationDispatcher notificationDispatcher;
     private final iuh.fit.contract_service.service.ContractSignatureService signatureService;
     private final iuh.fit.contract_service.service.AgreementFundingWorkflowService fundingWorkflowService;
+    private final iuh.fit.contract_service.service.AgreementRegistrationWorkflowService registrationWorkflowService;
     private final iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository;
+    private final ProcessedEventRepository processedEventRepository;
     private final ContractAcceptanceRepository acceptanceRepository;
     private final iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher;
     private final CurrentUserContext currentUserContext;
     private final ContractAccessControl accessControl;
+    private final org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway;
 
     public ContractManagementController(
             ContractAgreementRepository agreementRepository,
@@ -75,11 +79,14 @@ public class ContractManagementController {
             iuh.fit.contract_service.service.NotificationDispatcher notificationDispatcher,
             iuh.fit.contract_service.service.ContractSignatureService signatureService,
             iuh.fit.contract_service.service.AgreementFundingWorkflowService fundingWorkflowService,
+            iuh.fit.contract_service.service.AgreementRegistrationWorkflowService registrationWorkflowService,
             iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository,
+            ProcessedEventRepository processedEventRepository,
             ContractAcceptanceRepository acceptanceRepository,
             iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher,
             CurrentUserContext currentUserContext,
-            ContractAccessControl accessControl) {
+            ContractAccessControl accessControl,
+            org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway) {
         this.agreementRepository = agreementRepository;
         this.settlementRepository = settlementRepository;
         this.transactionRepository = transactionRepository;
@@ -90,11 +97,14 @@ public class ContractManagementController {
         this.notificationDispatcher = notificationDispatcher;
         this.signatureService = signatureService;
         this.fundingWorkflowService = fundingWorkflowService;
+        this.registrationWorkflowService = registrationWorkflowService;
         this.escrowPaymentRepository = escrowPaymentRepository;
+        this.processedEventRepository = processedEventRepository;
         this.acceptanceRepository = acceptanceRepository;
         this.learningServiceDispatcher = learningServiceDispatcher;
         this.currentUserContext = currentUserContext;
         this.accessControl = accessControl;
+        this.blockchainGateway = blockchainGateway;
     }
 
     public record InitiateAgreementRequest(
@@ -204,6 +214,16 @@ public class ContractManagementController {
 
         OffsetDateTime now = OffsetDateTime.now();
 
+        iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway gateway =
+                blockchainGateway != null ? blockchainGateway.getIfAvailable() : null;
+        iuh.fit.contract_service.blockchain.BlockchainNetworkSnapshot network =
+                gateway != null ? gateway.validateConfiguration() : null;
+        String platformWallet = network != null ? network.platformWallet() : "0x10dd719b6a13e9d275990d706c2640ab6f1ca28e";
+        long chainId = network != null ? network.chainId().longValueExact() : 11155111L;
+        String escrowAddress = network != null ? network.escrowAddress() : "0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3";
+        String tokenAddress = network != null ? network.tokenAddress() : "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
+        short tokenDecimals = network != null ? (short) network.tokenDecimals() : (short) 6;
+
         ContractAgreement agreement = ContractAgreement.builder()
                 .id(agreementId)
                 .onchainAgreementId(onchainAgreementId)
@@ -220,12 +240,12 @@ public class ContractManagementController {
                 .classroomReviewerEmail(request.classroomReviewerEmail() != null ? request.classroomReviewerEmail() : request.tutorEmail())
                 .studentWallet(studentWallet.toLowerCase(Locale.ROOT))
                 .tutorWallet(request.tutorWallet().toLowerCase(Locale.ROOT))
-                .platformWallet("0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266")
-                .chainId(11155111L)
-                .escrowContractAddress("0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3")
-                .tokenAddress("0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238")
+                .platformWallet(platformWallet)
+                .chainId(chainId)
+                .escrowContractAddress(escrowAddress)
+                .tokenAddress(tokenAddress)
                 .tokenSymbol("USDC")
-                .tokenDecimals((short) 6)
+                .tokenDecimals(tokenDecimals)
                 .termsJson("{\"classroomId\":" + request.classroomId() + ",\"studentEmail\":\"" + (request.studentEmail() != null ? request.studentEmail() : "") + "\",\"sessions\":" + totalSessions + "}")
                 .termsHash(termsHash)
                 .contractVersion(1)
@@ -436,6 +456,7 @@ public class ContractManagementController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     @GetMapping("/agreements/{id}/settlements")
     public ResponseEntity<List<SettlementDto>> getSettlements(
             @PathVariable UUID id) {
@@ -443,14 +464,38 @@ public class ContractManagementController {
         return agreementRepository.findById(id)
                 .filter(a -> accessControl.canViewAgreement(a, currentUser))
                 .map(agreement -> {
+                    short decimals = agreement.getTokenDecimals();
                     List<SettlementDto> list = settlementRepository
                             .findByAgreementId(agreement.getId())
                             .stream()
                             .sorted(Comparator.comparing(SessionSettlement::getCreatedAt))
-                            .map(this::toSettlementDto)
-                        .collect(Collectors.toList());
+                            .map(s -> toSettlementDto(s, decimals))
+                            .collect(Collectors.toList());
                     return ResponseEntity.ok(list);
                 }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/agreements/{id}/register-onchain")
+    public ResponseEntity<Map<String, Object>> triggerRegistrationOnchain(@PathVariable UUID id) {
+        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
+        ContractAgreement agreement = agreementRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Agreement not found"));
+        if (!accessControl.canViewAgreement(agreement, currentUser)) {
+            throw new ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Access denied");
+        }
+        if (agreement.getStatus() != ContractAgreementStatus.PREPARING_BLOCKCHAIN) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "success", false,
+                    "message", "Hợp đồng không ở trạng thái PREPARING_BLOCKCHAIN (hiện tại: " + agreement.getStatus() + ")"
+            ));
+        }
+        BlockchainTransactionIntentResult result = registrationWorkflowService.initiateRegistration(id);
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "status", result.status().name(),
+                "transactionId", result.transactionId().toString(),
+                "idempotencyKey", result.idempotencyKey()
+        ));
     }
 
     @PostMapping("/agreements/{id}/settlements/propose")
@@ -574,6 +619,7 @@ public class ContractManagementController {
             ContractAgreement agreement = agreementRepository.findById(id)
                     .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Agreement not found"));
             accessControl.requireCanManageAgreementLifecycle(agreement, currentUser);
+            requireOperationalFundingForActiveAgreement(agreement);
             BlockchainTransactionIntentResult result = lifecycleWorkflowService.initiateCancellation(
                     id, body != null ? body.reason() : "");
             return ResponseEntity.ok(Map.of(
@@ -776,6 +822,7 @@ public class ContractManagementController {
                 .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Agreement not found"));
         accessControl.requireCanManageSettlement(agreement, currentUserContext.requireCurrentUser());
         try {
+            requireSettlementEligible(agreement);
             String outcomeStr = body != null && body.outcome() != null ? body.outcome().toUpperCase() : "BOTH_PRESENT";
             iuh.fit.contract_service.enums.SettlementOutcome outcome =
                     iuh.fit.contract_service.enums.SettlementOutcome.valueOf(outcomeStr);
@@ -795,6 +842,9 @@ public class ContractManagementController {
                     "transactionStatus", result.status().name(),
                     "idempotencyKey", result.idempotencyKey()
             ));
+        } catch (ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode())
+                    .body(Map.of("error", e.getReason() != null ? e.getReason() : "Settlement rejected"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -809,7 +859,7 @@ public class ContractManagementController {
             @PathVariable Long sessionId,
             @RequestBody(required = false) LegacyProposeSettlementRequest body) {
         List<ContractAgreement> agreements = agreementRepository.findAll().stream()
-                .filter(a -> a.getClassroomId().equals(classroomId) && a.getStatus() == ContractAgreementStatus.ACTIVE)
+                .filter(a -> a.getClassroomId().equals(classroomId) && isSettlementEligible(a))
                 .toList();
 
         if (agreements.isEmpty()) {
@@ -862,7 +912,7 @@ public class ContractManagementController {
             @PathVariable Long sessionId,
             @RequestBody(required = false) InternalAutoProposeRequest body) {
         List<ContractAgreement> agreements = agreementRepository.findAll().stream()
-                .filter(a -> a.getClassroomId().equals(classroomId) && a.getStatus() == ContractAgreementStatus.ACTIVE)
+                .filter(a -> a.getClassroomId().equals(classroomId) && isSettlementEligible(a))
                 .toList();
 
         if (agreements.isEmpty()) {
@@ -892,13 +942,8 @@ public class ContractManagementController {
                     continue;
                 }
 
-                String outcomeStr = outcomeByStudent.getOrDefault(agreement.getStudentId(), "BOTH_PRESENT");
-                SettlementOutcome outcome;
-                try {
-                    outcome = SettlementOutcome.valueOf(outcomeStr);
-                } catch (Exception ex) {
-                    outcome = SettlementOutcome.BOTH_PRESENT;
-                }
+                // Missing or corrupt attendance must never become a tutor payout.
+                SettlementOutcome outcome = resolveAttendanceOutcome(outcomeByStudent, agreement.getStudentId());
 
                 String evidenceHash = org.web3j.crypto.Hash.sha3String("PROPOSE:" + agreement.getId() + ":" + sessionId);
                 BlockchainTransactionIntentResult res = settlementWorkflowService
@@ -990,6 +1035,9 @@ public class ContractManagementController {
                 .filter(s -> s.getStatus() == SettlementStatus.SETTLED
                         || s.getStatus() == SettlementStatus.REFUNDED)
                 .count();
+        boolean onchainFunded = hasConfirmedFundingEvent(a);
+        boolean legacyUnreconciled = isLegacyUnreconciled(a, onchainFunded);
+        boolean settlementEligible = a.getStatus() == ContractAgreementStatus.ACTIVE && onchainFunded;
 
         String studentEmail = a.getStudentEmail();
         if (studentEmail == null || studentEmail.isBlank()) {
@@ -1042,8 +1090,49 @@ public class ContractManagementController {
                 a.getPaymentDeadline() != null ? a.getPaymentDeadline().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null,
                 a.getChainId(),
                 a.getEscrowContractAddress(),
-                a.getClassroomReviewerEmail()
+                a.getClassroomReviewerEmail(),
+                onchainFunded,
+                legacyUnreconciled,
+                settlementEligible
         );
+    }
+
+    private boolean hasConfirmedFundingEvent(ContractAgreement agreement) {
+        return escrowPaymentRepository.findByAgreementId(agreement.getId())
+                .filter(payment -> payment.getFundTxHash() != null && !payment.getFundTxHash().isBlank())
+                .filter(payment -> payment.getChainId() != null)
+                .map(payment -> processedEventRepository
+                        .existsByEventTypeIgnoreCaseAndChainIdAndTransactionHashIgnoreCase(
+                                "AGREEMENT_FUNDED", payment.getChainId(), payment.getFundTxHash()))
+                .orElse(false);
+    }
+
+    private boolean isLegacyUnreconciled(ContractAgreement agreement, boolean onchainFunded) {
+        return !onchainFunded
+                && (agreement.getStatus() == ContractAgreementStatus.ACTIVE
+                || agreement.getStatus() == ContractAgreementStatus.COMPLETED);
+    }
+
+    private boolean isSettlementEligible(ContractAgreement agreement) {
+        return agreement.getStatus() == ContractAgreementStatus.ACTIVE && hasConfirmedFundingEvent(agreement);
+    }
+
+    private void requireSettlementEligible(ContractAgreement agreement) {
+        if (!isSettlementEligible(agreement)) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT,
+                    "Agreement is not backed by a confirmed on-chain AgreementFunded event and cannot be settled.");
+        }
+    }
+
+    private void requireOperationalFundingForActiveAgreement(ContractAgreement agreement) {
+        if ((agreement.getStatus() == ContractAgreementStatus.ACTIVE
+                || agreement.getStatus() == ContractAgreementStatus.COMPLETED)
+                && !hasConfirmedFundingEvent(agreement)) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT,
+                    "Legacy unreconciled agreement is audit-only and cannot execute blockchain lifecycle actions.");
+        }
     }
 
     private AgreementDetailDto toAgreementDetail(ContractAgreement a) {
@@ -1051,23 +1140,39 @@ public class ContractManagementController {
         return new AgreementDetailDto(summary, a.getTermsHash(), a.getContractVersion(), a.getTotalPriceVnd());
     }
 
-    private SettlementDto toSettlementDto(SessionSettlement s) {
-        int decimals = s.getAgreement().getTokenDecimals();
+    private SettlementDto toSettlementDto(SessionSettlement s, short decimals) {
         return new SettlementDto(
                 s.getId().toString(),
                 s.getSessionId(),
                 s.getOnchainSessionId(),
-                s.getOutcome().name(),
-                toUsdc(s.getAmount(), (short) decimals),
-                toUsdc(s.getTutorAmount(), (short) decimals),
-                toUsdc(s.getPlatformAmount(), (short) decimals),
-                toUsdc(s.getStudentRefundAmount(), (short) decimals),
-                s.getStatus().name(),
+                s.getOutcome() != null ? s.getOutcome().name() : null,
+                toUsdc(s.getAmount(), decimals),
+                toUsdc(s.getTutorAmount(), decimals),
+                toUsdc(s.getPlatformAmount(), decimals),
+                toUsdc(s.getStudentRefundAmount(), decimals),
+                s.getStatus() != null ? s.getStatus().name() : null,
                 s.getProposeTxHash(),
                 s.getFinalizeTxHash(),
                 s.getDisputeDeadline() != null ? s.getDisputeDeadline().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null,
                 s.getCreatedAt() != null ? s.getCreatedAt().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null
         );
+    }
+
+    private SettlementDto toSettlementDto(SessionSettlement s) {
+        short decimals = (s.getAgreement() != null) ? s.getAgreement().getTokenDecimals() : (short) 6;
+        return toSettlementDto(s, decimals);
+    }
+
+    static SettlementOutcome resolveAttendanceOutcome(Map<Long, String> outcomeByStudent, Long studentId) {
+        String value = outcomeByStudent.get(studentId);
+        if (value == null || value.isBlank()) {
+            return SettlementOutcome.TUTOR_ABSENT;
+        }
+        try {
+            return SettlementOutcome.valueOf(value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            return SettlementOutcome.TUTOR_ABSENT;
+        }
     }
 
     private BlockchainTxDto toTxDto(BlockchainTransaction t) {
@@ -1089,16 +1194,16 @@ public class ContractManagementController {
 
     private DisputeSummaryDto toDisputeDto(Dispute d) {
         SessionSettlement s = d.getSettlement();
-        ContractAgreement a = s.getAgreement();
+        ContractAgreement a = s != null ? s.getAgreement() : null;
         return new DisputeSummaryDto(
                 d.getId().toString(),
-                a.getId().toString(),
-                a.getOnchainAgreementId(),
-                s.getId().toString(),
-                s.getSessionId(),
+                a != null ? a.getId().toString() : null,
+                a != null ? a.getOnchainAgreementId() : null,
+                s != null ? s.getId().toString() : null,
+                s != null ? s.getSessionId() : null,
                 d.getComplainantId(),
                 d.getType(),
-                d.getStatus().name(),
+                d.getStatus() != null ? d.getStatus().name() : null,
                 d.getSubmittedAt() != null ? d.getSubmittedAt().toString() : null,
                 d.getResolution(),
                 d.getResolutionReason(),
@@ -1108,10 +1213,10 @@ public class ContractManagementController {
                 d.getOpenTxHash(),
                 d.getResolveTxHash(),
                 d.getTutorResponse(),
-                a.getStudentWallet(),
-                a.getTutorWallet(),
-                a.getClassroomReviewerEmail(),
-                s.getDisputeDeadline() != null ? s.getDisputeDeadline().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null,
+                a != null ? a.getStudentWallet() : null,
+                a != null ? a.getTutorWallet() : null,
+                a != null ? a.getClassroomReviewerEmail() : null,
+                s != null && s.getDisputeDeadline() != null ? s.getDisputeDeadline().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null,
                 d.getCreatedAt() != null ? d.getCreatedAt().toString() : null
         );
     }
@@ -1120,7 +1225,7 @@ public class ContractManagementController {
         if (units == null) return 0.0;
         BigDecimal bd = new BigDecimal(units);
         BigDecimal divisor = BigDecimal.TEN.pow(decimals);
-        return bd.divide(divisor).doubleValue();
+        return bd.divide(divisor, 4, java.math.RoundingMode.HALF_UP).doubleValue();
     }
 
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1137,7 +1242,8 @@ public class ContractManagementController {
             double totalAmountUsdc, double pricePerSessionUsdc,
             int totalSessions, int settledSessions,
             String status, String createdAt, String paymentDeadline,
-            Long chainId, String escrowContractAddress, String classroomReviewerEmail) {}
+            Long chainId, String escrowContractAddress, String classroomReviewerEmail,
+            boolean onchainFunded, boolean legacyUnreconciled, boolean settlementEligible) {}
 
     public record AgreementDetailDto(
             AgreementSummaryDto summary,

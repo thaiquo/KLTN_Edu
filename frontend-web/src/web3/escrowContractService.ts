@@ -2,7 +2,7 @@ import { ethers } from 'ethers';
 import { getContractAddresses, DEFAULT_CHAIN_ID, ERC20_ABI, ESCROW_ABI } from './web3Config';
 
 export interface EscrowAgreementOnchain {
-  status: number; // 0: NONE, 1: REGISTERED, 2: FUNDED, 3: COMPLETED, 4: REFUNDED, 5: CANCELLED
+  status: number; // 0: NONE, 1: CREATED, 2: FUNDED, 3: COMPLETED, 4: EXPIRED, 5: CANCELLED
   student: string;
   tutor: string;
   totalSessions: bigint;
@@ -16,13 +16,12 @@ export interface EscrowAgreementOnchain {
 }
 
 export interface SessionSettlementOnchain {
-  status: number;
-  attendanceType: number;
-  tutorPaidAmount: bigint;
-  studentRefundAmount: bigint;
-  platformFeeAmount: bigint;
-  disputeWindowDeadline: bigint;
-  createdAtBlock: bigint;
+  proposedOutcome: number; // 0: BOTH_PRESENT, 1: STUDENT_ABSENT_TUTOR_PRESENT, 2: TUTOR_ABSENT
+  status: number; // 0: NONE, 1: PROPOSED, 2: DISPUTED, 3: SETTLED, 4: REFUNDED
+  disputeDeadline: bigint;
+  proposalEvidenceHash: string;
+  disputeEvidenceHash: string;
+  resolutionHash: string;
 }
 
 export interface DisputeOnchain {
@@ -33,6 +32,10 @@ export interface DisputeOnchain {
   auditProofHash: string;
   createdAtBlock: bigint;
   resolvedAtBlock: bigint;
+}
+
+export function computeOnchainSessionId(sessionId: number | bigint | string): string {
+  return ethers.keccak256(ethers.toUtf8Bytes(`EDUCONNECT:SESSION:${sessionId}`));
 }
 
 function toBytes32(id: string | number | bigint): string {
@@ -152,15 +155,18 @@ export class EscrowContractService {
     sessionId: bigint | number | string
   ): Promise<SessionSettlementOnchain> {
     const escrowContract = this.getEscrowContract(runner);
-    const res = await escrowContract.getSessionSettlement(toBytes32(agreementId), toBytes32(sessionId));
+    const onchainAgreementId = toBytes32(agreementId);
+    const onchainSessionId = typeof sessionId === 'string' && sessionId.startsWith('0x') && sessionId.length === 66
+      ? sessionId
+      : computeOnchainSessionId(sessionId);
+    const res = await escrowContract.getSessionSettlement(onchainAgreementId, onchainSessionId);
     return {
-      status: Number(res.status ?? res[6] ?? 0),
-      attendanceType: Number(res.outcome ?? res[0] ?? 0),
-      tutorPaidAmount: BigInt(res.tutorAmount ?? res[1] ?? 0),
-      studentRefundAmount: BigInt(res.studentRefund ?? res[2] ?? 0),
-      platformFeeAmount: BigInt(res.platformFee ?? res[3] ?? 0),
-      disputeWindowDeadline: BigInt(res.disputeDeadline ?? res[4] ?? 0),
-      createdAtBlock: 0n,
+      proposedOutcome: Number(res.proposedOutcome ?? res[0] ?? 0),
+      status: Number(res.status ?? res[1] ?? 0),
+      disputeDeadline: BigInt(res.disputeDeadline ?? res[2] ?? 0),
+      proposalEvidenceHash: res.proposalEvidenceHash ?? res[3] ?? '',
+      disputeEvidenceHash: res.disputeEvidenceHash ?? res[4] ?? '',
+      resolutionHash: res.resolutionHash ?? res[5] ?? '',
     };
   }
 

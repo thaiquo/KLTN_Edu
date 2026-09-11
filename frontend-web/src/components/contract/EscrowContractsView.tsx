@@ -75,6 +75,7 @@ export function EscrowContractsView({
   const [selectedAgreementForTimeline, setSelectedAgreementForTimeline] = useState<AgreementSummary | null>(null);
   const [selectedAgreementForDocument, setSelectedAgreementForDocument] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [operationalFilter, setOperationalFilter] = useState<'ALL' | 'OPERATIONAL' | 'LEGACY'>('OPERATIONAL');
   const [selectedClassId, setSelectedClassId] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState<string>('');
 
@@ -112,8 +113,22 @@ export function EscrowContractsView({
         });
       }
 
-      // Fetch details for any missing classroom IDs
-      const missingClassIds = Array.from(new Set(content.map((a) => a.classroomId))).filter((id) => id && !classMap[id]);
+      // Only query Learning when the immutable agreement snapshot does not already
+      // contain enough display data. Legacy agreements can legitimately reference
+      // classrooms that no longer exist, and repeatedly requesting those IDs only
+      // creates noisy 404s without improving the contract view.
+      const missingClassIds = Array.from(new Set(content
+        .filter((agreement) => {
+          const missingClassName = !agreement.className
+            || agreement.className.startsWith('Lớp học #')
+            || agreement.className.startsWith('Khóa học #');
+          const missingTutorName = !agreement.tutorName
+            || agreement.tutorName.includes('@')
+            || agreement.tutorName.startsWith('Gia sư #');
+          return missingClassName || missingTutorName;
+        })
+        .map((agreement) => agreement.classroomId)))
+        .filter((id) => id && !classMap[id]);
       if (missingClassIds.length > 0) {
         await Promise.all(
           missingClassIds.map(async (classId) => {
@@ -266,6 +281,9 @@ export function EscrowContractsView({
         return false;
       }
 
+      if (operationalFilter === 'OPERATIONAL' && a.legacyUnreconciled) return false;
+      if (operationalFilter === 'LEGACY' && !a.legacyUnreconciled) return false;
+
       // Filter by classroom
       if (selectedClassId !== 'ALL' && String(a.classroomId) !== selectedClassId) {
         return false;
@@ -293,16 +311,18 @@ export function EscrowContractsView({
       }
       return true;
     });
-  }, [enrichedAgreements, selectedClassId, searchTerm, statusFilter, activeRole, user]);
+  }, [enrichedAgreements, selectedClassId, searchTerm, statusFilter, operationalFilter, activeRole, user]);
 
   // Financial KPIs
   const kpis = useMemo(() => {
     const totalCount = enrichedAgreements.length;
-    const activeCount = enrichedAgreements.filter((a) => a.status === 'ACTIVE').length;
-    const totalUsdc = enrichedAgreements.reduce((sum, a) => sum + (Number(a.totalAmountUsdc) || 0), 0);
-    const settledUsdc = enrichedAgreements.reduce((sum, a) => sum + ((Number(a.settledSessions) || 0) * (Number(a.pricePerSessionUsdc) || 0)), 0);
+    const activeCount = enrichedAgreements.filter((a) => a.settlementEligible).length;
+    const legacyCount = enrichedAgreements.filter((a) => a.legacyUnreconciled).length;
+    const verifiedAgreements = enrichedAgreements.filter((a) => a.onchainFunded);
+    const totalUsdc = verifiedAgreements.reduce((sum, a) => sum + (Number(a.totalAmountUsdc) || 0), 0);
+    const settledUsdc = verifiedAgreements.reduce((sum, a) => sum + ((Number(a.settledSessions) || 0) * (Number(a.pricePerSessionUsdc) || 0)), 0);
 
-    return { totalCount, activeCount, totalUsdc, settledUsdc };
+    return { totalCount, activeCount, legacyCount, totalUsdc, settledUsdc };
   }, [enrichedAgreements]);
 
   const handleOpenPayment = (agreement: AgreementSummary) => {
@@ -497,14 +517,18 @@ export function EscrowContractsView({
 
       {/* Financial KPI Summary Cards */}
       {activeTab === 'AGREEMENTS' && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Tổng số hợp đồng</span>
             <span className="text-xl font-black text-slate-900 block">{kpis.totalCount}</span>
           </div>
           <div className="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-200/70 shadow-2xs space-y-1">
-            <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">Đang học (ACTIVE)</span>
+            <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">Đủ điều kiện giải ngân</span>
             <span className="text-xl font-black text-emerald-900 block">{kpis.activeCount}</span>
+          </div>
+          <div className="bg-amber-50/60 p-4 rounded-2xl border border-amber-200 shadow-2xs space-y-1">
+            <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider block">Legacy chỉ tra cứu</span>
+            <span className="text-xl font-black text-amber-900 block">{kpis.legacyCount}</span>
           </div>
           <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-200/70 shadow-2xs space-y-1">
             <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider block">Tổng giá trị ký quỹ</span>
@@ -520,6 +544,18 @@ export function EscrowContractsView({
       {/* AGREEMENTS TAB */}
       {activeTab === 'AGREEMENTS' && (
         <div className="space-y-6">
+          {(activeRole === 'admin' || activeRole === 'staff') && (
+            <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 text-xs text-slate-700 shadow-2xs">
+              <p className="font-black text-blue-900">Phạm vi quản trị hợp đồng</p>
+              <p className="mt-1 leading-relaxed">
+                Admin giám sát toàn hệ thống; Staff chỉ xử lý lớp và khiếu nại được phân công. Hai vai trò có thể kiểm tra audit,
+                theo dõi quyết toán và phân xử khiếu nại theo quyền, nhưng không ký thay học viên hoặc gia sư. Hủy/expire hợp đồng là tác vụ quản trị cấp Admin,
+                không phải thao tác thường ngày trên lớp đang học. Chỉ hợp đồng có sự kiện
+                <span className="font-mono font-bold"> AgreementFunded</span> đã xác nhận mới được tính vào tiền ký quỹ và giải ngân.
+              </p>
+            </div>
+          )}
+
           {/* Controls: Filters & Search */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
             <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
@@ -589,6 +625,28 @@ export function EscrowContractsView({
                 Hiển thị <strong>{filteredAgreements.length}</strong> / {enrichedAgreements.length} hợp đồng
               </span>
             </div>
+            <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-slate-100">
+              <span className="text-xs font-bold text-slate-400">Nguồn tiền:</span>
+              {[
+                { value: 'OPERATIONAL', label: 'On-chain hợp lệ' },
+                { value: 'LEGACY', label: `Legacy chỉ audit (${kpis.legacyCount})` },
+                { value: 'ALL', label: 'Hiển thị tất cả' },
+              ].map((filter) => (
+                <button
+                  key={filter.value}
+                  onClick={() => setOperationalFilter(filter.value as 'ALL' | 'OPERATIONAL' | 'LEGACY')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    operationalFilter === filter.value
+                      ? filter.value === 'LEGACY'
+                        ? 'bg-amber-600 text-white shadow-sm'
+                        : 'bg-blue-700 text-white shadow-sm'
+                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Error */}
@@ -623,6 +681,7 @@ export function EscrowContractsView({
                 const cfg = getStatusCfg(item.status);
                 const isWaitingPayment = item.status === 'WAITING_PAYMENT';
                 const isActive = item.status === 'ACTIVE';
+                const isLegacy = Boolean(item.legacyUnreconciled);
                 const progressPct = item.totalSessions > 0
                   ? Math.round((item.settledSessions / item.totalSessions) * 100)
                   : 0;
@@ -642,13 +701,17 @@ export function EscrowContractsView({
                 return (
                   <div
                     key={item.id}
-                    className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm hover:shadow-md transition-all space-y-5 flex flex-col justify-between"
+                    className={`rounded-3xl border p-6 shadow-sm hover:shadow-md transition-all space-y-5 flex flex-col justify-between ${
+                      isLegacy ? 'bg-amber-50/40 border-amber-300' : 'bg-white border-slate-200'
+                    }`}
                   >
                     {/* Top Row: Class Name & Status */}
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-3">
                         <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-[11px] font-bold font-mono">
-                          {item.onchainAgreementId
+                          {isLegacy
+                            ? 'LEGACY • KHÔNG CÓ FUNDING EVENT'
+                            : item.onchainAgreementId
                             ? `On-chain: ${item.onchainAgreementId.slice(0, 10)}...`
                             : 'Hợp đồng điện tử'}
                         </span>
@@ -656,6 +719,17 @@ export function EscrowContractsView({
                           {cfg.label}
                         </span>
                       </div>
+
+                      {isLegacy && (
+                        <div className="flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-100/70 p-3 text-[11px] font-semibold leading-relaxed text-amber-950">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+                          <span>
+                            Dữ liệu lịch sử không có sự kiện <span className="font-mono font-black">AgreementFunded</span> tương ứng.
+                            Hợp đồng này chỉ dùng để tra cứu; hệ thống không tự động đề xuất giải ngân, không tính vào KPI ký quỹ
+                            và không cho gọi hoàn tiền qua Escrow V1.
+                          </span>
+                        </div>
+                      )}
 
                       <div className="flex items-start gap-2.5 pt-1">
                         <div className="p-2 rounded-xl bg-blue-50 text-blue-600 shrink-0 mt-0.5">
@@ -804,7 +878,7 @@ export function EscrowContractsView({
                         </button>
                       </div>
 
-                      {item.status === 'PENDING_TUTOR_ACCEPTANCE' && (activeRole === 'tutor' || activeRole === 'staff' || activeRole === 'admin') && (
+                      {item.status === 'PENDING_TUTOR_ACCEPTANCE' && activeRole === 'tutor' && (
                         <button
                           onClick={() => handleSignByTutor(item)}
                           className="flex items-center gap-1.5 px-4 py-2 text-white text-xs font-display font-black rounded-xl shadow-sm transition-all bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 hover:shadow"
@@ -842,27 +916,23 @@ export function EscrowContractsView({
                           title={isStudentWalletMismatch ? 'Vui lòng chuyển sang đúng ví học viên trong MetaMask' : undefined}
                         >
                           <Lock className="w-3.5 h-3.5" />
-                          <span>Ký quỹ ngay (${item.totalAmountUsdc.toFixed(0)} {item.tokenSymbol})</span>
+                          <span>Ký quỹ ngay (${item.totalAmountUsdc.toFixed(2)} {item.tokenSymbol})</span>
                         </button>
                       )}
 
-                      {isActive && (
+                      {isActive && item.settlementEligible && (
                         <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
                           Đang bảo vệ bởi Escrow
                         </span>
                       )}
 
-                      {(activeRole === 'staff' || activeRole === 'admin') && isActive && (
-                        <button
-                          onClick={() => handleCancelAgreement(item)}
-                          className="flex items-center gap-1.5 px-3 py-2 text-white text-xs font-display font-black rounded-xl bg-rose-600 hover:bg-rose-700 transition-all"
-                        >
-                          <XCircle className="w-3.5 h-3.5" />
-                          <span>Cancel & refund unused</span>
-                        </button>
+                      {isLegacy && (
+                        <span className="text-[11px] font-bold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-xl border border-amber-300">
+                          Chỉ tra cứu • không quyết toán
+                        </span>
                       )}
 
-                      {(activeRole === 'staff' || activeRole === 'admin') && isWaitingPayment && (
+                      {activeRole === 'admin' && isWaitingPayment && (
                         <button
                           onClick={() => handleExpireAgreement(item)}
                           className="flex items-center gap-1.5 px-3 py-2 text-white text-xs font-display font-black rounded-xl bg-slate-700 hover:bg-slate-800 transition-all"

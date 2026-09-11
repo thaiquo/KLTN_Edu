@@ -10,6 +10,7 @@ import iuh.fit.contract_service.repository.ContractAcceptanceRepository;
 import iuh.fit.contract_service.repository.ContractAgreementRepository;
 import iuh.fit.contract_service.repository.DisputeRepository;
 import iuh.fit.contract_service.repository.EscrowPaymentRepository;
+import iuh.fit.contract_service.repository.ProcessedEventRepository;
 import iuh.fit.contract_service.repository.SessionSettlementRepository;
 import iuh.fit.contract_service.service.AgreementFundingWorkflowService;
 import iuh.fit.contract_service.service.AgreementLifecycleWorkflowService;
@@ -62,7 +63,11 @@ class ContractManagementControllerPaymentTest {
     @Mock
     private AgreementFundingWorkflowService fundingWorkflowService;
     @Mock
+    private iuh.fit.contract_service.service.AgreementRegistrationWorkflowService registrationWorkflowService;
+    @Mock
     private EscrowPaymentRepository escrowPaymentRepository;
+    @Mock
+    private ProcessedEventRepository processedEventRepository;
     @Mock
     private ContractAcceptanceRepository acceptanceRepository;
     @Mock
@@ -71,6 +76,8 @@ class ContractManagementControllerPaymentTest {
     private CurrentUserContext currentUserContext;
     @Mock
     private ContractAccessControl accessControl;
+    @Mock
+    private org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway;
 
     private ContractManagementController controller;
 
@@ -87,11 +94,14 @@ class ContractManagementControllerPaymentTest {
                 notificationDispatcher,
                 signatureService,
                 fundingWorkflowService,
+                registrationWorkflowService,
                 escrowPaymentRepository,
+                processedEventRepository,
                 acceptanceRepository,
                 learningServiceDispatcher,
                 currentUserContext,
-                accessControl);
+                accessControl,
+                blockchainGateway);
     }
 
     @Test
@@ -144,6 +154,41 @@ class ContractManagementControllerPaymentTest {
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         verify(fundingWorkflowService, never()).recordPaymentSubmission(any(), any());
+    }
+
+    @Test
+    void legacyActiveAgreementCannotBeCancelledOrRefunded() {
+        UUID agreementId = UUID.randomUUID();
+        ContractAgreement agreement = agreement(agreementId, ContractAgreementStatus.ACTIVE);
+        ContractUserPrincipal admin = new ContractUserPrincipal(9L, "admin@example.com", "ADMIN", List.of("ADMIN"));
+        when(currentUserContext.requireCurrentUser()).thenReturn(admin);
+        when(agreementRepository.findById(agreementId)).thenReturn(Optional.of(agreement));
+        when(escrowPaymentRepository.findByAgreementId(agreementId)).thenReturn(Optional.empty());
+
+        var response = controller.cancelAgreement(
+                agreementId,
+                new ContractManagementController.LifecycleReasonRequest("legacy check"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        verify(lifecycleWorkflowService, never()).initiateCancellation(any(), any());
+    }
+
+    @Test
+    void legacyActiveAgreementCannotCreateSessionSettlement() {
+        UUID agreementId = UUID.randomUUID();
+        ContractAgreement agreement = agreement(agreementId, ContractAgreementStatus.ACTIVE);
+        ContractUserPrincipal admin = new ContractUserPrincipal(9L, "admin@example.com", "ADMIN", List.of("ADMIN"));
+        when(currentUserContext.requireCurrentUser()).thenReturn(admin);
+        when(agreementRepository.findById(agreementId)).thenReturn(Optional.of(agreement));
+        when(escrowPaymentRepository.findByAgreementId(agreementId)).thenReturn(Optional.empty());
+
+        var response = controller.proposeSessionSettlement(
+                agreementId,
+                101L,
+                new ContractManagementController.LegacyProposeSettlementRequest("BOTH_PRESENT", null));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        verify(settlementWorkflowService, never()).initiateSessionProposal(any(), any(), any(), any());
     }
 
     private ContractAgreement agreement(UUID id, ContractAgreementStatus status) {

@@ -85,6 +85,56 @@ export function DisputeManagementPanel({
   // Resolution state
   const [resolvingId, setResolvingId] = useState<string | number | null>(null);
 
+  // Tutor evidence state
+  const [isTutorModalOpen, setIsTutorModalOpen] = useState(false);
+  const [selectedDisputeForTutor, setSelectedDisputeForTutor] = useState<DisputeDto | null>(null);
+  const [tutorResponseText, setTutorResponseText] = useState('');
+  const [tutorEvidenceUrl, setTutorEvidenceUrl] = useState('');
+  const [isTutorSubmitting, setIsTutorSubmitting] = useState(false);
+
+  const handleOpenTutorModal = (dispute: DisputeDto) => {
+    setSelectedDisputeForTutor(dispute);
+    const rawResponse = dispute.tutorResponse || '';
+    const fileMatch = rawResponse.match(/\s*\[File:\s*([^\]]+)\]$/);
+    if (fileMatch) {
+      setTutorResponseText(rawResponse.replace(fileMatch[0], ''));
+      setTutorEvidenceUrl(fileMatch[1]);
+    } else {
+      setTutorResponseText(rawResponse);
+      setTutorEvidenceUrl('');
+    }
+    setIsTutorModalOpen(true);
+  };
+
+  const handleSubmitTutorEvidence = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedDisputeForTutor) return;
+    if (!tutorResponseText.trim()) {
+      setActionError('Vui lòng nhập nội dung giải trình.');
+      return;
+    }
+
+    try {
+      setIsTutorSubmitting(true);
+      setActionError(null);
+      await contractsApi.submitTutorDisputeEvidence(selectedDisputeForTutor.id, {
+        responseText: tutorResponseText.trim(),
+        evidenceFileUrl: tutorEvidenceUrl.trim() || undefined,
+      });
+
+      setActionSuccess('Đã gửi giải trình và minh chứng đối chất thành công!');
+      setIsTutorModalOpen(false);
+      setSelectedDisputeForTutor(null);
+      setTutorResponseText('');
+      setTutorEvidenceUrl('');
+      await fetchDisputes();
+    } catch (err: any) {
+      setActionError(err?.reason || err?.message || 'Không thể gửi giải trình.');
+    } finally {
+      setIsTutorSubmitting(false);
+    }
+  };
+
   const handleCreateDispute = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reasonInput) {
@@ -160,7 +210,11 @@ export function DisputeManagementPanel({
               Trung Tâm Quản Lý & Phân Xử Khiếu Nại (Dispute Resolution)
             </h2>
             <p className="text-xs text-slate-500 font-semibold mt-0.5">
-              Phân xử minh bạch trên Smart Contract Escrow bảo vệ quyền lợi đôi bên
+              {activeRole === 'tutor'
+                ? 'Theo dõi khiếu nại các buổi học và gửi minh chứng đối chất cho Staff/Admin xem xét'
+                : activeRole === 'student'
+                ? 'Gửi và theo dõi khiếu nại minh bạch trên Smart Contract Escrow bảo vệ quyền lợi học tập'
+                : 'Phân xử minh bạch trên Smart Contract Escrow bảo vệ quyền lợi đôi bên'}
             </p>
           </div>
         </div>
@@ -281,14 +335,42 @@ export function DisputeManagementPanel({
                       <p className="text-xs text-slate-700 font-medium pl-5">{dispute.type}</p>
                     </div>
 
-                    {dispute.tutorResponse && (
-                    <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 text-xs space-y-1.5">
-                      <div className="flex items-center gap-1.5 font-bold text-slate-700">
-                        <FileText className="w-3.5 h-3.5 text-slate-500" />
-                        <span>Phản hồi từ gia sư:</span>
+                    {dispute.tutorResponse ? (() => {
+                      const fileMatch = dispute.tutorResponse.match(/\s*\[File:\s*([^\]]+)\]$/);
+                      const textOnly = fileMatch ? dispute.tutorResponse.replace(fileMatch[0], '') : dispute.tutorResponse;
+                      const fileUrl = fileMatch ? fileMatch[1] : null;
+                      return (
+                        <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                              <FileText className="w-4 h-4 text-indigo-600" />
+                              <span>Phản hồi & Minh chứng từ gia sư:</span>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              Đã nộp đối chất
+                            </span>
+                          </div>
+                          <p className="text-slate-700 text-xs pl-5 leading-relaxed">{textOnly}</p>
+                          {fileUrl && (
+                            <div className="pl-5 pt-1">
+                              <a
+                                href={fileUrl.startsWith('http') ? fileUrl : `https://${fileUrl}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 text-indigo-700 font-bold border border-indigo-200 rounded-lg text-[11px] shadow-2xs transition-all"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5 text-indigo-500" />
+                                <span>Xem file tài liệu / link minh chứng của gia sư</span>
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })() : (
+                      <div className="bg-amber-50/50 border border-dashed border-amber-200 rounded-2xl p-3 text-xs text-amber-800 flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Chưa có phản hồi đối chất từ gia sư.</span>
                       </div>
-                      <p className="text-slate-600 text-[11px] pl-5">{dispute.tutorResponse}</p>
-                    </div>
                     )}
                   </div>
 
@@ -343,6 +425,28 @@ export function DisputeManagementPanel({
                     </div>
                   </div>
                 </div>
+
+                {/* Tutor Actions (Submit / Update Counter Evidence) */}
+                {activeRole === 'tutor' && dispute.status === 'OPEN' && (
+                  <div className="border-t border-slate-100 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-indigo-50/50 p-4 rounded-2xl">
+                    <div className="flex items-center gap-2 text-xs text-indigo-900 font-medium">
+                      <Info className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <span>
+                        {dispute.tutorResponse
+                          ? 'Bạn đã nộp giải trình đối chất. Bạn có thể cập nhật lại trước khi Staff/Admin phân xử.'
+                          : 'Học viên đã mở khiếu nại cho buổi học này. Vui lòng gửi giải trình và bằng chứng để bảo vệ quyền lợi.'}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => handleOpenTutorModal(dispute)}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-display font-black text-xs rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-1.5 shrink-0"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>{dispute.tutorResponse ? 'Cập Nhật Giải Trình' : 'Gửi Giải Trình & Minh Chứng'}</span>
+                    </button>
+                  </div>
+                )}
 
                 {/* Footer Resolution Actions (Staff / Admin only) */}
                 {(activeRole === 'admin' || activeRole === 'staff') && dispute.status === 'OPEN' && (
@@ -414,7 +518,7 @@ export function DisputeManagementPanel({
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">Mã Hợp Đồng (Agreement ID)</label>
                   <input
-                    type="number"
+                    type="text"
                     value={agreementIdInput}
                     onChange={(e) => setAgreementIdInput(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono font-bold focus:outline-none focus:border-rose-500"
@@ -476,6 +580,100 @@ export function DisputeManagementPanel({
                 >
                   {isSubmitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
                   <span>{isSubmitting ? 'Đang gửi...' : 'Xác nhận mở khiếu nại'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Tutor Evidence Modal */}
+      {isTutorModalOpen && selectedDisputeForTutor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
+            <div className="bg-gradient-to-r from-indigo-700 to-blue-800 px-6 py-5 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center backdrop-blur-md">
+                  <Upload className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-display font-black text-lg text-white">
+                    Giải Trình & Minh Chứng Đối Chất
+                  </h3>
+                  <p className="text-xs text-indigo-100 font-semibold">
+                    Hợp đồng #{selectedDisputeForTutor.agreementId?.slice(0, 8)} • Buổi học #{selectedDisputeForTutor.sessionId}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsTutorModalOpen(false)}
+                className="text-white/80 hover:text-white p-1 rounded-xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitTutorEvidence} className="p-6 space-y-4">
+              <div className="p-3.5 bg-rose-50 border border-rose-200/80 rounded-xl text-xs space-y-1">
+                <div className="font-bold text-rose-900 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <span>Nội dung học viên khiếu nại:</span>
+                </div>
+                <p className="text-slate-700 pl-5">{selectedDisputeForTutor.type || 'Gia sư không vào dạy / vi phạm quy định'}</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Lời giải trình của gia sư <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={4}
+                  value={tutorResponseText}
+                  onChange={(e) => setTutorResponseText(e.target.value)}
+                  placeholder="Mô tả cụ thể buổi học (ví dụ: tôi đã vào lớp từ 19:00 đến 20:30, học viên vào muộn 30 phút, nội dung giảng dạy đã hoàn tất đầy đủ theo giáo án...)"
+                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Đường dẫn tài liệu / ảnh chụp / video đối chất
+                </label>
+                <input
+                  type="text"
+                  value={tutorEvidenceUrl}
+                  onChange={(e) => setTutorEvidenceUrl(e.target.value)}
+                  placeholder="Link Google Drive, ảnh chụp màn hình điểm danh, video record..."
+                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Nhập link Google Drive hoặc file lưu trữ ảnh màn hình điểm danh, video ghi hình buổi học để Staff/Admin đối chiếu.
+                </p>
+              </div>
+
+              <div className="bg-indigo-50 border border-indigo-200/80 rounded-xl p-3 text-[11px] text-indigo-900 flex items-start gap-2">
+                <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                <span>
+                  Thông tin giải trình sẽ được gửi trực tiếp đến nhân viên vận hành (Staff phụ trách duyệt lớp) và Admin để xem xét trước khi đưa ra quyết định phân xử on-chain.
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsTutorModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={isTutorSubmitting}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-display font-black text-xs rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isTutorSubmitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{isTutorSubmitting ? 'Đang gửi...' : 'Nộp Giải Trình Đối Chất'}</span>
                 </button>
               </div>
             </form>

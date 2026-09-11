@@ -285,22 +285,7 @@ public class SessionAttendanceService {
                     log.warn("Auto rolling generation failed after auto-finalizing session #{}: {}", session.getId(), e.getMessage());
                 }
 
-                // Tự động kích hoạt đề xuất quyết toán (settlement proposal) và mở hạn khiếu nại 24h qua contract-service
-                try {
-                    List<ContractServiceDispatcher.StudentAttendanceOutcomeItem> outcomeItems = attendances.stream()
-                            .map(a -> new ContractServiceDispatcher.StudentAttendanceOutcomeItem(
-                                    a.getStudentId(),
-                                    a.getFinalOutcome() != null ? a.getFinalOutcome().name() : AttendanceOutcome.BOTH_PRESENT.name()
-                            ))
-                            .toList();
-                    contractServiceDispatcher.dispatchAutoProposeAsync(
-                            session.getClassRoom().getId(),
-                            session.getId(),
-                            outcomeItems
-                    );
-                } catch (Exception e) {
-                    log.warn("Failed to dispatch auto settlement proposal for session #{}: {}", session.getId(), e.getMessage());
-                }
+                // Delivery worker reads committed outcomes and retries until Contract acknowledges them.
             } catch (Exception e) {
                 log.error("Failed to auto-finalize Session #{}: {}", session.getId(), e.getMessage(), e);
             }
@@ -342,6 +327,39 @@ public class SessionAttendanceService {
         }
     }
 
+    @Transactional
+    public ClassSessionDtos.SessionAttendanceResponse submitHomework(
+            Long sessionId,
+            Long studentId,
+            ClassSessionDtos.SubmitHomeworkRequest request
+    ) {
+        ClassSession session = classSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Buổi học không tồn tại: " + sessionId));
+
+        sessionAccessControl.requireStudent(session.getClassRoom(), studentId);
+
+        SessionAttendance attendance = sessionAttendanceRepository.findBySessionIdAndStudentId(sessionId, studentId)
+                .orElseThrow(() -> new BadRequestException("Bạn không có tên trong danh sách học viên của buổi này"));
+
+        // UI locking is not sufficient: the attendance record is authoritative.
+        if (!Boolean.TRUE.equals(attendance.getStudentChecked())) {
+            throw new ForbiddenException("Valid session check-in is required before homework submission");
+        }
+        if (request == null
+                || ((request.submissionText() == null || request.submissionText().isBlank())
+                && (request.submissionFileUrl() == null || request.submissionFileUrl().isBlank()))) {
+            throw new BadRequestException("Homework text or a file URL is required");
+        }
+
+        attendance.setSubmissionText(request.submissionText() != null ? request.submissionText().trim() : null);
+        attendance.setSubmissionFileUrl(request.submissionFileUrl() != null ? request.submissionFileUrl().trim() : null);
+        attendance.setSubmittedAt(LocalDateTime.now());
+        SessionAttendance saved = sessionAttendanceRepository.save(attendance);
+
+        log.info("Student #{} submitted homework for Session #{}", studentId, sessionId);
+        return toAttendanceResponse(saved);
+    }
+
     private ClassSessionDtos.ClassSessionResponse toSessionResponse(ClassSession session) {
         return toSessionResponse(session, sessionAccessControl.currentStudentId());
     }
@@ -356,9 +374,21 @@ public class SessionAttendanceService {
                 .count();
 
         Boolean myCheckedIn = null;
+        String mySubmissionText = null;
+        String mySubmissionFileUrl = null;
+        LocalDateTime mySubmittedAt = null;
+
         if (studentId != null) {
-            myCheckedIn = attendances.stream()
-                    .anyMatch(a -> a.getStudentId().equals(studentId) && Boolean.TRUE.equals(a.getStudentChecked()));
+            SessionAttendance myAtt = attendances.stream()
+                    .filter(a -> a.getStudentId().equals(studentId))
+                    .findFirst()
+                    .orElse(null);
+            if (myAtt != null) {
+                myCheckedIn = Boolean.TRUE.equals(myAtt.getStudentChecked());
+                mySubmissionText = myAtt.getSubmissionText();
+                mySubmissionFileUrl = myAtt.getSubmissionFileUrl();
+                mySubmittedAt = myAtt.getSubmittedAt();
+            }
         }
 
         return new ClassSessionDtos.ClassSessionResponse(
@@ -377,7 +407,10 @@ public class SessionAttendanceService {
                 session.getUpdatedAt(),
                 total,
                 present,
-                myCheckedIn
+                myCheckedIn,
+                mySubmissionText,
+                mySubmissionFileUrl,
+                mySubmittedAt
         );
     }
 
@@ -393,7 +426,10 @@ public class SessionAttendanceService {
                 att.getTutorCheckedAt(),
                 att.getStudentChecked(),
                 att.getStudentCheckedAt(),
-                att.getFinalOutcome()
+                att.getFinalOutcome(),
+                att.getSubmissionText(),
+                att.getSubmissionFileUrl(),
+                att.getSubmittedAt()
         );
     }
 }

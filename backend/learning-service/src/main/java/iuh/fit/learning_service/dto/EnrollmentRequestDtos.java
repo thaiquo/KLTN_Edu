@@ -60,4 +60,40 @@ public final class EnrollmentRequestDtos {
             boolean isFull,
             boolean isBufferPoolFull
     ) {}
+
+    public record ScheduleItemDto(
+            Long classRoomId,
+            String className,
+            String tutorEmail,
+            String tutorFullName,
+            String meetingLink,
+            String address,
+            String learningMode,
+            Integer dayOfWeek,
+            String startTime,
+            String endTime,
+            java.time.LocalDate startDate,
+            java.time.LocalDate endDate
+    ) {}
+
+    public record UpcomingSessionItemDto(
+            Long sessionId,
+            Long classRoomId,
+            String className,
+            String tutorFullName,
+            Integer sequenceNumber,
+            String topic,
+            java.time.LocalDate sessionDate,
+            Integer dayOfWeek,
+            String startTime,
+            String endTime,
+            String status,
+            String meetingLink,
+            boolean assignmentLocked
+    ) {}
+
+    public record StudentScheduleResponse(
+            java.util.List<ScheduleItemDto> recurringSchedules,
+            java.util.List<UpcomingSessionItemDto> sessions
+    ) {}
 }

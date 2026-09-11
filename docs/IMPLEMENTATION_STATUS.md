@@ -36,7 +36,7 @@ Feedback/notification/realtime architecture rules are maintained in `docs/FEEDBA
 | UC007 | Quản lý bài đăng tìm gia sư | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | No backend entity/controller found. |
 | UC008 | Quản lý tin nhắn | NOT_IMPLEMENTED | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Web has mock/in-memory messaging UI; no backend persistence/API found. |
 | UC009 | Xem thông tin lớp học | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Public class list/detail flow exists. |
-| UC010 | Quản lý bài tập | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | No homework/submission/grading source found. |
+| UC010 | Quản lý bài tập | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Tutor assigns homework per session; checked-in students can view and submit text/file evidence; Tutor can review submissions. |
 | UC011 | Quản lý thanh toán | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Escrow/payment data exists. Student Web keeps `/payments` as the payment/escrow entry point and uses `/student/wallet` as wallet-focused access. Browser funding uses escrow `fundAgreement`; submitted txHash enters `PAYMENT_CONFIRMING`, and backend activation waits for confirmed `AgreementFunded`. Address/deployment verification remains incomplete. |
 | UC012 | Quản lý hồ sơ gia sư | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Tutor application/profile/documents are implemented. |
 | UC013 | Quản lý yêu cầu tham gia lớp | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Tutor accept/reject/list requests exists. |
@@ -48,7 +48,7 @@ Feedback/notification/realtime architecture rules are maintained in `docs/FEEDBA
 | UC019 | Kiểm duyệt nội dung | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Tutor approval, subject/class review exist; post moderation not found. |
 | UC020 | Quản lý vi phạm | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | No violation module found. |
 | UC021 | Giám sát lớp học | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Admin/staff class review/management exists, not full monitoring. |
-| UC022 | Xử lý khiếu nại | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Contract dispute workflow exists; no complete API/UI flow found. |
+| UC022 | Xử lý khiếu nại | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Student opens a dispute, Tutor submits counter-evidence, and Admin/assigned Staff resolves it through the shared dispute management UI and protected Contract APIs. |
 | UC023 | Hỗ trợ người dùng | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Admin/staff user management exists; no support ticket module found. |
 | UC024 | Quản lý người dùng | IMPLEMENTED | PARTIAL | NOT_IMPLEMENTED | IMPLEMENTED | Admin/staff user APIs exist. |
 | UC025 | Quản lý danh mục | IMPLEMENTED | PARTIAL | NOT_IMPLEMENTED | IMPLEMENTED | Admin teaching catalog APIs exist. |
@@ -97,7 +97,7 @@ Feedback/notification/realtime architecture rules are maintained in `docs/FEEDBA
 | Docker | PARTIAL | `docker-compose.yml` provides PostgreSQL and RabbitMQ only. |
 | Qdrant | NOT_IMPLEMENTED | No container/config/source found. |
 | Blockchain | PARTIAL | Solidity + Web3j implemented; Web has wallet-focused access through Student `/student/wallet` and Tutor Portal `wallet`, both reusing `MyWalletView`; funding confirmation is event-driven, while address/deployment verification and Sepolia evidence remain partial. |
-| Sepolia | PLANNED | Config exists; no Sepolia deployment evidence found. |
+| Sepolia | PARTIAL | Deployed bytecode and operator/arbitrator roles were verified at the configured address on 2026-09-11. Current local agreements/payment rows are not reconciled: four locally `ACTIVE` agreements are `NONE` on-chain, and historical payments transferred 38.4 USDC directly to the escrow address without `fundAgreement`, leaving the tokens unallocated in V1. Backend operator credentials are not configured/enabled. |
 
 ## 6. Known Conflicts
 
@@ -165,6 +165,42 @@ Status: IMPLEMENTED for backend auth/authorization and Web restricted routing. M
 - Frontend ABI/address alignment with Solidity.
 
 ## 8. Update Rule
+
+Runtime follow-up (2026-09-11): operator supports a password secret file for
+unattended restarts and simulates transactions before signing. Secret-file,
+preflight, dispatcher integration and catch-up scheduler tests pass (12 tests).
+This does not change Sepolia readiness: the operator is disabled locally and the
+four legacy ACTIVE agreements still require funding reconciliation. No successful
+Sepolia per-session transfer is claimed by these tests.
+
+Subsequent runtime check on the same day: keystore password verified, operator
+enabled and Learning/Contract restarted. Five completed sessions replayed into ten
+proposals. Old intents fail sender validation (legacy Anvil platform wallet), and
+all four agreement IDs remain NONE on Sepolia. New agreement initiation now reads
+deployment addresses from the validated gateway. Root `.env` is shared with Vite;
+see `ENV_SETUP.md`. These findings supersede earlier local-operator-disabled notes.
+
+Latest runtime check on 2026-09-11: a fifth, correctly configured agreement was
+subsequently funded through `fundAgreement`; the confirmed `AgreementFunded`
+event activated local agreement `6355b191-333a-426b-8f24-a1f06177fd4c` and its
+Learning enrollment. The browser funding transaction is
+`0x3cafb9035e00c71030b1565be44eec51e22f734e6bbda6b6038522c25aab1e44`.
+No successful Sepolia per-session payout has yet been observed, so funding is
+verified but the first real payout remains pending an eligible completed session
+and its 24-hour on-chain dispute window.
+The fifth agreement's registration was a one-off recovery broadcast, not a live
+end-to-end proof of automatic registration; its local transaction audit metadata
+was reconciled from the confirmed Sepolia transaction.
+
+Current operational boundary: only a matching confirmed `AGREEMENT_FUNDED`
+processed event makes an ACTIVE agreement settlement-eligible. Four old ACTIVE
+rows across `Toán lớp 2 (2026-001)` and `Vật lý 11 (001 -2026)` have no such
+event and are now excluded from automatic proposals, settlement/refund actions,
+and financial KPIs. They remain visible only as legacy audit records. Admin can
+audit all contracts; Staff is restricted to assigned classroom/reviewer scope;
+neither role can sign for Student or Tutor. Manual whole-agreement lifecycle
+actions (`expire`, `cancel/refund unused`) are Admin-only; Staff remains scoped
+to assigned monitoring, settlement management, and dispute resolution.
 
 Update this file when implementation changes significantly, especially when a feature moves:
 

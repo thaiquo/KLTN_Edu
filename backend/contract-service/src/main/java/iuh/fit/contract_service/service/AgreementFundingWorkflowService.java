@@ -61,9 +61,17 @@ public class AgreementFundingWorkflowService {
             throw new IllegalArgumentException("Invalid funded transaction hash.");
         }
 
+        EscrowPayment existingPayment = escrowPaymentRepository.findByAgreementId(agreementId).orElse(null);
         if (agreement.getStatus() == ContractAgreementStatus.ACTIVE
                 || agreement.getStatus() == ContractAgreementStatus.COMPLETED) {
-            throw new IllegalStateException("Agreement is already funded.");
+            if (existingPayment != null
+                    && existingPayment.getFundTxHash() != null
+                    && existingPayment.getFundTxHash().equalsIgnoreCase(fundTxHash)) {
+                log.info("Funding event was confirmed before payment submission for agreement {}; accepting matching txHash idempotently",
+                        agreementId);
+                return agreement;
+            }
+            throw new IllegalStateException("Agreement is already funded by a different transaction.");
         }
 
         if (agreement.getPaymentDeadline() != null
@@ -71,8 +79,7 @@ public class AgreementFundingWorkflowService {
             throw new IllegalStateException("Payment deadline has passed.");
         }
 
-        EscrowPayment payment = escrowPaymentRepository.findByAgreementId(agreementId)
-                .orElseGet(() -> EscrowPayment.create(agreement));
+        EscrowPayment payment = existingPayment != null ? existingPayment : EscrowPayment.create(agreement);
 
         if (agreement.getStatus() == ContractAgreementStatus.WAITING_PAYMENT) {
             agreement.markPaymentConfirming();

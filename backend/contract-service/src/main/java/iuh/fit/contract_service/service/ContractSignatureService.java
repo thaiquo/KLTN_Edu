@@ -230,7 +230,7 @@ public class ContractSignatureService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                command.run();
+                java.util.concurrent.CompletableFuture.runAsync(command);
             }
         });
     }

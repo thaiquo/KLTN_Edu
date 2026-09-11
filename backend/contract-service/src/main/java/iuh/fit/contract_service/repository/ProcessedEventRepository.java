@@ -8,4 +8,7 @@ import java.util.UUID;
 public interface ProcessedEventRepository extends JpaRepository<ProcessedEvent, UUID> {
     boolean existsByChainIdAndTransactionHashIgnoreCaseAndLogIndex(
             Long chainId, String transactionHash, Long logIndex);
+
+    boolean existsByEventTypeIgnoreCaseAndChainIdAndTransactionHashIgnoreCase(
+            String eventType, Long chainId, String transactionHash);
 }

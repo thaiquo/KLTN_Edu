@@ -51,6 +51,7 @@ export function Sidebar({
           { id: "requests", label: "Yêu cầu học", icon: CheckCircle2 },
           { id: "messages", label: "Tin nhắn", icon: MessageSquare },
           { id: "schedule", label: "Lịch dạy", icon: Calendar },
+          { id: "complaints", label: "Khiếu nại lớp học", icon: ShieldAlert },
         ];
       case "admin":
         return [
@@ -77,7 +78,7 @@ export function Sidebar({
   };
 
   const navItems = getNavItems();
-  const lockedTutorItems = new Set(["subjects", "my-classes", "contracts", "wallet", "requests", "messages", "schedule"]);
+  const lockedTutorItems = new Set(["subjects", "my-classes", "contracts", "wallet", "requests", "messages", "schedule", "complaints"]);
 
   return (
     <aside className={`fixed left-0 top-16 bottom-0 z-20 flex w-72 select-none flex-col border-r pt-3 font-sans ${

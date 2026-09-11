@@ -131,11 +131,111 @@ Status: KNOWN_CONFLICT until source/config is aligned.
 
 ## 9. Sepolia Deployment Status
 
-Sepolia is target/configured, but deployment evidence found during audit is local/Anvil.
+Runtime verification on 2026-09-11 confirmed deployed bytecode at
+`0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3` on Sepolia. The deployment
+transaction sender `0x10dd719B6a13e9d275990d706C2640ab6F1CA28e` currently has both
+`OPERATOR_ROLE` and `ARBITRATOR_ROLE` and has Sepolia ETH for gas.
 
-Do not mark Sepolia deployment IMPLEMENTED based only on config or placeholder addresses.
+The current database is not reconciled with that deployment. Four agreements
+marked `ACTIVE` locally return on-chain agreement status `NONE`. Their historical
+payment transactions called a smart-account execution endpoint which performed
+raw ERC-20 transfers to the escrow address instead of calling
+`fundAgreement(bytes32)`. The escrow address consequently holds 38.4 USDC
+(`38,400,000` base units with six decimals) that are not allocated to any agreement.
+The deployed V1 contract has no rescue/sweep function, so these historical raw
+transfers cannot be settled through the per-agreement functions.
+
+Do not treat a local `ACTIVE`/`LOCKED` row as proof of funding. A usable agreement
+must return on-chain status `FUNDED`, and activation must originate from an
+ingested, confirmed `AgreementFunded` event emitted by the configured escrow.
+
+The backend operator was enabled locally on 2026-09-11 after successful keystore
+decryption and role verification. Startup scheduling is
+catch-up based: confirmed proposals whose on-chain dispute deadline elapsed while
+the service was offline are queued for finalization after restart.
+
+The replay of five completed classes produced ten per-agreement proposals. Legacy
+intents contain the old Anvil platform address as sender and fail before signing.
+New agreement initiation now obtains platform wallet, chain, escrow and token
+from the validated configured deployment instead of hard-coded values. Existing
+signed agreements were not rewritten; they require an explicit replacement terms
+and funding process. The current master contract cannot allocate the historical
+direct token transfers. No successful per-session Sepolia payout is yet verified.
+
+Later runtime reconciliation on 2026-09-11 verified one correctly registered new
+agreement (`Vật lý lớp 9 (2026 -002)`, local id
+`6355b191-333a-426b-8f24-a1f06177fd4c`) at on-chain agreement id
+`0xd0327b1e4f0ac6b75eefe7b2445e63cb55756985be6a134282d44fb52b6708e9`.
+Registration transaction
+`0xd70e0051653e2166d1487ef30fb2549117f966fed36351c9a4bf4eefa3510b18`
+was successful in Sepolia block `11680831`, and the confirmed
+`AgreementRegistered` event moved the local agreement to `WAITING_PAYMENT`.
+This particular broadcast was performed by a one-off recovery script, so it is
+not production evidence that the automatic registration path completed end to
+end. The database transaction audit metadata was subsequently reconciled from
+the confirmed public transaction; the processed event remains the authoritative
+proof of the state transition.
+The on-chain agreement remains `CREATED`, with `remainingAmount=0`; therefore
+this proves registration only, not funding or settlement. Its amount is 4.8 USDC
+for eight sessions at 0.6 USDC/session, and its on-chain payment deadline is
+2026-09-12 08:45:12 UTC (the Solidity payment window is 24 hours, not 48 hours).
+
+Before the funding step, the Web modal was hardened to require the agreement's
+exact chain id before allowance, approval, or `fundAgreement`. Payment submission
+is also idempotent when the confirmed `AgreementFunded` event reaches the backend
+before the browser submits the same transaction hash. Neither change relaxes
+wallet ownership, amount, deadline, or confirmed-event checks.
 
 ## 10. Blockchain Guardrails
+
+### Unattended session settlement runtime
+
+The operator unlocks its keystore once at service startup; it does not require
+human confirmation per session. Set `BLOCKCHAIN_OPERATOR_KEYSTORE_PASSWORD_FILE`
+to an absolute path to a protected UTF-8 secret file (outside the repository), or
+supply `BLOCKCHAIN_OPERATOR_KEYSTORE_PASSWORD` through the process environment.
+The environment password takes precedence. A mounted secret file supports server
+restarts without an interactive prompt. Never commit either secret.
+
+Required runtime settings: `BLOCKCHAIN_ENABLED=true`,
+`BLOCKCHAIN_OPERATOR_ENABLED=true`, operator address, keystore path, and one of
+the password sources above. Both Learning and Contract services must be running;
+opening the IDE alone starts no scheduler. After deployment the same workers run
+continuously while the services remain up. After downtime they catch up.
+
+Before signing each transaction, the operator checks the RPC chain ID and runs
+`eth_call` with the intended sender and calldata. A reverting preflight enters
+the existing bounded retry/failure pipeline without a broadcast or gas charge.
+Preflight cannot guarantee inclusion success if state changes after simulation.
+This isolates invalid legacy intents but does not repair unfunded agreements.
+
+The 24-hour deadline starts with the confirmed on-chain proposal, not the class
+end time. A previously unproposed old class still needs the full dispute window.
+Only confirmed settlement events establish USDC payout/refund success.
+
+### Operational funding boundary and legacy agreements
+
+Contract Service classifies an agreement as operationally funded only when its
+`escrow_payment.fund_tx_hash` matches an ingested `processed_event` of type
+`AGREEMENT_FUNDED` on the same chain. A local `ACTIVE` value by itself is not
+sufficient. Automatic session proposals and direct settlement/cancellation
+actions reject active/completed agreements without this evidence.
+
+The Admin/Staff contract view defaults to operational agreements. Legacy rows
+remain available under an explicit audit-only filter, are excluded from escrow
+and released-value KPIs, and expose no settlement or refund action. Admin may
+audit all agreements; Staff is limited by the assigned classroom reviewer.
+Neither role may sign on behalf of a Student or Tutor. Manual lifecycle
+operations such as explicit `expire` or whole-agreement `cancel/refund unused`
+are Admin-only operational actions; Staff handles assigned monitoring,
+settlement/dispute review, and dispute resolution scope rather than cancelling
+active agreements directly.
+
+Runtime verification on 2026-09-11 found four legacy agreement rows belonging
+to the two old classes without a confirmed funding event, and one operational
+agreement (`6355b191-333a-426b-8f24-a1f06177fd4c`, `Vật lý lớp 9 (2026 -002)`)
+with confirmed `AgreementFunded` evidence. The latter is the only current row
+eligible for the automatic per-session settlement pipeline.
 
 - Solidity is the ABI/interface source of truth.
 - ETH is not the escrow asset.

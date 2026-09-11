@@ -93,5 +93,6 @@ export const classApi = {
     body: JSON.stringify({ reason })
   }),
   getBufferPoolStatus: (classId) => apiRequest(`/api/learning/v1/classes/${classId}/buffer-pool`),
-  getStudentClasses: () => apiRequest('/api/learning/student/classes')
+  getStudentClasses: () => apiRequest('/api/learning/student/classes'),
+  getStudentSchedule: () => apiRequest('/api/learning/v1/student/schedule')
 };

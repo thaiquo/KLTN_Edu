@@ -54,6 +54,9 @@ public class ClassSession {
     @Column(nullable = false, length = 30)
     private ClassSessionStatus status = ClassSessionStatus.SCHEDULED;
 
+    @Column(nullable = false)
+    private boolean settlementDispatched = false;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 

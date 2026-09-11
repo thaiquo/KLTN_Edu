@@ -1,14 +1,17 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import {
   BookOpen, Calendar, Clock, DollarSign, Eye, Filter, Globe, Key, MapPin,
-  Search, SlidersHorizontal, Users, Video, ShieldCheck, ArrowRight
+  Search, SlidersHorizontal, Users, Video, ShieldCheck, ArrowRight,
+  AlertTriangle, CheckCircle2
 } from 'lucide-react';
 import { classApi } from '../../api/classes';
 import { teachingCatalogApi } from '../../api/teachingRegistrations';
 import { HomeHeader } from '../../components/home/HomeHeader';
 import { PublicClassDetailModal } from './PublicClassDetailModal';
+import { useAuth } from '../../hooks/useAuth';
+import { checkClassScheduleConflict, formatDayOfWeek, formatTimeSlot } from '../../utils/scheduleUtils';
 
 const VIETNAMESE_DAYS = [
   { value: 2, label: 'T2' },
@@ -23,6 +26,7 @@ const VIETNAMESE_DAYS = [
 export function ClassMarketplacePage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   // Real DB Filter State
   const [filters, setFilters] = useState({
@@ -35,6 +39,10 @@ export function ClassMarketplacePage() {
     mode: searchParams.get('mode') || '',
     tutorEmail: searchParams.get('tutorEmail') || ''
   });
+
+  // Schedule conflict filtering for logged-in students
+  const [filterNoConflict, setFilterNoConflict] = useState(false);
+  const [studentSchedule, setStudentSchedule] = useState({ recurringSchedules: [], upcomingSessions: [] });
 
   // Dynamic Catalog Dropdowns from DB via teachingCatalogApi
   const [programTypes, setProgramTypes] = useState([]);
@@ -49,6 +57,17 @@ export function ClassMarketplacePage() {
 
   // Selected Class Modal
   const [selectedClass, setSelectedClass] = useState(null);
+
+  // Load student schedule if active role is STUDENT
+  useEffect(() => {
+    if (user?.activeRole === 'STUDENT') {
+      classApi.getStudentSchedule()
+        .then((data) => setStudentSchedule(data || { recurringSchedules: [], upcomingSessions: [] }))
+        .catch(() => setStudentSchedule({ recurringSchedules: [], upcomingSessions: [] }));
+    } else {
+      setStudentSchedule({ recurringSchedules: [], upcomingSessions: [] });
+    }
+  }, [user]);
 
   // 1. Fetch Program Types & Education Levels on Mount
   useEffect(() => {
@@ -128,7 +147,18 @@ export function ClassMarketplacePage() {
 
   const selectedProgram = programTypes.find((p) => String(p.id) === String(filters.programTypeId));
   const isAcademic = selectedProgram?.code === 'ACADEMIC';
-  const hasFilter = Object.values(filters).some(Boolean);
+  const hasFilter = Object.values(filters).some(Boolean) || filterNoConflict;
+
+  // Filter classes based on schedule conflict toggle
+  const displayedClasses = useMemo(() => {
+    if (!filterNoConflict || !studentSchedule?.recurringSchedules?.length) {
+      return classList;
+    }
+    return classList.filter((cls) => {
+      const conflict = checkClassScheduleConflict(cls, studentSchedule.recurringSchedules);
+      return !conflict;
+    });
+  }, [classList, filterNoConflict, studentSchedule]);
 
   function updateFilter(e) {
     const { name, value } = e.target;
@@ -164,6 +194,7 @@ export function ClassMarketplacePage() {
       mode: '',
       tutorEmail: ''
     });
+    setFilterNoConflict(false);
   }
 
   return (
@@ -183,12 +214,12 @@ export function ClassMarketplacePage() {
                 Tìm lớp học phù hợp cho bạn
               </h1>
               <p className="mt-3 max-w-2xl text-base font-semibold leading-7 text-slate-300">
-                Lọc các lớp học theo Loại chương trình, Cấp học, Lĩnh vực chuyên môn, Môn học và Lớp trình độ trực tiếp từ Database.
+                Lọc các lớp học theo Loại chương trình, Cấp học, Lĩnh vực chuyên môn, Môn học và tự động đối soát lịch để tránh trùng thời khóa biểu.
               </p>
             </div>
             <div className="rounded-[22px] border border-white/10 bg-white/8 p-5 space-y-1 backdrop-blur-xs">
               <p className="text-xs font-bold text-slate-200">
-                💡 Dữ liệu môn học và chương trình được đồng bộ thời gian thực từ Database hệ thống.
+                💡 Dữ liệu môn học và lịch học được đối soát thời gian thực với thời khóa biểu của bạn.
               </p>
             </div>
           </div>
@@ -248,24 +279,23 @@ export function ClassMarketplacePage() {
             </label>
 
             {/* 3. Education Level (only if Academic) */}
-            {isAcademic && (
-              <label className="grid gap-1.5 text-xs font-black text-slate-800 uppercase tracking-wider">
-                Cấp học
-                <select
-                  name="educationLevelId"
-                  value={filters.educationLevelId}
-                  onChange={updateFilter}
-                  className="min-h-[44px] rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-900 outline-none focus:border-brand-primary"
-                >
-                  <option value="">Tất cả cấp học</option>
-                  {educationLevels.map((edu) => (
-                    <option key={edu.id} value={edu.id}>
-                      {edu.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
+            <label className="grid gap-1.5 text-xs font-black text-slate-800 uppercase tracking-wider">
+              Cấp học (Phổ thông)
+              <select
+                name="educationLevelId"
+                value={filters.educationLevelId}
+                onChange={updateFilter}
+                disabled={!isAcademic && educationLevels.length === 0}
+                className="min-h-[44px] rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-900 outline-none focus:border-brand-primary disabled:opacity-50"
+              >
+                <option value="">Tất cả cấp học</option>
+                {educationLevels.map((edu) => (
+                  <option key={edu.id} value={edu.id}>
+                    {edu.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
             {/* 4. Category */}
             <label className="grid gap-1.5 text-xs font-black text-slate-800 uppercase tracking-wider">
@@ -339,6 +369,22 @@ export function ClassMarketplacePage() {
               </select>
             </label>
 
+            {/* 8. Schedule conflict filter (for logged-in student) */}
+            {user?.activeRole === 'STUDENT' && (
+              <div className="flex flex-col justify-end">
+                <label className="flex min-h-[44px] items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/70 px-3 text-xs font-black text-indigo-950 cursor-pointer hover:bg-indigo-100/70 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={filterNoConflict}
+                    onChange={(e) => setFilterNoConflict(e.target.checked)}
+                    className="h-4 w-4 rounded border-slate-300 text-brand-primary focus:ring-brand-primary"
+                  />
+                  <Calendar className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="truncate">Lọc không trùng lịch</span>
+                </label>
+              </div>
+            )}
+
           </div>
         </section>
 
@@ -351,9 +397,16 @@ export function ClassMarketplacePage() {
                 Danh sách lớp học mở bán
               </h2>
             </div>
-            <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-600 shadow-2xs">
-              <Filter size={14} /> {loading ? 'Đang lọc...' : `${classList.length} lớp học`}
-            </span>
+            <div className="flex items-center gap-2">
+              {filterNoConflict && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-800">
+                  <Calendar size={13} /> Đang lọc tránh trùng lịch
+                </span>
+              )}
+              <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-600 shadow-2xs">
+                <Filter size={14} /> {loading ? 'Đang lọc...' : `${displayedClasses.length} lớp học`}
+              </span>
+            </div>
           </div>
 
           {error && (
@@ -373,7 +426,7 @@ export function ClassMarketplacePage() {
                 </div>
               ))}
             </div>
-          ) : classList.length === 0 ? (
+          ) : displayedClasses.length === 0 ? (
             <div className="grid place-items-center rounded-[24px] border border-dashed border-slate-300 bg-white px-6 py-14 text-center space-y-3">
               <span className="grid h-14 w-14 place-items-center rounded-2xl bg-blue-50 text-brand-primary">
                 <BookOpen size={24} />
@@ -381,7 +434,7 @@ export function ClassMarketplacePage() {
               <h3 className="font-display text-xl font-extrabold text-slate-950">Không tìm thấy lớp học nào</h3>
               <p className="max-w-md text-xs font-semibold leading-6 text-slate-500">
                 {hasFilter
-                  ? 'Thử nới lỏng từ khóa hoặc chọn bộ lọc môn học khác.'
+                  ? 'Thử nới lỏng từ khóa hoặc bỏ lọc trùng lịch để xem thêm lớp.'
                   : 'Hiện chưa có lớp học nào mở bán công khai. Vui lòng quay lại sau!'}
               </p>
               {hasFilter && (
@@ -396,7 +449,7 @@ export function ClassMarketplacePage() {
             </div>
           ) : (
             <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-              {classList.map((cls) => {
+              {displayedClasses.map((cls) => {
                 const tutorName = getTutorDisplayName(cls);
                 const VND_PER_USDC = 25000;
                 const pricePerSession = Number(cls.pricePerSession) || 0;
@@ -406,6 +459,10 @@ export function ClassMarketplacePage() {
                 const totalSessions = cls.totalSessions || totalSessionsFromChapters || 0;
                 const totalCoursePriceVnd = pricePerSession * totalSessions;
                 const totalCoursePriceUsdc = (totalCoursePriceVnd / VND_PER_USDC).toFixed(2);
+
+                const scheduleConflict = user?.activeRole === 'STUDENT'
+                  ? checkClassScheduleConflict(cls, studentSchedule?.recurringSchedules)
+                  : null;
 
                 return (
                   <article 
@@ -418,11 +475,27 @@ export function ClassMarketplacePage() {
                         <span className="px-2.5 py-1 rounded-lg bg-brand-primary/10 text-brand-primary text-[11px] font-black uppercase tracking-wider">
                           {cls.registration?.subjectName || 'Môn học'} &bull; {cls.level?.name || 'Cấp độ'}
                         </span>
-                        {cls.joinMode === 'INVITE_KEY' && (
-                          <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-sky-50 text-sky-800 border border-sky-200 flex items-center gap-1">
-                            <Key className="w-3 h-3 text-sky-600" /> Cần Mã Mời
-                          </span>
-                        )}
+                        
+                        <div className="flex items-center gap-1.5">
+                          {scheduleConflict ? (
+                            <span
+                              className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1"
+                              title={`Trùng lịch với: ${scheduleConflict.conflictingClassTitle} (${scheduleConflict.dayLabel} ${scheduleConflict.activeTime})`}
+                            >
+                              <AlertTriangle className="w-3 h-3 text-amber-600" /> Trùng lịch
+                            </span>
+                          ) : studentSchedule?.recurringSchedules?.length > 0 && user?.activeRole === 'STUDENT' ? (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Hợp lịch
+                            </span>
+                          ) : null}
+
+                          {cls.joinMode === 'INVITE_KEY' && (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold bg-sky-50 text-sky-800 border border-sky-200 flex items-center gap-1">
+                              <Key className="w-3 h-3 text-sky-600" /> Cần Mã Mời
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <div>
@@ -458,45 +531,54 @@ export function ClassMarketplacePage() {
                       <div className="grid grid-cols-2 gap-2 text-xs pt-1">
                         <div className="flex items-center gap-1.5 text-slate-600">
                           {cls.learningMode === 'ONLINE' ? (
-                            <Video className="w-3.5 h-3.5 text-brand-primary shrink-0" />
+                            <>
+                              <Video className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span className="font-bold truncate">Học Online</span>
+                            </>
                           ) : (
-                            <MapPin className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            <>
+                              <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                              <span className="font-bold truncate">{cls.province || 'Học Offline'}</span>
+                            </>
                           )}
-                          <span className="font-bold truncate">
-                            {cls.learningMode === 'ONLINE' ? 'Học Online' : (cls.address || 'Học Offline')}
+                        </div>
+                        <div className="flex items-center gap-1.5 text-slate-600 justify-end">
+                          <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span className="font-bold">
+                            {cls.acceptedCount || 0}/{cls.maxStudents || 1} học viên
                           </span>
                         </div>
-
-                        <div className="flex items-center gap-1.5 text-slate-600">
-                          <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span className="font-bold">Tối đa {cls.maxStudents} HV</span>
-                        </div>
                       </div>
 
-                      <div className="flex items-center gap-1 flex-wrap pt-1">
-                        <span className="text-[10px] font-black uppercase text-slate-400 mr-1">Lịch:</span>
-                        {cls.schedules && cls.schedules.map((s) => {
-                          const dayLabel = VIETNAMESE_DAYS.find((d) => d.value === s.dayOfWeek)?.label || `T${s.dayOfWeek}`;
-                          return (
-                            <span key={s.id} className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold border border-slate-200">
-                              {dayLabel} ({s.startTime}-{s.endTime})
+                      {/* Recurring Schedules Chips */}
+                      {Array.isArray(cls.recurringSchedules) && cls.recurringSchedules.length > 0 && (
+                        <div className="pt-2 border-t border-slate-100 flex flex-wrap gap-1.5">
+                          {cls.recurringSchedules.map((sch, i) => (
+                            <span 
+                              key={i}
+                              className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md text-[10px] font-bold flex items-center gap-1"
+                            >
+                              <Clock className="w-2.5 h-2.5 text-slate-500" />
+                              {formatDayOfWeek(sch.dayOfWeek)}: {sch.startTime?.slice(0, 5)} - {sch.endTime?.slice(0, 5)}
                             </span>
-                          );
-                        })}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
-                    <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
                       <div>
-                        <span className="text-[10px] font-bold uppercase text-slate-400 block">
-                          Học phí {totalSessions > 0 ? `(${totalSessions} buổi)` : '/ buổi'}
-                        </span>
-                        <strong className="font-display text-base font-black text-brand-primary">
-                          {pricePerSession.toLocaleString('vi-VN')} đ <span className="text-[10px] text-slate-500 font-semibold">/ buổi</span>
-                        </strong>
-                        {totalCoursePriceVnd > 0 && (
-                          <span className="block text-[10px] font-bold text-emerald-600">
-                            Khóa: {totalCoursePriceVnd.toLocaleString('vi-VN')} đ (~{totalCoursePriceUsdc} USDC)
+                        <div className="flex items-baseline gap-1">
+                          <span className="font-display font-black text-base text-slate-900">
+                            {pricePerSession > 0 ? pricePerSession.toLocaleString('vi-VN') : 'Miễn phí'}
+                          </span>
+                          {pricePerSession > 0 && (
+                            <span className="text-[10px] font-bold text-slate-500">đ/buổi</span>
+                          )}
+                        </div>
+                        {pricePerSession > 0 && (
+                          <span className="text-[10px] font-extrabold text-brand-primary">
+                            Trọn khóa: {totalCoursePriceVnd.toLocaleString('vi-VN')} đ (~${totalCoursePriceUsdc} USDC)
                           </span>
                         )}
                       </div>
@@ -526,6 +608,7 @@ export function ClassMarketplacePage() {
         <PublicClassDetailModal
           classRoom={selectedClass}
           onClose={() => setSelectedClass(null)}
+          onRefreshClass={loadClasses}
         />
       )}
     </div>

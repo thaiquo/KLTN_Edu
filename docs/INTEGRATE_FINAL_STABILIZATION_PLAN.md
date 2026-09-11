@@ -236,3 +236,43 @@ Trước main:
 
 Các mục chưa đánh dấu không phải đã hoàn thành; bản kế hoạch này không chứng nhận
 integrate-final sẵn sàng main.
+
+## 11. Đợt 6 — Catch-up settlement cho buổi không có người check-in
+
+Không bổ sung quy tắc nghiệp vụ mới. Áp dụng đúng ma trận P0 hiện có:
+
+- Tutor không check-in, Student có hoặc không check-in -> `TUTOR_ABSENT`.
+- `TUTOR_ABSENT` -> Tutor 0%, Platform 0%, hoàn Student 100% giá buổi.
+- Không có `session_attendance` sau khi buổi đã `COMPLETED` được hiểu là cả hai
+  không check-in, không phải là lý do bỏ qua settlement.
+- Mỗi agreement Student nhận một proposal riêng theo `sequenceNumber` của buổi.
+- Deadline 24 giờ chỉ bắt đầu khi `SessionSettlementProposed` được xác nhận on-chain.
+- Khi service khởi động lại, proposal đã xác nhận và quá deadline phải được quét bù;
+  chỉ `SessionSettled` xác nhận mới là bằng chứng giải ngân/hoàn tiền thành công.
+
+Tasks:
+
+- [x] Delivery worker gửi cả buổi `COMPLETED` có attendance rỗng sang Contract Service
+  và chỉ acknowledge khi Contract Service chấp nhận.
+- [x] Contract Service ánh xạ agreement không có row check-in thành `TUTOR_ABSENT`,
+  không còn mặc định sai thành `BOTH_PRESENT`.
+- [x] Migration một lần đưa mọi buổi `COMPLETED` cũ về hàng đợi delivery để các
+  buổi từng bị acknowledge khi attendance rỗng cũng được đối soát lại.
+- [x] Giữ outcome đã finalize trong attendance làm nguồn có thẩm quyền khi row tồn tại.
+- [x] Thêm regression test cho attendance rỗng và catch-up scheduler sau restart.
+- [x] Lịch sử ví bỏ synthetic `SUCCESS`, chỉ tính payout/refund từ settlement final
+  đã xác nhận, kèm phân bổ Tutor/Platform/Student và tx hash.
+- [x] Đồng bộ ABI event frontend với Solidity.
+- [x] Đọc mật khẩu keystore từ secret file để khởi động không cần nhập tương tác;
+  script operator chỉ hỏi nếu chưa cấu hình nguồn mật khẩu.
+- [x] Kiểm tra chain ID và mô phỏng calldata trước khi ký; intent revert không
+  broadcast, không tốn gas. Có regression test cho sai chain và revert.
+- [x] Gom môi trường về `.env` gốc; xác minh mật khẩu, bật operator và restart
+  Learning/Contract. Quét thực tế 5 buổi tạo 10 proposal, chưa có payout on-chain.
+- [x] Sửa API tạo agreement bỏ ví Anvil hard-code, lấy deployment đã xác minh.
+- [ ] Thay thế điều khoản legacy có platform wallet sai bằng version được Tutor/
+  Student xác nhận; giữ nguyên lịch sử cũ. Student cần ký giao dịch funding hợp lệ.
+- [ ] Reconcile bốn agreement `ACTIVE` cũ đang `NONE` on-chain và ba intent
+  `PROPOSE/CREATED` trước khi bật operator; không broadcast intent sai trạng thái.
+- [ ] Tạo/fund agreement hợp lệ bằng `fundAgreement(bytes32)` và chạy một E2E Sepolia
+  từ attendance -> proposal -> 24h -> finalize -> `SessionSettled`.

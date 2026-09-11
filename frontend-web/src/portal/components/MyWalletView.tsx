@@ -25,7 +25,7 @@ import { useWeb3Wallet } from "../../web3/useWeb3Wallet";
 import { DEFAULT_CHAIN_ID, SUPPORTED_CHAINS, getContractAddresses } from "../../web3/web3Config";
 import { apiRequest } from "../../api/client";
 import { userApi } from "../../api/user";
-import { contractsApi, AgreementSummary, BlockchainTxDto } from "../../api/contractsApi";
+import { contractsApi, AgreementSummary, SettlementDto } from "../../api/contractsApi";
 import { useAuth } from "../../hooks/useAuth";
 
 interface MyWalletViewProps {
@@ -53,6 +53,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<"ALL" | "FUND" | "SETTLE">("ALL");
   const [agreements, setAgreements] = useState<AgreementSummary[]>([]);
+  const [settlements, setSettlements] = useState<SettlementDto[]>([]);
   const [txLogs, setTxLogs] = useState<any[]>([]);
   const [loadingAgreements, setLoadingAgreements] = useState(false);
 
@@ -101,38 +102,49 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
         const list: AgreementSummary[] = data?.content || (Array.isArray(data) ? data : []);
         setAgreements(list);
 
-        // Fetch detailed blockchain transaction logs for each agreement
+        // Build the financial ledger from confirmed settlements. Transaction
+        // intents stay visible for diagnostics but are never presented as payouts.
         const allTxEvents: any[] = [];
+        const allSettlements: SettlementDto[] = [];
         for (const ag of list) {
           try {
-            const rawTxs = await contractsApi.getAgreementTransactions(ag.id).catch(() => []);
+            const [rawTxs, agreementSettlements] = await Promise.all([
+              contractsApi.getAgreementTransactions(ag.id).catch(() => []),
+              contractsApi.getSettlements(ag.id).catch(() => []),
+            ]);
+            allSettlements.push(...agreementSettlements);
+
+            for (const settlement of agreementSettlements) {
+              if (settlement.status !== "SETTLED" && settlement.status !== "REFUNDED") continue;
+              allTxEvents.push({
+                id: `settlement-${settlement.id}`,
+                agreementId: ag.id,
+                className: ag.className || `Lớp học #${ag.classroomId}`,
+                type: "SETTLE",
+                actionName: settlement.status === "REFUNDED"
+                  ? `Hoàn tiền buổi #${settlement.sessionId} (${settlement.outcome})`
+                  : `Giải ngân buổi #${settlement.sessionId} (${settlement.outcome})`,
+                txHash: settlement.finalizeTxHash,
+                amountUsdc: isTutor ? settlement.tutorAmountUsdc : settlement.studentRefundUsdc,
+                distribution: `Gia sư ${settlement.tutorAmountUsdc} / Nền tảng ${settlement.platformAmountUsdc} / Hoàn HV ${settlement.studentRefundUsdc} USDC`,
+                status: settlement.status,
+                createdAt: settlement.createdAt,
+              });
+            }
+
             if (Array.isArray(rawTxs) && rawTxs.length > 0) {
               for (const tx of rawTxs) {
+                if (tx.action === "FINALIZE") continue;
                 allTxEvents.push({
                   id: tx.id || `tx-${tx.transactionHash}`,
                   agreementId: ag.id,
                   className: ag.className || `Lớp học #${ag.classroomId}`,
-                  type: tx.action?.includes("DEPOSIT") || tx.action?.includes("FUND") ? "FUND" : tx.action?.includes("SETTLE") ? "SETTLE" : "OTHER",
+                  type: tx.action?.includes("DEPOSIT") || tx.action?.includes("FUND") ? "FUND" : "OTHER",
                   actionName: tx.action || "Giao dịch Escrow",
                   txHash: tx.transactionHash,
-                  amountUsdc: ag.totalAmountUsdc,
-                  status: tx.status || "SUCCESS",
+                  amountUsdc: null,
+                  status: tx.status,
                   createdAt: tx.createdAt || ag.createdAt,
-                });
-              }
-            } else {
-              // Synthetic record from agreement snapshot if backend tx log array is empty
-              if (ag.status === "ACTIVE" || ag.status === "COMPLETED" || (ag as any).fundedTxHash) {
-                allTxEvents.push({
-                  id: `funded-${ag.id}`,
-                  agreementId: ag.id,
-                  className: ag.className || `Lớp học #${ag.classroomId}`,
-                  type: "FUND",
-                  actionName: "Nạp Cọc Escrow (Smart Contract)",
-                  txHash: (ag as any).fundedTxHash || (ag as any).onchainAgreementId,
-                  amountUsdc: ag.totalAmountUsdc,
-                  status: "SUCCESS",
-                  createdAt: ag.createdAt,
                 });
               }
             }
@@ -140,6 +152,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
             console.warn(`Could not load txs for agreement ${ag.id}:`, e);
           }
         }
+        setSettlements(allSettlements);
         setTxLogs(allTxEvents);
       } catch (err) {
         console.warn("Could not load agreements for wallet overview:", err);
@@ -210,9 +223,9 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
     .filter((a) => (a.onchainFunded || a.status === "ACTIVE") && a.status !== "COMPLETED" && a.status !== "REFUNDED")
     .reduce((acc, curr) => acc + (Number(curr.remainingDeposit ?? curr.totalAmountUsdc ?? curr.totalAmount) || 0), 0);
 
-  const totalDisbursedAmount = agreements
-    .filter((a) => a.status === "COMPLETED" || (a.settledSessions > 0))
-    .reduce((acc, curr) => acc + ((Number(curr.totalAmountUsdc ?? curr.totalAmount) || 0) - (Number(curr.remainingDeposit) || 0)), 0);
+  const totalDisbursedAmount = settlements
+    .filter((settlement) => settlement.status === "SETTLED")
+    .reduce((total, settlement) => total + Number(settlement.tutorAmountUsdc || 0), 0);
 
   return (
     <section className="mx-auto max-w-6xl pb-16 font-sans text-slate-800 space-y-8 select-none">
@@ -636,7 +649,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
             <RefreshCw className="h-4 w-4 animate-spin text-brand-primary" />
             <span>Đang tải lịch sử hợp đồng Escrow...</span>
           </div>
-        ) : agreements.length === 0 ? (
+        ) : txLogs.length === 0 ? (
           <div className="py-12 text-center space-y-3">
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-slate-100 text-slate-400">
               <History className="h-6 w-6" />
@@ -659,27 +672,15 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {(txLogs.length > 0
-                  ? txLogs.filter((log) => activeTab === "ALL" || log.type === activeTab)
-                  : agreements.map((ag) => ({
-                      id: ag.id,
-                      agreementId: ag.id,
-                      className: ag.className || `Lớp học #${ag.classroomId}`,
-                      type: ag.onchainFunded || ag.status === "ACTIVE" || ag.status === "COMPLETED" ? "FUND" : "OTHER",
-                      actionName: ag.onchainFunded || ag.status === "ACTIVE" || ag.status === "COMPLETED" ? "Nạp Cọc Smart Contract Escrow" : "Khởi tạo Hợp đồng Chờ nạp cọc",
-                      txHash: (ag as any).fundedTxHash || (ag as any).onchainAgreementId,
-                      amountUsdc: ag.totalAmountUsdc,
-                      status: ag.status,
-                      createdAt: ag.createdAt,
-                    }))
-                ).map((item) => (
+                {txLogs.filter((log) => activeTab === "ALL" || log.type === activeTab).map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="py-3.5 pr-3">
                       <p className="font-bold text-slate-800 text-xs">Mã Hợp đồng #{String(item.agreementId).slice(0, 8)}</p>
                       <p className="text-[11px] text-slate-500 font-medium">Lớp: {item.className || "Chưa cập nhật tên lớp"}</p>
+                      {item.distribution && <p className="text-[10px] text-slate-500 font-mono mt-1">{item.distribution}</p>}
                     </td>
                     <td className="py-3.5 pr-3">
-                      {item.type === "FUND" || item.status === "ACTIVE" || item.status === "COMPLETED" ? (
+                      {item.type === "FUND" && item.status === "CONFIRMED" ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-emerald-700 border border-emerald-200">
                           <CheckCircle2 className="h-3 w-3 text-emerald-600" /> {item.actionName || "Đã nạp cọc Smart Contract"}
                         </span>
@@ -687,14 +688,18 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                         <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-blue-700 border border-blue-200">
                           <CheckCircle2 className="h-3 w-3 text-blue-600" /> {item.actionName || "Giải ngân buổi học"}
                         </span>
+                      ) : item.status === "FAILED" ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-rose-700 border border-rose-200">
+                          {item.actionName} · Thất bại
+                        </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-amber-700 border border-amber-200">
-                          Chờ nạp cọc Escrow
+                          {item.actionName} · {item.status}
                         </span>
                       )}
                     </td>
                     <td className="py-3.5 pr-3 font-mono font-bold text-emerald-700 text-sm">
-                      {(Number(item.amountUsdc) || 0).toLocaleString("vi-VN")} USDC
+                      {item.amountUsdc == null ? "—" : `${(Number(item.amountUsdc) || 0).toLocaleString("vi-VN")} USDC`}
                     </td>
                     <td className="py-3.5 pr-3 text-slate-500 font-mono text-[11px]">
                       {item.createdAt ? new Date(item.createdAt).toLocaleString("vi-VN") : "N/A"}

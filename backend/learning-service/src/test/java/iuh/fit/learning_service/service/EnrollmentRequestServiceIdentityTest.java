@@ -20,6 +20,9 @@ class EnrollmentRequestServiceIdentityTest {
 
     private final EnrollmentRequestRepository enrollmentRequestRepository = mock(EnrollmentRequestRepository.class);
 
+    private final iuh.fit.learning_service.repository.ClassSessionRepository classSessionRepository = mock(
+            iuh.fit.learning_service.repository.ClassSessionRepository.class);
+
     private final TutorAuthorizationStateRepository tutorAuthorizationStateRepository = mock(
             TutorAuthorizationStateRepository.class);
 
@@ -28,6 +31,7 @@ class EnrollmentRequestServiceIdentityTest {
     private final EnrollmentRequestService service = new EnrollmentRequestService(
             classRoomRepository,
             enrollmentRequestRepository,
+            classSessionRepository,
             tutorAuthorizationStateRepository,
             eventPublisher);
 

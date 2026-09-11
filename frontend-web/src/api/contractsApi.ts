@@ -35,6 +35,8 @@ export interface AgreementSummary {
   escrowContractAddress: string | null;
   classroomReviewerEmail: string | null;
   onchainFunded?: boolean;
+  legacyUnreconciled?: boolean;
+  settlementEligible?: boolean;
   totalAmount?: number;
   remainingDeposit?: number;
   fundedTxHash?: string;
@@ -283,6 +285,17 @@ export const contractsApi = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ approved, reason }),
+    });
+  },
+
+  submitTutorDisputeEvidence(
+    disputeId: string,
+    payload: { responseText: string; evidenceFileUrl?: string }
+  ): Promise<DisputeDto> {
+    return apiRequest(`/api/contracts/disputes/${disputeId}/tutor-evidence`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
   },
 

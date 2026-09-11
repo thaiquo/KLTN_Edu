@@ -2,6 +2,8 @@ package iuh.fit.learning_service.service;
 
 import iuh.fit.learning_service.dto.EnrollmentRequestDtos.*;
 import iuh.fit.learning_service.entity.ClassRoom;
+import iuh.fit.learning_service.entity.ClassSchedule;
+import iuh.fit.learning_service.entity.ClassSession;
 import iuh.fit.learning_service.entity.EnrollmentRequest;
 import iuh.fit.learning_service.enums.ClassRoomStatus;
 import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
@@ -11,12 +13,16 @@ import iuh.fit.learning_service.exception.ForbiddenException;
 import iuh.fit.learning_service.exception.ResourceNotFoundException;
 import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
+import iuh.fit.learning_service.repository.ClassSessionRepository;
 import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
 import iuh.fit.learning_service.repository.TutorAuthorizationStateRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 @Service
@@ -25,17 +31,20 @@ public class EnrollmentRequestService {
 
     private final ClassRoomRepository classRoomRepository;
     private final EnrollmentRequestRepository enrollmentRequestRepository;
+    private final ClassSessionRepository classSessionRepository;
     private final TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
     private final LearningEventPublisher eventPublisher;
 
     public EnrollmentRequestService(
             ClassRoomRepository classRoomRepository,
             EnrollmentRequestRepository enrollmentRequestRepository,
+            ClassSessionRepository classSessionRepository,
             TutorAuthorizationStateRepository tutorAuthorizationStateRepository,
             LearningEventPublisher eventPublisher
     ) {
         this.classRoomRepository = classRoomRepository;
         this.enrollmentRequestRepository = enrollmentRequestRepository;
+        this.classSessionRepository = classSessionRepository;
         this.tutorAuthorizationStateRepository = tutorAuthorizationStateRepository;
         this.eventPublisher = eventPublisher;
     }
@@ -100,6 +109,9 @@ public class EnrollmentRequestService {
         if (alreadySubmitted) {
             throw new BadRequestException("Bạn đã gửi yêu cầu hoặc đang tham gia lớp học này.");
         }
+
+        // Validate schedule conflict with student's active enrolled classes
+        validateNoScheduleConflict(classRoom, studentEmail);
 
         // Buffer pool ceiling check: Total_In_Pool = PENDING + ACCEPTED
         long pendingCount = enrollmentRequestRepository.countByClassRoomIdAndStatus(classRoomId, EnrollmentRequestStatus.PENDING);
@@ -404,6 +416,150 @@ public class EnrollmentRequestService {
         }
 
         return toResponse(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public StudentScheduleResponse getStudentSchedule(String studentEmail) {
+        List<EnrollmentRequest> activeRequests = enrollmentRequestRepository.findByStudentEmailWithDetails(studentEmail);
+        List<ClassRoom> activeClasses = activeRequests.stream()
+                .filter(r -> r.getStatus() == EnrollmentRequestStatus.ACCEPTED || r.getStatus() == EnrollmentRequestStatus.ENROLLED)
+                .map(EnrollmentRequest::getClassRoom)
+                .filter(c -> c != null && c.getStatus() != ClassRoomStatus.CLOSED && c.getStatus() != ClassRoomStatus.CANCELLED)
+                .distinct()
+                .toList();
+
+        List<ScheduleItemDto> recurringSchedules = new ArrayList<>();
+        for (ClassRoom classRoom : activeClasses) {
+            if (classRoom.getSchedules() != null) {
+                for (ClassSchedule schedule : classRoom.getSchedules()) {
+                    recurringSchedules.add(new ScheduleItemDto(
+                            classRoom.getId(),
+                            classRoom.getName(),
+                            classRoom.getTutorEmail(),
+                            classRoom.getTutorFullName(),
+                            classRoom.getMeetingLink(),
+                            classRoom.getAddress(),
+                            classRoom.getLearningMode() != null ? classRoom.getLearningMode().name() : "ONLINE",
+                            schedule.getDayOfWeek(),
+                            schedule.getStartTime(),
+                            schedule.getEndTime(),
+                            classRoom.getStartDate(),
+                            classRoom.getEndDate()
+                    ));
+                }
+            }
+        }
+
+        List<Long> classIds = activeClasses.stream().map(ClassRoom::getId).toList();
+        List<UpcomingSessionItemDto> sessions = new ArrayList<>();
+        if (!classIds.isEmpty()) {
+            List<ClassSession> classSessions = classSessionRepository.findByClassRoomIdInOrderBySessionDateAscStartTimeAsc(classIds);
+            for (ClassSession session : classSessions) {
+                int dayOfWeek = session.getSessionDate() != null
+                        ? (session.getSessionDate().getDayOfWeek().getValue() == 7 ? 8 : session.getSessionDate().getDayOfWeek().getValue() + 1)
+                        : 2;
+                sessions.add(new UpcomingSessionItemDto(
+                        session.getId(),
+                        session.getClassRoom().getId(),
+                        session.getClassRoom().getName(),
+                        session.getClassRoom().getTutorFullName(),
+                        session.getSequenceNumber(),
+                        session.getTopic(),
+                        session.getSessionDate(),
+                        dayOfWeek,
+                        session.getStartTime(),
+                        session.getEndTime(),
+                        session.getStatus() != null ? session.getStatus().name() : "SCHEDULED",
+                        session.getClassRoom().getMeetingLink(),
+                        session.getAssignmentTitle() != null && !session.getAssignmentTitle().isBlank()
+                ));
+            }
+        }
+
+        recurringSchedules.sort(Comparator.comparing(ScheduleItemDto::dayOfWeek, Comparator.nullsLast(Comparator.naturalOrder()))
+                .thenComparing(ScheduleItemDto::startTime, Comparator.nullsLast(Comparator.naturalOrder())));
+
+        return new StudentScheduleResponse(recurringSchedules, sessions);
+    }
+
+    private void validateNoScheduleConflict(ClassRoom targetClass, String studentEmail) {
+        if (targetClass.getSchedules() == null || targetClass.getSchedules().isEmpty()) {
+            return;
+        }
+
+        List<EnrollmentRequest> activeRequests = enrollmentRequestRepository.findByStudentEmailWithDetails(studentEmail);
+        List<ClassRoom> activeClasses = activeRequests.stream()
+                .filter(r -> r.getStatus() == EnrollmentRequestStatus.ACCEPTED || r.getStatus() == EnrollmentRequestStatus.ENROLLED)
+                .map(EnrollmentRequest::getClassRoom)
+                .filter(c -> c != null && c.getStatus() != ClassRoomStatus.CLOSED && c.getStatus() != ClassRoomStatus.CANCELLED)
+                .distinct()
+                .toList();
+
+        for (ClassRoom activeClass : activeClasses) {
+            if (activeClass.getId().equals(targetClass.getId())) {
+                continue;
+            }
+            if (targetClass.getStartDate() != null && targetClass.getEndDate() != null
+                    && activeClass.getStartDate() != null && activeClass.getEndDate() != null) {
+                boolean dateOverlaps = !(targetClass.getEndDate().isBefore(activeClass.getStartDate())
+                        || activeClass.getEndDate().isBefore(targetClass.getStartDate()));
+                if (!dateOverlaps) {
+                    continue;
+                }
+            }
+
+            if (activeClass.getSchedules() == null || activeClass.getSchedules().isEmpty()) {
+                continue;
+            }
+
+            for (ClassSchedule targetSlot : targetClass.getSchedules()) {
+                if (targetSlot.getDayOfWeek() == null || targetSlot.getStartTime() == null || targetSlot.getEndTime() == null) {
+                    continue;
+                }
+                LocalTime targetStart;
+                LocalTime targetEnd;
+                try {
+                    targetStart = LocalTime.parse(targetSlot.getStartTime().trim());
+                    targetEnd = LocalTime.parse(targetSlot.getEndTime().trim());
+                } catch (Exception e) {
+                    continue;
+                }
+
+                for (ClassSchedule activeSlot : activeClass.getSchedules()) {
+                    if (activeSlot.getDayOfWeek() == null || activeSlot.getStartTime() == null || activeSlot.getEndTime() == null) {
+                        continue;
+                    }
+                    if (!targetSlot.getDayOfWeek().equals(activeSlot.getDayOfWeek())) {
+                        continue;
+                    }
+
+                    LocalTime activeStart;
+                    LocalTime activeEnd;
+                    try {
+                        activeStart = LocalTime.parse(activeSlot.getStartTime().trim());
+                        activeEnd = LocalTime.parse(activeSlot.getEndTime().trim());
+                    } catch (Exception e) {
+                        continue;
+                    }
+
+                    // Overlap condition: start1 < end2 && start2 < end1
+                    boolean timeOverlaps = targetStart.isBefore(activeEnd) && activeStart.isBefore(targetEnd);
+                    if (timeOverlaps) {
+                        String dayLabel = formatDayOfWeek(targetSlot.getDayOfWeek());
+                        throw new BadRequestException(String.format(
+                                "Trùng lịch học: Lớp học này có lịch vào %s (%s - %s) bị trùng với lớp '%s' (%s - %s) mà bạn đang theo học.",
+                                dayLabel, targetSlot.getStartTime(), targetSlot.getEndTime(),
+                                activeClass.getName(), activeSlot.getStartTime(), activeSlot.getEndTime()
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    private String formatDayOfWeek(Integer dayOfWeek) {
+        if (dayOfWeek == null) return "";
+        return dayOfWeek == 8 ? "Chủ nhật" : "Thứ " + dayOfWeek;
     }
 
     private EnrollmentRequestResponse toResponse(EnrollmentRequest r) {

@@ -6,6 +6,7 @@ import iuh.fit.learning_service.entity.ClassSession;
 import iuh.fit.learning_service.entity.SessionAttendance;
 import iuh.fit.learning_service.enums.AttendanceOutcome;
 import iuh.fit.learning_service.enums.ClassSessionStatus;
+import iuh.fit.learning_service.exception.ForbiddenException;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.ClassSessionRepository;
 import iuh.fit.learning_service.repository.SessionAttendanceRepository;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -122,14 +124,8 @@ class SessionAttendanceServiceTest {
         ArgumentCaptor<List<ContractServiceDispatcher.StudentAttendanceOutcomeItem>> captor =
                 ArgumentCaptor.forClass(List.class);
 
-        verify(contractServiceDispatcher).dispatchAutoProposeAsync(eq(100L), eq(1L), captor.capture());
-
-        List<ContractServiceDispatcher.StudentAttendanceOutcomeItem> outcomes = captor.getValue();
-        assertThat(outcomes).hasSize(2);
-        assertThat(outcomes.get(0).studentId()).isEqualTo(201L);
-        assertThat(outcomes.get(0).outcome()).isEqualTo("BOTH_PRESENT");
-        assertThat(outcomes.get(1).studentId()).isEqualTo(202L);
-        assertThat(outcomes.get(1).outcome()).isEqualTo("STUDENT_ABSENT_TUTOR_PRESENT");
+        assertThat(session.isSettlementDispatched()).isFalse();
+        verifyNoInteractions(contractServiceDispatcher);
     }
 
     @Test
@@ -182,5 +178,40 @@ class SessionAttendanceServiceTest {
         assertThat(res.assignmentDescription()).isEqualTo("Làm câu 1-10");
         assertThat(res.assignmentFileUrl()).isEqualTo("https://storage/baitap1.pdf");
         assertThat(res.myCheckedIn()).isTrue();
+    }
+
+    @Test
+    @DisplayName("submitHomework rejects a student who did not check in")
+    void submitHomeworkRejectsStudentWithoutValidCheckIn() {
+        SessionAttendance attendance = new SessionAttendance();
+        attendance.setSession(session);
+        attendance.setStudentId(201L);
+        attendance.setStudentChecked(false);
+        when(classSessionRepository.findById(1L)).thenReturn(Optional.of(session));
+        when(sessionAttendanceRepository.findBySessionIdAndStudentId(1L, 201L)).thenReturn(Optional.of(attendance));
+
+        assertThatThrownBy(() -> sessionAttendanceService.submitHomework(
+                1L, 201L, new ClassSessionDtos.SubmitHomeworkRequest("solution", null)))
+                .isInstanceOf(ForbiddenException.class);
+        verify(sessionAttendanceRepository, never()).save(any(SessionAttendance.class));
+    }
+
+    @Test
+    @DisplayName("auto finalization refunds when tutor did not check in")
+    void autoFinalizePastDueSessionsMarksTutorAbsent() {
+        SessionAttendance attendance = new SessionAttendance();
+        attendance.setSession(session);
+        attendance.setStudentId(201L);
+        attendance.setTutorChecked(false);
+        attendance.setStudentChecked(true);
+        when(classSessionRepository.findAll()).thenReturn(List.of(session));
+        when(sessionAttendanceRepository.findBySessionId(1L)).thenReturn(List.of(attendance));
+        when(sessionAttendanceRepository.save(any(SessionAttendance.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(classSessionRepository.save(any(ClassSession.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        sessionAttendanceService.autoFinalizePastDueSessions();
+
+        assertThat(attendance.getFinalOutcome()).isEqualTo(AttendanceOutcome.TUTOR_ABSENT);
+        assertThat(session.getStatus()).isEqualTo(ClassSessionStatus.COMPLETED);
     }
 }

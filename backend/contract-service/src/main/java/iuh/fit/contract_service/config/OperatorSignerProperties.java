@@ -16,33 +16,49 @@ public class OperatorSignerProperties {
 
     private boolean enabled;
     private String address;
+    private String privateKey;
     private Path keystorePath;
     private String keystorePassword;
+    private Path keystorePasswordFile;
 
     @Min(21_000)
     private long gasLimit = 1_500_000;
 
-    @AssertTrue(message = "enabled operator requires a valid address, readable keystore, and runtime password")
+    @AssertTrue(message = "enabled operator requires a valid address, and either a private key or a readable keystore with runtime password")
     public boolean isCompleteWhenEnabled() {
         if (!enabled) {
             return true;
         }
-        return address != null
-                && ADDRESS.matcher(address).matches()
-                && keystorePath != null
+        boolean hasValidAddress = address != null && ADDRESS.matcher(address).matches();
+        boolean hasPrivateKey = privateKey != null && !privateKey.isBlank();
+        boolean hasKeystore = keystorePath != null
                 && Files.isRegularFile(keystorePath)
-                && keystorePassword != null
-                && !keystorePassword.isBlank();
+                && ((keystorePassword != null && !keystorePassword.isBlank())
+                    || (keystorePasswordFile != null && Files.isRegularFile(keystorePasswordFile)
+                        && Files.isReadable(keystorePasswordFile)));
+        return hasValidAddress && (hasPrivateKey || hasKeystore);
     }
 
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public String getAddress() { return address; }
     public void setAddress(String address) { this.address = address; }
+    public String getPrivateKey() { return privateKey; }
+    public void setPrivateKey(String privateKey) { this.privateKey = privateKey; }
     public Path getKeystorePath() { return keystorePath; }
     public void setKeystorePath(Path keystorePath) { this.keystorePath = keystorePath; }
     public String getKeystorePassword() { return keystorePassword; }
     public void setKeystorePassword(String keystorePassword) { this.keystorePassword = keystorePassword; }
+    public Path getKeystorePasswordFile() { return keystorePasswordFile; }
+    public void setKeystorePasswordFile(Path value) { this.keystorePasswordFile = value; }
+    public String resolveKeystorePassword() throws java.io.IOException {
+        if (keystorePassword != null && !keystorePassword.isBlank()) return keystorePassword;
+        if (keystorePasswordFile == null) throw new IllegalStateException("Operator password is not configured");
+        // Secret mounts commonly append one newline. Preserve spaces in passwords.
+        String password = Files.readString(keystorePasswordFile).replaceFirst("\\r?\\n$", "");
+        if (password.isBlank()) throw new IllegalStateException("Operator password file is empty");
+        return password;
+    }
     public long getGasLimit() { return gasLimit; }
     public void setGasLimit(long gasLimit) { this.gasLimit = gasLimit; }
 }

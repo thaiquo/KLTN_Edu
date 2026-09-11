@@ -49,6 +49,14 @@ public class SessionAttendance {
     @Column(length = 40)
     private AttendanceOutcome finalOutcome;
 
+    @Column(columnDefinition = "TEXT")
+    private String submissionText;
+
+    @Column(length = 1000)
+    private String submissionFileUrl;
+
+    private LocalDateTime submittedAt;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 

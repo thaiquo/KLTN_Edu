@@ -41,6 +41,16 @@ public class EnrollmentRequestController {
         return ResponseEntity.ok(classRoomService.getMyEnrolledClasses(authentication.getName()));
     }
 
+    @GetMapping({"/api/v1/student/schedule", "/api/student/schedule", "/api/student/my-schedule"})
+    public ResponseEntity<StudentScheduleResponse> getStudentSchedule(
+            Authentication authentication
+    ) {
+        if (authentication == null) {
+            return ResponseEntity.ok(new StudentScheduleResponse(List.of(), List.of()));
+        }
+        return ResponseEntity.ok(service.getStudentSchedule(authentication.getName()));
+    }
+
     @PostMapping({"/api/v1/classes/{classId}/enroll", "/api/classes/{classId}/enroll"})
     public ResponseEntity<EnrollmentRequestResponse> enrollClass(
             Authentication authentication,

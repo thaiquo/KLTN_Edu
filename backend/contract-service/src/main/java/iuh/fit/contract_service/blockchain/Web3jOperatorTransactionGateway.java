@@ -43,6 +43,20 @@ public class Web3jOperatorTransactionGateway implements OperatorTransactionGatew
             throw new OperatorTransactionException("Intent fromAddress is not the configured operator");
         }
         try {
+            var chain = web3j.ethChainId().send();
+            requireNoError(chain.hasError(), chain.getError() == null
+                    ? null : chain.getError().getMessage(), "eth_chainId");
+            if (!BigInteger.valueOf(chainId).equals(chain.getChainId())) {
+                throw new OperatorTransactionException("RPC chain does not match transaction chainId");
+            }
+            var simulation = web3j.ethCall(
+                    org.web3j.protocol.core.methods.request.Transaction.createEthCallTransaction(
+                            fromAddress, toAddress, calldata), DefaultBlockParameterName.PENDING).send();
+            requireNoError(simulation.hasError(), simulation.getError() == null
+                    ? null : simulation.getError().getMessage(), "Operator preflight eth_call");
+            if (simulation.isReverted()) {
+                throw new OperatorTransactionException("Operator preflight reverted: " + simulation.getRevertReason());
+            }
             EthGetTransactionCount nonceResponse = web3j.ethGetTransactionCount(
                     fromAddress, DefaultBlockParameterName.PENDING).send();
             EthGasPrice gasPriceResponse = web3j.ethGasPrice().send();
