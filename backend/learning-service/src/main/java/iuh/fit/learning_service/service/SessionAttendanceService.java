@@ -389,6 +389,9 @@ public class SessionAttendanceService {
                 mySubmissionFileUrl = myAtt.getSubmissionFileUrl();
                 mySubmittedAt = myAtt.getSubmittedAt();
             }
+        } else {
+            boolean tutorChecked = attendances.stream().anyMatch(a -> Boolean.TRUE.equals(a.getTutorChecked()));
+            myCheckedIn = tutorChecked;
         }
 
         return new ClassSessionDtos.ClassSessionResponse(

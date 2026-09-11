@@ -181,14 +181,19 @@ export function ContractAuditTimeline({
       title: '4. Tiến trình Giảng dạy & Quyết toán từng phần (Settlements)',
       description: settledSessions > 0
         ? `Đã quyết toán ${settledSessions}/${totalSessions} buổi học. Sau mỗi buổi học hoàn tất và hết 24h khiếu nại, Smart Contract tự động giải ngân 85% cho Gia sư và 15% phí nền tảng.`
+        : settlements.some((s) => s.status === 'PROPOSED')
+        ? `Đã có ${settlements.filter((s) => s.status === 'PROPOSED').length} buổi học hoàn tất đã mở đề xuất quyết toán on-chain. Smart Contract đang đếm ngược 24h chờ khiếu nại trước khi chuyển ví.`
         : `Lớp học đang diễn ra (${settledSessions}/${totalSessions} buổi). Sau mỗi buổi học được điểm danh hoàn thành, Smart Contract sẽ giải ngân $${(pricePerSession * 0.85).toFixed(2)} USDC cho Gia sư.`,
       status: settledSessions >= totalSessions && totalSessions > 0
         ? 'COMPLETED'
-        : (currentStatus === 'ACTIVE')
+        : (currentStatus === 'ACTIVE' || settlements.length > 0)
         ? 'IN_PROGRESS'
         : 'PENDING',
+      txHash: settlements.find((s) => s.finalizeTxHash)?.finalizeTxHash || settlements.find((s) => s.proposeTxHash)?.proposeTxHash || undefined,
       amountUsdc: settledSessions > 0
         ? (settledSessions * pricePerSession).toFixed(2)
+        : settlements.some((s) => s.status === 'PROPOSED')
+        ? (pricePerSession * 0.85).toFixed(2)
         : pricePerSession.toFixed(2),
     },
     {
@@ -290,13 +295,50 @@ export function ContractAuditTimeline({
                   && (!settlement.disputeDeadline || Date.now() >= new Date(settlement.disputeDeadline).getTime());
                 return (
                   <div key={settlement.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white bg-white px-3 py-2 text-xs">
-                    <div className="font-semibold text-slate-700">
-                      Session #{settlement.sessionId} - {settlement.outcome} - {settlement.status}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-slate-500">
-                        Tutor ${Number(settlement.tutorAmountUsdc || 0).toFixed(2)} / Refund ${Number(settlement.studentRefundUsdc || 0).toFixed(2)}
+                    <div className="font-semibold text-slate-700 flex items-center gap-2">
+                      <span>Buổi #{settlement.sessionId} - {settlement.outcome}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                        settlement.status === 'PROPOSED' ? 'bg-indigo-100 text-indigo-800' :
+                        settlement.status === 'SETTLED' ? 'bg-emerald-100 text-emerald-800' :
+                        'bg-amber-100 text-amber-800'
+                      }`}>
+                        {settlement.status === 'PROPOSED' ? 'Chờ 24h khiếu nại' : settlement.status}
                       </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {(() => {
+                        let tutorAmt = Number(settlement.tutorAmountUsdc || 0);
+                        let studentRef = Number(settlement.studentRefundUsdc || 0);
+                        if (tutorAmt === 0 && studentRef === 0 && Number(settlement.amountUsdc || 0) > 0) {
+                          const total = Number(settlement.amountUsdc);
+                          if (settlement.outcome === "BOTH_PRESENT") tutorAmt = Math.round(total * 0.85 * 100) / 100;
+                          else if (settlement.outcome === "STUDENT_ABSENT_TUTOR_PRESENT") {
+                            tutorAmt = Math.round(total * 0.45 * 100) / 100;
+                            studentRef = Math.round(total * 0.45 * 100) / 100;
+                          } else if (settlement.outcome === "TUTOR_ABSENT") studentRef = total;
+                        }
+                        return (
+                          <span className="font-mono text-slate-600 font-bold">
+                            Gia sư: ${tutorAmt.toFixed(2)} | Hoàn: ${studentRef.toFixed(2)} USDC
+                          </span>
+                        );
+                      })()}
+                      {settlement.proposeTxHash && (
+                        <EtherscanLink
+                          txHash={settlement.proposeTxHash}
+                          chainId={activeChainId}
+                          label="Tx Đề xuất"
+                          className="text-[11px] text-blue-600 underline font-bold"
+                        />
+                      )}
+                      {settlement.finalizeTxHash && (
+                        <EtherscanLink
+                          txHash={settlement.finalizeTxHash}
+                          chainId={activeChainId}
+                          label="Tx Quyết toán"
+                          className="text-[11px] text-emerald-600 underline font-bold"
+                        />
+                      )}
                       {canFinalize && (
                         <button
                           type="button"

@@ -5,6 +5,7 @@ import {
   Check,
   CheckCircle2,
   CircleDollarSign,
+  Clock,
   Copy,
   ExternalLink,
   Flame,
@@ -115,19 +116,50 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
             allSettlements.push(...agreementSettlements);
 
             for (const settlement of agreementSettlements) {
-              if (settlement.status !== "SETTLED" && settlement.status !== "REFUNDED") continue;
+              const isSettled = settlement.status === "SETTLED";
+              const isRefunded = settlement.status === "REFUNDED";
+              const isProposed = settlement.status === "PROPOSED";
+              if (!isSettled && !isRefunded && !isProposed) continue;
+
+              let tutorAmt = Number(settlement.tutorAmountUsdc || 0);
+              let platAmt = Number(settlement.platformAmountUsdc || 0);
+              let studentRef = Number(settlement.studentRefundUsdc || 0);
+
+              if (tutorAmt === 0 && studentRef === 0 && Number(settlement.amountUsdc || 0) > 0) {
+                const totalAmt = Number(settlement.amountUsdc);
+                if (settlement.outcome === "BOTH_PRESENT") {
+                  tutorAmt = Math.round(totalAmt * 0.85 * 100) / 100;
+                  platAmt = Math.round(totalAmt * 0.15 * 100) / 100;
+                } else if (settlement.outcome === "STUDENT_ABSENT_TUTOR_PRESENT") {
+                  tutorAmt = Math.round(totalAmt * 0.45 * 100) / 100;
+                  platAmt = Math.round(totalAmt * 0.10 * 100) / 100;
+                  studentRef = Math.round(totalAmt * 0.45 * 100) / 100;
+                } else if (settlement.outcome === "TUTOR_ABSENT") {
+                  studentRef = totalAmt;
+                }
+              }
+
+              const txHash = isSettled || isRefunded
+                ? (settlement.finalizeTxHash || settlement.proposeTxHash)
+                : settlement.proposeTxHash;
+
+              const actionName = isProposed
+                ? `Đề xuất giải ngân buổi #${settlement.sessionId} (${settlement.outcome})`
+                : settlement.status === "REFUNDED"
+                ? `Hoàn tiền buổi #${settlement.sessionId} (${settlement.outcome})`
+                : `Giải ngân buổi #${settlement.sessionId} (${settlement.outcome})`;
+
               allTxEvents.push({
                 id: `settlement-${settlement.id}`,
                 agreementId: ag.id,
                 className: ag.className || `Lớp học #${ag.classroomId}`,
                 type: "SETTLE",
-                actionName: settlement.status === "REFUNDED"
-                  ? `Hoàn tiền buổi #${settlement.sessionId} (${settlement.outcome})`
-                  : `Giải ngân buổi #${settlement.sessionId} (${settlement.outcome})`,
-                txHash: settlement.finalizeTxHash,
-                amountUsdc: isTutor ? settlement.tutorAmountUsdc : settlement.studentRefundUsdc,
-                distribution: `Gia sư ${settlement.tutorAmountUsdc} / Nền tảng ${settlement.platformAmountUsdc} / Hoàn HV ${settlement.studentRefundUsdc} USDC`,
+                actionName,
+                txHash,
+                amountUsdc: isTutor ? tutorAmt : studentRef,
+                distribution: `Gia sư ${tutorAmt} / Nền tảng ${platAmt} / Hoàn HV ${studentRef} USDC`,
                 status: settlement.status,
+                disputeDeadline: settlement.disputeDeadline,
                 createdAt: settlement.createdAt,
               });
             }
@@ -226,6 +258,36 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
   const totalDisbursedAmount = settlements
     .filter((settlement) => settlement.status === "SETTLED")
     .reduce((total, settlement) => total + Number(settlement.tutorAmountUsdc || 0), 0);
+
+  const totalPendingProposedAmount = settlements
+    .filter((settlement) => settlement.status === "PROPOSED")
+    .reduce((total, s) => {
+      let tutorAmt = Number(s.tutorAmountUsdc || 0);
+      if (tutorAmt === 0 && Number(s.amountUsdc || 0) > 0) {
+        if (s.outcome === "BOTH_PRESENT") {
+          tutorAmt = Math.round(Number(s.amountUsdc) * 0.85 * 100) / 100;
+        } else if (s.outcome === "STUDENT_ABSENT_TUTOR_PRESENT") {
+          tutorAmt = Math.round(Number(s.amountUsdc) * 0.45 * 100) / 100;
+        }
+      }
+      return total + tutorAmt;
+    }, 0);
+
+  const totalPendingRefundAmount = settlements
+    .filter((settlement) => settlement.status === "PROPOSED")
+    .reduce((total, s) => {
+      let refundAmt = Number(s.studentRefundUsdc || 0);
+      if (refundAmt === 0 && Number(s.amountUsdc || 0) > 0) {
+        if (s.outcome === "TUTOR_ABSENT") {
+          refundAmt = Number(s.amountUsdc);
+        } else if (s.outcome === "STUDENT_ABSENT_TUTOR_PRESENT") {
+          refundAmt = Math.round(Number(s.amountUsdc) * 0.45 * 100) / 100;
+        }
+      }
+      return total + refundAmt;
+    }, 0);
+
+  const pendingProposedCount = settlements.filter((s) => s.status === "PROPOSED").length;
 
   return (
     <section className="mx-auto max-w-6xl pb-16 font-sans text-slate-800 space-y-8 select-none">
@@ -533,17 +595,45 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
           </div>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
+        {pendingProposedCount > 0 && (
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4 flex items-start gap-3 text-xs">
+            <Clock className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-bold text-indigo-900">
+                {isTutor
+                  ? `Đang có ${pendingProposedCount} buổi học vừa hoàn tất đã mở đề xuất giải ngân on-chain (${totalPendingProposedAmount.toLocaleString("vi-VN")} USDC)`
+                  : `Đang có ${pendingProposedCount} buổi học có đề xuất quyết toán on-chain đang đếm ngược`}
+              </p>
+              <p className="text-indigo-700 leading-relaxed">
+                Hợp đồng thông minh Smart Contract tự động kích hoạt thời hạn 24 giờ chờ khiếu nại (Dispute Window) để bảo vệ quyền lợi học viên. Khi đồng hồ 24h kết thúc, Smart Contract sẽ tự động chuyển token USDC trực tiếp vào địa chỉ ví cá nhân.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {isTutor ? (
             <>
               <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-4 space-y-1">
                 <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700">
-                  Tổng thu nhập đã giải ngân
+                  Thu nhập đã chuyển ví
                 </span>
                 <p className="font-mono text-2xl font-black text-emerald-900">
                   {totalDisbursedAmount.toLocaleString("vi-VN")} USDC
                 </p>
-                <p className="text-[11px] font-bold text-emerald-600">Đã chuyển về ví thành công</p>
+                <p className="text-[11px] font-bold text-emerald-600">Đã về ví thành công</p>
+              </div>
+
+              <div className="rounded-2xl border border-indigo-200/80 bg-indigo-50/60 p-4 space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700">
+                  Đang mở đề xuất on-chain
+                </span>
+                <p className="font-mono text-2xl font-black text-indigo-900">
+                  {totalPendingProposedAmount.toLocaleString("vi-VN")} USDC
+                </p>
+                <p className="text-[11px] font-bold text-indigo-600">
+                  {pendingProposedCount > 0 ? `${pendingProposedCount} buổi chờ đếm ngược 24h` : "Không có buổi chờ"}
+                </p>
               </div>
 
               <div className="rounded-2xl border border-amber-200/80 bg-amber-50/50 p-4 space-y-1">
@@ -575,12 +665,22 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                 <p className="font-mono text-2xl font-black text-blue-900">
                   {totalEscrowDeposited.toLocaleString("vi-VN")} USDC
                 </p>
-                <p className="text-[11px] font-bold text-blue-600">Được bảo vệ bởi Escrow Smart Contract</p>
+                <p className="text-[11px] font-bold text-blue-600">Được bảo vệ bởi Smart Contract</p>
+              </div>
+
+              <div className="rounded-2xl border border-indigo-200/80 bg-indigo-50/60 p-4 space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700">
+                  Đang mở đề xuất hoàn tiền
+                </span>
+                <p className="font-mono text-2xl font-black text-indigo-900">
+                  {totalPendingRefundAmount.toLocaleString("vi-VN")} USDC
+                </p>
+                <p className="text-[11px] font-bold text-indigo-600">Chờ hết 24h chuyển về ví</p>
               </div>
 
               <div className="rounded-2xl border border-amber-200/80 bg-amber-50/50 p-4 space-y-1">
                 <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">
-                  Tiền cọc đang giữ
+                  Tiền cọc đang giữ trong Escrow
                 </span>
                 <p className="font-mono text-2xl font-black text-amber-900">
                   {escrowHoldingAmount.toLocaleString("vi-VN")} USDC
@@ -685,9 +785,19 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                           <CheckCircle2 className="h-3 w-3 text-emerald-600" /> {item.actionName || "Đã nạp cọc Smart Contract"}
                         </span>
                       ) : item.type === "SETTLE" ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-blue-700 border border-blue-200">
-                          <CheckCircle2 className="h-3 w-3 text-blue-600" /> {item.actionName || "Giải ngân buổi học"}
-                        </span>
+                        item.status === "PROPOSED" ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-indigo-700 border border-indigo-200" title="Smart Contract đang đếm ngược 24h chờ khiếu nại trước khi chuyển ví">
+                            <Clock className="h-3 w-3 text-indigo-600 animate-pulse" /> {item.actionName} · Chờ 24h
+                          </span>
+                        ) : item.status === "REFUNDED" ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-amber-700 border border-amber-200">
+                            <CheckCircle2 className="h-3 w-3 text-amber-600" /> {item.actionName} · Đã hoàn tiền
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-emerald-700 border border-emerald-200">
+                            <CheckCircle2 className="h-3 w-3 text-emerald-600" /> {item.actionName || "Giải ngân buổi học"} · Đã về ví
+                          </span>
+                        )
                       ) : item.status === "FAILED" ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-rose-700 border border-rose-200">
                           {item.actionName} · Thất bại
