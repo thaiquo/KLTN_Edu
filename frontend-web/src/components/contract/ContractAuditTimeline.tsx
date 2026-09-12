@@ -15,6 +15,7 @@ import {
 import { EtherscanLink } from '../common/EtherscanLink';
 import { DEFAULT_CHAIN_ID } from '../../web3/web3Config';
 import { contractsApi, AgreementDetail, BlockchainTxDto } from '../../api/contractsApi';
+import { useFeedback } from '../feedback/useFeedback';
 
 export interface ContractTimelineEvent {
   title: string;
@@ -41,6 +42,7 @@ export function ContractAuditTimeline({
   activeRole = '',
   className = '',
 }: ContractAuditTimelineProps) {
+  const { confirm } = useFeedback();
   const [detail, setDetail] = useState<AgreementDetail | null>(null);
   const [acceptances, setAcceptances] = useState<any[]>([]);
   const [settlements, setSettlements] = useState<any[]>([]);
@@ -76,6 +78,8 @@ export function ContractAuditTimeline({
 
   useEffect(() => {
     loadAuditData();
+    const timer = window.setInterval(loadAuditData, 15000);
+    return () => window.clearInterval(timer);
   }, [agreementId]);
 
   const summary = detail?.summary;
@@ -83,7 +87,8 @@ export function ContractAuditTimeline({
   const activeChainId = summary?.chainId ? Number(summary.chainId) : chainId;
 
   // Find real deposit transaction from tx list
-  const depositTx = transactions.find(
+  const depositTx: Partial<BlockchainTxDto> | undefined = summary?.onchainFunded && summary.fundedTxHash
+    ? { transactionHash: summary.fundedTxHash } : transactions.find(
     (t) => t.action === 'DEPOSIT_ESCROW' && t.transactionHash && t.transactionHash.startsWith('0x')
   );
 
@@ -94,9 +99,26 @@ export function ContractAuditTimeline({
   const pricePerSession = summary?.pricePerSessionUsdc || 0;
   const totalSessions = summary?.totalSessions || 0;
   const settledSessions = summary?.settledSessions || 0;
-  const canManageActiveSettlement = currentStatus === 'ACTIVE' && activeRole !== 'student';
+  const canManageActiveSettlement = currentStatus === 'ACTIVE' && summary?.settlementEligible === true
+    && ['tutor', 'staff', 'admin'].includes(activeRole.toLowerCase());
 
   const displayClassName = summary?.className || 'Chưa cập nhật tên lớp';
+
+  const retryTransaction = async (tx: BlockchainTxDto) => {
+    if (!await confirm({ title: 'Gửi lại giao dịch thất bại?',
+      message: 'Hệ thống sẽ kiểm tra điều kiện hiện tại trước khi gửi lại. Lịch sử lần thử cũ được giữ để đối soát.',
+      confirmText: 'Gửi lại' })) return;
+    setActionBusy(true);
+    try {
+      const result = await contractsApi.retryTransaction(tx.id);
+      setActionMessage(`Đã xếp hàng gửi lại (${result.transactionStatus}). Đang chờ xác nhận blockchain.`);
+      await loadAuditData();
+    } catch (error: any) {
+      setActionMessage(error?.message || 'Không thể gửi lại giao dịch.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
 
   const handleProposeSettlement = async () => {
     if (!summary) return;
@@ -158,20 +180,18 @@ export function ContractAuditTimeline({
     },
     {
       title: '3. Học viên Ký quỹ Học phí vào Smart Contract (Funded & Active)',
-      description: currentStatus === 'ACTIVE' || currentStatus === 'COMPLETED'
+      description: summary?.onchainFunded
         ? `Học viên đã nạp cọc thành công $${totalAmountUsdc.toFixed(2)} USDC vào quỹ Smart Contract Escrow trên mạng Ethereum Sepolia Testnet để khóa bảo đảm.`
         : currentStatus === 'WAITING_PAYMENT'
         ? `Hợp đồng đang chờ Học viên phê duyệt ví MetaMask và nạp $${totalAmountUsdc.toFixed(2)} USDC vào Smart Contract Escrow (Thời hạn 24 giờ).`
         : 'Chờ hoàn tất ký hợp đồng trước khi nạp cọc.',
-      status: currentStatus === 'ACTIVE' || currentStatus === 'COMPLETED'
+      status: summary?.onchainFunded
         ? 'COMPLETED'
         : currentStatus === 'WAITING_PAYMENT' || currentStatus === 'PAYMENT_CONFIRMING'
         ? 'IN_PROGRESS'
         : 'PENDING',
       timestamp: depositTx?.createdAt
         ? new Date(depositTx.createdAt).toLocaleString('vi-VN')
-        : (currentStatus === 'ACTIVE' || currentStatus === 'COMPLETED')
-        ? new Date().toLocaleString('vi-VN')
         : undefined,
       txHash: depositTx?.transactionHash || undefined,
       blockNumber: depositTx?.blockNumber ? `#${depositTx.blockNumber}` : undefined,
@@ -180,7 +200,7 @@ export function ContractAuditTimeline({
     {
       title: '4. Tiến trình Giảng dạy & Quyết toán từng phần (Settlements)',
       description: settledSessions > 0
-        ? `Đã quyết toán ${settledSessions}/${totalSessions} buổi học. Sau mỗi buổi học hoàn tất và hết 24h khiếu nại, Smart Contract tự động giải ngân 85% cho Gia sư và 15% phí nền tảng.`
+        ? `Đã quyết toán ${settledSessions}/${totalSessions} buổi học. Sau 24h khiếu nại, dịch vụ vận hành gửi yêu cầu quyết toán theo kết quả buổi học; số tiền đã chuyển chỉ cập nhật khi blockchain xác nhận.`
         : settlements.some((s) => s.status === 'PROPOSED')
         ? `Đã có ${settlements.filter((s) => s.status === 'PROPOSED').length} buổi học hoàn tất đã mở đề xuất quyết toán on-chain. Smart Contract đang đếm ngược 24h chờ khiếu nại trước khi chuyển ví.`
         : `Lớp học đang diễn ra (${settledSessions}/${totalSessions} buổi). Sau mỗi buổi học được điểm danh hoàn thành, Smart Contract sẽ giải ngân $${(pricePerSession * 0.85).toFixed(2)} USDC cho Gia sư.`,
@@ -253,6 +273,21 @@ export function ContractAuditTimeline({
       )}
 
       {canManageActiveSettlement && (
+        <div className="mb-4 space-y-2">
+          {transactions.filter(tx => tx.status === 'FAILED').map(tx => (
+            <div key={tx.id} className="rounded-xl border border-amber-200 p-3 text-xs text-amber-900">
+              <p>{tx.action}: {tx.errorMessage || 'Giao dịch thất bại'}</p>
+              {activeRole.toLowerCase() === 'admin' && (!tx.transactionHash || tx.receiptStatus === 0) && (
+                <button disabled={actionBusy} onClick={() => retryTransaction(tx)} className="mt-2 font-bold underline">
+                  Kiểm tra và gửi lại
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {canManageActiveSettlement && (
         <div className="mb-6 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
             <input
@@ -292,7 +327,7 @@ export function ContractAuditTimeline({
             <div className="space-y-2">
               {settlements.map((settlement) => {
                 const canFinalize = settlement.status === 'PROPOSED'
-                  && (!settlement.disputeDeadline || Date.now() >= new Date(settlement.disputeDeadline).getTime());
+                  && settlement.disputeDeadline && Date.now() > new Date(settlement.disputeDeadline).getTime();
                 return (
                   <div key={settlement.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white bg-white px-3 py-2 text-xs">
                     <div className="font-semibold text-slate-700 flex items-center gap-2">
@@ -309,7 +344,7 @@ export function ContractAuditTimeline({
                       {(() => {
                         let tutorAmt = Number(settlement.tutorAmountUsdc || 0);
                         let studentRef = Number(settlement.studentRefundUsdc || 0);
-                        if (tutorAmt === 0 && studentRef === 0 && Number(settlement.amountUsdc || 0) > 0) {
+                        if (settlement.status === 'PROPOSED' && Number(settlement.amountUsdc || 0) > 0) {
                           const total = Number(settlement.amountUsdc);
                           if (settlement.outcome === "BOTH_PRESENT") tutorAmt = Math.round(total * 0.85 * 100) / 100;
                           else if (settlement.outcome === "STUDENT_ABSENT_TUTOR_PRESENT") {

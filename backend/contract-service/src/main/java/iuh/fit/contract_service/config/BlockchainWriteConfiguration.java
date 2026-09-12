@@ -55,8 +55,9 @@ public class BlockchainWriteConfiguration {
             BlockchainTransactionRepository repository,
             OperatorTransactionGateway gateway,
             BlockchainProperties blockchainProperties,
-            PlatformTransactionManager transactionManager) {
-        return new OperatorTransactionDispatcher(repository, gateway, blockchainProperties, transactionManager);
+            PlatformTransactionManager transactionManager,
+            iuh.fit.contract_service.service.OperationalFundingPolicy fundingPolicy) {
+        return new OperatorTransactionDispatcher(repository, gateway, blockchainProperties, transactionManager, fundingPolicy);
     }
 
     @Bean
@@ -80,8 +81,18 @@ public class BlockchainWriteConfiguration {
     @Bean
     ApplicationRunner blockchainWriteRuntimeLogger(
             BlockchainProperties blockchainProperties,
-            OperatorSignerProperties operatorProperties) {
-        return args -> log.info(
+            OperatorSignerProperties operatorProperties,
+            iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway readGateway,
+            Web3j web3j) {
+        return args -> {
+            readGateway.validateConfiguration();
+            readGateway.requireOperatorRoles(operatorProperties.getAddress());
+            var balance = web3j.ethGetBalance(operatorProperties.getAddress(),
+                    org.web3j.protocol.core.DefaultBlockParameterName.LATEST).send();
+            if (balance.hasError() || balance.getBalance().signum() == 0) {
+                throw new IllegalStateException("Cannot start escrow operator without a verified ETH gas balance");
+            }
+            log.info(
                 "Blockchain write runtime enabled for chainId={} operator={} dispatchBatch={} receiptBatch={} confirmations={} staleTimeoutMs={}",
                 blockchainProperties.getChainId(),
                 operatorProperties.getAddress(),
@@ -89,5 +100,6 @@ public class BlockchainWriteConfiguration {
                 blockchainProperties.getReceiptWatchBatchSize(),
                 blockchainProperties.getConfirmations(),
                 blockchainProperties.getTransactionStaleTimeoutMs());
+        };
     }
 }

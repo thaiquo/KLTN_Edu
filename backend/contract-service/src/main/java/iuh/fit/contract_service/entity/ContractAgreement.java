@@ -28,6 +28,8 @@ import java.util.UUID;
 @Table(name = "contract_agreement")
 @NoArgsConstructor
 public class ContractAgreement {
+    @Column(name = "legacy_excluded", nullable = false)
+    private boolean legacyExcluded;
     @Id
     private UUID id;
 

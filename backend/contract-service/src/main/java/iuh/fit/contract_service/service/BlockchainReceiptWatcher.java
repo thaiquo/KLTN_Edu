@@ -2,6 +2,7 @@ package iuh.fit.contract_service.service;
 
 import iuh.fit.contract_service.blockchain.BlockchainTransactionReceipt;
 import iuh.fit.contract_service.blockchain.OperatorTransactionGateway;
+import iuh.fit.contract_service.blockchain.PreparedOperatorTransaction;
 import iuh.fit.contract_service.config.BlockchainProperties;
 import iuh.fit.contract_service.entity.BlockchainTransaction;
 import iuh.fit.contract_service.enums.BlockchainTransactionStatus;
@@ -9,6 +10,8 @@ import iuh.fit.contract_service.repository.BlockchainTransactionRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigInteger;
 import java.time.Duration;
@@ -17,6 +20,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 public class BlockchainReceiptWatcher {
+    private static final Logger log = LoggerFactory.getLogger(BlockchainReceiptWatcher.class);
     private final BlockchainTransactionRepository repository;
     private final OperatorTransactionGateway gateway;
     private final BlockchainProperties properties;
@@ -48,6 +52,7 @@ public class BlockchainReceiptWatcher {
         int changed = 0;
         OffsetDateTime current = now();
         for (BlockchainTransaction candidate : candidates) {
+            try {
             if (candidate.getTransactionHash() == null) {
                 if (isStale(candidate, current)) {
                     resetOrFailUnpreparedDispatch(candidate, current);
@@ -57,29 +62,72 @@ public class BlockchainReceiptWatcher {
             }
             BlockchainTransactionReceipt receipt = gateway.findReceipt(candidate.getTransactionHash()).orElse(null);
             if (receipt == null) {
+                rebroadcastUncertain(candidate, current);
                 if (isStale(candidate, current)) {
-                    failStalePreparedTransaction(candidate, current);
+                    flagDelayedReceipt(candidate, current);
                     changed++;
                 }
-                continue;
-            }
-            if (!receipt.successful()) {
-                fail(candidate, receipt);
-                changed++;
                 continue;
             }
             BigInteger confirmations = latestBlock
                     .subtract(BigInteger.valueOf(receipt.blockNumber()))
                     .add(BigInteger.ONE);
             if (confirmations.compareTo(BigInteger.valueOf(properties.getConfirmations())) >= 0) {
-                confirm(candidate, receipt);
+                if (receipt.successful()) {
+                    confirm(candidate, receipt);
+                } else {
+                    fail(candidate, receipt);
+                }
                 changed++;
             } else if (candidate.getStatus() == BlockchainTransactionStatus.DISPATCHING) {
                 markObservedSubmitted(candidate);
                 changed++;
             }
+            } catch (RuntimeException failure) {
+                log.warn("Receipt reconciliation deferred for transaction {} ({})",
+                        candidate.getId(), failure.getClass().getSimpleName());
+            } finally {
+                // Rotate pending rows so a missing receipt cannot starve later batches.
+                transactionTemplate.executeWithoutResult(status -> {
+                    BlockchainTransaction locked = lock(candidate);
+                    locked.recordReceiptCheck(now());
+                    repository.saveAndFlush(locked);
+                });
+            }
         }
         return changed;
+    }
+
+    private void rebroadcastUncertain(BlockchainTransaction candidate, OffsetDateTime current) {
+        if ((candidate.getStatus() != BlockchainTransactionStatus.DISPATCHING
+                && !(candidate.getStatus() == BlockchainTransactionStatus.SUBMITTED && isStale(candidate, current)))
+                || candidate.getSignedRawTransaction() == null
+                || (candidate.getNextAttemptAt() != null && current.isBefore(candidate.getNextAttemptAt()))) return;
+        try {
+            String hash = gateway.broadcast(new PreparedOperatorTransaction(candidate.getNonce(),
+                    candidate.getTransactionHash(), candidate.getSignedRawTransaction()));
+            transactionTemplate.executeWithoutResult(status -> {
+                var locked = lock(candidate);
+                if (locked.getStatus() == BlockchainTransactionStatus.DISPATCHING) {
+                    locked.markSubmitted(hash, current);
+                }
+                if (locked.getStatus() == BlockchainTransactionStatus.SUBMITTED) {
+                    locked.recordRebroadcastAttempt(null,
+                            current.plus(Duration.ofMillis(properties.getDispatchRetryDelayMs())), current);
+                    repository.saveAndFlush(locked);
+                }
+            });
+        } catch (RuntimeException uncertain) {
+            transactionTemplate.executeWithoutResult(status -> {
+                var locked = lock(candidate);
+                if (locked.getStatus() == BlockchainTransactionStatus.DISPATCHING
+                        || locked.getStatus() == BlockchainTransactionStatus.SUBMITTED) {
+                    locked.recordRebroadcastAttempt("Rebroadcast not acknowledged; still watching the original hash",
+                            current.plus(Duration.ofMillis(properties.getDispatchRetryDelayMs())), current);
+                    repository.saveAndFlush(locked);
+                }
+            });
+        }
     }
 
     private boolean isStale(BlockchainTransaction candidate, OffsetDateTime current) {
@@ -113,16 +161,14 @@ public class BlockchainReceiptWatcher {
         });
     }
 
-    private void failStalePreparedTransaction(BlockchainTransaction candidate, OffsetDateTime current) {
+    private void flagDelayedReceipt(BlockchainTransaction candidate, OffsetDateTime current) {
         transactionTemplate.executeWithoutResult(status -> {
             BlockchainTransaction locked = lock(candidate);
             if ((locked.getStatus() == BlockchainTransactionStatus.DISPATCHING
                     || locked.getStatus() == BlockchainTransactionStatus.SUBMITTED)
                     && locked.getTransactionHash() != null
                     && isStale(locked, current)) {
-                locked.failWithoutReceipt(
-                        "Transaction receipt was not found before stale timeout; manual review required",
-                        current);
+                locked.awaitReceiptReview(current);
                 repository.saveAndFlush(locked);
             }
         });

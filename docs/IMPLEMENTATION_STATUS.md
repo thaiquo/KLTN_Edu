@@ -1,5 +1,12 @@
 # EduConnect Implementation Status
 
+2026-09-12 escrow follow-up: the existing master contract is retained. Shared funding validation,
+legacy quarantine, audited failure recovery, exact rounding and confirmed financial projections are implemented
+and tested. Backend settlement and dispute flows pass isolated Anvil integration tests. See
+[current-deployment evidence and limits](ESCROW_HARDENING_2026-09-12.md).
+The first real Sepolia payout still requires its actual deadline and a confirmed `SessionSettled` event;
+successful local tests do not upgrade that claim to end-to-end production readiness.
+
 ## 1. Status Definitions
 
 - `IMPLEMENTED`: flow chính đã có implementation đủ bằng chứng.

@@ -1,5 +1,10 @@
 # EduConnect API Baseline
 
+Escrow hardening (2026-09-12): `POST /api/contracts/transactions/{id}/retry` is active-Admin-only,
+returns queued transaction status, and rejects unknown receipts, legacy agreements and ineligible lifecycle states.
+Agreement summaries now expose `remainingDeposit`, `releasedAmountUsdc`, `refundedAmountUsdc` and `fundedTxHash`
+from confirmed financial data. See [runtime semantics](ESCROW_HARDENING_2026-09-12.md).
+
 ## 1. API Principles
 
 - EduConnect uses REST-style APIs for Web/Mobile integration.

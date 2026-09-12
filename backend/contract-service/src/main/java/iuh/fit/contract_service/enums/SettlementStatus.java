@@ -9,5 +9,6 @@ public enum SettlementStatus {
     FINALIZE_PENDING,
     SETTLED,
     REFUNDED,
-    FAILED_RETRYABLE
+    FAILED_RETRYABLE,
+    EXCLUDED_LEGACY
 }

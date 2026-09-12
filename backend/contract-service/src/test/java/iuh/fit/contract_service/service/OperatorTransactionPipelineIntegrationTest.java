@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
 class OperatorTransactionPipelineIntegrationTest {
+    @Autowired private OperationalFundingPolicy fundingPolicy;
     private static final String FROM = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266";
     private static final String TO = "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512";
     private static final String CALLDATA = "0x1234";
@@ -79,7 +80,7 @@ class OperatorTransactionPipelineIntegrationTest {
         blockchainProperties.setReceiptWatchBatchSize(50);
         blockchainProperties.setTransactionStaleTimeoutMs(1_800_000);
         gateway = new FakeOperatorGateway();
-        dispatcher = new OperatorTransactionDispatcher(repository, gateway, blockchainProperties, transactionManager);
+        dispatcher = new OperatorTransactionDispatcher(repository, gateway, blockchainProperties, transactionManager, fundingPolicy);
         watcher = new BlockchainReceiptWatcher(
                 repository, gateway, blockchainProperties, transactionManager);
     }
@@ -166,6 +167,113 @@ class OperatorTransactionPipelineIntegrationTest {
         assertEquals(BlockchainTransactionStatus.FAILED, failed.getStatus());
         assertEquals((short) 0, failed.getReceiptStatus());
         assertEquals("On-chain transaction reverted", failed.getErrorMessage());
+    }
+
+    @Test
+    void revertedReceiptMustReachConfirmationsAndCanDisappearBeforeThen() {
+        UUID id = createIntent();
+        blockchainProperties.setConfirmations(3);
+        dispatcher.dispatchNext();
+        gateway.receipt = new BlockchainTransactionReceipt(TX_HASH, false, 100, BLOCK_HASH);
+        gateway.latestBlock = BigInteger.valueOf(100);
+        assertEquals(0, watcher.reconcilePendingReceipts());
+        var pending = repository.findById(id).orElseThrow();
+        assertEquals(BlockchainTransactionStatus.SUBMITTED, pending.getStatus());
+        assertNull(pending.getReceiptStatus());
+        assertEquals("0xdeadbeef", pending.getSignedRawTransaction());
+        gateway.receipt = null;
+        assertEquals(0, watcher.reconcilePendingReceipts());
+        gateway.receipt = new BlockchainTransactionReceipt(TX_HASH, false, 101, BLOCK_HASH);
+        gateway.latestBlock = BigInteger.valueOf(103);
+        assertEquals(1, watcher.reconcilePendingReceipts());
+        assertEquals(BlockchainTransactionStatus.FAILED, repository.findById(id).orElseThrow().getStatus());
+    }
+
+    @Test
+    void submittedTransactionReservesSenderUntilReceiptIsConfirmed() {
+        createIntent();
+        dispatcher.dispatchNext();
+        var queued = repository.saveAndFlush(BlockchainTransaction.createIntent("queued-register", "REGISTER",
+                31337, FROM.toUpperCase(), TO, CALLDATA, Hash.sha3(CALLDATA), agreementId, null, OffsetDateTime.now()));
+        assertTrue(dispatcher.dispatchNext().isEmpty());
+        assertEquals(1, gateway.prepareCalls);
+        gateway.receipt = new BlockchainTransactionReceipt(TX_HASH, true, 100, BLOCK_HASH);
+        gateway.latestBlock = BigInteger.valueOf(100);
+        watcher.reconcilePendingReceipts();
+        new TransactionTemplate(transactionManager).executeWithoutResult(status ->
+                assertEquals(queued.getId(), repository.lockCreatedForDispatch(OffsetDateTime.now(),
+                        PageRequest.of(0, 1)).getFirst().getId()));
+    }
+
+    @Test
+    void droppedSubmittedTransactionRebroadcastsSameBytesWithBackoff() {
+        UUID id = createIntent();
+        dispatcher.dispatchNext();
+        jdbcTemplate.update("UPDATE blockchain_transaction SET dispatch_started_at = ? WHERE id = ?",
+                OffsetDateTime.now().minusHours(1), id);
+        watcher.reconcilePendingReceipts();
+        assertEquals(2, gateway.broadcastCalls);
+        assertEquals(1, gateway.prepareCalls);
+        assertEquals("0xdeadbeef", gateway.lastBroadcast.signedRawTransaction());
+        assertEquals(BigInteger.valueOf(7), gateway.lastBroadcast.nonce());
+        watcher.reconcilePendingReceipts();
+        assertEquals(2, gateway.broadcastCalls);
+        assertEquals(TX_HASH, repository.findById(id).orElseThrow().getTransactionHash());
+    }
+
+    @Test
+    void failingRpcReceiptDoesNotStarveTheNextBatch() {
+        UUID first = createIntent();
+        dispatcher.dispatchNext();
+        jdbcTemplate.update("UPDATE blockchain_transaction SET updated_at = ? WHERE id = ?",
+                OffsetDateTime.now().minusMinutes(2), first);
+        String secondHash = "0x" + "ee".repeat(32);
+        var second = BlockchainTransaction.createIntent("other-pending", "REGISTER", 31337,
+                FROM, TO, CALLDATA, Hash.sha3(CALLDATA), agreementId, null, OffsetDateTime.now().minusMinutes(1));
+        second.claimForDispatch(OffsetDateTime.now().minusMinutes(1));
+        second.recordPreparedTransaction(BigInteger.valueOf(8), secondHash, "0xbeef", OffsetDateTime.now().minusMinutes(1));
+        second.markSubmitted(secondHash, OffsetDateTime.now().minusMinutes(1));
+        repository.saveAndFlush(second);
+        gateway.failingReceiptHash = TX_HASH;
+        gateway.receipt = new BlockchainTransactionReceipt(secondHash, true, 100, BLOCK_HASH);
+        gateway.latestBlock = BigInteger.valueOf(100);
+        assertEquals(0, watcher.reconcilePendingReceipts(1));
+        assertEquals(1, watcher.reconcilePendingReceipts(1));
+        assertEquals(BlockchainTransactionStatus.CONFIRMED, repository.findById(second.getId()).orElseThrow().getStatus());
+        assertEquals(BlockchainTransactionStatus.SUBMITTED, repository.findById(first).orElseThrow().getStatus());
+    }
+
+    @Test
+    void delayedReceiptRemainsWatchedAndCanConfirmAfterStaleTimeout() {
+        UUID id = createIntent();
+        dispatcher.dispatchNext();
+        jdbcTemplate.update("UPDATE blockchain_transaction SET dispatch_started_at = ? WHERE id = ?",
+                OffsetDateTime.now().minusHours(1), id);
+        watcher.reconcilePendingReceipts();
+        var delayed = repository.findById(id).orElseThrow();
+        assertEquals(BlockchainTransactionStatus.SUBMITTED, delayed.getStatus());
+        assertEquals(TX_HASH, delayed.getTransactionHash());
+        gateway.receipt = new BlockchainTransactionReceipt(TX_HASH, true, 100, BLOCK_HASH);
+        gateway.latestBlock = BigInteger.valueOf(100);
+        watcher.reconcilePendingReceipts();
+        assertEquals(BlockchainTransactionStatus.CONFIRMED, repository.findById(id).orElseThrow().getStatus());
+        assertEquals(1, gateway.prepareCalls);
+    }
+
+    @Test
+    void uncertainBroadcastResendsExactlyThePreparedTransactionWithoutNewNonce() {
+        UUID id = createIntent();
+        gateway.broadcastUncertain = true;
+        dispatcher.dispatchNext();
+        jdbcTemplate.update("UPDATE blockchain_transaction SET next_attempt_at = ? WHERE id = ?",
+                OffsetDateTime.now().minusMinutes(1), id);
+        gateway.broadcastUncertain = false;
+        watcher.reconcilePendingReceipts();
+        var recovered = repository.findById(id).orElseThrow();
+        assertEquals(BlockchainTransactionStatus.SUBMITTED, recovered.getStatus());
+        assertEquals(TX_HASH, recovered.getTransactionHash());
+        assertEquals(1, gateway.prepareCalls);
+        assertEquals(2, gateway.broadcastCalls);
     }
 
     @Test
@@ -267,6 +375,8 @@ class OperatorTransactionPipelineIntegrationTest {
         private boolean prepareFails;
         private boolean broadcastUncertain;
         private BlockchainTransactionReceipt receipt;
+        private PreparedOperatorTransaction lastBroadcast;
+        private String failingReceiptHash;
         private BigInteger latestBlock = BigInteger.ZERO;
 
         @Override
@@ -282,6 +392,7 @@ class OperatorTransactionPipelineIntegrationTest {
         @Override
         public String broadcast(PreparedOperatorTransaction transaction) {
             broadcastCalls++;
+            lastBroadcast = transaction;
             if (broadcastUncertain) {
                 throw new OperatorTransactionException("simulated RPC timeout");
             }
@@ -290,6 +401,7 @@ class OperatorTransactionPipelineIntegrationTest {
 
         @Override
         public Optional<BlockchainTransactionReceipt> findReceipt(String transactionHash) {
+            if (transactionHash.equals(failingReceiptHash)) throw new OperatorTransactionException("simulated receipt RPC failure");
             return Optional.ofNullable(receipt);
         }
 

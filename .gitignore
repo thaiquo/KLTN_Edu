@@ -10,6 +10,7 @@ backend/.env
 
 # Local database/Git recovery artifacts; may contain private data and secrets.
 /.local-backups/
+.runtime/
 **/target/
 **/*-runtime.out.log
 **/*-runtime.err.log

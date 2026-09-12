@@ -320,7 +320,7 @@ export function EscrowContractsView({
     const legacyCount = enrichedAgreements.filter((a) => a.legacyUnreconciled).length;
     const verifiedAgreements = enrichedAgreements.filter((a) => a.onchainFunded);
     const totalUsdc = verifiedAgreements.reduce((sum, a) => sum + (Number(a.totalAmountUsdc) || 0), 0);
-    const settledUsdc = verifiedAgreements.reduce((sum, a) => sum + ((Number(a.settledSessions) || 0) * (Number(a.pricePerSessionUsdc) || 0)), 0);
+    const settledUsdc = verifiedAgreements.reduce((sum, a) => sum + (Number(a.releasedAmountUsdc) || 0), 0);
 
     return { totalCount, activeCount, legacyCount, totalUsdc, settledUsdc };
   }, [enrichedAgreements]);

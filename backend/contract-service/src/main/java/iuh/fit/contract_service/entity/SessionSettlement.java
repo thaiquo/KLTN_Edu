@@ -152,4 +152,12 @@ public class SessionSettlement {
         this.status = SettlementStatus.DISPUTED;
         this.updatedAt = OffsetDateTime.now();
     }
+
+    public void markFailedRetryable() {
+        if (status == SettlementStatus.PROPOSE_PENDING || status == SettlementStatus.FINALIZE_PENDING
+                || status == SettlementStatus.DISPUTE_OPENING) {
+            status = SettlementStatus.FAILED_RETRYABLE;
+            updatedAt = OffsetDateTime.now();
+        }
+    }
 }

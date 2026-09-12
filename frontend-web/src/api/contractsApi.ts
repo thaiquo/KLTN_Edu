@@ -39,6 +39,8 @@ export interface AgreementSummary {
   settlementEligible?: boolean;
   totalAmount?: number;
   remainingDeposit?: number;
+  releasedAmountUsdc?: number;
+  refundedAmountUsdc?: number;
   fundedTxHash?: string;
 }
 
@@ -194,6 +196,9 @@ export interface PagedResponse<T> {
 // ─── API Functions ────────────────────────────────────
 
 export const contractsApi = {
+  retryTransaction(id: string): Promise<{ transactionId: string; transactionStatus: string }> {
+    return apiRequest(`/api/contracts/transactions/${id}/retry`, { method: "POST" });
+  },
   /**
    * List agreements - backend derives caller identity from the auth cookie.
    */

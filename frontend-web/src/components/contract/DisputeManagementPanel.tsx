@@ -70,7 +70,11 @@ export function DisputeManagementPanel({
     }
   }, []);
 
-  useEffect(() => { fetchDisputes(); }, [fetchDisputes]);
+  useEffect(() => {
+    fetchDisputes();
+    const timer = window.setInterval(fetchDisputes, 15000);
+    return () => window.clearInterval(timer);
+  }, [fetchDisputes]);
 
   // New dispute modal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -151,7 +155,7 @@ export function DisputeManagementPanel({
         contentType: evidenceTextInput.trim() ? 'text/plain' : undefined,
       });
 
-      setActionSuccess(`Đã mở khiếu nại thành công cho Buổi học #${sessionIdInput}!`);
+      setActionSuccess(`Đã gửi yêu cầu khiếu nại cho buổi #${sessionIdInput}. Đang chờ xác nhận blockchain.`);
       setIsCreateModalOpen(false);
       setReasonInput('');
       setEvidenceTextInput('');
@@ -173,9 +177,9 @@ export function DisputeManagementPanel({
       setActionError(null);
       const result = await contractsApi.resolveDispute(dispute.id, approveRefund, reason || 'Admin resolution');
       setActionSuccess(
-        `Đã phân xử thành công: ${
+        `Đã gửi yêu cầu phân xử: ${
           approveRefund ? 'Chấp thuận hoàn tiền cho học viên' : 'Bác bỏ khiếu nại, giải ngân cho gia sư'
-        }! (${result.transactionStatus})`
+        }. Đang chờ xác nhận blockchain (${result.transactionStatus}).`
       );
       await fetchDisputes();
     } catch (err: any) {

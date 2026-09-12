@@ -44,6 +44,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 @SpringBootTest
 @EnabledIfEnvironmentVariable(named = "RUN_ANVIL_DISPUTE_IT", matches = "true")
 class AnvilDisputeIntegrationTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private iuh.fit.contract_service.service.LearningServiceDispatcher learningDispatcher;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private iuh.fit.contract_service.service.NotificationDispatcher notificationDispatcher;
 
     @Autowired
     private AgreementRegistrationWorkflowService registrationWorkflowService;
@@ -187,7 +191,7 @@ class AnvilDisputeIntegrationTest {
         }
 
         SessionSettlement settlement = sessionSettlementRepository
-                .findByAgreementIdAndSessionId(agreementId, 1L).orElse(null);
+                .findByAgreementIdAndSessionId(agreementId, 1L).orElseThrow();
         if (settlement != null) {
             // 4. Open dispute by student
             String disputeEvidenceHash = "0x" + "d".repeat(64);
@@ -209,10 +213,10 @@ class AnvilDisputeIntegrationTest {
                 disputeWorkflowService.processConfirmedDisputeOpenedEvent(disputeOpenedEvents.get(disputeOpenedEvents.size() - 1));
             }
 
-            Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElse(null);
+            Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
             if (dispute != null) {
                 // 5. Resolve dispute by assigned staff (approved -> student refunded 100%)
-                String resolutionHash = "0x" + "r".repeat(64);
+                String resolutionHash = Hash.sha3String("Tutor did not show up in video recording");
                 disputeWorkflowService.initiateDisputeResolution(
                         dispute.getId(),
                         201L,
@@ -233,5 +237,13 @@ class AnvilDisputeIntegrationTest {
                 }
             }
         }
+        var resolved = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals(iuh.fit.contract_service.enums.DisputeStatus.APPROVED, resolved.getStatus());
+        var refunded = sessionSettlementRepository.findById(settlement.getId()).orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals(iuh.fit.contract_service.enums.SettlementStatus.REFUNDED, refunded.getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(BigInteger.valueOf(40_000_000), refunded.getStudentRefundAmount());
+        org.junit.jupiter.api.Assertions.assertEquals(BigInteger.ZERO, refunded.getTutorAmount());
+        org.junit.jupiter.api.Assertions.assertNotNull(refunded.getFinalizeTxHash());
+        web3j.shutdown();
     }
 }

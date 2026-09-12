@@ -34,6 +34,7 @@ public class BlockchainReadConfiguration {
 
     @Bean(destroyMethod = "shutdown")
     Web3j web3j(BlockchainProperties properties) {
+        log.info("Initialized Web3j client connecting to RPC: {}", properties.getRpcUrl());
         return Web3j.build(new HttpService(properties.getRpcUrl().toString()));
     }
 

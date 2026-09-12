@@ -101,7 +101,9 @@ class ContractManagementControllerPaymentTest {
                 learningServiceDispatcher,
                 currentUserContext,
                 accessControl,
-                blockchainGateway);
+                blockchainGateway, new iuh.fit.contract_service.service.OperationalFundingPolicy(
+                        agreementRepository, escrowPaymentRepository, processedEventRepository,
+                        new tools.jackson.databind.ObjectMapper()));
     }
 
     @Test
@@ -195,6 +197,7 @@ class ContractManagementControllerPaymentTest {
         return ContractAgreement.builder()
                 .id(id)
                 .studentId(1L)
+                .chainId(31337L)
                 .studentEmail("student@example.com")
                 .tutorId(2L)
                 .tutorEmail("tutor@example.com")

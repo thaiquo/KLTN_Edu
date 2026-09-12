@@ -107,7 +107,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
         // intents stay visible for diagnostics but are never presented as payouts.
         const allTxEvents: any[] = [];
         const allSettlements: SettlementDto[] = [];
-        for (const ag of list) {
+        for (const ag of list.filter(a => a.onchainFunded && !a.legacyUnreconciled)) {
           try {
             const [rawTxs, agreementSettlements] = await Promise.all([
               contractsApi.getAgreementTransactions(ag.id).catch(() => []),
@@ -125,7 +125,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
               let platAmt = Number(settlement.platformAmountUsdc || 0);
               let studentRef = Number(settlement.studentRefundUsdc || 0);
 
-              if (tutorAmt === 0 && studentRef === 0 && Number(settlement.amountUsdc || 0) > 0) {
+              if (isProposed && Number(settlement.amountUsdc || 0) > 0) {
                 const totalAmt = Number(settlement.amountUsdc);
                 if (settlement.outcome === "BOTH_PRESENT") {
                   tutorAmt = Math.round(totalAmt * 0.85 * 100) / 100;
@@ -140,7 +140,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
               }
 
               const txHash = isSettled || isRefunded
-                ? (settlement.finalizeTxHash || settlement.proposeTxHash)
+                ? settlement.finalizeTxHash
                 : settlement.proposeTxHash;
 
               const actionName = isProposed
@@ -193,6 +193,8 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
       }
     }
     fetchUserAgreementsAndTxs();
+    const refreshTimer = window.setInterval(fetchUserAgreementsAndTxs, 15000);
+    return () => window.clearInterval(refreshTimer);
   }, [userEmail, isTutor, user?.id, user?.email]);
 
   async function handleSaveDefaultWallet() {
@@ -248,12 +250,12 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
 
   // Calculate statistics from agreements
   const totalEscrowDeposited = agreements
-    .filter((a) => a.onchainFunded || a.status === "ACTIVE" || a.status === "COMPLETED")
+    .filter((a) => a.onchainFunded && !a.legacyUnreconciled)
     .reduce((acc, curr) => acc + (Number(curr.totalAmountUsdc ?? curr.totalAmount) || 0), 0);
 
   const escrowHoldingAmount = agreements
-    .filter((a) => (a.onchainFunded || a.status === "ACTIVE") && a.status !== "COMPLETED" && a.status !== "REFUNDED")
-    .reduce((acc, curr) => acc + (Number(curr.remainingDeposit ?? curr.totalAmountUsdc ?? curr.totalAmount) || 0), 0);
+    .filter((a) => a.onchainFunded && !a.legacyUnreconciled)
+    .reduce((acc, curr) => acc + (Number(curr.remainingDeposit) || 0), 0);
 
   const totalDisbursedAmount = settlements
     .filter((settlement) => settlement.status === "SETTLED")
@@ -605,7 +607,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                   : `Đang có ${pendingProposedCount} buổi học có đề xuất quyết toán on-chain đang đếm ngược`}
               </p>
               <p className="text-indigo-700 leading-relaxed">
-                Hợp đồng thông minh Smart Contract tự động kích hoạt thời hạn 24 giờ chờ khiếu nại (Dispute Window) để bảo vệ quyền lợi học viên. Khi đồng hồ 24h kết thúc, Smart Contract sẽ tự động chuyển token USDC trực tiếp vào địa chỉ ví cá nhân.
+                Thời hạn khiếu nại kéo dài 24 giờ kể từ khi đề xuất được ghi nhận trên blockchain. Sau thời hạn này, dịch vụ vận hành gửi yêu cầu quyết toán; USDC chỉ được ghi nhận đã chuyển khi giao dịch được xác nhận.
               </p>
             </div>
           </div>

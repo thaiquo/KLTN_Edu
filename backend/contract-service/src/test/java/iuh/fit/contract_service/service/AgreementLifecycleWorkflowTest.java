@@ -164,5 +164,6 @@ class AgreementLifecycleWorkflowTest {
                 Hash.sha3String("terms-v1"),
                 paymentDeadline,
                 status);
+        FundingTestEvidence.insert(jdbcTemplate, id);
     }
 }

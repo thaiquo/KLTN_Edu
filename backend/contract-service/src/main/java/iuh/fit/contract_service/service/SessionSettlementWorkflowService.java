@@ -39,18 +39,20 @@ public class SessionSettlementWorkflowService {
     private final BlockchainTransactionCommandService commandService;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final java.time.Clock clock;
 
     public SessionSettlementWorkflowService(
             ContractAgreementRepository agreementRepository,
             SessionSettlementRepository sessionSettlementRepository,
             BlockchainTransactionCommandService commandService,
             OutboxEventRepository outboxEventRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper, java.time.Clock clock) {
         this.agreementRepository = agreementRepository;
         this.sessionSettlementRepository = sessionSettlementRepository;
         this.commandService = commandService;
         this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
+        this.clock = clock;
     }
 
     @Transactional
@@ -200,8 +202,8 @@ public class SessionSettlementWorkflowService {
             throw new IllegalStateException("Settlement must be in PROPOSED status to finalize, actual: " + settlement.getStatus());
         }
 
-        if (settlement.getDisputeDeadline() != null &&
-                OffsetDateTime.now(ZoneOffset.UTC).isBefore(settlement.getDisputeDeadline())) {
+        if (settlement.getDisputeDeadline() == null ||
+                !OffsetDateTime.now(clock).isAfter(settlement.getDisputeDeadline())) {
             throw new IllegalStateException("Cannot finalize session before dispute deadline: " + settlement.getDisputeDeadline());
         }
 
@@ -341,20 +343,21 @@ public class SessionSettlementWorkflowService {
             BigInteger studentRefund) {
         BigInteger amount = settlement.getAmount();
         BigInteger normalTutor = amount.multiply(BigInteger.valueOf(8500)).divide(BigInteger.valueOf(10000));
-        BigInteger normalPlatform = amount.subtract(normalTutor);
+        BigInteger normalPlatform = amount.multiply(BigInteger.valueOf(1500)).divide(BigInteger.valueOf(10000));
+        BigInteger normalRefund = amount.subtract(normalTutor).subtract(normalPlatform);
         BigInteger absentTutor = amount.multiply(BigInteger.valueOf(4500)).divide(BigInteger.valueOf(10000));
         BigInteger absentPlatform = amount.multiply(BigInteger.valueOf(1000)).divide(BigInteger.valueOf(10000));
         BigInteger absentRefund = amount.subtract(absentTutor).subtract(absentPlatform);
 
         boolean valid;
         if (settlement.getStatus() == SettlementStatus.DISPUTED && settlement.getOutcome() == SettlementOutcome.BOTH_PRESENT) {
-            valid = (!isRefunded && tutorAmount.equals(normalTutor) && platformAmount.equals(normalPlatform) && studentRefund.equals(BigInteger.ZERO))
+            valid = (!isRefunded && tutorAmount.equals(normalTutor) && platformAmount.equals(normalPlatform) && studentRefund.equals(normalRefund))
                     || (isRefunded && tutorAmount.equals(BigInteger.ZERO) && platformAmount.equals(BigInteger.ZERO) && studentRefund.equals(amount));
         } else if (settlement.getOutcome() == SettlementOutcome.BOTH_PRESENT) {
             valid = !isRefunded
                     && tutorAmount.equals(normalTutor)
                     && platformAmount.equals(normalPlatform)
-                    && studentRefund.equals(BigInteger.ZERO);
+                    && studentRefund.equals(normalRefund);
         } else if (settlement.getOutcome() == SettlementOutcome.STUDENT_ABSENT_TUTOR_PRESENT) {
             valid = !isRefunded
                     && tutorAmount.equals(absentTutor)

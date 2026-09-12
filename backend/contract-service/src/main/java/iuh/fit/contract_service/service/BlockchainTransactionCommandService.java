@@ -22,19 +22,35 @@ public class BlockchainTransactionCommandService {
     private final OutboxEventRepository outboxRepository;
     private final BlockchainTransactionOutboxFactory outboxFactory;
     private final TransactionTemplate transactionTemplate;
+    private final OperationalFundingPolicy fundingPolicy;
+    private final iuh.fit.contract_service.config.OperatorSignerProperties signer;
 
     public BlockchainTransactionCommandService(
             BlockchainTransactionRepository transactionRepository,
             OutboxEventRepository outboxRepository,
             BlockchainTransactionOutboxFactory outboxFactory,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            OperationalFundingPolicy fundingPolicy,
+            iuh.fit.contract_service.config.OperatorSignerProperties signer) {
         this.transactionRepository = transactionRepository;
         this.outboxRepository = outboxRepository;
         this.outboxFactory = outboxFactory;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.fundingPolicy = fundingPolicy;
+        this.signer = signer;
     }
 
     public BlockchainTransactionIntentResult createIntent(BlockchainTransactionCommand command) {
+        // The fee beneficiary and the transaction signer are different responsibilities.
+        if (signer.isEnabled()) {
+            command = new BlockchainTransactionCommand(command.idempotencyKey(), command.action(), command.chainId(),
+                    signer.getAddress(), command.toAddress(), command.calldata(), command.calldataHash(),
+                    command.agreementId(), command.settlementId(), command.correlationId());
+        }
+        return createValidatedIntent(command);
+    }
+
+    private BlockchainTransactionIntentResult createValidatedIntent(BlockchainTransactionCommand command) {
         try {
             return transactionTemplate.execute(status -> createOrReturnExisting(command));
         } catch (DataIntegrityViolationException race) {
@@ -50,11 +66,15 @@ public class BlockchainTransactionCommandService {
     }
 
     private BlockchainTransactionIntentResult createOrReturnExisting(BlockchainTransactionCommand command) {
+        fundingPolicy.requireCommand(command);
         BlockchainTransaction existing = transactionRepository
                 .findByIdempotencyKey(command.idempotencyKey())
                 .orElse(null);
         if (existing != null) {
             requireSameIntent(existing, command);
+            if (existing.getStatus() == iuh.fit.contract_service.enums.BlockchainTransactionStatus.FAILED) {
+                throw new IllegalStateException("Previous transaction failed; use the audited recovery action");
+            }
             return result(existing, false);
         }
 

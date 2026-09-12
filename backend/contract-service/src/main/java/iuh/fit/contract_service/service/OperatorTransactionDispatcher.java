@@ -20,16 +20,18 @@ public class OperatorTransactionDispatcher {
     private final OperatorTransactionGateway gateway;
     private final BlockchainProperties properties;
     private final TransactionTemplate transactionTemplate;
+    private final OperationalFundingPolicy funding;
 
     public OperatorTransactionDispatcher(
             BlockchainTransactionRepository repository,
             OperatorTransactionGateway gateway,
             BlockchainProperties properties,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager, OperationalFundingPolicy funding) {
         this.repository = repository;
         this.gateway = gateway;
         this.properties = properties;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.funding = funding;
     }
 
     public Optional<UUID> dispatchNext() {
@@ -50,6 +52,12 @@ public class OperatorTransactionDispatcher {
 
         PreparedOperatorTransaction prepared;
         try {
+            funding.requireCommand(new iuh.fit.contract_service.command.BlockchainTransactionCommand(
+                    transaction.getIdempotencyKey(),
+                    iuh.fit.contract_service.enums.BlockchainTransactionAction.valueOf(transaction.getAction()),
+                    transaction.getChainId(), transaction.getFromAddress(), transaction.getToAddress(),
+                    transaction.getCalldata(), transaction.getCalldataHash(), transaction.getAgreementId(),
+                    transaction.getSettlementId(), null));
             prepared = gateway.prepare(
                     transaction.getChainId(),
                     transaction.getFromAddress(),

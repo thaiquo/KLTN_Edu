@@ -108,6 +108,18 @@ public class EduConnectEscrowReadGateway {
                 OnChainAgreementStatus.fromValue(uint(values, 12)));
     }
 
+    public void requireOperatorRoles(String operator) {
+        for (String role : List.of("OPERATOR_ROLE", "ARBITRATOR_ROLE")) {
+            Function function = new Function("hasRole", List.of(
+                    new Bytes32(Numeric.hexStringToByteArray(org.web3j.crypto.Hash.sha3String(role))),
+                    new Address(operator)), List.of(new TypeReference<org.web3j.abi.datatypes.Bool>() {}));
+            Type<?> value = decodeSingle(properties.getEscrowAddress(), function);
+            if (!(value instanceof org.web3j.abi.datatypes.Bool flag) || !flag.getValue()) {
+                throw new BlockchainConfigurationException("Configured operator is missing " + role);
+            }
+        }
+    }
+
     private void requireContractCode(String label, String address) {
         String code = rpcClient.getCode(address);
         if (code == null || code.isBlank() || code.equalsIgnoreCase("0x") || code.equalsIgnoreCase("0x0")) {

@@ -378,5 +378,6 @@ class DisputeWorkflowTest {
                 id, onchainAgreementId, reviewerEmail,
                 STUDENT, TUTOR, PLATFORM, CHAIN_ID,
                 ESCROW, TOKEN, termsHash, totalSessions, status);
+        FundingTestEvidence.insert(jdbcTemplate, id);
     }
 }

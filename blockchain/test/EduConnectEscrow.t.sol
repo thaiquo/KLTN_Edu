@@ -46,6 +46,28 @@ contract EduConnectEscrowTest is Test {
         assertFalse(escrow.hasRole(escrow.OPERATOR_ROLE(), outsider));
     }
 
+    function testDirectTransferSurplusDoesNotChangeValidAgreementAccounting() public {
+        uint256 surplus = 38_400_000;
+        vm.prank(student);
+        token.transfer(address(escrow), surplus);
+        _register(AGREEMENT_ID, student, tutor, TOTAL_AMOUNT, SESSION_AMOUNT, TOTAL_SESSIONS);
+        vm.prank(student);
+        escrow.fundAgreement(AGREEMENT_ID);
+        bytes32 sessionId = keccak256("surplus-session");
+        vm.prank(admin);
+        escrow.proposeSessionSettlement(AGREEMENT_ID, sessionId, IEduConnectEscrow.Outcome.BOTH_PRESENT, EVIDENCE_HASH);
+        vm.warp(block.timestamp + 24 hours + 1);
+        vm.prank(admin);
+        escrow.finalizeSession(AGREEMENT_ID, sessionId);
+        assertEq(token.balanceOf(tutor), SESSION_AMOUNT * 85 / 100);
+        assertEq(escrow.getAgreement(AGREEMENT_ID).remainingAmount, TOTAL_AMOUNT - SESSION_AMOUNT);
+        assertEq(token.balanceOf(address(escrow)), surplus + TOTAL_AMOUNT - SESSION_AMOUNT);
+        vm.prank(admin);
+        escrow.cancelAgreementAndRefundUnused(AGREEMENT_ID, REASON_HASH);
+        assertEq(token.balanceOf(address(escrow)), surplus);
+        assertEq(escrow.getAgreement(AGREEMENT_ID).remainingAmount, 0);
+    }
+
     function testConstructorRejectsInvalidAddressesAndToken() public {
         vm.expectRevert(EduConnectEscrow.ZeroAddress.selector);
         new EduConnectEscrow(address(0), platform, admin);

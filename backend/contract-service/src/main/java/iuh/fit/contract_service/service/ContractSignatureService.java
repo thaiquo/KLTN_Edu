@@ -66,6 +66,16 @@ public class ContractSignatureService {
         if (signature == null || signature.isBlank()) {
             throw new IllegalArgumentException("Missing EIP-712 signature from wallet.");
         }
+        String expectedWallet = "STUDENT".equals(normalizedRole) ? agreement.getStudentWallet()
+                : "TUTOR".equals(normalizedRole) ? agreement.getTutorWallet() : null;
+        if (expectedWallet == null || !normalizedWallet.equalsIgnoreCase(expectedWallet)
+                || expectedWallet.equalsIgnoreCase("0x" + "0".repeat(40)) || agreement.isLegacyExcluded()) {
+            throw new IllegalArgumentException("Signing wallet must match the immutable agreement party wallet");
+        }
+        if (ContractTermsSnapshotService.SCHEMA_VERSION.equals(snapshotVersion(agreement))
+                && !new ContractTermsSnapshotService().matchesHash(agreement.getTermsJson(), agreement.getTermsHash())) {
+            throw new IllegalStateException("Agreement terms hash does not match its immutable snapshot");
+        }
 
         long createdAtSeconds = agreement.getCreatedAt() != null ? agreement.getCreatedAt().toEpochSecond() : 0L;
         long chainId = agreement.getChainId() != null ? agreement.getChainId() : 11155111L;
@@ -140,12 +150,6 @@ public class ContractSignatureService {
         } else if ("STUDENT".equals(normalizedRole)) {
             if (agreement.getStatus() != ContractAgreementStatus.PENDING_STUDENT_ACCEPTANCE) {
                 throw new IllegalStateException("Hợp đồng không ở trạng thái chờ Học viên ký (Hiện tại: " + agreement.getStatus() + ")");
-            }
-
-            // Legacy v1 agreements did not require a student wallet at initiation.
-            if (!ContractTermsSnapshotService.SCHEMA_VERSION.equals(snapshotVersion(agreement))
-                    && normalizedWallet.startsWith("0x") && normalizedWallet.length() == 42) {
-                agreement.setStudentWallet(normalizedWallet);
             }
 
             // Record student acceptance with signature

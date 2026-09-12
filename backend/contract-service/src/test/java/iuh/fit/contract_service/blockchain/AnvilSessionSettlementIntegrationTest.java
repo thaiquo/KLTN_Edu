@@ -45,6 +45,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest
 @EnabledIfEnvironmentVariable(named = "RUN_ANVIL_SETTLEMENT_IT", matches = "true")
 class AnvilSessionSettlementIntegrationTest {
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private iuh.fit.contract_service.service.LearningServiceDispatcher learningDispatcher;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private iuh.fit.contract_service.service.NotificationDispatcher notificationDispatcher;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private java.time.Clock clock;
 
     @Autowired
     private AgreementRegistrationWorkflowService registrationWorkflowService;
@@ -78,6 +84,14 @@ class AnvilSessionSettlementIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @org.junit.jupiter.api.BeforeEach
+    void clearBusinessFixtures() {
+        for (String table : List.of("outbox_event", "blockchain_transaction", "processed_event", "dispute_evidence",
+                "dispute", "session_settlement", "escrow_payment", "contract_agreement")) {
+            jdbcTemplate.execute("DELETE FROM " + table);
+        }
+    }
 
     @Test
     void executesFullSessionSettlementLifecycleOnAnvil() throws Exception {
@@ -157,6 +171,11 @@ class AnvilSessionSettlementIntegrationTest {
             new Request<>("evm_mine", Collections.emptyList(), new HttpService(rpcUrl), org.web3j.protocol.core.methods.response.NetVersion.class).send();
 
             // 5. Finalize Session Settlement
+            // Advance the application clock alongside the local chain, preserving the persisted deadline.
+            var chainTime = web3j.ethGetBlockByNumber(
+                    org.web3j.protocol.core.DefaultBlockParameterName.LATEST, false).send().getBlock().getTimestamp();
+            org.mockito.Mockito.when(clock.instant()).thenReturn(java.time.Instant.ofEpochSecond(chainTime.longValueExact()));
+            org.mockito.Mockito.when(clock.getZone()).thenReturn(java.time.ZoneOffset.UTC);
             settlementWorkflowService.initiateSessionFinalization(proposedSettlement.getId());
             dispatcher.dispatchNext();
             ingestionService.scanNextConfirmedRange();

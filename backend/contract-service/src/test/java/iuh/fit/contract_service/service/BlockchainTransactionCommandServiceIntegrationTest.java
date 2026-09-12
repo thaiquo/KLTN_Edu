@@ -148,7 +148,8 @@ class BlockchainTransactionCommandServiceIntegrationTest {
                 transactionRepository,
                 outboxRepository,
                 failingFactory,
-                transactionManager);
+                transactionManager, mock(OperationalFundingPolicy.class),
+                new iuh.fit.contract_service.config.OperatorSignerProperties());
 
         assertThrows(IllegalStateException.class,
                 () -> failingService.createIntent(command(CALLDATA)));

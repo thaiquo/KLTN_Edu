@@ -76,7 +76,8 @@ public class Web3jOperatorTransactionGateway implements OperatorTransactionGatew
             String signed = Numeric.toHexString(TransactionEncoder.signMessage(rawTransaction, chainId, credentials));
             return new PreparedOperatorTransaction(nonce, Hash.sha3(signed), signed);
         } catch (IOException exception) {
-            throw new OperatorTransactionException("Cannot prepare operator transaction", exception);
+            String detail = exception.getMessage() != null ? exception.getMessage() : exception.getClass().getSimpleName();
+            throw new OperatorTransactionException("Cannot prepare operator transaction: " + detail, exception);
         }
     }
 
@@ -88,7 +89,8 @@ public class Web3jOperatorTransactionGateway implements OperatorTransactionGatew
                     ? null : response.getError().getMessage(), "eth_sendRawTransaction");
             return response.getTransactionHash();
         } catch (IOException exception) {
-            throw new OperatorTransactionException("Operator broadcast result is uncertain", exception);
+            String detail = exception.getMessage() != null ? exception.getMessage() : exception.getClass().getSimpleName();
+            throw new OperatorTransactionException("Operator broadcast result is uncertain: " + detail, exception);
         }
     }
 
@@ -104,7 +106,8 @@ public class Web3jOperatorTransactionGateway implements OperatorTransactionGatew
                     receipt.getBlockNumber().longValueExact(),
                     receipt.getBlockHash()));
         } catch (IOException exception) {
-            throw new OperatorTransactionException("Cannot read operator transaction receipt", exception);
+            String detail = exception.getMessage() != null ? exception.getMessage() : exception.getClass().getSimpleName();
+            throw new OperatorTransactionException("Cannot read operator transaction receipt: " + detail, exception);
         }
     }
 
@@ -116,7 +119,8 @@ public class Web3jOperatorTransactionGateway implements OperatorTransactionGatew
                     ? null : response.getError().getMessage(), "eth_blockNumber");
             return response.getBlockNumber();
         } catch (IOException exception) {
-            throw new OperatorTransactionException("Cannot read latest block number", exception);
+            String detail = exception.getMessage() != null ? exception.getMessage() : exception.getClass().getSimpleName();
+            throw new OperatorTransactionException("Cannot read latest block number: " + detail, exception);
         }
     }
 

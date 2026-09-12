@@ -23,6 +23,9 @@ import iuh.fit.contract_service.repository.ProcessedEventRepository;
 import iuh.fit.contract_service.service.AgreementLifecycleWorkflowService;
 import iuh.fit.contract_service.service.DisputeWorkflowService;
 import iuh.fit.contract_service.service.SessionSettlementWorkflowService;
+import iuh.fit.contract_service.service.OperationalFundingPolicy;
+import iuh.fit.contract_service.service.ContractTermsSnapshot;
+import iuh.fit.contract_service.service.ContractTermsSnapshotService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -66,6 +69,7 @@ public class ContractManagementController {
     private final iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher;
     private final CurrentUserContext currentUserContext;
     private final ContractAccessControl accessControl;
+    private final OperationalFundingPolicy operationalFundingPolicy;
     private final org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway;
 
     public ContractManagementController(
@@ -86,7 +90,8 @@ public class ContractManagementController {
             iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher,
             CurrentUserContext currentUserContext,
             ContractAccessControl accessControl,
-            org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway) {
+            org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway,
+            OperationalFundingPolicy operationalFundingPolicy) {
         this.agreementRepository = agreementRepository;
         this.settlementRepository = settlementRepository;
         this.transactionRepository = transactionRepository;
@@ -105,6 +110,7 @@ public class ContractManagementController {
         this.currentUserContext = currentUserContext;
         this.accessControl = accessControl;
         this.blockchainGateway = blockchainGateway;
+        this.operationalFundingPolicy = operationalFundingPolicy;
     }
 
     public record InitiateAgreementRequest(
@@ -122,7 +128,17 @@ public class ContractManagementController {
             String tutorWallet,
             BigDecimal pricePerSessionVnd,
             Integer totalSessions,
-            String classroomReviewerEmail
+            String classroomReviewerEmail,
+            String classDescription,
+            String learningMode,
+            String meetingPlatform,
+            String meetingLink,
+            String learningAddress,
+            String courseStartDate,
+            String courseEndDate,
+            Integer durationPerSessionMinutes,
+            List<ContractTermsSnapshot.ScheduleTerms> schedules,
+            List<ContractTermsSnapshot.SyllabusTerms> syllabus
     ) {}
 
     public record SignAgreementRequest(
@@ -191,17 +207,15 @@ public class ContractManagementController {
         String studentPhone = request.studentPhone() != null ? request.studentPhone().trim() : "";
         String tutorPhone = request.tutorPhone() != null ? request.tutorPhone().trim() : "";
 
-        String studentWallet = (request.studentWallet() != null && request.studentWallet().startsWith("0x") && request.studentWallet().length() == 42)
-                ? request.studentWallet()
-                : "0x0000000000000000000000000000000000000000";
-
-        if (request.tutorWallet() == null || !request.tutorWallet().startsWith("0x") || request.tutorWallet().length() != 42) {
-            return ResponseEntity.badRequest().build();
+        String studentWallet = request.studentWallet();
+        if (!usableWallet(studentWallet) || !usableWallet(request.tutorWallet())
+                || studentWallet.equalsIgnoreCase(request.tutorWallet())) {
+            throw new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "Student and tutor must provide distinct, non-zero wallets before agreement creation");
         }
 
         UUID agreementId = UUID.randomUUID();
         String onchainAgreementId = org.web3j.crypto.Hash.sha3String("AGREEMENT:" + agreementId);
-        String termsHash = org.web3j.crypto.Hash.sha3String("TERMS:" + request.classroomId() + ":" + request.studentId() + ":" + request.tutorId());
 
         BigDecimal pricePerSessionVnd = request.pricePerSessionVnd();
         int totalSessions = request.totalSessions();
@@ -209,8 +223,12 @@ public class ContractManagementController {
         BigDecimal vndPerUsdc = BigDecimal.valueOf(25000);
 
         // Convert to USDC units (6 decimals)
-        long pricePerSessionUnits = pricePerSessionVnd.divide(vndPerUsdc, 2, java.math.RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(1_000_000)).longValue();
-        long totalAmountUnits = pricePerSessionUnits * totalSessions;
+        BigInteger pricePerSessionUnits = pricePerSessionVnd.divide(vndPerUsdc, 6, java.math.RoundingMode.HALF_UP)
+                .movePointRight(6).toBigIntegerExact();
+        BigInteger totalAmountUnits = pricePerSessionUnits.multiply(BigInteger.valueOf(totalSessions));
+        if (pricePerSessionUnits.signum() <= 0 || totalAmountUnits.bitLength() > 256) {
+            throw new ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "Invalid USDC amount");
+        }
 
         OffsetDateTime now = OffsetDateTime.now();
 
@@ -218,11 +236,32 @@ public class ContractManagementController {
                 blockchainGateway != null ? blockchainGateway.getIfAvailable() : null;
         iuh.fit.contract_service.blockchain.BlockchainNetworkSnapshot network =
                 gateway != null ? gateway.validateConfiguration() : null;
-        String platformWallet = network != null ? network.platformWallet() : "0x10dd719b6a13e9d275990d706c2640ab6f1ca28e";
-        long chainId = network != null ? network.chainId().longValueExact() : 11155111L;
-        String escrowAddress = network != null ? network.escrowAddress() : "0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3";
-        String tokenAddress = network != null ? network.tokenAddress() : "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238";
-        short tokenDecimals = network != null ? (short) network.tokenDecimals() : (short) 6;
+        if (network == null || network.tokenDecimals() != 6) {
+            throw new ResponseStatusException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                    "A validated USDC escrow deployment is required to create an agreement");
+        }
+        String platformWallet = network.platformWallet();
+        long chainId = network.chainId().longValueExact();
+        String escrowAddress = network.escrowAddress();
+        String tokenAddress = network.tokenAddress();
+        short tokenDecimals = (short) network.tokenDecimals();
+        var snapshotService = new ContractTermsSnapshotService();
+        String termsJson = snapshotService.serialize(new ContractTermsSnapshot(
+                ContractTermsSnapshotService.SCHEMA_VERSION,
+                new ContractTermsSnapshot.ClassroomTerms(request.className(), request.classDescription(),
+                        request.learningMode(), request.meetingPlatform(), request.meetingLink(), request.learningAddress(),
+                        request.courseStartDate(), request.courseEndDate(), request.durationPerSessionMinutes(),
+                        request.schedules() == null ? List.of() : request.schedules(),
+                        request.syllabus() == null ? List.of() : request.syllabus()),
+                new ContractTermsSnapshot.PartiesTerms(
+                        new ContractTermsSnapshot.PartyTerms(tutorName, request.tutorEmail(), tutorPhone, request.tutorWallet().toLowerCase(Locale.ROOT)),
+                        new ContractTermsSnapshot.PartyTerms(studentName, request.studentEmail(), studentPhone, studentWallet.toLowerCase(Locale.ROOT))),
+                new ContractTermsSnapshot.FinancialTerms(pricePerSessionVnd, totalPriceVnd, vndPerUsdc, "USDC", tokenDecimals,
+                        pricePerSessionUnits.toString(), totalAmountUnits.toString(), totalSessions),
+                new ContractTermsSnapshot.PlatformTerms(chainId, platformWallet, escrowAddress, tokenAddress),
+                new ContractTermsSnapshot.EscrowPolicyTerms(24, 8500, 1500,
+                        "24h dispute after proposal; BOTH_PRESENT=85/15/0; STUDENT_ABSENT_TUTOR_PRESENT=45/10/45; TUTOR_ABSENT=0/0/100; tutor-fraud dispute only for BOTH_PRESENT")));
+        String termsHash = snapshotService.hash(termsJson);
 
         ContractAgreement agreement = ContractAgreement.builder()
                 .id(agreementId)
@@ -246,13 +285,13 @@ public class ContractManagementController {
                 .tokenAddress(tokenAddress)
                 .tokenSymbol("USDC")
                 .tokenDecimals(tokenDecimals)
-                .termsJson("{\"classroomId\":" + request.classroomId() + ",\"studentEmail\":\"" + (request.studentEmail() != null ? request.studentEmail() : "") + "\",\"sessions\":" + totalSessions + "}")
+                .termsJson(termsJson)
                 .termsHash(termsHash)
                 .contractVersion(1)
                 .totalPriceVnd(totalPriceVnd)
                 .vndPerUsdc(vndPerUsdc)
-                .totalAmountUsdcUnits(BigInteger.valueOf(totalAmountUnits))
-                .pricePerSessionUsdcUnits(BigInteger.valueOf(pricePerSessionUnits))
+                .totalAmountUsdcUnits(totalAmountUnits)
+                .pricePerSessionUsdcUnits(pricePerSessionUnits)
                 .totalSessions(totalSessions)
                 .status(ContractAgreementStatus.PENDING_TUTOR_ACCEPTANCE)
                 .createdAt(now)
@@ -509,6 +548,7 @@ public class ContractManagementController {
             accessControl.requireCanManageSettlement(agreement, currentUser);
 
             SettlementOutcome outcome = SettlementOutcome.valueOf(body.outcome().trim().toUpperCase(Locale.ROOT));
+            requireSettlementEligible(agreement);
             String evidenceHash = resolveBytes32Hash(
                     body.evidenceHash(),
                     "SETTLEMENT:" + id + ":" + body.sessionId() + ":" + body.outcome() + ":" + nullToBlank(body.evidence()));
@@ -1031,11 +1071,25 @@ public class ContractManagementController {
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private AgreementSummaryDto toAgreementSummary(ContractAgreement a) {
-        long settled = settlementRepository.findByAgreementId(a.getId()).stream()
+        var confirmedSettlements = settlementRepository.findByAgreementId(a.getId()).stream()
                 .filter(s -> s.getStatus() == SettlementStatus.SETTLED
                         || s.getStatus() == SettlementStatus.REFUNDED)
-                .count();
+                .toList();
+        long settled = confirmedSettlements.size();
         boolean onchainFunded = hasConfirmedFundingEvent(a);
+        BigInteger released = onchainFunded ? confirmedSettlements.stream()
+                .map(s -> zeroIfNull(s.getTutorAmount()).add(zeroIfNull(s.getPlatformAmount())))
+                .reduce(BigInteger.ZERO, BigInteger::add) : BigInteger.ZERO;
+        BigInteger refunded = onchainFunded ? confirmedSettlements.stream()
+                .map(s -> zeroIfNull(s.getStudentRefundAmount()))
+                .reduce(BigInteger.ZERO, BigInteger::add) : BigInteger.ZERO;
+        BigInteger remaining = onchainFunded ? a.getTotalAmountUsdcUnits().subtract(confirmedSettlements.stream()
+                .map(SessionSettlement::getAmount).reduce(BigInteger.ZERO, BigInteger::add)).max(BigInteger.ZERO)
+                : BigInteger.ZERO;
+        if (a.getStatus() == ContractAgreementStatus.CANCELLED || a.getStatus() == ContractAgreementStatus.COMPLETED) {
+            if (onchainFunded && a.getStatus() == ContractAgreementStatus.CANCELLED) refunded = refunded.add(remaining);
+            remaining = BigInteger.ZERO;
+        }
         boolean legacyUnreconciled = isLegacyUnreconciled(a, onchainFunded);
         boolean settlementEligible = a.getStatus() == ContractAgreementStatus.ACTIVE && onchainFunded;
 
@@ -1093,22 +1147,27 @@ public class ContractManagementController {
                 a.getClassroomReviewerEmail(),
                 onchainFunded,
                 legacyUnreconciled,
-                settlementEligible
+                settlementEligible,
+                toUsdc(remaining, a.getTokenDecimals()),
+                toUsdc(released, a.getTokenDecimals()),
+                toUsdc(refunded, a.getTokenDecimals()),
+                onchainFunded ? escrowPaymentRepository.findByAgreementId(a.getId()).map(EscrowPayment::getFundTxHash).orElse(null) : null
         );
     }
 
     private boolean hasConfirmedFundingEvent(ContractAgreement agreement) {
-        return escrowPaymentRepository.findByAgreementId(agreement.getId())
-                .filter(payment -> payment.getFundTxHash() != null && !payment.getFundTxHash().isBlank())
-                .filter(payment -> payment.getChainId() != null)
-                .map(payment -> processedEventRepository
-                        .existsByEventTypeIgnoreCaseAndChainIdAndTransactionHashIgnoreCase(
-                                "AGREEMENT_FUNDED", payment.getChainId(), payment.getFundTxHash()))
-                .orElse(false);
+        return operationalFundingPolicy.isFunded(agreement);
     }
 
+    private static boolean usableWallet(String wallet) {
+        return wallet != null && wallet.matches("0x[0-9a-fA-F]{40}")
+                && !wallet.equalsIgnoreCase("0x" + "0".repeat(40));
+    }
+
+    private static BigInteger zeroIfNull(BigInteger value) { return value == null ? BigInteger.ZERO : value; }
+
     private boolean isLegacyUnreconciled(ContractAgreement agreement, boolean onchainFunded) {
-        return !onchainFunded
+        return agreement.isLegacyExcluded() || !onchainFunded
                 && (agreement.getStatus() == ContractAgreementStatus.ACTIVE
                 || agreement.getStatus() == ContractAgreementStatus.COMPLETED);
     }
@@ -1243,7 +1302,8 @@ public class ContractManagementController {
             int totalSessions, int settledSessions,
             String status, String createdAt, String paymentDeadline,
             Long chainId, String escrowContractAddress, String classroomReviewerEmail,
-            boolean onchainFunded, boolean legacyUnreconciled, boolean settlementEligible) {}
+            boolean onchainFunded, boolean legacyUnreconciled, boolean settlementEligible, double remainingDeposit,
+            double releasedAmountUsdc, double refundedAmountUsdc, String fundedTxHash) {}
 
     public record AgreementDetailDto(
             AgreementSummaryDto summary,

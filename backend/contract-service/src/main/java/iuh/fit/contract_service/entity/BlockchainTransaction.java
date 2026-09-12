@@ -258,4 +258,53 @@ public class BlockchainTransaction {
         nextAttemptAt = null;
         updatedAt = now;
     }
+
+    public void awaitReceiptReview(OffsetDateTime now) {
+        // A missing receipt is not proof that the signed transaction cannot mine.
+        errorMessage = "Receipt delayed; continuing reconciliation. Do not submit a replacement intent.";
+        updatedAt = now;
+    }
+
+    public void recordReceiptCheck(OffsetDateTime now) {
+        if (status == BlockchainTransactionStatus.DISPATCHING || status == BlockchainTransactionStatus.SUBMITTED) {
+            updatedAt = now;
+        }
+    }
+
+    public void recordRebroadcastAttempt(String message, OffsetDateTime retryAt, OffsetDateTime now) {
+        if ((status != BlockchainTransactionStatus.DISPATCHING && status != BlockchainTransactionStatus.SUBMITTED)
+                || transactionHash == null || signedRawTransaction == null) {
+            throw new IllegalStateException("Only a pending signed transaction can be rebroadcast");
+        }
+        errorMessage = message;
+        nextAttemptAt = retryAt;
+        updatedAt = now;
+    }
+
+    public void resumeUncertainReceiptWatch(OffsetDateTime now) {
+        if (status != BlockchainTransactionStatus.FAILED || transactionHash == null || receiptStatus != null) {
+            throw new IllegalStateException("Only a legacy unknown receipt can resume reconciliation");
+        }
+        status = BlockchainTransactionStatus.SUBMITTED;
+        awaitReceiptReview(now);
+    }
+
+    public void retryKnownFailure(OffsetDateTime now) {
+        if (status != BlockchainTransactionStatus.FAILED
+                || (transactionHash != null && !Short.valueOf((short) 0).equals(receiptStatus))) {
+            throw new IllegalStateException("Only a failure before signing or a confirmed revert can be retried");
+        }
+        transitionTo(BlockchainTransactionStatus.CREATED);
+        transactionHash = null;
+        nonce = null;
+        signedRawTransaction = null;
+        receiptStatus = null;
+        blockNumber = null;
+        blockHash = null;
+        dispatchStartedAt = null;
+        attemptCount = 0;
+        errorMessage = null;
+        nextAttemptAt = now;
+        updatedAt = now;
+    }
 }

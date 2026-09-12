@@ -30,7 +30,8 @@ public class Web3jBlockchainRpcClient implements BlockchainRpcClient, Blockchain
         try {
             return web3j.ethChainId().send().getChainId();
         } catch (IOException exception) {
-            throw new BlockchainConfigurationException("Cannot read chain ID from configured RPC", exception);
+            String detail = exception.getMessage() != null ? exception.getMessage() : exception.getClass().getSimpleName();
+            throw new BlockchainConfigurationException("Cannot read chain ID from configured RPC: " + detail, exception);
         }
     }
 
@@ -43,7 +44,8 @@ public class Web3jBlockchainRpcClient implements BlockchainRpcClient, Blockchain
             }
             return response.getCode();
         } catch (IOException exception) {
-            throw new BlockchainConfigurationException("Cannot read contract bytecode", exception);
+            String detail = exception.getMessage() != null ? exception.getMessage() : exception.getClass().getSimpleName();
+            throw new BlockchainConfigurationException("Cannot read contract bytecode: " + detail, exception);
         }
     }
 
@@ -60,7 +62,8 @@ public class Web3jBlockchainRpcClient implements BlockchainRpcClient, Blockchain
             }
             return response.getValue();
         } catch (IOException exception) {
-            throw new BlockchainConfigurationException("Cannot call configured contract", exception);
+            String detail = exception.getMessage() != null ? exception.getMessage() : exception.getClass().getSimpleName();
+            throw new BlockchainConfigurationException("Cannot call configured contract: " + detail, exception);
         }
     }
 
@@ -72,7 +75,8 @@ public class Web3jBlockchainRpcClient implements BlockchainRpcClient, Blockchain
                     ? null : response.getError().getMessage(), "eth_blockNumber");
             return response.getBlockNumber();
         } catch (IOException exception) {
-            throw new BlockchainConfigurationException("Cannot read latest block number", exception);
+            String detail = exception.getMessage() != null ? exception.getMessage() : exception.getClass().getSimpleName();
+            throw new BlockchainConfigurationException("Cannot read latest block number: " + detail, exception);
         }
     }
 
@@ -90,7 +94,8 @@ public class Web3jBlockchainRpcClient implements BlockchainRpcClient, Blockchain
                     response.getBlock().getNumber().longValueExact(),
                     response.getBlock().getHash());
         } catch (IOException exception) {
-            throw new BlockchainConfigurationException("Cannot read block " + blockNumber, exception);
+            String detail = exception.getMessage() != null ? exception.getMessage() : exception.getClass().getSimpleName();
+            throw new BlockchainConfigurationException("Cannot read block " + blockNumber + ": " + detail, exception);
         }
     }
 
@@ -117,7 +122,8 @@ public class Web3jBlockchainRpcClient implements BlockchainRpcClient, Blockchain
                             log.getLogIndex().longValueExact()))
                     .toList();
         } catch (IOException exception) {
-            throw new BlockchainConfigurationException("Cannot read escrow event logs", exception);
+            String detail = exception.getMessage() != null ? exception.getMessage() : exception.getClass().getSimpleName();
+            throw new BlockchainConfigurationException("Cannot read escrow event logs: " + detail, exception);
         }
     }
 

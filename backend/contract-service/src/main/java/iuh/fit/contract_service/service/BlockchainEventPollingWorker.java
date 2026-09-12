@@ -26,7 +26,9 @@ public class BlockchainEventPollingWorker {
         try {
             ingestionService.scanNextConfirmedRange();
         } catch (RuntimeException exception) {
-            log.warn("Escrow event polling failed; cursor was not advanced: {}", exception.getMessage());
+            String cause = exception.getCause() != null && exception.getCause().getMessage() != null
+                    ? " [cause: " + exception.getCause().getMessage() + "]" : "";
+            log.warn("Escrow event polling failed; cursor was not advanced: {}{}", exception.getMessage(), cause);
         } finally {
             running.set(false);
         }

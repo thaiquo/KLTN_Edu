@@ -1,5 +1,9 @@
 # EduConnect Blockchain Baseline
 
+Latest current-deployment decision and runtime hardening (2026-09-12):
+[Current escrow hardening](ESCROW_HARDENING_2026-09-12.md). Keep the existing Sepolia master contract.
+That report supersedes historical legacy-eligibility and operator-disabled notes below; older observations are retained as history.
+
 ## 1. Purpose
 
 Blockchain supports EduConnect contract management by recording/verifying agreement state and handling escrow-related flows.

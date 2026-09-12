@@ -35,6 +35,7 @@ public class AgreementLifecycleWorkflowService {
             SettlementStatus.PROPOSED,
             SettlementStatus.DISPUTE_OPENING,
             SettlementStatus.DISPUTED,
+            SettlementStatus.FAILED_RETRYABLE,
             SettlementStatus.FINALIZE_PENDING);
 
     private final ContractAgreementRepository agreementRepository;

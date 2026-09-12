@@ -35,6 +35,65 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
 class SessionSettlementWorkflowTest {
+    @Autowired private BlockchainRecoveryService recoveryService;
+
+    @Test
+    void rejectsUnfundedActiveAgreementAndRollsBackPendingSettlement() {
+        UUID id = UUID.randomUUID();
+        insertAgreement(id, Hash.sha3String("agreement:" + id), Hash.sha3String("terms"), "ACTIVE", 1);
+        jdbcTemplate.update("DELETE FROM processed_event");
+        assertThrows(IllegalStateException.class, () -> workflowService.initiateSessionProposal(
+                id, 1L, SettlementOutcome.BOTH_PRESENT, Hash.sha3String("evidence")));
+        assertEquals(0, sessionSettlementRepository.count());
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM blockchain_transaction", Integer.class));
+    }
+
+    @Test
+    void eventForAnotherAgreementOrContractCannotAuthorizeFunding() {
+        UUID id = UUID.randomUUID();
+        insertAgreement(id, Hash.sha3String("agreement:" + id), Hash.sha3String("terms"), "ACTIVE", 1);
+        jdbcTemplate.update("UPDATE processed_event SET contract_address = ?", STUDENT);
+        assertThrows(IllegalStateException.class, () -> workflowService.initiateSessionProposal(
+                id, 1L, SettlementOutcome.BOTH_PRESENT, Hash.sha3String("evidence")));
+        jdbcTemplate.update("UPDATE processed_event SET contract_address = ?, decoded_payload = ?", ESCROW,
+                "{\"type\":\"AGREEMENT_FUNDED\",\"agreementId\":\"wrong\",\"attributes\":{}}");
+        assertThrows(IllegalStateException.class, () -> workflowService.initiateSessionProposal(
+                id, 1L, SettlementOutcome.BOTH_PRESENT, Hash.sha3String("evidence")));
+    }
+
+    @Test
+    void knownFailureCanBeRetriedWithAuditButUnknownReceiptCannot() {
+        UUID id = UUID.randomUUID();
+        insertAgreement(id, Hash.sha3String("agreement:" + id), Hash.sha3String("terms"), "ACTIVE", 1);
+        var intent = workflowService.initiateSessionProposal(id, 1L, SettlementOutcome.BOTH_PRESENT,
+                Hash.sha3String("evidence"));
+        jdbcTemplate.update("UPDATE blockchain_transaction SET status = 'FAILED', error_message = 'RPC unavailable' WHERE id = ?",
+                intent.transactionId());
+        recoveryService.reconcileKnownFailures();
+        assertEquals(SettlementStatus.FAILED_RETRYABLE,
+                sessionSettlementRepository.findByAgreementId(id).getFirst().getStatus());
+        recoveryService.retry(intent.transactionId(), 9L);
+        assertEquals(SettlementStatus.PROPOSE_PENDING,
+                sessionSettlementRepository.findByAgreementId(id).getFirst().getStatus());
+        assertEquals(1, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM outbox_event WHERE event_type = 'blockchain.transaction.retry.v1'", Integer.class));
+        jdbcTemplate.update("UPDATE blockchain_transaction SET status = 'FAILED', transaction_hash = ?, receipt_status = NULL WHERE id = ?",
+                Hash.sha3String("unknown"), intent.transactionId());
+        assertThrows(IllegalStateException.class, () -> recoveryService.retry(intent.transactionId(), 9L));
+        recoveryService.reconcileKnownFailures();
+        assertEquals("SUBMITTED", jdbcTemplate.queryForObject(
+                "SELECT status FROM blockchain_transaction WHERE id = ?", String.class, intent.transactionId()));
+    }
+
+    @Test
+    void quarantinedAgreementCannotRetryAnOldIntent() {
+        UUID id = UUID.randomUUID();
+        insertAgreement(id, Hash.sha3String("agreement:" + id), Hash.sha3String("terms"), "ACTIVE", 1);
+        var intent = workflowService.initiateSessionProposal(id, 1L, SettlementOutcome.BOTH_PRESENT, Hash.sha3String("evidence"));
+        jdbcTemplate.update("UPDATE blockchain_transaction SET status = 'FAILED' WHERE id = ?", intent.transactionId());
+        jdbcTemplate.update("UPDATE contract_agreement SET legacy_excluded = TRUE WHERE id = ?", id);
+        assertThrows(IllegalStateException.class, () -> recoveryService.retry(intent.transactionId(), 9L));
+    }
 
     @Autowired
     private SessionSettlementWorkflowService workflowService;
@@ -258,5 +317,6 @@ class SessionSettlementWorkflowTest {
                 """,
                 id, onchainAgreementId, STUDENT, TUTOR, PLATFORM, CHAIN_ID,
                 ESCROW, TOKEN, termsHash, totalSessions, status);
+        FundingTestEvidence.insert(jdbcTemplate, id);
     }
 }

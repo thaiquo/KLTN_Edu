@@ -22,6 +22,10 @@ public interface BlockchainTransactionRepository extends JpaRepository<Blockchai
     @Query("""
             select transaction from BlockchainTransaction transaction
             where transaction.status = iuh.fit.contract_service.enums.BlockchainTransactionStatus.CREATED
+              and not exists (select pending.id from BlockchainTransaction pending
+                  where pending.chainId = transaction.chainId and lower(pending.fromAddress) = lower(transaction.fromAddress)
+                    and pending.status in (iuh.fit.contract_service.enums.BlockchainTransactionStatus.DISPATCHING,
+                        iuh.fit.contract_service.enums.BlockchainTransactionStatus.SUBMITTED))
               and (transaction.nextAttemptAt is null or transaction.nextAttemptAt <= :now)
             order by transaction.createdAt
             """)
