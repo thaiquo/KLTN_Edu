@@ -13,7 +13,9 @@ import {
   ExternalLink,
   GraduationCap,
   ShieldCheck,
-  FileText
+  FileText,
+  Search,
+  ArrowUpDown
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { classApi } from "../../api/classes";
@@ -24,12 +26,82 @@ interface StudentClassManagementProps {
   onNavigate?: (tab: string) => void;
 }
 
+const normalizeText = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d");
+
+const sessionDateTime = (dateValue?: string, timeValue?: string) => {
+  if (!dateValue) return null;
+  const [year, month, day] = String(dateValue).split("-").map(Number);
+  if (!year || !month || !day) return null;
+  const [hour = 0, minute = 0] = String(timeValue || "00:00").split(":").map(Number);
+  return new Date(year, month - 1, day, Number.isFinite(hour) ? hour : 0, Number.isFinite(minute) ? minute : 0);
+};
+
+const formatUpcomingLabel = (startsAt: Date) => {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const target = new Date(startsAt.getFullYear(), startsAt.getMonth(), startsAt.getDate()).getTime();
+  const diffDays = Math.round((target - today) / 86400000);
+  if (diffDays === 0) return "Hôm nay";
+  if (diffDays === 1) return "Ngày mai";
+  return startsAt.toLocaleDateString("vi-VN", { weekday: "short", day: "2-digit", month: "2-digit" });
+};
+
+const fallbackNextSession = (cls: any) => {
+  const schedules = Array.isArray(cls?.schedules) ? cls.schedules : [];
+  if (schedules.length === 0) return null;
+  const now = new Date();
+  let best: any = null;
+
+  for (let offset = 0; offset < 14; offset++) {
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
+    const projectDay = day.getDay() === 0 ? 8 : day.getDay() + 1;
+    for (const schedule of schedules) {
+      if (Number(schedule.dayOfWeek) !== projectDay) continue;
+      const startsAt = sessionDateTime(
+        `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`,
+        schedule.startTime
+      );
+      if (!startsAt || startsAt.getTime() < now.getTime() - 30 * 60 * 1000) continue;
+      if (!best || startsAt.getTime() < best.startsAt.getTime()) {
+        best = {
+          startsAt,
+          startTime: schedule.startTime,
+          endTime: schedule.endTime,
+          label: formatUpcomingLabel(startsAt),
+          timeLabel: `${formatUpcomingLabel(startsAt)} ${schedule.startTime || ""}`.trim()
+        };
+      }
+    }
+    if (best) break;
+  }
+  return best;
+};
+
+const compareClassesByUpcoming = (a: any, b: any) => {
+  const aTime = a?.nextSession?.startsAt?.getTime?.() ?? Number.MAX_SAFE_INTEGER;
+  const bTime = b?.nextSession?.startsAt?.getTime?.() ?? Number.MAX_SAFE_INTEGER;
+  if (aTime !== bTime) return aTime - bTime;
+  return String(a?.name || "").localeCompare(String(b?.name || ""), "vi");
+};
+
+const dateValue = (value?: string) => {
+  const time = value ? new Date(value).getTime() : Number.MAX_SAFE_INTEGER;
+  return Number.isFinite(time) ? time : Number.MAX_SAFE_INTEGER;
+};
+
 export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ onNavigate }) => {
   const { user } = useAuth();
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
   const [pendingContractsCount, setPendingContractsCount] = useState<number>(0);
   const [classFilter, setClassFilter] = useState<'ALL' | 'ACTIVE' | 'COMPLETED'>('ALL');
+  const [classSearch, setClassSearch] = useState<string>("");
+  const [classSort, setClassSort] = useState<'UPCOMING' | 'NAME' | 'START_DATE'>('UPCOMING');
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -139,11 +211,48 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
         console.warn("Could not load enrollment requests for student:", e);
       }
 
+      let list = Array.from(classMap.values());
+      try {
+        const scheduleData = await classApi.getStudentSchedule();
+        const upcomingByClassId = new Map<number, any>();
+        const now = new Date();
+        const sessions = Array.isArray(scheduleData?.sessions) ? scheduleData.sessions : [];
+        sessions
+          .filter((session: any) => String(session.status || "").toUpperCase() !== "COMPLETED")
+          .map((session: any) => ({
+            ...session,
+            startsAt: sessionDateTime(session.sessionDate, session.startTime)
+          }))
+          .filter((session: any) => session.startsAt && session.startsAt.getTime() >= now.getTime() - 30 * 60 * 1000)
+          .sort((a: any, b: any) => a.startsAt.getTime() - b.startsAt.getTime())
+          .forEach((session: any) => {
+            const classId = Number(session.classRoomId);
+            if (classId && !upcomingByClassId.has(classId)) {
+              upcomingByClassId.set(classId, {
+                ...session,
+                label: `${formatUpcomingLabel(session.startsAt)} - Buổi ${session.sequenceNumber || ""}`.trim(),
+                timeLabel: `${formatUpcomingLabel(session.startsAt)} ${session.startTime || ""}`.trim()
+              });
+            }
+          });
+
+        list = list.map((cls) => ({
+          ...cls,
+          nextSession: upcomingByClassId.get(Number(cls.id)) || fallbackNextSession(cls)
+        }));
+      } catch (e) {
+        console.warn("Could not load student schedule for class ordering:", e);
+        list = list.map((cls) => ({
+          ...cls,
+          nextSession: fallbackNextSession(cls)
+        }));
+      }
+
+      list.sort(compareClassesByUpcoming);
       setPendingContractsCount(pendingCount);
-      const list = Array.from(classMap.values());
       setClasses(list);
       if (list.length > 0) {
-        setSelectedClassId((prev) => (prev && classMap.has(prev) ? prev : list[0].id));
+        setSelectedClassId((prev) => (prev && list.some((cls) => cls.id === prev) ? prev : list[0].id));
       } else {
         setSelectedClassId(null);
       }
@@ -162,13 +271,36 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
   }, [user?.email, loadMyClasses]);
 
   const filteredClasses = useMemo(() => {
-    return classes.filter((cls) => {
+    const keyword = normalizeText(classSearch);
+    const result = classes.filter((cls) => {
       const isCompleted = cls.agreementStatus === 'COMPLETED' || cls.enrollmentStatus === 'COMPLETED' || cls.status === 'COMPLETED';
       if (classFilter === 'COMPLETED') return isCompleted;
-      if (classFilter === 'ACTIVE') return !isCompleted;
-      return true;
+      if (classFilter === 'ACTIVE' && isCompleted) return false;
+      if (!keyword) return true;
+      const searchText = normalizeText([
+        cls.name,
+        cls.className,
+        cls.tutorFullName,
+        cls.tutorName,
+        cls.tutorEmail,
+        cls.subjectName,
+        cls.registration?.subjectName,
+        cls.nextSession?.label,
+        cls.nextSession?.timeLabel
+      ].filter(Boolean).join(" "));
+      return searchText.includes(keyword);
     });
-  }, [classes, classFilter]);
+
+    return [...result].sort((a, b) => {
+      if (classSort === 'NAME') {
+        return String(a.name || "").localeCompare(String(b.name || ""), "vi");
+      }
+      if (classSort === 'START_DATE') {
+        return dateValue(a.startDate) - dateValue(b.startDate);
+      }
+      return compareClassesByUpcoming(a, b);
+    });
+  }, [classes, classFilter, classSearch, classSort]);
 
   const selectedClass = useMemo(() => {
     if (selectedClassId) {
@@ -287,7 +419,7 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
       ) : (
         <div className="space-y-6">
           {/* Class Selector Tabs & Filter */}
-          <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
             <div className="flex items-center gap-1.5 overflow-x-auto">
               <span className="text-xs font-bold text-slate-400 px-2 uppercase tracking-wider shrink-0">
                 Lọc:
@@ -324,12 +456,40 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
               </button>
             </div>
 
+            <div className="flex flex-col sm:flex-row gap-2">
+              <label className="relative flex-1 min-w-0">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  value={classSearch}
+                  onChange={(event) => setClassSearch(event.target.value)}
+                  placeholder="Tìm tên lớp, gia sư, môn..."
+                  className="w-full h-10 rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-50"
+                />
+              </label>
+              <label className="relative sm:w-[220px]">
+                <ArrowUpDown className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <select
+                  value={classSort}
+                  onChange={(event) => setClassSort(event.target.value as typeof classSort)}
+                  className="w-full h-10 appearance-none rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-8 text-sm font-bold text-slate-700 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-50"
+                >
+                  <option value="UPCOMING">Sắp diễn ra trước</option>
+                  <option value="NAME">Theo tên lớp</option>
+                  <option value="START_DATE">Theo ngày khai giảng</option>
+                </select>
+              </label>
+            </div>
+
             {/* Class buttons */}
             <div className="flex items-center gap-2 overflow-x-auto pt-1 sm:pt-0">
               <span className="text-xs font-bold text-slate-400 px-2 uppercase tracking-wider shrink-0">
                 Chọn lớp:
               </span>
-              {filteredClasses.map((cls) => {
+              {filteredClasses.length === 0 ? (
+                <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-500">
+                  Không có lớp phù hợp bộ lọc.
+                </div>
+              ) : filteredClasses.map((cls) => {
                 const isSelected = selectedClass?.id === cls.id;
                 return (
                   <button
@@ -341,7 +501,14 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
                         : "bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200"
                     }`}
                   >
-                    <span className="truncate max-w-[180px]">{cls.name || `Lớp học #${cls.id}`}</span>
+                    <span className="truncate max-w-[190px]">{cls.name || `Lớp học #${cls.id}`}</span>
+                    {cls.nextSession?.timeLabel && (
+                      <span className={`hidden sm:inline-flex px-2 py-0.5 rounded-lg text-[10px] font-black ${
+                        isSelected ? "bg-white/20 text-white" : "bg-emerald-50 text-emerald-700"
+                      }`}>
+                        {cls.nextSession.timeLabel}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -370,6 +537,15 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
                   </div>
                   <h2 className="text-xl font-black text-slate-900">{selectedClass.name}</h2>
                   <p className="text-xs text-slate-500 mt-1 line-clamp-1">{selectedClass.description}</p>
+                  {selectedClass.nextSession && (
+                    <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">
+                      <Clock className="w-4 h-4 text-emerald-600" />
+                      <span>
+                        Buổi gần nhất: {selectedClass.nextSession.label}
+                        {selectedClass.nextSession.startTime ? ` · ${selectedClass.nextSession.startTime}${selectedClass.nextSession.endTime ? ` - ${selectedClass.nextSession.endTime}` : ""}` : ""}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0 flex-wrap">
