@@ -34,19 +34,22 @@ public class EnrollmentRequestService {
     private final ClassSessionRepository classSessionRepository;
     private final TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
     private final LearningEventPublisher eventPublisher;
+    private final RollingSessionService rollingSessionService;
 
     public EnrollmentRequestService(
             ClassRoomRepository classRoomRepository,
             EnrollmentRequestRepository enrollmentRequestRepository,
             ClassSessionRepository classSessionRepository,
             TutorAuthorizationStateRepository tutorAuthorizationStateRepository,
-            LearningEventPublisher eventPublisher
+            LearningEventPublisher eventPublisher,
+            RollingSessionService rollingSessionService
     ) {
         this.classRoomRepository = classRoomRepository;
         this.enrollmentRequestRepository = enrollmentRequestRepository;
         this.classSessionRepository = classSessionRepository;
         this.tutorAuthorizationStateRepository = tutorAuthorizationStateRepository;
         this.eventPublisher = eventPublisher;
+        this.rollingSessionService = rollingSessionService;
     }
 
     /**
@@ -377,12 +380,18 @@ public class EnrollmentRequestService {
         if (req == null) {
             throw new ResourceNotFoundException("No pending/accepted enrollment request found for activation (classRoomId: " + classRoomId + ", studentId: " + studentId + ", agreementId: " + agreementId + ")");
         }
+        if (req.getStatus() != EnrollmentRequestStatus.ACCEPTED
+                && req.getStatus() != EnrollmentRequestStatus.PENDING
+                && req.getStatus() != EnrollmentRequestStatus.ENROLLED) {
+            throw new BadRequestException("Enrollment request cannot be activated from status: " + req.getStatus());
+        }
 
         req.setStatus(EnrollmentRequestStatus.ENROLLED);
         if (agreementId != null && !agreementId.isBlank()) {
             req.setAgreementId(agreementId.trim());
         }
         EnrollmentRequest saved = enrollmentRequestRepository.save(req);
+        rollingSessionService.createMissingAttendancesForEnrollment(saved);
         return toResponse(saved);
     }
 

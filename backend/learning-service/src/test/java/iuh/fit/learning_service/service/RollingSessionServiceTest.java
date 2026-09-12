@@ -4,6 +4,7 @@ import iuh.fit.learning_service.entity.*;
 import iuh.fit.learning_service.enums.ClassSessionStatus;
 import iuh.fit.learning_service.repository.*;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -61,5 +62,39 @@ class RollingSessionServiceTest {
         when(sessions.findByClassRoomIdOrderBySequenceNumberAsc(1L)).thenReturn(List.of(session(1, ClassSessionStatus.COMPLETED)));
         assertThat(service.generateNextBatchIfNeeded(1L)).isEmpty();
         verify(sessions, never()).save(any());
+    }
+
+    @Test
+    void activationCreatesMissingAttendancesOnlyForOpenSessions() {
+        ClassRoom room = room();
+        room.setTutorProfileId(77L);
+        EnrollmentRequest enrollment = new EnrollmentRequest();
+        enrollment.setClassRoom(room);
+        enrollment.setStudentId(100L);
+        enrollment.setStudentEmail("student@example.com");
+        enrollment.setStudentName("Student Demo");
+
+        ClassSession scheduled = session(1, ClassSessionStatus.SCHEDULED);
+        ReflectionTestUtils.setField(scheduled, "id", 10L);
+        ClassSession completed = session(2, ClassSessionStatus.COMPLETED);
+        ReflectionTestUtils.setField(completed, "id", 11L);
+        ClassSession existing = session(3, ClassSessionStatus.SCHEDULED);
+        ReflectionTestUtils.setField(existing, "id", 12L);
+
+        when(sessions.findByClassRoomIdOrderBySequenceNumberAsc(1L))
+                .thenReturn(List.of(scheduled, completed, existing));
+        when(attendances.findBySessionIdAndStudentId(10L, 100L)).thenReturn(Optional.empty());
+        when(attendances.findBySessionIdAndStudentId(12L, 100L))
+                .thenReturn(Optional.of(new SessionAttendance()));
+
+        int created = service.createMissingAttendancesForEnrollment(enrollment);
+
+        assertThat(created).isEqualTo(1);
+        verify(attendances).save(argThat(attendance ->
+                attendance.getSession() == scheduled
+                        && attendance.getStudentId().equals(100L)
+                        && attendance.getTutorId().equals(77L)
+                        && !attendance.getStudentChecked()
+                        && !attendance.getTutorChecked()));
     }
 }

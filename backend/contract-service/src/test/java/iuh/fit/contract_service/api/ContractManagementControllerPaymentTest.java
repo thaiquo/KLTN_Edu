@@ -27,6 +27,7 @@ import org.springframework.web.server.ResponseStatusException;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -159,6 +160,22 @@ class ContractManagementControllerPaymentTest {
     }
 
     @Test
+    void paymentSubmittedAfterFundingEventDelegatesToWorkflowForIdempotentDecision() {
+        UUID agreementId = UUID.randomUUID();
+        ContractAgreement agreement = agreement(agreementId, ContractAgreementStatus.ACTIVE);
+        when(currentUserContext.requireCurrentUser())
+                .thenReturn(new ContractUserPrincipal(1L, "student@example.com", "STUDENT", List.of("STUDENT")));
+        when(agreementRepository.findById(agreementId)).thenReturn(Optional.of(agreement));
+        when(fundingWorkflowService.recordPaymentSubmission(agreementId, "0x" + "c".repeat(64)))
+                .thenReturn(agreement);
+
+        var response = controller.submitPayment(agreementId, Map.of("txHash", "0x" + "c".repeat(64)));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        verify(fundingWorkflowService).recordPaymentSubmission(agreementId, "0x" + "c".repeat(64));
+    }
+
+    @Test
     void legacyActiveAgreementCannotBeCancelledOrRefunded() {
         UUID agreementId = UUID.randomUUID();
         ContractAgreement agreement = agreement(agreementId, ContractAgreementStatus.ACTIVE);
@@ -201,6 +218,10 @@ class ContractManagementControllerPaymentTest {
                 .studentEmail("student@example.com")
                 .tutorId(2L)
                 .tutorEmail("tutor@example.com")
+                .tokenDecimals((short) 6)
+                .totalSessions(8)
+                .totalAmountUsdcUnits(BigInteger.valueOf(4_800_000))
+                .pricePerSessionUsdcUnits(BigInteger.valueOf(600_000))
                 .status(status)
                 .build();
     }

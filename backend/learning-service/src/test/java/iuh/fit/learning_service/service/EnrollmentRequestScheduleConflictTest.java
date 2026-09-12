@@ -51,6 +51,9 @@ class EnrollmentRequestScheduleConflictTest {
     @Mock
     private LearningEventPublisher eventPublisher;
 
+    @Mock
+    private RollingSessionService rollingSessionService;
+
     @Test
     void rejectsEnrollmentWhenScheduleConflictsWithActiveEnrolledClass() {
         EnrollmentRequestService service = service();
@@ -200,7 +203,8 @@ class EnrollmentRequestScheduleConflictTest {
                 enrollmentRequestRepository,
                 classSessionRepository,
                 tutorAuthorizationStateRepository,
-                eventPublisher);
+                eventPublisher,
+                rollingSessionService);
     }
 
     private ClassRoom createClassRoom(Long id, String name, LocalDate startDate, LocalDate endDate) {

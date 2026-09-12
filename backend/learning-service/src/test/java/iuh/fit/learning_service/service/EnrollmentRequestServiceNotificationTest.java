@@ -48,6 +48,9 @@ class EnrollmentRequestServiceNotificationTest {
     @Mock
     private LearningEventPublisher eventPublisher;
 
+    @Mock
+    private RollingSessionService rollingSessionService;
+
     @Test
     void enrollClassPublishesEnrollmentRequestedToTutor() {
         EnrollmentRequestService service = service();
@@ -230,7 +233,8 @@ class EnrollmentRequestServiceNotificationTest {
                 enrollmentRequestRepository,
                 classSessionRepository,
                 tutorAuthorizationStateRepository,
-                eventPublisher);
+                eventPublisher,
+                rollingSessionService);
     }
 
     private ClassRoom classRoom() {

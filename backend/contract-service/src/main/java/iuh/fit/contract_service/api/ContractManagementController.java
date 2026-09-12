@@ -376,7 +376,9 @@ public class ContractManagementController {
 
             accessControl.requireCanSubmitPayment(agreement, currentUser);
             if (agreement.getStatus() != ContractAgreementStatus.WAITING_PAYMENT
-                    && agreement.getStatus() != ContractAgreementStatus.PAYMENT_CONFIRMING) {
+                    && agreement.getStatus() != ContractAgreementStatus.PAYMENT_CONFIRMING
+                    && agreement.getStatus() != ContractAgreementStatus.ACTIVE
+                    && agreement.getStatus() != ContractAgreementStatus.COMPLETED) {
                 return ResponseEntity.status(409).body(Map.of(
                         "error",
                         "Hợp đồng chưa được ghi nhận on-chain nên chưa thể nạp cọc.",

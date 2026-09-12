@@ -28,12 +28,15 @@ class EnrollmentRequestServiceIdentityTest {
 
     private final LearningEventPublisher eventPublisher = mock(LearningEventPublisher.class);
 
+    private final RollingSessionService rollingSessionService = mock(RollingSessionService.class);
+
     private final EnrollmentRequestService service = new EnrollmentRequestService(
             classRoomRepository,
             enrollmentRequestRepository,
             classSessionRepository,
             tutorAuthorizationStateRepository,
-            eventPublisher);
+            eventPublisher,
+            rollingSessionService);
 
     @Test
     void rejectsEnrollmentWhenJwtDoesNotContainStudentId() {

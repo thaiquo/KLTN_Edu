@@ -186,6 +186,47 @@ public class RollingSessionService {
         }
     }
 
+    @Transactional
+    public int createMissingAttendancesForEnrollment(EnrollmentRequest enrollmentRequest) {
+        if (enrollmentRequest == null
+                || enrollmentRequest.getClassRoom() == null
+                || enrollmentRequest.getClassRoom().getId() == null
+                || enrollmentRequest.getStudentId() == null) {
+            return 0;
+        }
+
+        ClassRoom classRoom = enrollmentRequest.getClassRoom();
+        Long tutorProfileId = classRoom.getTutorProfileId() != null ? classRoom.getTutorProfileId() : 0L;
+        int created = 0;
+
+        List<ClassSession> sessions = classSessionRepository.findByClassRoomIdOrderBySequenceNumberAsc(classRoom.getId());
+        for (ClassSession session : sessions) {
+            if (session.getStatus() == ClassSessionStatus.COMPLETED) {
+                continue;
+            }
+            if (sessionAttendanceRepository.findBySessionIdAndStudentId(session.getId(), enrollmentRequest.getStudentId()).isPresent()) {
+                continue;
+            }
+
+            SessionAttendance attendance = new SessionAttendance();
+            attendance.setSession(session);
+            attendance.setStudentId(enrollmentRequest.getStudentId());
+            attendance.setStudentEmail(enrollmentRequest.getStudentEmail());
+            attendance.setStudentName(enrollmentRequest.getStudentName());
+            attendance.setTutorId(tutorProfileId);
+            attendance.setTutorChecked(false);
+            attendance.setStudentChecked(false);
+            sessionAttendanceRepository.save(attendance);
+            created++;
+        }
+
+        if (created > 0) {
+            log.info("Created {} missing attendance rows for student {} in ClassRoom {}",
+                    created, enrollmentRequest.getStudentId(), classRoom.getId());
+        }
+        return created;
+    }
+
     /**
      * Map Java standard DayOfWeek (MONDAY=1 ... SUNDAY=7) to EduConnect convention (2=Mon ... 8=Sun)
      */

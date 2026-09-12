@@ -178,9 +178,7 @@ public class AgreementFundingWorkflowService {
 
         scheduleOfficialDocumentFinalization(agreement.getId());
 
-        // Dispatch activation to learning-service
-        learningServiceDispatcher.activateEnrollmentAsync(
-                agreement.getClassroomId(), agreement.getStudentId(), agreement.getId().toString());
+        scheduleLearningEnrollmentActivation(agreement);
         sendActivationNotifications(agreement);
 
         log.info("Successfully transitioned agreement {} to ACTIVE and payment to LOCKED from event tx {}",
@@ -206,6 +204,23 @@ public class AgreementFundingWorkflowService {
             });
         } else {
             finalizeTask.run();
+        }
+    }
+
+    private void scheduleLearningEnrollmentActivation(ContractAgreement agreement) {
+        Long classroomId = agreement.getClassroomId();
+        Long studentId = agreement.getStudentId();
+        String agreementId = agreement.getId().toString();
+        Runnable activationTask = () -> learningServiceDispatcher.activateEnrollmentAsync(classroomId, studentId, agreementId);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    activationTask.run();
+                }
+            });
+        } else {
+            activationTask.run();
         }
     }
 
