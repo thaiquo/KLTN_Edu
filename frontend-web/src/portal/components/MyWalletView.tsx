@@ -124,17 +124,21 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
               let tutorAmt = Number(settlement.tutorAmountUsdc || 0);
               let platAmt = Number(settlement.platformAmountUsdc || 0);
               let studentRef = Number(settlement.studentRefundUsdc || 0);
+              const sessionTotal = Number(settlement.amountUsdc || (tutorAmt + platAmt + studentRef));
 
               if (isProposed && Number(settlement.amountUsdc || 0) > 0) {
                 const totalAmt = Number(settlement.amountUsdc);
                 if (settlement.outcome === "BOTH_PRESENT") {
                   tutorAmt = Math.round(totalAmt * 0.85 * 100) / 100;
                   platAmt = Math.round(totalAmt * 0.15 * 100) / 100;
+                  studentRef = 0;
                 } else if (settlement.outcome === "STUDENT_ABSENT_TUTOR_PRESENT") {
                   tutorAmt = Math.round(totalAmt * 0.45 * 100) / 100;
                   platAmt = Math.round(totalAmt * 0.10 * 100) / 100;
                   studentRef = Math.round(totalAmt * 0.45 * 100) / 100;
                 } else if (settlement.outcome === "TUTOR_ABSENT") {
+                  tutorAmt = 0;
+                  platAmt = 0;
                   studentRef = totalAmt;
                 }
               }
@@ -143,11 +147,33 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                 ? settlement.finalizeTxHash
                 : settlement.proposeTxHash;
 
-              const actionName = isProposed
-                ? `Đề xuất giải ngân buổi #${settlement.sessionId} (${settlement.outcome})`
-                : settlement.status === "REFUNDED"
-                ? `Hoàn tiền buổi #${settlement.sessionId} (${settlement.outcome})`
-                : `Giải ngân buổi #${settlement.sessionId} (${settlement.outcome})`;
+              let actionName = "";
+              let displayAmount: number = 0;
+              let isDeduction = false;
+
+              if (isTutor) {
+                displayAmount = tutorAmt;
+                if (isProposed) {
+                  actionName = `Thu nhập Buổi #${settlement.sessionId} (${settlement.outcome}) · Đang chờ 24h`;
+                } else if (settlement.status === "REFUNDED") {
+                  actionName = `Buổi #${settlement.sessionId} (${settlement.outcome}) · Đã hoàn tiền cho học viên`;
+                } else {
+                  actionName = `Thu nhập Buổi #${settlement.sessionId} (${settlement.outcome}) · Đã về ví gia sư`;
+                }
+              } else {
+                if (studentRef > 0) {
+                  displayAmount = studentRef;
+                  actionName = isProposed
+                    ? `Đề xuất hoàn tiền Buổi #${settlement.sessionId} (${settlement.outcome}) · Chờ 24h`
+                    : `Hoàn tiền Buổi #${settlement.sessionId} · Đã về ví học viên`;
+                } else {
+                  displayAmount = sessionTotal || (tutorAmt + platAmt);
+                  isDeduction = true;
+                  actionName = isProposed
+                    ? `Đang chờ quyết toán Buổi #${settlement.sessionId} (Trừ tiền cọc)`
+                    : `Đã trừ cọc thanh toán Buổi #${settlement.sessionId} (Gia sư & Phí)`;
+                }
+              }
 
               allTxEvents.push({
                 id: `settlement-${settlement.id}`,
@@ -156,7 +182,8 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                 type: "SETTLE",
                 actionName,
                 txHash,
-                amountUsdc: isTutor ? tutorAmt : studentRef,
+                amountUsdc: displayAmount,
+                isDeduction,
                 distribution: `Gia sư ${tutorAmt} / Nền tảng ${platAmt} / Hoàn HV ${studentRef} USDC`,
                 status: settlement.status,
                 disputeDeadline: settlement.disputeDeadline,
@@ -167,14 +194,18 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
             if (Array.isArray(rawTxs) && rawTxs.length > 0) {
               for (const tx of rawTxs) {
                 if (tx.action === "FINALIZE") continue;
+                const isDeposit = tx.action?.includes("DEPOSIT") || tx.action?.includes("FUND");
                 allTxEvents.push({
                   id: tx.id || `tx-${tx.transactionHash}`,
                   agreementId: ag.id,
                   className: ag.className || `Lớp học #${ag.classroomId}`,
-                  type: tx.action?.includes("DEPOSIT") || tx.action?.includes("FUND") ? "FUND" : "OTHER",
-                  actionName: tx.action || "Giao dịch Escrow",
+                  type: isDeposit ? "FUND" : "OTHER",
+                  actionName: isDeposit
+                    ? (isTutor ? "Học viên nạp tiền cọc Smart Contract" : "Đã nạp tiền cọc học phí vào Smart Contract")
+                    : (tx.action || "Giao dịch Escrow"),
                   txHash: tx.transactionHash,
-                  amountUsdc: null,
+                  amountUsdc: isDeposit ? (isTutor ? null : ag.totalAmountUsdc) : null,
+                  isDeduction: isDeposit && !isTutor,
                   status: tx.status,
                   createdAt: tx.createdAt || ag.createdAt,
                 });
@@ -783,21 +814,25 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                     </td>
                     <td className="py-3.5 pr-3">
                       {item.type === "FUND" && item.status === "CONFIRMED" ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-emerald-700 border border-emerald-200">
-                          <CheckCircle2 className="h-3 w-3 text-emerald-600" /> {item.actionName || "Đã nạp cọc Smart Contract"}
+                        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-blue-700 border border-blue-200">
+                          <CheckCircle2 className="h-3 w-3 text-blue-600" /> {item.actionName}
                         </span>
                       ) : item.type === "SETTLE" ? (
                         item.status === "PROPOSED" ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-indigo-700 border border-indigo-200" title="Smart Contract đang đếm ngược 24h chờ khiếu nại trước khi chuyển ví">
-                            <Clock className="h-3 w-3 text-indigo-600 animate-pulse" /> {item.actionName} · Chờ 24h
+                            <Clock className="h-3 w-3 text-indigo-600 animate-pulse" /> {item.actionName}
                           </span>
-                        ) : item.status === "REFUNDED" ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-amber-700 border border-amber-200">
-                            <CheckCircle2 className="h-3 w-3 text-amber-600" /> {item.actionName} · Đã hoàn tiền
+                        ) : item.status === "REFUNDED" || (!isTutor && !item.isDeduction && item.amountUsdc > 0) ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-purple-700 border border-purple-200">
+                            <CheckCircle2 className="h-3 w-3 text-purple-600" /> {item.actionName}
+                          </span>
+                        ) : item.isDeduction ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-amber-800 border border-amber-200">
+                            <CheckCircle2 className="h-3 w-3 text-amber-600" /> {item.actionName}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-emerald-700 border border-emerald-200">
-                            <CheckCircle2 className="h-3 w-3 text-emerald-600" /> {item.actionName || "Giải ngân buổi học"} · Đã về ví
+                            <CheckCircle2 className="h-3 w-3 text-emerald-600" /> {item.actionName}
                           </span>
                         )
                       ) : item.status === "FAILED" ? (
@@ -805,13 +840,16 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                           {item.actionName} · Thất bại
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-amber-700 border border-amber-200">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-[10px] font-black uppercase text-slate-700 border border-slate-200">
                           {item.actionName} · {item.status}
                         </span>
                       )}
                     </td>
-                    <td className="py-3.5 pr-3 font-mono font-bold text-emerald-700 text-sm">
-                      {item.amountUsdc == null ? "—" : `${(Number(item.amountUsdc) || 0).toLocaleString("vi-VN")} USDC`}
+                    <td className={`py-3.5 pr-3 font-mono font-bold text-sm ${
+                      item.amountUsdc == null ? "text-slate-400" :
+                      item.isDeduction ? "text-amber-800" : "text-emerald-700"
+                    }`}>
+                      {item.amountUsdc == null ? "—" : `${item.isDeduction ? "-" : "+"}${(Number(item.amountUsdc) || 0).toLocaleString("vi-VN")} USDC`}
                     </td>
                     <td className="py-3.5 pr-3 text-slate-500 font-mono text-[11px]">
                       {item.createdAt ? new Date(item.createdAt).toLocaleString("vi-VN") : "N/A"}

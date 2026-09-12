@@ -75,6 +75,18 @@ public class AgreementLifecycleWorkflowService {
             throw new IllegalStateException("Payment deadline has not passed");
         }
 
+        if (agreement.getOnchainAgreementId() == null || agreement.getOnchainAgreementId().isBlank()) {
+            agreement.markExpired();
+            agreementRepository.saveAndFlush(agreement);
+            learningServiceDispatcher.expireEnrollmentAsync(
+                    agreement.getClassroomId(), agreement.getStudentId(), agreement.getId().toString());
+            notifyAgreementParties(agreement, "AGREEMENT_EXPIRED", "Contract payment expired",
+                    "The escrow payment window expired and the reserved seat was released.");
+            saveOutbox("contract.expired.v1", agreement, "");
+            log.info("Locally expired agreement {} without on-chain ID", agreement.getId());
+            return null;
+        }
+
         String calldata = EduConnectEscrowCalldataEncoder.encodeExpireAgreement(agreement.getOnchainAgreementId());
         String idempotencyKey = "EXPIRE:" + agreement.getChainId() + ":" + agreement.getId();
         return commandService.createIntent(command(agreement, null, idempotencyKey,

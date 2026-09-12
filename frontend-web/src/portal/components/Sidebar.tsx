@@ -56,6 +56,7 @@ export function Sidebar({
       case "admin":
         return [
           { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+          { id: "admin-finance", label: "Tài chính & Dòng tiền", icon: WalletCards },
           { id: "tutor-approval", label: "Tutor Approval", icon: CheckCircle2 },
           { id: "contracts", label: "Hợp đồng Escrow", icon: ShieldCheck },
           { id: "complaints", label: "Phân xử Khiếu nại", icon: ShieldAlert },

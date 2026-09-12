@@ -55,11 +55,11 @@ const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
 
 const FILTER_TABS = [
   { value: 'ALL', label: 'Tất cả' },
+  { value: 'ACTIVE', label: 'Đang học (Đã nạp cọc)' },
+  { value: 'WAITING_PAYMENT', label: 'Chờ nạp cọc' },
   { value: 'PENDING_SIGNATURE', label: 'Chờ ký xác nhận' },
-  { value: 'WAITING_PAYMENT', label: 'Chờ ký quỹ' },
-  { value: 'ACTIVE', label: 'Đang học' },
   { value: 'COMPLETED', label: 'Hoàn tất' },
-  { value: 'CANCELLED', label: 'Đã hủy' },
+  { value: 'HISTORY', label: 'Lịch sử (Quá hạn / Hủy)' },
 ];
 
 export function EscrowContractsView({
@@ -94,7 +94,7 @@ export function EscrowContractsView({
       const isTutor = activeRole === 'tutor';
       const [agreementsData, tutorClasses] = await Promise.all([
         contractsApi.listAgreements({
-          status: (statusFilter === 'ALL' || statusFilter === 'PENDING_SIGNATURE') ? undefined : statusFilter,
+          status: (statusFilter === 'ALL' || statusFilter === 'PENDING_SIGNATURE' || statusFilter === 'HISTORY') ? undefined : statusFilter,
           page: 0,
           size: 100,
         }),
@@ -277,6 +277,10 @@ export function EscrowContractsView({
         if (a.status !== 'PENDING_TUTOR_ACCEPTANCE' && a.status !== 'PENDING_STUDENT_ACCEPTANCE') {
           return false;
         }
+      } else if (statusFilter === 'HISTORY') {
+        if (a.status !== 'CANCELLED' && a.status !== 'EXPIRED') {
+          return false;
+        }
       } else if (statusFilter !== 'ALL' && a.status !== statusFilter) {
         return false;
       }
@@ -326,6 +330,14 @@ export function EscrowContractsView({
   }, [enrichedAgreements]);
 
   const handleOpenPayment = (agreement: AgreementSummary) => {
+    if (agreement.status === 'EXPIRED') {
+      alert("Hợp đồng này đã hết hạn thanh toán hoặc lớp học đã khóa vị trí. Bạn không thể thực hiện ký quỹ.");
+      return;
+    }
+    if (agreement.paymentDeadline && new Date(agreement.paymentDeadline).getTime() < Date.now()) {
+      alert("Hợp đồng này đã quá hạn thời gian ký quỹ. Hệ thống đã khóa quyền nạp cọc.");
+      return;
+    }
     setSelectedAgreementForPayment({
       agreementId: agreement.id,
       onchainAgreementId: agreement.onchainAgreementId || agreement.id,

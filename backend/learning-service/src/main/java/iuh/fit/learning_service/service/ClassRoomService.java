@@ -616,7 +616,7 @@ public class ClassRoomService {
     public ClassRoomDtos.ClassRoomResponse getPublicClassById(Long id) {
         ClassRoom classRoom = classRoomRepository.findByIdWithDetails(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + id));
-        if (classRoom.getStatus() != ClassRoomStatus.PUBLISHED && classRoom.getStatus() != ClassRoomStatus.ACTIVE) {
+        if (classRoom.getStatus() != ClassRoomStatus.PUBLISHED && classRoom.getStatus() != ClassRoomStatus.ACTIVE && classRoom.getStatus() != ClassRoomStatus.LOCKED) {
             throw new ResourceNotFoundException("Classroom is not available for public view");
         }
         return toResponse(classRoom);

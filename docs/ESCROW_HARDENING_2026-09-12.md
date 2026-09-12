@@ -63,7 +63,7 @@ That is an expectation, not evidence of a mined payout. Confirm `SessionSettled`
   At 18:08 the Sepolia event cursor had reached block 11688523; the valid settlement was still PROPOSED, before its deadline.
 - At 18:55:22 GMT+7 the automated scheduler dispatched the finalize transaction `0xd835b8ae250b20141feb32d26eb081ca1a0d532c9c6780b9622812c91990dc2a`.
   It was confirmed at block 11688753 (receipt_status: 1). Payout verified: 0.51 USDC to tutor, 0.09 USDC to platform, 4.2 USDC remaining in escrow.
-- Switched primary RPC endpoint to Alchemy (`BLOCKCHAIN_RPC_URL_ALCHEMY`) for high reliability and added explicit error diagnostics to all Web3j RPC exception handlers.
+- The configured primary RPC was changed to Alchemy. This is a single configured endpoint, not an implemented multi-endpoint fallback; transient RPC failures remain visible in service logs and the event cursor retries without advancing on error.
 - The final isolated Anvil rerun passed both integration tests with no skips and no Sepolia transactions.
 
 ## Operational limits and reporting
@@ -78,3 +78,4 @@ overdue proposals. Finalization catches up after restart; Solidity does not exec
 `scripts/restart-contract-service.ps1` starts the packaged current application with root `.env`, validates the existing
 port owner before stopping it, and writes runtime logs under ignored `.runtime/contract-service`.
 This verification confirms the first live Sepolia payout completed successfully according to the master contract rules.
+`scripts/audit-settlement-receipt.cjs` performs a read-only receipt audit using the current compiled Solidity ABI. It verifies the canonical block, `SessionSettled` event, ERC-20 transfers, session conservation and agreement conservation for a supplied transaction hash.

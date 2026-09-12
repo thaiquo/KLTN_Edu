@@ -101,30 +101,36 @@ public class Web3jBlockchainRpcClient implements BlockchainRpcClient, Blockchain
 
     @Override
     public List<BlockchainLog> getLogs(long fromBlock, long toBlock, String contractAddress) {
-        EthFilter filter = new EthFilter(
-                DefaultBlockParameter.valueOf(BigInteger.valueOf(fromBlock)),
-                DefaultBlockParameter.valueOf(BigInteger.valueOf(toBlock)),
-                contractAddress);
-        try {
-            EthLog response = web3j.ethGetLogs(filter).send();
-            requireNoError(response.hasError(), response.getError() == null
-                    ? null : response.getError().getMessage(), "eth_getLogs");
-            return response.getLogs().stream()
-                    .map(EthLog.LogResult::get)
-                    .map(Log.class::cast)
-                    .map(log -> new BlockchainLog(
-                            log.getAddress(),
-                            log.getTopics(),
-                            log.getData(),
-                            log.getBlockNumber().longValueExact(),
-                            log.getBlockHash(),
-                            log.getTransactionHash(),
-                            log.getLogIndex().longValueExact()))
-                    .toList();
-        } catch (IOException exception) {
-            String detail = exception.getMessage() != null ? exception.getMessage() : exception.getClass().getSimpleName();
-            throw new BlockchainConfigurationException("Cannot read escrow event logs: " + detail, exception);
+        long maxChunkSize = 10L;
+        List<BlockchainLog> allLogs = new java.util.ArrayList<>();
+        for (long chunkFrom = fromBlock; chunkFrom <= toBlock; chunkFrom += maxChunkSize) {
+            long chunkTo = Math.min(toBlock, chunkFrom + maxChunkSize - 1);
+            EthFilter filter = new EthFilter(
+                    DefaultBlockParameter.valueOf(BigInteger.valueOf(chunkFrom)),
+                    DefaultBlockParameter.valueOf(BigInteger.valueOf(chunkTo)),
+                    contractAddress);
+            try {
+                EthLog response = web3j.ethGetLogs(filter).send();
+                requireNoError(response.hasError(), response.getError() == null
+                        ? null : response.getError().getMessage(), "eth_getLogs");
+                response.getLogs().stream()
+                        .map(EthLog.LogResult::get)
+                        .map(Log.class::cast)
+                        .map(log -> new BlockchainLog(
+                                log.getAddress(),
+                                log.getTopics(),
+                                log.getData(),
+                                log.getBlockNumber().longValueExact(),
+                                log.getBlockHash(),
+                                log.getTransactionHash(),
+                                log.getLogIndex().longValueExact()))
+                        .forEach(allLogs::add);
+            } catch (IOException exception) {
+                String detail = exception.getMessage() != null ? exception.getMessage() : exception.getClass().getSimpleName();
+                throw new BlockchainConfigurationException("Cannot read escrow event logs: " + detail, exception);
+            }
         }
+        return allLogs;
     }
 
     private static void requireNoError(boolean hasError, String message, String method) {

@@ -35,6 +35,7 @@ public final class EnrollmentRequestDtos {
             Long classRoomId,
             String className,
             String tutorEmail,
+            String tutorFullName,
             Long studentId,
             String studentEmail,
             String studentName,

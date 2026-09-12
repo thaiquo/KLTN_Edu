@@ -263,10 +263,8 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
         })) : [],
       });
 
-      // 2. Reserve the classroom slot only after an agreement snapshot exists and link agreementId.
-      await classApi.acceptEnrollmentRequest(contractModalReq.id, agreementDetail?.summary?.id);
-
-      // 3. Prompt MetaMask for EIP-712 Gasless Signing
+      // 2. The tutor must sign before reserving a scarce classroom slot. A rejected
+      // MetaMask request must leave the enrollment request PENDING and retryable.
       let tutorSignature: string | undefined = undefined;
       if (agreementDetail?.summary?.id) {
         try {
@@ -290,11 +288,14 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
           throw new Error("Không nhận được chữ ký EIP-712 từ MetaMask.");
         }
 
-        // 4. Submit signature to contract-service
+        // 3. Submit the verified signature before linking the enrollment request.
         await contractsApi.signAgreement(agreementDetail.summary.id, {
           walletAddress: tutorWallet,
           signature: tutorSignature,
         });
+
+        // 4. Reserve the classroom slot and keep the agreement/enrollment link atomic at the workflow level.
+        await classApi.acceptEnrollmentRequest(contractModalReq.id, agreementDetail.summary.id);
       }
 
       setActionMsg({

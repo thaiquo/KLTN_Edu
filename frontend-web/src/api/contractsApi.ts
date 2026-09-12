@@ -185,6 +185,45 @@ export interface DisputeDto {
   createdAt: string;
 }
 
+export interface AdminFinancialOverview {
+  totalEscrowFundedUsdc: number;
+  totalTutorPaidUsdc: number;
+  totalPlatformFeeUsdc: number;
+  totalStudentRefundedUsdc: number;
+  totalEscrowLockedUsdc: number;
+  totalActiveAgreements: number;
+  totalSettledSessions: number;
+  totalPendingSessions: number;
+  totalDisputedSessions: number;
+  platformWallet: string | null;
+  escrowContractAddress: string | null;
+  chainId: number | null;
+}
+
+export interface AdminSettlementDetail {
+  id: string;
+  agreementId: string;
+  classroomId: number | null;
+  className: string | null;
+  studentId: number | null;
+  studentName: string | null;
+  tutorId: number | null;
+  tutorName: string | null;
+  sessionId: number;
+  onchainSessionId: string | null;
+  outcome: string;
+  amountUsdc: number;
+  tutorAmountUsdc: number;
+  platformAmountUsdc: number;
+  studentRefundUsdc: number;
+  status: string;
+  proposeTxHash: string | null;
+  finalizeTxHash: string | null;
+  disputeDeadline: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
 export interface PagedResponse<T> {
   content: T[];
   totalElements: number;
@@ -373,5 +412,18 @@ export const contractsApi = {
     if (params?.size !== undefined) query.set("size", String(params.size));
     const qs = query.toString() ? `?${query.toString()}` : "";
     return apiRequest(`/api/contracts/transactions${qs}`);
+  },
+
+  getAdminFinancialOverview(): Promise<AdminFinancialOverview> {
+    return apiRequest(`/api/contracts/admin/financial-overview`);
+  },
+
+  listAdminSettlements(params?: { status?: string; page?: number; size?: number }): Promise<PagedResponse<AdminSettlementDetail>> {
+    const query = new URLSearchParams();
+    if (params?.status) query.set("status", params.status);
+    if (params?.page !== undefined) query.set("page", String(params.page));
+    if (params?.size !== undefined) query.set("size", String(params.size));
+    const qs = query.toString() ? `?${query.toString()}` : "";
+    return apiRequest(`/api/contracts/admin/settlements${qs}`);
   },
 };

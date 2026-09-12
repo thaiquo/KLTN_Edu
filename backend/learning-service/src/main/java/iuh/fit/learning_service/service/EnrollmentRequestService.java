@@ -569,6 +569,7 @@ public class EnrollmentRequestService {
                 c.getId(),
                 c.getName(),
                 c.getTutorEmail(),
+                c.getTutorFullName(),
                 r.getStudentId(),
                 r.getStudentEmail(),
                 r.getStudentName(),

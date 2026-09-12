@@ -499,7 +499,7 @@ export default function App({ user, onLogout }: AppProps) {
         return activeRole === "tutor" ? <TutorClassManagement /> : <AdminClassManagement activeRole={activeRole} />;
 
       case "my-classes":
-        return activeRole === "student" ? <StudentClassManagement /> : <TutorClassManagement />;
+        return activeRole === "student" ? <StudentClassManagement onNavigate={handleNavigate} /> : <TutorClassManagement />;
 
       case "sessions":
         return <TutorSessionManagement />;

@@ -4,8 +4,9 @@
 legacy quarantine, audited failure recovery, exact rounding and confirmed financial projections are implemented
 and tested. Backend settlement and dispute flows pass isolated Anvil integration tests. See
 [current-deployment evidence and limits](ESCROW_HARDENING_2026-09-12.md).
-The first real Sepolia payout still requires its actual deadline and a confirmed `SessionSettled` event;
-successful local tests do not upgrade that claim to end-to-end production readiness.
+The first real Sepolia payout was confirmed at Sepolia block `11688753`: 0.51 USDC reached the tutor,
+0.09 USDC reached the platform, and the agreement now has 4.2 USDC remaining. This is an end-to-end
+proof for this one normal settlement, not a claim that every production concern or complaint type is complete.
 
 ## 1. Status Definitions
 

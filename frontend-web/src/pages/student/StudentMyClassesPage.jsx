@@ -3,6 +3,9 @@ import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
   BookOpen,
+  GraduationCap,
+  Mail,
+  User,
   Calendar,
   CheckCircle2,
   Clock,
@@ -22,6 +25,7 @@ import {
   Filter
 } from 'lucide-react';
 import { classApi } from '../../api/classes';
+import { contractsApi } from '../../api/contractsApi';
 import { useFeedback } from '../../components/feedback/useFeedback';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import { StudentEmptyState, StudentPageScaffold } from './StudentPageScaffold';
@@ -31,6 +35,7 @@ const STATUS_META = {
   ENROLLED: { label: 'Đang học', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   PENDING: { label: 'Đang chờ duyệt', className: 'bg-amber-50 text-amber-700 border-amber-200' },
   ACCEPTED: { label: 'Đã chấp nhận (Cần nạp cọc)', className: 'bg-blue-50 text-blue-700 border-blue-200' },
+  EXPIRED: { label: 'Quá hạn thanh toán', className: 'bg-red-50 text-red-700 border-red-200' },
   REJECTED: { label: 'Đã từ chối', className: 'bg-red-50 text-red-700 border-red-200' },
   CANCELLED: { label: 'Đã hủy', className: 'bg-slate-100 text-slate-600 border-slate-200' }
 };
@@ -54,12 +59,25 @@ export function StudentMyClassesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const feedback = useFeedback();
 
+  const [agreementsMap, setAgreementsMap] = useState({});
+
   async function loadRequests() {
     setLoading(true);
     setError('');
     try {
-      const data = await classApi.getMyEnrollmentRequests();
+      const [data, agreementsData] = await Promise.all([
+        classApi.getMyEnrollmentRequests(),
+        contractsApi.listAgreements({ size: 100 }).catch(() => [])
+      ]);
       setRequests(normalizeRequests(data));
+      const agrContent = Array.isArray(agreementsData) ? agreementsData : (agreementsData?.content || []);
+      const map = {};
+      agrContent.forEach((agr) => {
+        if (agr && agr.classroomId) {
+          map[agr.classroomId] = agr;
+        }
+      });
+      setAgreementsMap(map);
     } catch (err) {
       setError(err?.message || 'Không thể tải yêu cầu học của bạn.');
     } finally {
@@ -71,22 +89,39 @@ export function StudentMyClassesPage() {
     loadRequests();
   }, []);
 
-  useRealtimeRefresh(['ENROLLMENT_ACCEPTED', 'ENROLLMENT_REJECTED', 'AGREEMENT_FUNDED'], loadRequests);
+  useRealtimeRefresh(['ENROLLMENT_ACCEPTED', 'ENROLLMENT_REJECTED', 'AGREEMENT_FUNDED', 'AGREEMENT_EXPIRED'], loadRequests);
+
+  // Calculate counts
+  const enrolledClasses = useMemo(() => {
+    return requests.filter((r) => {
+      const s = normalizeStatus(r.status);
+      return s === 'ENROLLED' || s === 'COMPLETED';
+    });
+  }, [requests]);
+
+  const pendingEscrowCount = useMemo(() => {
+    return requests.filter((r) => normalizeStatus(r.status) === 'ACCEPTED').length;
+  }, [requests]);
+
+  const pendingApprovalCount = useMemo(() => {
+    return requests.filter((r) => normalizeStatus(r.status) === 'PENDING').length;
+  }, [requests]);
 
   const stats = useMemo(() => {
-    return requests.reduce((acc, item) => {
+    return enrolledClasses.reduce((acc, item) => {
       const status = normalizeStatus(item.status);
       acc[status] = (acc[status] || 0) + 1;
       return acc;
     }, {});
-  }, [requests]);
+  }, [enrolledClasses]);
 
   const filteredRequests = useMemo(() => {
-    return requests.filter((req) => {
+    return enrolledClasses.filter((req) => {
       const status = normalizeStatus(req.status);
       const matchFilter =
         activeFilter === 'ALL' ||
-        (activeFilter === 'HISTORY' ? (status === 'CANCELLED' || status === 'REJECTED') : status === activeFilter);
+        status === activeFilter ||
+        (activeFilter === 'COMPLETED' && (status === 'COMPLETED' || req.isCompleted));
 
       if (!matchFilter) return false;
 
@@ -97,7 +132,7 @@ export function StudentMyClassesPage() {
       const note = (req.note || '').toLowerCase();
       return name.includes(query) || tutor.includes(query) || note.includes(query);
     });
-  }, [requests, activeFilter, searchQuery]);
+  }, [enrolledClasses, activeFilter, searchQuery]);
 
   async function handleCancel(requestId) {
     const accepted = await feedback.confirm({
@@ -126,15 +161,15 @@ export function StudentMyClassesPage() {
     <StudentPageScaffold
       eyebrow="Student Web"
       title="Lớp học của tôi"
-      description="Theo dõi các lớp đang học, xem lịch học cuốn chiếu, làm bài tập về nhà và điểm danh trong đúng khung giờ để nhận giải ngân minh bạch từ Smart Contract Escrow."
+      description="Không gian học tập chính thức: theo dõi lịch học cuốn chiếu, tham gia phòng học trực tuyến, điểm danh và nộp bài tập theo từng buổi học."
       actions={
         <div className="flex items-center gap-2.5">
           <Link
-            to="/tutors"
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-800 transition-colors hover:border-primary/40 hover:text-primary shadow-xs"
+            to="/contracts"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 text-sm font-bold text-indigo-700 transition-colors hover:bg-indigo-100/70 shadow-xs"
           >
-            <Search size={16} />
-            Tìm gia sư
+            <ShieldCheck size={16} />
+            Hợp đồng & Ký quỹ
           </Link>
           <Link
             to="/classes"
@@ -146,17 +181,82 @@ export function StudentMyClassesPage() {
         </div>
       }
     >
-      {/* 1. Quick Stats Row */}
-      <section className="grid gap-3 sm:grid-cols-5">
-        {['ENROLLED', 'PENDING', 'ACCEPTED', 'REJECTED', 'CANCELLED'].map((status) => (
-          <StatCard
-            key={status}
-            status={status}
-            value={stats[status] || 0}
-            active={activeFilter === status}
-            onClick={() => setActiveFilter(activeFilter === status ? 'ALL' : status)}
-          />
-        ))}
+      {/* Pending Contracts & Escrow Banner */}
+      {pendingEscrowCount > 0 && (
+        <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 rounded-xl bg-blue-600 text-white shrink-0 mt-0.5 shadow-xs">
+              <ShieldCheck size={20} />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-blue-950 font-display">
+                Bạn có {pendingEscrowCount} lớp học đang chờ ký hợp đồng & nạp cọc Escrow
+              </h3>
+              <p className="text-xs text-blue-800 mt-0.5 leading-relaxed font-medium">
+                Gia sư đã chấp thuận yêu cầu. Bạn cần hoàn tất ký xác nhận hợp đồng điện tử và nạp cọc bảo vệ để chính thức xuất hiện tại không gian lớp học này.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/contracts"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-4 py-2.5 text-xs font-black text-white shadow-sm transition-all shrink-0"
+          >
+            <FileText size={14} />
+            <span>Ký quỹ vào lớp ngay</span>
+            <ExternalLink size={13} />
+          </Link>
+        </div>
+      )}
+
+      {/* 1. Quick Stats Row (Only Enrolled & Completed) */}
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <article
+          onClick={() => setActiveFilter('ALL')}
+          className={`rounded-2xl border p-4 shadow-xs cursor-pointer transition-all ${
+            activeFilter === 'ALL'
+              ? 'bg-slate-900 text-white border-slate-900 ring-2 ring-slate-900/20 shadow-md'
+              : 'bg-white border-slate-200 hover:border-slate-300'
+          }`}
+        >
+          <p className={`text-[11px] font-black uppercase tracking-wider ${activeFilter === 'ALL' ? 'text-slate-300' : 'text-slate-400'}`}>
+            Tất cả lớp đã tham gia
+          </p>
+          <p className={`mt-1 font-display text-2xl font-black ${activeFilter === 'ALL' ? 'text-white' : 'text-slate-950'}`}>
+            {enrolledClasses.length}
+          </p>
+        </article>
+
+        <article
+          onClick={() => setActiveFilter('ENROLLED')}
+          className={`rounded-2xl border p-4 shadow-xs cursor-pointer transition-all ${
+            activeFilter === 'ENROLLED'
+              ? 'bg-emerald-700 text-white border-emerald-700 ring-2 ring-emerald-700/20 shadow-md'
+              : 'bg-white border-slate-200 hover:border-emerald-300'
+          }`}
+        >
+          <p className={`text-[11px] font-black uppercase tracking-wider ${activeFilter === 'ENROLLED' ? 'text-emerald-100' : 'text-emerald-700'}`}>
+            Lớp đang học chính thức
+          </p>
+          <p className={`mt-1 font-display text-2xl font-black ${activeFilter === 'ENROLLED' ? 'text-white' : 'text-emerald-950'}`}>
+            {stats['ENROLLED'] || 0}
+          </p>
+        </article>
+
+        <article
+          onClick={() => setActiveFilter('COMPLETED')}
+          className={`rounded-2xl border p-4 shadow-xs cursor-pointer transition-all ${
+            activeFilter === 'COMPLETED'
+              ? 'bg-blue-700 text-white border-blue-700 ring-2 ring-blue-700/20 shadow-md'
+              : 'bg-white border-slate-200 hover:border-blue-300'
+          }`}
+        >
+          <p className={`text-[11px] font-black uppercase tracking-wider ${activeFilter === 'COMPLETED' ? 'text-blue-100' : 'text-blue-700'}`}>
+            Khóa học đã hoàn tất
+          </p>
+          <p className={`mt-1 font-display text-2xl font-black ${activeFilter === 'COMPLETED' ? 'text-white' : 'text-slate-950'}`}>
+            {stats['COMPLETED'] || 0}
+          </p>
+        </article>
       </section>
 
       {/* 2. Filter Tabs & Search Bar */}
@@ -172,7 +272,7 @@ export function StudentMyClassesPage() {
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            Tất cả ({requests.length})
+            Tất cả lớp ({enrolledClasses.length})
           </button>
           <button
             type="button"
@@ -187,37 +287,14 @@ export function StudentMyClassesPage() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveFilter('PENDING')}
+            onClick={() => setActiveFilter('COMPLETED')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-              activeFilter === 'PENDING'
-                ? 'bg-amber-600 text-white shadow-xs'
-                : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
-            }`}
-          >
-            Chờ duyệt ({stats['PENDING'] || 0})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveFilter('ACCEPTED')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-              activeFilter === 'ACCEPTED'
+              activeFilter === 'COMPLETED'
                 ? 'bg-blue-600 text-white shadow-xs'
                 : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
             }`}
           >
-            Cần nạp cọc ({stats['ACCEPTED'] || 0})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveFilter('HISTORY')}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 flex items-center gap-1 ${
-              activeFilter === 'HISTORY'
-                ? 'bg-slate-700 text-white shadow-xs'
-                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            <History size={13} />
-            <span>Lịch sử cũ ({(stats['CANCELLED'] || 0) + (stats['REJECTED'] || 0)})</span>
+            Đã hoàn thành ({stats['COMPLETED'] || 0})
           </button>
         </div>
 
@@ -255,6 +332,7 @@ export function StudentMyClassesPage() {
             <EnrollmentRequestCard
               key={request.id}
               request={request}
+              agreement={agreementsMap[request.classRoomId]}
               cancelling={cancellingId === request.id}
               onCancel={handleCancel}
             />
@@ -294,7 +372,7 @@ function StatCard({ status, value, active, onClick }) {
   );
 }
 
-function EnrollmentRequestCard({ request, cancelling, onCancel }) {
+function EnrollmentRequestCard({ request, agreement, cancelling, onCancel }) {
   const [expanded, setExpanded] = useState(false);
   const [classroomDetails, setClassroomDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -364,56 +442,92 @@ function EnrollmentRequestCard({ request, cancelling, onCancel }) {
             {request.className || `Lớp học #${request.classRoomId || request.id}`}
           </h2>
 
-          {/* Quick Schedule & Class Info Grid */}
-          <div className="mt-3 grid gap-2 text-xs font-medium text-slate-600 sm:grid-cols-2 lg:grid-cols-3 bg-slate-50/80 p-3.5 rounded-xl border border-slate-100">
-            {request.tutorEmail && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-400">Gia sư:</span>
-                <span className="font-semibold text-slate-800">{request.tutorEmail}</span>
+          {/* Tutor & Class Info Details */}
+          <div className="mt-4 rounded-2xl border border-slate-200/90 bg-slate-50/70 p-4 space-y-3.5">
+            {/* 1. Tutor Info Card (Họ và tên gia sư + Gmail gia sư) */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-2xs">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-xs">
+                  <GraduationCap size={22} />
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-extrabold text-indigo-700 tracking-wider block">
+                    Gia sư phụ trách:
+                  </span>
+                  <strong className="text-slate-950 font-black text-sm block font-display">
+                    {classroomDetails?.tutorFullName || request.tutorFullName || agreement?.tutorName || (request.tutorEmail ? request.tutorEmail.split('@')[0] : 'Gia sư')}
+                  </strong>
+                  <span className="text-xs text-slate-600 font-medium flex items-center gap-1.5 mt-0.5">
+                    <Mail size={13} className="text-slate-400" />
+                    <span>{classroomDetails?.tutorEmail || request.tutorEmail || agreement?.tutorEmail}</span>
+                  </span>
+                </div>
               </div>
-            )}
 
-            {classroomDetails?.totalSessions && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-400">Quy mô:</span>
-                <span className="font-semibold text-slate-800">{classroomDetails.totalSessions} buổi học</span>
-              </div>
-            )}
+              {(classroomDetails?.pricePerSession !== undefined || agreement?.pricePerSessionUsdc !== undefined) && (
+                <div className="sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Học phí</span>
+                  <span className="font-mono font-black text-emerald-700 text-sm">
+                    ${Number(classroomDetails?.pricePerSession ?? agreement?.pricePerSessionUsdc ?? 0).toFixed(2)} USDC <span className="text-[10px] text-slate-500 font-normal">/ buổi</span>
+                  </span>
+                </div>
+              )}
+            </div>
 
-            {classroomDetails?.pricePerSession !== undefined && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-slate-400">Học phí:</span>
-                <span className="font-bold text-indigo-700">{classroomDetails.pricePerSession} USDC / buổi</span>
-              </div>
-            )}
+            {/* 2. Class details grid */}
+            <div className="grid gap-2 text-xs font-medium text-slate-700 sm:grid-cols-2 lg:grid-cols-3">
+              {(classroomDetails?.totalSessions || agreement?.totalSessions) && (
+                <div className="flex items-center gap-2 bg-white p-2.5 rounded-xl border border-slate-200/70 shadow-2xs">
+                  <BookOpen size={15} className="text-blue-600 shrink-0" />
+                  <div>
+                    <span className="text-slate-400 text-[10px] block font-bold">Quy mô khóa học:</span>
+                    <span className="font-bold text-slate-900">{classroomDetails?.totalSessions || agreement?.totalSessions} buổi học</span>
+                  </div>
+                </div>
+              )}
 
-            {classroomDetails?.startDate && (
-              <div className="flex items-center gap-1.5">
-                <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                <span className="text-slate-400">Bắt đầu:</span>
-                <span className="font-semibold text-slate-800">{classroomDetails.startDate}</span>
-              </div>
-            )}
+              {classroomDetails?.startDate && (
+                <div className="flex items-center gap-2 bg-white p-2.5 rounded-xl border border-slate-200/70 shadow-2xs">
+                  <Calendar size={15} className="text-emerald-600 shrink-0" />
+                  <div>
+                    <span className="text-slate-400 text-[10px] block font-bold">Khai giảng:</span>
+                    <span className="font-bold text-slate-900">{classroomDetails.startDate}</span>
+                  </div>
+                </div>
+              )}
 
-            {schedulesText && (
-              <div className="flex items-center gap-1.5 sm:col-span-2">
-                <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                <span className="text-slate-400 shrink-0">Lịch học:</span>
-                <span className="font-bold text-slate-800 truncate">{schedulesText}</span>
+              <div className="flex items-center gap-2 bg-white p-2.5 rounded-xl border border-slate-200/70 shadow-2xs">
+                <Video size={15} className="text-indigo-600 shrink-0" />
+                <div>
+                  <span className="text-slate-400 text-[10px] block font-bold">Hình thức học:</span>
+                  <span className="font-bold text-slate-900">
+                    {classroomDetails?.learningMode === 'OFFLINE' ? 'Học Trực Tiếp (Offline)' : 'Trực Tuyến (Google Meet)'}
+                  </span>
+                </div>
               </div>
-            )}
 
-            {request.note && (
-              <div className="sm:col-span-2 lg:col-span-3 text-slate-500 italic">
-                Ghi chú: {request.note}
-              </div>
-            )}
+              {schedulesText && (
+                <div className="flex items-center gap-2 bg-white p-2.5 rounded-xl border border-slate-200/70 shadow-2xs sm:col-span-2 lg:col-span-3">
+                  <Clock size={15} className="text-amber-600 shrink-0" />
+                  <div>
+                    <span className="text-slate-400 text-[10px] block font-bold">Lịch học cố định hàng tuần:</span>
+                    <span className="font-bold text-slate-900">{schedulesText}</span>
+                  </div>
+                </div>
+              )}
 
-            {request.rejectReason && (
-              <div className="sm:col-span-2 lg:col-span-3 text-red-600 font-semibold">
-                Lý do từ chối: {request.rejectReason}
-              </div>
-            )}
+              {request.note && (
+                <div className="sm:col-span-2 lg:col-span-3 text-slate-500 italic text-[11px] bg-white p-2 rounded-lg border border-slate-100">
+                  Ghi chú đăng ký: {request.note}
+                </div>
+              )}
+
+              {request.rejectReason && (
+                <div className="sm:col-span-2 lg:col-span-3 text-red-600 font-semibold text-[11px] bg-red-50 p-2 rounded-lg border border-red-200">
+                  Lý do từ chối: {request.rejectReason}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -447,7 +561,7 @@ function EnrollmentRequestCard({ request, cancelling, onCancel }) {
       </div>
 
       {/* Classroom Timeline Accordion */}
-      {status === 'ENROLLED' && request.classRoomId && (
+      {(status === 'ENROLLED' || status === 'COMPLETED') && request.classRoomId && (
         <div className="mt-4 pt-4 border-t border-slate-100">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <button
@@ -488,20 +602,6 @@ function EnrollmentRequestCard({ request, cancelling, onCancel }) {
               />
             </div>
           )}
-        </div>
-      )}
-
-      {status === 'ACCEPTED' && (
-        <div className="mt-4 flex items-center justify-between p-3.5 bg-blue-50 border border-blue-200 rounded-xl text-xs">
-          <span className="text-blue-800 font-semibold">
-            Gia sư đã chấp nhận yêu cầu của bạn! Vui lòng ký hợp đồng và nạp cọc để bắt đầu vào lớp.
-          </span>
-          <Link
-            to="/contracts"
-            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shrink-0 transition-colors shadow-xs"
-          >
-            Đến Hợp Đồng & Ký Quỹ
-          </Link>
         </div>
       )}
     </article>

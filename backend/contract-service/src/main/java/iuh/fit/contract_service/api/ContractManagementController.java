@@ -484,6 +484,139 @@ public class ContractManagementController {
         return ResponseEntity.ok(new PageImpl<>(page, pageable, filtered.size()));
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    @GetMapping("/admin/financial-overview")
+    public ResponseEntity<AdminFinancialOverviewDto> getAdminFinancialOverview() {
+        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
+        if (!accessControl.canViewTransactionsAsStaffOrAdmin(currentUser)) {
+            throw new ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN,
+                    "Only admin or staff can view financial overview");
+        }
+
+        List<ContractAgreement> agreements = agreementRepository.findAll().stream()
+                .filter(a -> !a.isLegacyExcluded())
+                .toList();
+
+        double totalEscrowFunded = 0.0;
+        double totalTutorPaid = 0.0;
+        double totalPlatformFee = 0.0;
+        double totalStudentRefunded = 0.0;
+        double totalEscrowLocked = 0.0;
+        int activeAgreements = 0;
+        int settledSessions = 0;
+        int pendingSessions = 0;
+        int disputedSessions = 0;
+
+        String platformWallet = null;
+        String escrowAddress = null;
+        Long chainId = null;
+
+        for (ContractAgreement a : agreements) {
+            if (platformWallet == null) platformWallet = a.getPlatformWallet();
+            if (escrowAddress == null) escrowAddress = a.getEscrowContractAddress();
+            if (chainId == null) chainId = a.getChainId();
+
+            boolean onchainFunded = hasConfirmedFundingEvent(a);
+            if (onchainFunded) {
+                totalEscrowFunded += toUsdc(a.getTotalAmountUsdcUnits(), a.getTokenDecimals());
+                if (a.getStatus() == ContractAgreementStatus.ACTIVE) {
+                    activeAgreements++;
+                }
+
+                var settlements = settlementRepository.findByAgreementId(a.getId());
+                BigInteger agreementReleased = BigInteger.ZERO;
+                BigInteger agreementRefunded = BigInteger.ZERO;
+
+                for (var s : settlements) {
+                    if (s.getStatus() == SettlementStatus.SETTLED) {
+                        settledSessions++;
+                        double tutorPart = toUsdc(s.getTutorAmount(), a.getTokenDecimals());
+                        double platPart = toUsdc(s.getPlatformAmount(), a.getTokenDecimals());
+                        double refPart = toUsdc(s.getStudentRefundAmount(), a.getTokenDecimals());
+                        totalTutorPaid += tutorPart;
+                        totalPlatformFee += platPart;
+                        totalStudentRefunded += refPart;
+
+                        agreementReleased = agreementReleased
+                                .add(zeroIfNull(s.getTutorAmount()))
+                                .add(zeroIfNull(s.getPlatformAmount()));
+                        agreementRefunded = agreementRefunded
+                                .add(zeroIfNull(s.getStudentRefundAmount()));
+                    } else if (s.getStatus() == SettlementStatus.PROPOSED) {
+                        pendingSessions++;
+                    } else if (s.getStatus() == SettlementStatus.DISPUTED) {
+                        disputedSessions++;
+                    } else if (s.getStatus() == SettlementStatus.REFUNDED) {
+                        double refPart = toUsdc(s.getStudentRefundAmount(), a.getTokenDecimals());
+                        totalStudentRefunded += refPart;
+                        agreementRefunded = agreementRefunded
+                                .add(zeroIfNull(s.getStudentRefundAmount()));
+                    }
+                }
+
+                BigInteger remaining = a.getTotalAmountUsdcUnits()
+                        .subtract(agreementReleased)
+                        .subtract(agreementRefunded)
+                        .max(BigInteger.ZERO);
+                if (a.getStatus() == ContractAgreementStatus.ACTIVE) {
+                    totalEscrowLocked += toUsdc(remaining, a.getTokenDecimals());
+                }
+            }
+        }
+
+        AdminFinancialOverviewDto dto = new AdminFinancialOverviewDto(
+                roundFourDecimals(totalEscrowFunded),
+                roundFourDecimals(totalTutorPaid),
+                roundFourDecimals(totalPlatformFee),
+                roundFourDecimals(totalStudentRefunded),
+                roundFourDecimals(totalEscrowLocked),
+                activeAgreements,
+                settledSessions,
+                pendingSessions,
+                disputedSessions,
+                platformWallet,
+                escrowAddress,
+                chainId
+        );
+        return ResponseEntity.ok(dto);
+    }
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    @GetMapping("/admin/settlements")
+    public ResponseEntity<Page<AdminSettlementDetailDto>> listAdminSettlements(
+            @RequestParam(required = false) String status,
+            @PageableDefault(size = 30) Pageable pageable) {
+        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
+        if (!accessControl.canViewTransactionsAsStaffOrAdmin(currentUser)) {
+            throw new ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN,
+                    "Only admin or staff can view administrative settlements");
+        }
+
+        Map<UUID, ContractAgreement> agreementMap = agreementRepository.findAll().stream()
+                .collect(Collectors.toMap(ContractAgreement::getId, a -> a, (k1, k2) -> k1));
+
+        List<SessionSettlement> all = settlementRepository.findAll().stream()
+                .filter(s -> s.getStatus() != SettlementStatus.EXCLUDED_LEGACY)
+                .filter(s -> {
+                    ContractAgreement a = (s.getAgreement() != null) ? agreementMap.get(s.getAgreement().getId()) : null;
+                    return a == null || !a.isLegacyExcluded();
+                })
+                .filter(s -> status == null || status.isBlank() || "ALL".equalsIgnoreCase(status)
+                        || (s.getStatus() != null && s.getStatus().name().equalsIgnoreCase(status.trim())))
+                .sorted(Comparator.comparing(SessionSettlement::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
+                .toList();
+
+        int start = (int) pageable.getOffset();
+        int end = Math.min(start + pageable.getPageSize(), all.size());
+        List<AdminSettlementDetailDto> page = (start >= all.size())
+                ? Collections.emptyList()
+                : all.subList(start, end).stream()
+                        .map(s -> toAdminSettlementDetailDto(s, agreementMap))
+                        .toList();
+
+        return ResponseEntity.ok(new PageImpl<>(page, pageable, all.size()));
+    }
+
     @GetMapping("/agreements/{id}")
     public ResponseEntity<AgreementDetailDto> getAgreement(
             @PathVariable UUID id) {
@@ -1251,6 +1384,55 @@ public class ContractManagementController {
         );
     }
 
+    private AdminSettlementDetailDto toAdminSettlementDetailDto(SessionSettlement s) {
+        return toAdminSettlementDetailDto(s, null);
+    }
+
+    private AdminSettlementDetailDto toAdminSettlementDetailDto(SessionSettlement s, Map<UUID, ContractAgreement> agreementMap) {
+        ContractAgreement a = null;
+        if (s.getAgreement() != null && s.getAgreement().getId() != null && agreementMap != null) {
+            a = agreementMap.get(s.getAgreement().getId());
+        }
+        if (a == null) {
+            try {
+                a = s.getAgreement();
+            } catch (Exception ignored) {}
+        }
+        short decimals = (a != null) ? a.getTokenDecimals() : (short) 6;
+        String className = (a != null && a.getClassName() != null && !a.getClassName().isBlank())
+                ? a.getClassName()
+                : (a != null ? "Lớp học #" + a.getClassroomId() : "N/A");
+        Long classroomId = (a != null) ? a.getClassroomId() : null;
+        Long studentId = (a != null) ? a.getStudentId() : null;
+        String studentName = (a != null) ? a.getStudentName() : null;
+        Long tutorId = (a != null) ? a.getTutorId() : null;
+        String tutorName = (a != null) ? a.getTutorName() : null;
+
+        return new AdminSettlementDetailDto(
+                s.getId().toString(),
+                a != null ? a.getId().toString() : (s.getAgreement() != null ? s.getAgreement().getId().toString() : null),
+                classroomId,
+                className,
+                studentId,
+                studentName,
+                tutorId,
+                tutorName,
+                s.getSessionId(),
+                s.getOnchainSessionId(),
+                s.getOutcome() != null ? s.getOutcome().name() : null,
+                toUsdc(s.getAmount(), decimals),
+                toUsdc(s.getTutorAmount(), decimals),
+                toUsdc(s.getPlatformAmount(), decimals),
+                toUsdc(s.getStudentRefundAmount(), decimals),
+                s.getStatus() != null ? s.getStatus().name() : null,
+                s.getProposeTxHash(),
+                s.getFinalizeTxHash(),
+                s.getDisputeDeadline() != null ? s.getDisputeDeadline().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null,
+                s.getCreatedAt() != null ? s.getCreatedAt().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null,
+                s.getUpdatedAt() != null ? s.getUpdatedAt().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null
+        );
+    }
+
     private DisputeSummaryDto toDisputeDto(Dispute d) {
         SessionSettlement s = d.getSettlement();
         ContractAgreement a = s != null ? s.getAgreement() : null;
@@ -1334,4 +1516,48 @@ public class ContractManagementController {
             String disputeDeadline, String createdAt) {}
 
     public record ResolveDisputeRequest(boolean approved, String reason) {}
+
+    public record AdminFinancialOverviewDto(
+            double totalEscrowFundedUsdc,
+            double totalTutorPaidUsdc,
+            double totalPlatformFeeUsdc,
+            double totalStudentRefundedUsdc,
+            double totalEscrowLockedUsdc,
+            int totalActiveAgreements,
+            int totalSettledSessions,
+            int totalPendingSessions,
+            int totalDisputedSessions,
+            String platformWallet,
+            String escrowContractAddress,
+            Long chainId
+    ) {}
+
+    public record AdminSettlementDetailDto(
+            String id,
+            String agreementId,
+            Long classroomId,
+            String className,
+            Long studentId,
+            String studentName,
+            Long tutorId,
+            String tutorName,
+            Long sessionId,
+            String onchainSessionId,
+            String outcome,
+            double amountUsdc,
+            double tutorAmountUsdc,
+            double platformAmountUsdc,
+            double studentRefundUsdc,
+            String status,
+            String proposeTxHash,
+            String finalizeTxHash,
+            String disputeDeadline,
+            String createdAt,
+            String updatedAt
+    ) {}
+
+    private static double roundFourDecimals(double val) {
+        return Math.round(val * 10000.0) / 10000.0;
+    }
+
 }
