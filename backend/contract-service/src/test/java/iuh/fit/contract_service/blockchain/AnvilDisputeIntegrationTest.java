@@ -198,6 +198,8 @@ class AnvilDisputeIntegrationTest {
             disputeWorkflowService.initiateDisputeOpening(
                     settlement.getId(),
                     studentId,
+                    "STUDENT",
+                    "Tutor did not show up in video recording",
                     disputeEvidenceHash,
                     "disputes/session1.pdf",
                     "application/pdf",

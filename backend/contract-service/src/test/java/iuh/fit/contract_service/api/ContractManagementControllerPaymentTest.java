@@ -9,6 +9,7 @@ import iuh.fit.contract_service.repository.BlockchainTransactionRepository;
 import iuh.fit.contract_service.repository.ContractAcceptanceRepository;
 import iuh.fit.contract_service.repository.ContractAgreementRepository;
 import iuh.fit.contract_service.repository.DisputeRepository;
+import iuh.fit.contract_service.repository.DisputeEvidenceRepository;
 import iuh.fit.contract_service.repository.EscrowPaymentRepository;
 import iuh.fit.contract_service.repository.ProcessedEventRepository;
 import iuh.fit.contract_service.repository.SessionSettlementRepository;
@@ -52,6 +53,8 @@ class ContractManagementControllerPaymentTest {
     @Mock
     private DisputeRepository disputeRepository;
     @Mock
+    private DisputeEvidenceRepository disputeEvidenceRepository;
+    @Mock
     private DisputeWorkflowService disputeWorkflowService;
     @Mock
     private SessionSettlementWorkflowService settlementWorkflowService;
@@ -89,6 +92,7 @@ class ContractManagementControllerPaymentTest {
                 settlementRepository,
                 transactionRepository,
                 disputeRepository,
+                disputeEvidenceRepository,
                 disputeWorkflowService,
                 settlementWorkflowService,
                 lifecycleWorkflowService,

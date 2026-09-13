@@ -43,8 +43,14 @@ public class Dispute {
     @Column(name = "type", nullable = false, length = 40)
     private String type;
 
+    @Column(name = "reason", nullable = false, columnDefinition = "TEXT")
+    private String reason;
+
     @Column(name = "complainant_id", nullable = false)
     private Long complainantId;
+
+    @Column(name = "complainant_role", nullable = false, length = 20)
+    private String complainantRole;
 
     @Column(name = "submitted_at", nullable = false)
     private Instant submittedAt;

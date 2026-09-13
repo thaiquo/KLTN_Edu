@@ -46,6 +46,23 @@ interface DisputeManagementPanelProps {
   userEmail?: string;
 }
 
+interface EligibleDisputeSession {
+  key: string;
+  agreementId: string;
+  className: string;
+  studentName?: string;
+  sessionId: number;
+  disputeDeadline: string;
+}
+
+const DISPUTE_STATUS_META: Record<string, { label: string; className: string }> = {
+  OPENING: { label: 'ĐANG XÁC NHẬN MỞ KHIẾU NẠI', className: 'bg-blue-100 text-blue-800 border border-blue-200' },
+  OPEN: { label: 'ĐANG MỞ KHIẾU NẠI', className: 'bg-amber-100 text-amber-800 border border-amber-200' },
+  RESOLUTION_PENDING: { label: 'ĐANG XÁC NHẬN PHÁN QUYẾT', className: 'bg-indigo-100 text-indigo-800 border border-indigo-200' },
+  APPROVED: { label: 'CHẤP THUẬN - HOÀN TIỀN HỌC VIÊN', className: 'bg-emerald-100 text-emerald-800 border border-emerald-200' },
+  REJECTED: { label: 'BÁC BỎ - TRẢ TIỀN GIA SƯ', className: 'bg-rose-100 text-rose-800 border border-rose-200' },
+};
+
 export function DisputeManagementPanel({
   activeRole,
   userEmail = '',
@@ -80,6 +97,8 @@ export function DisputeManagementPanel({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [agreementIdInput, setAgreementIdInput] = useState<string>('');
   const [sessionIdInput, setSessionIdInput] = useState<string>('1');
+  const [eligibleSessions, setEligibleSessions] = useState<EligibleDisputeSession[]>([]);
+  const [eligibleSessionsLoading, setEligibleSessionsLoading] = useState(false);
   const [reasonInput, setReasonInput] = useState<string>('');
   const [evidenceTextInput, setEvidenceTextInput] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -96,16 +115,61 @@ export function DisputeManagementPanel({
   const [tutorEvidenceUrl, setTutorEvidenceUrl] = useState('');
   const [isTutorSubmitting, setIsTutorSubmitting] = useState(false);
 
+  const fetchEligibleDisputeSessions = useCallback(async () => {
+    if (activeRole !== 'student' && activeRole !== 'tutor') return;
+    setEligibleSessionsLoading(true);
+    try {
+      const agreementPage = await contractsApi.listAgreements({ page: 0, size: 100 });
+      const agreements = agreementPage?.content ?? [];
+      const settlementLists = await Promise.all(
+        agreements.map(async (agreement) => ({
+          agreement,
+          settlements: await contractsApi.getSettlements(agreement.id).catch(() => []),
+        }))
+      );
+      const currentTime = Date.now();
+      const options = settlementLists.flatMap(({ agreement, settlements }) =>
+        settlements
+          .filter((settlement) => settlement.status === 'PROPOSED'
+            && settlement.outcome === 'BOTH_PRESENT'
+            && !!settlement.disputeDeadline
+            && new Date(settlement.disputeDeadline).getTime() >= currentTime)
+          .map((settlement) => ({
+            key: `${agreement.id}:${settlement.sessionId}`,
+            agreementId: agreement.id,
+            className: agreement.className || `Lớp học #${agreement.classroomId}`,
+            studentName: agreement.studentName,
+            sessionId: settlement.sessionId,
+            disputeDeadline: settlement.disputeDeadline as string,
+          }))
+      );
+      setEligibleSessions(options);
+      if (options.length > 0) {
+        setAgreementIdInput(options[0].agreementId);
+        setSessionIdInput(String(options[0].sessionId));
+      }
+    } catch (err: any) {
+      setActionError(err?.message || 'Không thể tải các buổi còn hạn khiếu nại.');
+      setEligibleSessions([]);
+    } finally {
+      setEligibleSessionsLoading(false);
+    }
+  }, [activeRole]);
+
+  useEffect(() => {
+    fetchEligibleDisputeSessions();
+  }, [fetchEligibleDisputeSessions]);
+
   const handleOpenTutorModal = (dispute: DisputeDto) => {
     setSelectedDisputeForTutor(dispute);
     const rawResponse = dispute.tutorResponse || '';
     const fileMatch = rawResponse.match(/\s*\[File:\s*([^\]]+)\]$/);
     if (fileMatch) {
       setTutorResponseText(rawResponse.replace(fileMatch[0], ''));
-      setTutorEvidenceUrl(fileMatch[1]);
+      setTutorEvidenceUrl(dispute.tutorEvidenceObjectKey || fileMatch[1]);
     } else {
       setTutorResponseText(rawResponse);
-      setTutorEvidenceUrl('');
+      setTutorEvidenceUrl(dispute.tutorEvidenceObjectKey || '');
     }
     setIsTutorModalOpen(true);
   };
@@ -141,6 +205,10 @@ export function DisputeManagementPanel({
 
   const handleCreateDispute = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!agreementIdInput || !eligibleSessions.some((item) => item.key === `${agreementIdInput}:${sessionIdInput}`)) {
+      setActionError('Buổi học không còn đủ điều kiện khiếu nại. Vui lòng tải lại danh sách.');
+      return;
+    }
     if (!reasonInput) {
       setActionError('Vui lòng nhập lý do khiếu nại.');
       return;
@@ -152,7 +220,7 @@ export function DisputeManagementPanel({
       await contractsApi.openDispute(agreementIdInput.trim(), Number(sessionIdInput), {
         reason: reasonInput.trim(),
         evidenceObjectKey: evidenceTextInput.trim() || undefined,
-        contentType: evidenceTextInput.trim() ? 'text/plain' : undefined,
+        contentType: evidenceTextInput.trim() ? 'text/uri-list' : undefined,
       });
 
       setActionSuccess(`Đã gửi yêu cầu khiếu nại cho buổi #${sessionIdInput}. Đang chờ xác nhận blockchain.`);
@@ -160,6 +228,7 @@ export function DisputeManagementPanel({
       setReasonInput('');
       setEvidenceTextInput('');
       await fetchDisputes();
+      await fetchEligibleDisputeSessions();
     } catch (err: any) {
       setActionError(err?.reason || err?.message || 'Không thể tạo khiếu nại.');
     } finally {
@@ -167,19 +236,20 @@ export function DisputeManagementPanel({
     }
   };
 
-  const handleResolve = async (dispute: DisputeDto, approveRefund: boolean) => {
+  const handleResolve = async (dispute: DisputeDto, complaintApproved: boolean) => {
+    const resolutionLabel = dispute.complainantRole === 'TUTOR'
+      ? (complaintApproved ? 'chấp thuận khiếu nại của gia sư' : 'bác khiếu nại của gia sư')
+      : (complaintApproved ? 'chấp thuận hoàn tiền học viên' : 'bác khiếu nại của học viên');
     const reason = window.prompt(
-      `Nhập lý do ${approveRefund ? 'chấp thuận hoàn tiền' : 'bác bỏ khiếu nại'}:`, ''
+      `Nhập lý do ${resolutionLabel}:`, ''
     );
     if (reason === null) return; // cancelled
     try {
       setResolvingId(dispute.id);
       setActionError(null);
-      const result = await contractsApi.resolveDispute(dispute.id, approveRefund, reason || 'Admin resolution');
+      const result = await contractsApi.resolveDispute(dispute.id, complaintApproved, reason || 'Admin resolution');
       setActionSuccess(
-        `Đã gửi yêu cầu phân xử: ${
-          approveRefund ? 'Chấp thuận hoàn tiền cho học viên' : 'Bác bỏ khiếu nại, giải ngân cho gia sư'
-        }. Đang chờ xác nhận blockchain (${result.transactionStatus}).`
+        `Đã gửi yêu cầu phân xử: ${resolutionLabel}. Đang chờ xác nhận blockchain (${result.transactionStatus}).`
       );
       await fetchDisputes();
     } catch (err: any) {
@@ -223,9 +293,13 @@ export function DisputeManagementPanel({
           </div>
         </div>
 
-        {activeRole === 'student' && (
+        {(activeRole === 'student' || activeRole === 'tutor') && (
           <button
-            onClick={() => setIsCreateModalOpen(true)}
+            onClick={() => {
+              setActionError(null);
+              setIsCreateModalOpen(true);
+              fetchEligibleDisputeSessions();
+            }}
             className="flex items-center gap-2 px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-display font-black text-xs rounded-xl shadow-md hover:shadow-lg transition-all"
           >
             <AlertTriangle className="w-4 h-4" />
@@ -281,6 +355,15 @@ export function DisputeManagementPanel({
         ) : !dataLoading && (
           disputes.map((dispute) => {
             const hasResolvePermission = canStaffResolve(dispute);
+            const statusMeta = DISPUTE_STATUS_META[dispute.status] || {
+              label: dispute.status,
+              className: 'bg-slate-100 text-slate-700 border border-slate-200',
+            };
+            const effectiveStatusMeta = dispute.complainantRole === 'TUTOR' && dispute.status === 'APPROVED'
+              ? { ...statusMeta, label: 'CHẤP THUẬN KHIẾU NẠI GIA SƯ' }
+              : dispute.complainantRole === 'TUTOR' && dispute.status === 'REJECTED'
+                ? { ...statusMeta, label: 'BÁC KHIẾU NẠI GIA SƯ' }
+                : statusMeta;
 
             return (
               <div
@@ -291,19 +374,9 @@ export function DisputeManagementPanel({
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
                   <div className="flex items-center gap-3">
                     <span
-                      className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${
-                        dispute.status === 'OPEN'
-                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                          : dispute.status === 'APPROVED'
-                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          : 'bg-rose-100 text-rose-800 border border-rose-200'
-                      }`}
+                      className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${effectiveStatusMeta.className}`}
                     >
-                      {dispute.status === 'OPEN'
-                        ? 'ĐANG MỞ KHIẾU NẠI'
-                        : dispute.status === 'APPROVED'
-                        ? 'HOÀN TIỀN CHO HỌC VIÊN'
-                        : 'BÁC BỎ - TRẢ TIỀN GIA SƯ'}
+                      {effectiveStatusMeta.label}
                     </span>
                   </div>
 
@@ -324,7 +397,9 @@ export function DisputeManagementPanel({
                   <div className="md:col-span-2 space-y-3">
                     <div>
                       <h4 className="font-bold text-slate-900 text-base">
-                        Khiếu nại: {dispute.type || 'TUTOR_FRAUD'}
+                        {dispute.complainantRole === 'TUTOR'
+                          ? 'Khiếu nại của gia sư gửi Staff/Admin'
+                          : 'Khiếu nại của học viên về buổi học'}
                       </h4>
                       <p className="text-xs text-slate-400 font-semibold">
                         Hợp đồng #{dispute.agreementId?.slice(0,8)} - Buổi học #{dispute.sessionId}
@@ -336,13 +411,55 @@ export function DisputeManagementPanel({
                         <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
                         <span>Lý do khiếu nại:</span>
                       </div>
-                      <p className="text-xs text-slate-700 font-medium pl-5">{dispute.type}</p>
+                      <p className="text-xs text-slate-700 font-medium pl-5 whitespace-pre-wrap">
+                        {dispute.reason || 'Chưa có nội dung khiếu nại.'}
+                      </p>
+                      {dispute.complainantRole === 'STUDENT' && dispute.studentEvidenceObjectKey && (
+                        <div className="pl-5 pt-1 space-y-1">
+                          <a
+                            href={dispute.studentEvidenceObjectKey.startsWith('http')
+                              ? dispute.studentEvidenceObjectKey
+                              : `https://${dispute.studentEvidenceObjectKey}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-700 font-bold border border-rose-200 rounded-lg text-[11px]"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            Xem bằng chứng của học viên
+                          </a>
+                          {dispute.studentEvidenceSha256 && (
+                            <p className="font-mono text-[10px] text-slate-400 break-all">
+                              SHA-256: {dispute.studentEvidenceSha256}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {dispute.complainantRole === 'TUTOR' && dispute.tutorEvidenceObjectKey && (
+                        <div className="pl-5 pt-1 space-y-1">
+                          <a
+                            href={dispute.tutorEvidenceObjectKey.startsWith('http')
+                              ? dispute.tutorEvidenceObjectKey
+                              : `https://${dispute.tutorEvidenceObjectKey}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-700 font-bold border border-rose-200 rounded-lg text-[11px]"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            Xem bằng chứng gia sư gửi Staff/Admin
+                          </a>
+                          {dispute.tutorEvidenceSha256 && (
+                            <p className="font-mono text-[10px] text-slate-400 break-all">
+                              SHA-256: {dispute.tutorEvidenceSha256}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {dispute.tutorResponse ? (() => {
+                    {dispute.complainantRole === 'STUDENT' && dispute.tutorResponse ? (() => {
                       const fileMatch = dispute.tutorResponse.match(/\s*\[File:\s*([^\]]+)\]$/);
                       const textOnly = fileMatch ? dispute.tutorResponse.replace(fileMatch[0], '') : dispute.tutorResponse;
-                      const fileUrl = fileMatch ? fileMatch[1] : null;
+                      const fileUrl = dispute.tutorEvidenceObjectKey || (fileMatch ? fileMatch[1] : null);
                       return (
                         <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs space-y-2">
                           <div className="flex items-center justify-between gap-2">
@@ -351,7 +468,9 @@ export function DisputeManagementPanel({
                               <span>Phản hồi & Minh chứng từ gia sư:</span>
                             </div>
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                              Đã nộp đối chất
+                              {dispute.tutorRespondedAt
+                                ? `Đã nộp ${new Date(dispute.tutorRespondedAt).toLocaleString('vi-VN')}`
+                                : 'Đã nộp đối chất'}
                             </span>
                           </div>
                           <p className="text-slate-700 text-xs pl-5 leading-relaxed">{textOnly}</p>
@@ -370,30 +489,42 @@ export function DisputeManagementPanel({
                           )}
                         </div>
                       );
-                    })() : (
+                    })() : dispute.complainantRole === 'STUDENT' ? (
                       <div className="bg-amber-50/50 border border-dashed border-amber-200 rounded-2xl p-3 text-xs text-amber-800 flex items-center gap-2">
                         <Clock className="w-4 h-4 text-amber-600 shrink-0" />
                         <span>Chưa có phản hồi đối chất từ gia sư.</span>
                       </div>
-                    )}
+                    ) : null}
                   </div>
 
                   {/* Right Col: Parties & Blockchain Audit Links */}
                   <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-4 space-y-3 flex flex-col justify-between">
                     <div className="space-y-2.5 text-xs">
                       <div>
-                        <span className="text-slate-400 font-semibold block text-[11px]">Học viên khiếu nại:</span>
+                        <span className="text-slate-400 font-semibold block text-[11px]">
+                          {dispute.complainantRole === 'TUTOR' ? 'Gia sư khiếu nại:' : 'Học viên khiếu nại:'}
+                        </span>
                         <span className="font-bold text-slate-800">#{dispute.complainantId}</span>
                         <div className="mt-0.5">
-                          <EtherscanLink address={dispute.studentWallet} chainId={activeChainId} />
+                          <EtherscanLink
+                            address={dispute.complainantRole === 'TUTOR' ? dispute.tutorWallet : dispute.studentWallet}
+                            chainId={activeChainId}
+                          />
                         </div>
                       </div>
 
                       <div>
-                        <span className="text-slate-400 font-semibold block text-[11px]">Gia sư bị khiếu nại:</span>
-                        <span className="font-bold text-slate-800">Ví gia sư</span>
+                        <span className="text-slate-400 font-semibold block text-[11px]">
+                          {dispute.complainantRole === 'TUTOR' ? 'Học viên liên quan:' : 'Gia sư bị khiếu nại:'}
+                        </span>
+                        <span className="font-bold text-slate-800">
+                          {dispute.complainantRole === 'TUTOR' ? 'Ví học viên' : 'Ví gia sư'}
+                        </span>
                         <div className="mt-0.5">
-                          <EtherscanLink address={dispute.tutorWallet} chainId={activeChainId} />
+                          <EtherscanLink
+                            address={dispute.complainantRole === 'TUTOR' ? dispute.studentWallet : dispute.tutorWallet}
+                            chainId={activeChainId}
+                          />
                         </div>
                       </div>
 
@@ -431,7 +562,7 @@ export function DisputeManagementPanel({
                 </div>
 
                 {/* Tutor Actions (Submit / Update Counter Evidence) */}
-                {activeRole === 'tutor' && dispute.status === 'OPEN' && (
+                {activeRole === 'tutor' && dispute.complainantRole === 'STUDENT' && dispute.status === 'OPEN' && (
                   <div className="border-t border-slate-100 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-indigo-50/50 p-4 rounded-2xl">
                     <div className="flex items-center gap-2 text-xs text-indigo-900 font-medium">
                       <Info className="w-4 h-4 text-indigo-600 shrink-0" />
@@ -476,14 +607,22 @@ export function DisputeManagementPanel({
                           disabled={resolvingId === dispute.id}
                           className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-xl transition-all disabled:opacity-50"
                         >
-                          {resolvingId === dispute.id ? 'Đang gửi tx...' : 'Bác bỏ khiếu nại (Trả tiền gia sư)'}
+                          {resolvingId === dispute.id
+                            ? 'Đang gửi tx...'
+                            : dispute.complainantRole === 'TUTOR'
+                              ? 'Bác khiếu nại (Hoàn tiền học viên)'
+                              : 'Bác bỏ khiếu nại (Trả tiền gia sư)'}
                         </button>
                         <button
                           onClick={() => handleResolve(dispute, true)}
                           disabled={resolvingId === dispute.id}
                           className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md hover:shadow transition-all disabled:opacity-50"
                         >
-                          {resolvingId === dispute.id ? 'Đang gửi tx...' : 'Chấp thuận (Hoàn tiền học viên)'}
+                          {resolvingId === dispute.id
+                            ? 'Đang gửi tx...'
+                            : dispute.complainantRole === 'TUTOR'
+                              ? 'Chấp thuận (Trả tiền gia sư)'
+                              : 'Chấp thuận (Hoàn tiền học viên)'}
                         </button>
                       </div>
                     )}
@@ -495,7 +634,7 @@ export function DisputeManagementPanel({
         )}
       </div>
 
-      {/* Create Dispute Modal for Student */}
+      {/* Create Dispute Modal for Student or Tutor */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
@@ -518,27 +657,38 @@ export function DisputeManagementPanel({
             </div>
 
             <form onSubmit={handleCreateDispute} className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Mã Hợp Đồng (Agreement ID)</label>
-                  <input
-                    type="text"
-                    value={agreementIdInput}
-                    onChange={(e) => setAgreementIdInput(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono font-bold focus:outline-none focus:border-rose-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Mã Buổi Học (Session ID)</label>
-                  <input
-                    type="number"
-                    value={sessionIdInput}
-                    onChange={(e) => setSessionIdInput(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-mono font-bold focus:outline-none focus:border-rose-500"
-                    required
-                  />
-                </div>
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Buổi học cần khiếu nại</label>
+                <select
+                  value={`${agreementIdInput}:${sessionIdInput}`}
+                  onChange={(event) => {
+                    const option = eligibleSessions.find((item) => item.key === event.target.value);
+                    if (option) {
+                      setAgreementIdInput(option.agreementId);
+                      setSessionIdInput(String(option.sessionId));
+                    }
+                  }}
+                  disabled={eligibleSessionsLoading || eligibleSessions.length === 0}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:border-rose-500 disabled:bg-slate-100 disabled:text-slate-400"
+                  required
+                >
+                  {eligibleSessions.length === 0 && (
+                    <option value=":1">
+                      {eligibleSessionsLoading ? 'Đang tải buổi học...' : 'Không có buổi BOTH_PRESENT nào còn hạn khiếu nại'}
+                    </option>
+                  )}
+                  {eligibleSessions.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.className}
+                      {activeRole === 'tutor' && option.studentName ? ` — Học viên: ${option.studentName}` : ''}
+                      {' '}— Buổi #{option.sessionId} — hạn {new Date(option.disputeDeadline).toLocaleString('vi-VN')}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Chỉ có thể gửi trong hạn 24 giờ và trước khi giải ngân. Smart Contract V1 hiện hỗ trợ khóa/phân xử on-chain cho buổi `BOTH_PRESENT`.
+                  {activeRole === 'tutor' && ' Khiếu nại của gia sư chỉ Staff/Admin được xem; học viên không thấy nội dung và minh chứng.'}
+                </p>
               </div>
 
               <div>
@@ -547,14 +697,16 @@ export function DisputeManagementPanel({
                   rows={3}
                   value={reasonInput}
                   onChange={(e) => setReasonInput(e.target.value)}
-                  placeholder="Mô tả cụ thể sự việc (ví dụ: gia sư đến muộn 45 phút, giảng dạy sai nội dung cam kết...)"
+                  placeholder={activeRole === 'tutor'
+                    ? 'Mô tả sự việc liên quan đến học viên trong buổi học để Staff/Admin xem xét...'
+                    : 'Mô tả cụ thể sự việc (ví dụ: gia sư không dạy hoặc nội dung điểm danh không đúng...)'}
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-rose-500"
                   required
                 />
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Đường dẫn bằng chứng / Ghi chú</label>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Đường dẫn bằng chứng (không bắt buộc)</label>
                 <input
                   type="text"
                   value={evidenceTextInput}
@@ -579,7 +731,7 @@ export function DisputeManagementPanel({
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || eligibleSessionsLoading || eligibleSessions.length === 0}
                   className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-display font-black text-xs rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center gap-2"
                 >
                   {isSubmitting && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
@@ -623,7 +775,21 @@ export function DisputeManagementPanel({
                   <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                   <span>Nội dung học viên khiếu nại:</span>
                 </div>
-                <p className="text-slate-700 pl-5">{selectedDisputeForTutor.type || 'Gia sư không vào dạy / vi phạm quy định'}</p>
+                <p className="text-slate-700 pl-5 whitespace-pre-wrap">
+                  {selectedDisputeForTutor.reason || 'Học viên phản ánh sai lệch điểm danh của buổi học.'}
+                </p>
+                {selectedDisputeForTutor.studentEvidenceObjectKey && (
+                  <a
+                    href={selectedDisputeForTutor.studentEvidenceObjectKey.startsWith('http')
+                      ? selectedDisputeForTutor.studentEvidenceObjectKey
+                      : `https://${selectedDisputeForTutor.studentEvidenceObjectKey}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-rose-700 font-bold underline pl-5"
+                  >
+                    <ExternalLink className="w-3 h-3" /> Xem bằng chứng học viên gửi
+                  </a>
+                )}
               </div>
 
               <div>

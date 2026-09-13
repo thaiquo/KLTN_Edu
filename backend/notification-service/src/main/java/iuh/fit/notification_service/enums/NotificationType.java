@@ -6,6 +6,7 @@ public enum NotificationType {
     AGREEMENT_FUNDED,
     SESSION_SETTLED,
     DISPUTE_OPENED,
+    DISPUTE_UPDATED,
     DISPUTE_RESOLVED,
     
     // Tutor & Account Lifecycle

@@ -351,14 +351,13 @@ export function StudentSchedulePage() {
                             )}
 
                             {session.meetingLink && (
-                              <a
-                                href={session.meetingLink}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-emerald-600 px-2 py-1 text-[10px] font-black text-white hover:bg-emerald-700 transition-colors mt-1"
+                              <Link
+                                to={session.classRoomId ? `/my-classes?classId=${session.classRoomId}` : '/my-classes'}
+                                className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-black text-white hover:bg-indigo-700 transition-colors mt-1 shadow-2xs"
+                                title="Vào lớp để điểm danh và nhận link phòng học"
                               >
-                                <Video size={11} /> Vào phòng học
-                              </a>
+                                <Video size={11} /> Vào lớp & Điểm danh
+                              </Link>
                             )}
                           </div>
                         );
@@ -515,14 +514,13 @@ export function StudentSchedulePage() {
 
                     <div className="flex items-center gap-2">
                       {session.meetingLink ? (
-                        <a
-                          href={session.meetingLink}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-1.5 text-xs font-black text-white hover:bg-emerald-700 transition-colors shadow-2xs"
+                        <Link
+                          to={session.classRoomId ? `/my-classes?classId=${session.classRoomId}` : '/my-classes'}
+                          className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-black text-white hover:bg-indigo-700 transition-colors shadow-2xs"
+                          title="Vào lớp để điểm danh và nhận link phòng học"
                         >
-                          <Video size={14} /> Vào lớp học
-                        </a>
+                          <Video size={14} /> Vào lớp & Điểm danh
+                        </Link>
                       ) : (
                         <span className="text-[11px] font-bold text-slate-400 italic">
                           Chưa có link phòng

@@ -99,9 +99,13 @@ public class ContractAccessControl {
     }
 
     public void requireCanOpenDispute(ContractAgreement agreement, ContractUserPrincipal user) {
-        if (!user.hasActiveAuthority("STUDENT")
-                || (!user.matchesUserId(agreement.getStudentId()) && !user.matchesEmail(agreement.getStudentEmail()))) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only the agreement student can open a dispute.");
+        boolean ownStudentAgreement = user.hasActiveAuthority("STUDENT")
+                && (user.matchesUserId(agreement.getStudentId()) || user.matchesEmail(agreement.getStudentEmail()));
+        boolean ownTutorAgreement = user.hasActiveAuthority("TUTOR")
+                && (user.matchesUserId(agreement.getTutorId()) || user.matchesEmail(agreement.getTutorEmail()));
+        if (!ownStudentAgreement && !ownTutorAgreement) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only the Student or Tutor belonging to this agreement can open a dispute.");
         }
     }
 
@@ -130,8 +134,17 @@ public class ContractAccessControl {
         if (dispute == null) {
             return false;
         }
-        return user.matchesUserId(dispute.getComplainantId())
-                || canViewAgreement(dispute.getSettlement().getAgreement(), user);
+        ContractAgreement agreement = dispute.getSettlement().getAgreement();
+        if (user.hasActiveAuthority("TUTOR")) {
+            return user.matchesUserId(agreement.getTutorId()) || user.matchesEmail(agreement.getTutorEmail());
+        }
+        if (user.hasActiveAuthority("STUDENT")) {
+            // Tutor-originated complaints are private operational reports. The
+            // Student can see that settlement is held, but not complaint details.
+            return "STUDENT".equalsIgnoreCase(dispute.getComplainantRole())
+                    && (user.matchesUserId(agreement.getStudentId()) || user.matchesEmail(agreement.getStudentEmail()));
+        }
+        return false;
     }
 
     public void requireCanResolveDispute(Dispute dispute, ContractUserPrincipal user) {

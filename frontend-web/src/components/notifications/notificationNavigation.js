@@ -67,6 +67,13 @@ export function getNotificationTarget(notification, activeRole) {
       : target('/dashboard');
   }
 
+  if (type.startsWith('DISPUTE_') || referenceType === 'DISPUTE') {
+    if (role === 'TUTOR' || role === 'STAFF' || role === 'ADMIN') {
+      return target('/dashboard', 'complaints');
+    }
+    return target('/contracts');
+  }
+
   return null;
 }
 

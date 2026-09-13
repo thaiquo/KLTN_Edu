@@ -66,7 +66,7 @@ export function EscrowContractsView({
   activeRole,
   userEmail = '',
 }: EscrowContractsViewProps) {
-  const { address, chainId } = useWeb3Wallet();
+  const { address, chainId, usdcBalance } = useWeb3Wallet();
   const { user } = useAuth();
   const activeChainId = chainId || DEFAULT_CHAIN_ID;
 
@@ -916,21 +916,45 @@ export function EscrowContractsView({
                         </button>
                       )}
 
-                      {isWaitingPayment && activeRole === 'student' && (
-                        <button
-                          onClick={() => handleOpenPayment(item)}
-                          disabled={isStudentWalletMismatch}
-                          className={`flex items-center gap-1.5 px-4 py-2 text-white text-xs font-display font-black rounded-xl shadow-sm transition-all ${
-                            isStudentWalletMismatch
-                              ? 'bg-slate-400 cursor-not-allowed opacity-60'
-                              : 'bg-emerald-600 hover:bg-emerald-700 hover:shadow'
-                          }`}
-                          title={isStudentWalletMismatch ? 'Vui lòng chuyển sang đúng ví học viên trong MetaMask' : undefined}
-                        >
-                          <Lock className="w-3.5 h-3.5" />
-                          <span>Ký quỹ ngay (${item.totalAmountUsdc.toFixed(2)} {item.tokenSymbol})</span>
-                        </button>
-                      )}
+                      {isWaitingPayment && activeRole === 'student' && (() => {
+                        const balanceNum = parseFloat(usdcBalance || '0');
+                        const isInsufficientBalance = Boolean(address) && balanceNum < item.totalAmountUsdc;
+
+                        return (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              onClick={() => handleOpenPayment(item)}
+                              disabled={isStudentWalletMismatch}
+                              className={`flex items-center gap-1.5 px-4 py-2 text-white text-xs font-display font-black rounded-xl shadow-sm transition-all ${
+                                isStudentWalletMismatch
+                                  ? 'bg-slate-400 cursor-not-allowed opacity-60'
+                                  : isInsufficientBalance
+                                  ? 'bg-amber-600 hover:bg-amber-700'
+                                  : 'bg-emerald-600 hover:bg-emerald-700 hover:shadow'
+                              }`}
+                              title={
+                                isStudentWalletMismatch
+                                  ? 'Vui lòng chuyển sang đúng ví học viên trong MetaMask'
+                                  : isInsufficientBalance
+                                  ? `Số dư ví hiện tại: $${balanceNum.toFixed(2)} USDC (Còn thiếu $${(item.totalAmountUsdc - balanceNum).toFixed(2)} USDC)`
+                                  : undefined
+                              }
+                            >
+                              <Lock className="w-3.5 h-3.5" />
+                              <span>
+                                {isInsufficientBalance
+                                  ? `Ký quỹ (${item.totalAmountUsdc.toFixed(2)} ${item.tokenSymbol} • Thiếu số dư)`
+                                  : `Ký quỹ ngay (${item.totalAmountUsdc.toFixed(2)} ${item.tokenSymbol})`}
+                              </span>
+                            </button>
+                            {isInsufficientBalance && !isStudentWalletMismatch && (
+                              <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
+                                ⚠️ Ví có ${balanceNum.toFixed(2)} USDC (Thiếu ${(item.totalAmountUsdc - balanceNum).toFixed(2)})
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       {isActive && item.settlementEligible && (
                         <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">

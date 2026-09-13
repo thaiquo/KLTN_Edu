@@ -214,4 +214,64 @@ class SessionAttendanceServiceTest {
         assertThat(attendance.getFinalOutcome()).isEqualTo(AttendanceOutcome.TUTOR_ABSENT);
         assertThat(session.getStatus()).isEqualTo(ClassSessionStatus.COMPLETED);
     }
+
+    @Test
+    @DisplayName("completed session response reports the real tutor and per-student outcomes")
+    void completedSessionResponseUsesPersistedAttendanceInsteadOfAssumingBothPresent() {
+        session.setStatus(ClassSessionStatus.COMPLETED);
+        session.setSettlementDispatched(true);
+        SessionAttendance attendance = new SessionAttendance();
+        attendance.setSession(session);
+        attendance.setStudentId(201L);
+        attendance.setTutorChecked(false);
+        attendance.setStudentChecked(false);
+        attendance.setFinalOutcome(AttendanceOutcome.TUTOR_ABSENT);
+        session.setAttendances(List.of(attendance));
+
+        when(classSessionRepository.findById(1L)).thenReturn(Optional.of(session));
+        when(sessionAccessControl.currentStudentId()).thenReturn(201L);
+
+        ClassSessionDtos.ClassSessionResponse response = sessionAttendanceService.getSessionById(1L);
+
+        assertThat(response.tutorCheckedIn()).isFalse();
+        assertThat(response.myCheckedIn()).isFalse();
+        assertThat(response.myFinalOutcome()).isEqualTo(AttendanceOutcome.TUTOR_ABSENT);
+        assertThat(response.bothPresentCount()).isZero();
+        assertThat(response.studentAbsentCount()).isZero();
+        assertThat(response.tutorAbsentCount()).isEqualTo(1);
+        assertThat(response.settlementDispatched()).isTrue();
+    }
+
+    @Test
+    @DisplayName("student session response keeps each learner's attendance independent")
+    void studentSessionResponseDoesNotBorrowAnotherStudentsPresence() {
+        session.setStatus(ClassSessionStatus.COMPLETED);
+        SessionAttendance currentStudent = new SessionAttendance();
+        currentStudent.setSession(session);
+        currentStudent.setStudentId(201L);
+        currentStudent.setTutorChecked(true);
+        currentStudent.setStudentChecked(false);
+        currentStudent.setFinalOutcome(AttendanceOutcome.STUDENT_ABSENT_TUTOR_PRESENT);
+
+        SessionAttendance otherStudent = new SessionAttendance();
+        otherStudent.setSession(session);
+        otherStudent.setStudentId(202L);
+        otherStudent.setTutorChecked(true);
+        otherStudent.setStudentChecked(true);
+        otherStudent.setFinalOutcome(AttendanceOutcome.BOTH_PRESENT);
+        session.setAttendances(List.of(currentStudent, otherStudent));
+
+        when(classSessionRepository.findById(1L)).thenReturn(Optional.of(session));
+        when(sessionAccessControl.currentStudentId()).thenReturn(201L);
+
+        ClassSessionDtos.ClassSessionResponse response = sessionAttendanceService.getSessionById(1L);
+
+        assertThat(response.presentCount()).isEqualTo(1);
+        assertThat(response.myCheckedIn()).isFalse();
+        assertThat(response.myFinalOutcome()).isEqualTo(AttendanceOutcome.STUDENT_ABSENT_TUTOR_PRESENT);
+        assertThat(response.tutorCheckedIn()).isTrue();
+        assertThat(response.bothPresentCount()).isEqualTo(1);
+        assertThat(response.studentAbsentCount()).isEqualTo(1);
+        assertThat(response.tutorAbsentCount()).isZero();
+    }
 }

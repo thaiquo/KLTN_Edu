@@ -29,6 +29,10 @@ import tools.jackson.databind.ObjectMapper;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -43,6 +47,7 @@ public class DisputeWorkflowService {
     private final BlockchainTransactionCommandService commandService;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final NotificationDispatcher notificationDispatcher;
 
     public DisputeWorkflowService(
             DisputeRepository disputeRepository,
@@ -51,7 +56,8 @@ public class DisputeWorkflowService {
             ContractAgreementRepository agreementRepository,
             BlockchainTransactionCommandService commandService,
             OutboxEventRepository outboxEventRepository,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            NotificationDispatcher notificationDispatcher) {
         this.disputeRepository = disputeRepository;
         this.disputeEvidenceRepository = disputeEvidenceRepository;
         this.sessionSettlementRepository = sessionSettlementRepository;
@@ -59,16 +65,31 @@ public class DisputeWorkflowService {
         this.commandService = commandService;
         this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
+        this.notificationDispatcher = notificationDispatcher;
     }
 
     @Transactional
     public BlockchainTransactionIntentResult initiateDisputeOpening(
             UUID settlementId,
             Long complainantId,
+            String complainantRole,
+            String reason,
             String evidenceHash,
             String evidenceObjectKey,
             String contentType,
             String sha256) {
+
+        String normalizedRole = complainantRole != null ? complainantRole.trim().toUpperCase(Locale.ROOT) : "";
+        if (!"STUDENT".equals(normalizedRole) && !"TUTOR".equals(normalizedRole)) {
+            throw new IllegalArgumentException("Complainant role must be STUDENT or TUTOR");
+        }
+        String normalizedReason = reason != null ? reason.trim() : "";
+        if (normalizedReason.isBlank()) {
+            throw new IllegalArgumentException("Dispute reason is required");
+        }
+        if (normalizedReason.length() > 2000) {
+            throw new IllegalArgumentException("Dispute reason must not exceed 2000 characters");
+        }
 
         SessionSettlement settlement = sessionSettlementRepository.findById(settlementId)
                 .orElseThrow(() -> new IllegalArgumentException("Session settlement not found: " + settlementId));
@@ -79,14 +100,18 @@ public class DisputeWorkflowService {
         if (settlement.getOutcome() != SettlementOutcome.BOTH_PRESENT) {
             throw new IllegalStateException("Only sessions proposed with BOTH_PRESENT outcome can be disputed as tutor fraud");
         }
-        if (!settlement.getAgreement().getStudentId().equals(complainantId)) {
-            throw new SecurityException("Only the student belonging to this agreement can open a tutor fraud dispute");
+        ContractAgreement agreement = settlement.getAgreement();
+        Long expectedComplainantId = "STUDENT".equals(normalizedRole)
+                ? agreement.getStudentId()
+                : agreement.getTutorId();
+        if (!expectedComplainantId.equals(complainantId)) {
+            throw new SecurityException("Only the " + normalizedRole.toLowerCase(Locale.ROOT)
+                    + " belonging to this agreement can open this dispute");
         }
         if (settlement.getDisputeDeadline() == null || OffsetDateTime.now(ZoneOffset.UTC).isAfter(settlement.getDisputeDeadline())) {
             throw new IllegalStateException("Dispute window has expired on " + settlement.getDisputeDeadline());
         }
 
-        ContractAgreement agreement = settlement.getAgreement();
         String calldata = EduConnectEscrowCalldataEncoder.encodeOpenTutorFraudDispute(
                 agreement.getOnchainAgreementId(),
                 settlement.getOnchainSessionId(),
@@ -111,31 +136,38 @@ public class DisputeWorkflowService {
         BlockchainTransactionIntentResult intentResult = commandService.createIntent(command);
 
         Dispute dispute = disputeRepository.findBySettlementId(settlementId).orElse(null);
+        boolean newlyCreated = dispute == null;
         if (dispute == null) {
             dispute = Dispute.builder()
                     .id(UUID.randomUUID())
                     .settlement(settlement)
-                    .type("TUTOR_FRAUD")
+                    .type("STUDENT".equals(normalizedRole) ? "TUTOR_FRAUD" : "STUDENT_MISCONDUCT")
+                    .reason(normalizedReason)
                     .complainantId(complainantId)
+                    .complainantRole(normalizedRole)
                     .submittedAt(Instant.now())
                     .status(DisputeStatus.OPENING)
                     .build();
             disputeRepository.save(dispute);
         }
 
-        DisputeEvidence evidence = DisputeEvidence.builder()
-                .id(UUID.randomUUID())
-                .dispute(dispute)
-                .submittedByUserId(complainantId)
-                .submittedByRole("STUDENT")
-                .objectKey(evidenceObjectKey)
-                .contentType(contentType)
-                .sha256(sha256)
-                .build();
-        disputeEvidenceRepository.save(evidence);
+        saveEvidenceIfPresent(dispute, complainantId, normalizedRole, evidenceObjectKey, contentType, sha256);
 
         settlement.markDisputeOpening();
         sessionSettlementRepository.saveAndFlush(settlement);
+
+        if (newlyCreated && "STUDENT".equals(normalizedRole)) {
+            notificationDispatcher.sendAsync(
+                    agreement.getTutorEmail(),
+                    agreement.getTutorId(),
+                    "Học viên khiếu nại Buổi #" + settlement.getSessionId(),
+                    "Học viên đã gửi khiếu nại cho " + safeClassName(agreement)
+                            + ". Nội dung: " + abbreviate(dispute.getReason(), 700)
+                            + ". Khoản quyết toán của học viên này đã được tạm giữ; vui lòng vào mục Khiếu nại lớp học để xem và phản hồi.",
+                    "DISPUTE_OPENED",
+                    "DISPUTE",
+                    dispute.getId().toString());
+        }
 
         log.info("Initiated dispute opening for settlement {} on agreement {}", settlementId, agreement.getId());
         return intentResult;
@@ -212,6 +244,42 @@ public class DisputeWorkflowService {
     }
 
     @Transactional
+    public Dispute submitTutorResponse(
+            UUID disputeId,
+            Long tutorId,
+            String responseText,
+            String evidenceObjectKey) {
+        Dispute dispute = disputeRepository.findById(disputeId)
+                .orElseThrow(() -> new IllegalArgumentException("Dispute not found: " + disputeId));
+        if (dispute.getStatus() != DisputeStatus.OPEN) {
+            throw new IllegalStateException("Only open disputes accept tutor evidence");
+        }
+        if (!"STUDENT".equalsIgnoreCase(dispute.getComplainantRole())) {
+            throw new IllegalStateException("Tutor responses are only accepted for Student-originated disputes");
+        }
+
+        ContractAgreement agreement = dispute.getSettlement().getAgreement();
+        if (tutorId == null || !tutorId.equals(agreement.getTutorId())) {
+            throw new SecurityException("Only the tutor belonging to this agreement can respond to the dispute");
+        }
+
+        String normalizedResponse = responseText != null ? responseText.trim() : "";
+        if (normalizedResponse.isBlank()) {
+            throw new IllegalArgumentException("Tutor response is required");
+        }
+        if (normalizedResponse.length() > 4000) {
+            throw new IllegalArgumentException("Tutor response must not exceed 4000 characters");
+        }
+
+        dispute.setTutorResponse(normalizedResponse);
+        dispute.setTutorRespondedAt(Instant.now());
+        Dispute saved = disputeRepository.save(dispute);
+        saveEvidenceIfPresent(saved, tutorId, "TUTOR", evidenceObjectKey, "text/uri-list", null);
+
+        return saved;
+    }
+
+    @Transactional
     public BlockchainTransactionIntentResult initiateDisputeResolution(
             UUID disputeId,
             Long resolverUserId,
@@ -245,10 +313,16 @@ public class DisputeWorkflowService {
         }
 
         SessionSettlement settlement = dispute.getSettlement();
+        // V1 exposes a tutor-fraud boolean only. For a Tutor-originated complaint,
+        // approving the complainant means choosing the normal Tutor payout branch,
+        // which is the inverse of approving a Student tutor-fraud complaint.
+        boolean onchainComplaintApproved = "TUTOR".equalsIgnoreCase(dispute.getComplainantRole())
+                ? !complaintApproved
+                : complaintApproved;
         String calldata = EduConnectEscrowCalldataEncoder.encodeResolveTutorFraudDispute(
                 agreement.getOnchainAgreementId(),
                 settlement.getOnchainSessionId(),
-                complaintApproved,
+                onchainComplaintApproved,
                 resolutionHash);
         String calldataHash = Hash.sha3(calldata);
 
@@ -297,7 +371,7 @@ public class DisputeWorkflowService {
 
         String onchainAgreementId = decodedEvent.agreementId().toLowerCase(Locale.ROOT);
         String onchainSessionId = decodedEvent.sessionId().toLowerCase(Locale.ROOT);
-        boolean complaintApproved = Boolean.parseBoolean(decodedEvent.attributes().get("complaintApproved"));
+        boolean onchainComplaintApproved = Boolean.parseBoolean(decodedEvent.attributes().get("complaintApproved"));
 
         Dispute dispute = disputeRepository.findByOnchainIdentifiers(onchainAgreementId, onchainSessionId)
                 .orElse(null);
@@ -317,6 +391,9 @@ public class DisputeWorkflowService {
             throw new IllegalStateException("Confirmed dispute resolution event missing resolutionHash");
         }
 
+        boolean complaintApproved = "TUTOR".equalsIgnoreCase(dispute.getComplainantRole())
+                ? !onchainComplaintApproved
+                : onchainComplaintApproved;
         dispute.markResolved(
                 complaintApproved,
                 dispute.getResolutionReason(),
@@ -351,7 +428,88 @@ public class DisputeWorkflowService {
                 now);
         outboxEventRepository.saveAndFlush(outboxEvent);
 
+        boolean tutorOriginated = "TUTOR".equalsIgnoreCase(dispute.getComplainantRole());
+        String resultText;
+        if (tutorOriginated) {
+            resultText = complaintApproved
+                    ? "Khiếu nại của bạn đã được chấp thuận; buổi học sẽ theo nhánh thanh toán cho gia sư sau xác nhận on-chain."
+                    : "Khiếu nại của bạn đã bị bác; buổi học sẽ theo nhánh hoàn tiền cho học viên sau xác nhận on-chain.";
+        } else {
+            resultText = complaintApproved
+                    ? "Khiếu nại đã được chấp thuận; buổi học sẽ hoàn 100% cho học viên sau xác nhận quyết toán on-chain."
+                    : "Khiếu nại đã bị bác bỏ; buổi học sẽ được quyết toán cho gia sư theo phán quyết on-chain.";
+        }
+        // Tutor-originated complaints are private operational reports to Staff/Admin.
+        if (!tutorOriginated) {
+            notificationDispatcher.sendAsync(
+                    agreement.getStudentEmail(), agreement.getStudentId(),
+                    "Đã phân xử khiếu nại Buổi #" + settlement.getSessionId(),
+                    resultText,
+                    "DISPUTE_RESOLVED", "DISPUTE", dispute.getId().toString());
+        }
+        notificationDispatcher.sendAsync(
+                agreement.getTutorEmail(), agreement.getTutorId(),
+                "Đã phân xử khiếu nại Buổi #" + settlement.getSessionId(),
+                resultText,
+                "DISPUTE_RESOLVED", "DISPUTE", dispute.getId().toString());
+
         log.info("Successfully processed TutorFraudDisputeResolved for dispute {} (approved={})", dispute.getId(), complaintApproved);
         return true;
+    }
+
+    private void saveEvidenceIfPresent(
+            Dispute dispute,
+            Long submittedByUserId,
+            String submittedByRole,
+            String objectKey,
+            String contentType,
+            String suppliedSha256) {
+        String normalizedObjectKey = objectKey != null ? objectKey.trim() : "";
+        if (normalizedObjectKey.isBlank()) {
+            return;
+        }
+        if (normalizedObjectKey.length() > 1024) {
+            throw new IllegalArgumentException("Evidence link must not exceed 1024 characters");
+        }
+        if (disputeEvidenceRepository.existsByDisputeIdAndObjectKey(dispute.getId(), normalizedObjectKey)) {
+            return;
+        }
+
+        String normalizedSha256 = suppliedSha256 != null ? suppliedSha256.trim().toLowerCase(Locale.ROOT) : "";
+        if (!normalizedSha256.matches("[0-9a-f]{64}")) {
+            normalizedSha256 = sha256(normalizedObjectKey);
+        }
+        DisputeEvidence evidence = DisputeEvidence.builder()
+                .id(UUID.randomUUID())
+                .dispute(dispute)
+                .submittedByUserId(submittedByUserId)
+                .submittedByRole(submittedByRole)
+                .objectKey(normalizedObjectKey)
+                .contentType(contentType)
+                .sha256(normalizedSha256)
+                .build();
+        disputeEvidenceRepository.save(evidence);
+    }
+
+    private String sha256(String value) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    private String safeClassName(ContractAgreement agreement) {
+        return agreement.getClassName() != null && !agreement.getClassName().isBlank()
+                ? "lớp " + agreement.getClassName()
+                : "buổi học này";
+    }
+
+    private String abbreviate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value != null ? value : "";
+        }
+        return value.substring(0, maxLength - 1) + "…";
     }
 }

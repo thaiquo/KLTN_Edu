@@ -112,6 +112,7 @@ export function EscrowPaymentModal({
 
   if (!isOpen) return null;
 
+  const isPaymentDone = currentStep === 'SUCCESS' || !!fundingTxHash || agreement.status === 'PAYMENT_CONFIRMING' || agreement.status === 'ACTIVE';
   const hasEnoughAllowance = allowance >= totalAmountUnits;
   const userHasEnoughBalance = parseFloat(usdcBalance) >= agreement.totalAmount;
   const walletMatchesAgreement = !agreement.studentAddress
@@ -130,6 +131,10 @@ export function EscrowPaymentModal({
     try {
       if (!walletOnRequiredChain) {
         throw new Error(`Vui lòng chuyển ví sang đúng mạng chain ID ${requiredChainId} trước khi phê duyệt USDC.`);
+      }
+      if (parseFloat(usdcBalance || '0') < agreement.totalAmount) {
+        const shortage = (agreement.totalAmount - parseFloat(usdcBalance || '0')).toFixed(2);
+        throw new Error(`Số dư USDC trong ví (${usdcBalance || '0'} USDC) không đủ để ký quỹ $${agreement.totalAmount} USDC. Bạn còn thiếu $${shortage} USDC.`);
       }
       setIsProcessing(true);
       setCurrentStep('APPROVING');
@@ -167,6 +172,10 @@ export function EscrowPaymentModal({
     try {
       if (!walletOnRequiredChain) {
         throw new Error(`Vui lòng chuyển ví sang đúng mạng chain ID ${requiredChainId} trước khi ký quỹ.`);
+      }
+      if (parseFloat(usdcBalance || '0') < agreement.totalAmount) {
+        const shortage = (agreement.totalAmount - parseFloat(usdcBalance || '0')).toFixed(2);
+        throw new Error(`Số dư USDC trong ví (${usdcBalance || '0'} USDC) không đủ để ký quỹ $${agreement.totalAmount} USDC. Bạn còn thiếu $${shortage} USDC.`);
       }
       setIsProcessing(true);
       setCurrentStep('FUNDING');
@@ -310,7 +319,7 @@ export function EscrowPaymentModal({
                 Kết nối ví ngay
               </button>
             </div>
-          ) : !userHasEnoughBalance ? (
+          ) : !isPaymentDone && !userHasEnoughBalance ? (
             <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
               <div>
@@ -323,7 +332,7 @@ export function EscrowPaymentModal({
             </div>
           ) : null}
 
-          {isConnected && !walletMatchesAgreement && (
+          {!isPaymentDone && isConnected && !walletMatchesAgreement && (
             <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
               <div>
@@ -335,7 +344,7 @@ export function EscrowPaymentModal({
             </div>
           )}
 
-          {isConnected && !walletOnRequiredChain && (
+          {!isPaymentDone && isConnected && !walletOnRequiredChain && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between gap-3">
               <div className="flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
@@ -357,7 +366,7 @@ export function EscrowPaymentModal({
             </div>
           )}
 
-          {(!isAgreementWaitingPayment || isDeadlineExpired) && (
+          {!isPaymentDone && (!isAgreementWaitingPayment || isDeadlineExpired) && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div>
@@ -489,27 +498,57 @@ export function EscrowPaymentModal({
               <button
                 onClick={handleApproveUsdc}
                 disabled={!isConnected || !walletOnRequiredChain || !userHasEnoughBalance || !isAgreementWaitingPayment || !walletMatchesAgreement || isDeadlineExpired || isProcessing}
-                className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-display font-black rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50"
+                className={`flex items-center gap-2 px-5 py-2.5 text-xs font-display font-black rounded-xl transition-all ${
+                  !userHasEnoughBalance && isConnected
+                    ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed shadow-none'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed'
+                }`}
+                title={
+                  !userHasEnoughBalance && isConnected
+                    ? `Số dư USDC không đủ (${usdcBalance || '0'} / $${agreement.totalAmount} USDC). Vui lòng nạp thêm tiền vào ví.`
+                    : undefined
+                }
               >
                 {isProcessing && currentStep === 'APPROVING' ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : !userHasEnoughBalance && isConnected ? (
+                  <Lock className="w-4 h-4 text-slate-400" />
                 ) : (
                   <Coins className="w-4 h-4" />
                 )}
-                <span>1. Phê duyệt USDC</span>
+                <span>
+                  {!userHasEnoughBalance && isConnected
+                    ? `Đóng băng: Thiếu ${(agreement.totalAmount - parseFloat(usdcBalance || '0')).toFixed(2)} USDC`
+                    : '1. Phê duyệt USDC'}
+                </span>
               </button>
             ) : currentStep !== 'SUCCESS' ? (
               <button
                 onClick={handleFundEscrow}
                 disabled={!isConnected || !walletOnRequiredChain || !userHasEnoughBalance || !isAgreementWaitingPayment || !walletMatchesAgreement || isDeadlineExpired || isProcessing}
-                className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-display font-black rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50"
+                className={`flex items-center gap-2 px-5 py-2.5 text-xs font-display font-black rounded-xl transition-all ${
+                  !userHasEnoughBalance && isConnected
+                    ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed shadow-none'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed'
+                }`}
+                title={
+                  !userHasEnoughBalance && isConnected
+                    ? `Số dư USDC không đủ (${usdcBalance || '0'} / $${agreement.totalAmount} USDC). Vui lòng nạp thêm tiền vào ví.`
+                    : undefined
+                }
               >
                 {isProcessing && currentStep === 'FUNDING' ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : !userHasEnoughBalance && isConnected ? (
+                  <Lock className="w-4 h-4 text-slate-400" />
                 ) : (
                   <Lock className="w-4 h-4" />
                 )}
-                <span>2. Ký quỹ ${agreement.totalAmount} USDC</span>
+                <span>
+                  {!userHasEnoughBalance && isConnected
+                    ? `Đóng băng: Thiếu ${(agreement.totalAmount - parseFloat(usdcBalance || '0')).toFixed(2)} USDC`
+                    : `2. Ký quỹ $${agreement.totalAmount} USDC`}
+                </span>
               </button>
             ) : (
               <button

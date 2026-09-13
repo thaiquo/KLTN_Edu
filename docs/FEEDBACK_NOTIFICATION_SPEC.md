@@ -211,7 +211,7 @@ These are target events derived from current project scope and docs. They are no
 | `SESSION_CREATED` | `PLANNED` | Learning Service | Student | Tutor toast | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Session feature not implemented. |
 | `SESSION_UPDATED` | `PLANNED` | Learning Service | Student/Tutor | Toast | Yes when schedule-impacting | Recommended | Yes when schedule-impacting | `TBD / FUTURE ROUTE` | Session feature not implemented. |
 | `SESSION_CANCELLED` | `PLANNED` | Learning Service | Student/Tutor | Confirm before cancel, then toast | Yes | Required | Yes | `TBD / FUTURE ROUTE` | Session feature not implemented. |
-| `ATTENDANCE_RECORDED` | `PLANNED` | Learning Service | Student/Tutor | Toast | Persistent only when correction/dispute-relevant | Recommended | Optional | `TBD / FUTURE ROUTE` | Attendance feature not implemented. |
+| `ATTENDANCE_RECORDED` | `PARTIAL` | Learning Service | Student/Tutor | Inline session-state refresh | Persistent only when correction/dispute-relevant | Not implemented | No | `/my-classes` or Portal `my-classes` | Attendance rows and independent Tutor/Student check-in are implemented; a dedicated attendance notification event is not. |
 | `HOMEWORK_CREATED` | `PLANNED` | Learning Service | Student | Tutor toast | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Homework feature not implemented. |
 | `HOMEWORK_UPDATED` | `PLANNED` | Learning Service | Student | Tutor toast | Yes when due date/content changes materially | Recommended | Yes when material | `TBD / FUTURE ROUTE` | Homework feature not implemented. |
 | `HOMEWORK_SUBMITTED` | `PLANNED` | Learning Service | Tutor | Student toast | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Homework submission not implemented. |
@@ -223,8 +223,8 @@ These are target events derived from current project scope and docs. They are no
 | `SESSION_SETTLED` | `PLANNED` | Contract Service | Student/Tutor | Financial progress and Important Success Modal | Yes | Required after authoritative confirmation | Yes | `/payments` or `/contracts` | End-to-end learning-to-contract settlement missing. |
 | `PAYMENT_CONFIRMED` | `PARTIAL` | Contract Service | Student/Tutor/Admin as applicable | Financial progress and Important Success Modal | Yes | Required after authoritative confirmation | Yes | `/payments` | Payment flow partial. |
 | `REFUND_PROCESSED` | `PARTIAL` | Contract Service | Student/Tutor/Admin as applicable | Important Success Modal | Yes | Required after authoritative confirmation | Yes | `/payments` or `/contracts` | Refund workflow partial. |
-| `DISPUTE_OPENED` | `PARTIAL` | Contract Service | Counterparty/Staff/Admin | Confirm before submit, then toast | Yes | Required | Yes | `/contracts` | Dispute workflow partial. |
-| `DISPUTE_RESOLVED` | `PARTIAL` | Contract Service | Student/Tutor/Admin as applicable | Important Success Modal for resolver | Yes | Required | Yes | `/contracts` | Dispute workflow partial. |
+| `DISPUTE_OPENED` | `PARTIAL` | Contract Service | Tutor | Confirm before submit, then toast | Immediate when a Student complaint is accepted locally | Notification Service WebSocket | Yes | Portal `complaints` | Tutor notification includes the persisted Student complaint reason. Submission immediately holds the per-Student settlement. Tutor-origin complaints are private Staff/Admin reports and do not notify the Student. Reviewer Bell delivery remains unavailable because agreements do not store reviewer user id. |
+| `DISPUTE_RESOLVED` | `PARTIAL` | Contract Service | Student/Tutor | Important Success Modal for resolver | Yes after confirmed on-chain resolution | Notification Service WebSocket | Yes | `/contracts` or Portal `complaints` | Both parties receive the authoritative resolution result; reviewer Bell delivery remains pending a reviewer recipient id. |
 | `MESSAGE_RECEIVED` | `PLANNED` | Messaging domain owner TBD | Recipient | Sender local send state | Yes, preferably summary only | Required | Yes, summary only | `/messages` | Messaging backend/API missing; web UI is mock/partial. |
 | `COMPLAINT_CREATED` | `PLANNED` | Complaint/support domain owner TBD | Staff/Admin or counterparty as applicable | Confirm when sensitive, then toast | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Complaint/support module not implemented. |
 | `COMPLAINT_RESOLVED` | `PLANNED` | Complaint/support domain owner TBD | Reporter and affected users | Important success when current user resolves | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Complaint/support module not implemented. |
@@ -307,7 +307,8 @@ These are target events derived from current project scope and docs. They are no
 | `ENROLLMENT_CANCELLED` | `IMPLEMENTED` | Learning Service | Tutor | Persistent notification implemented | Implemented through Notification Service WebSocket | `TUTOR` | `/dashboard` |
 | `MESSAGE_RECEIVED` | `PLANNED` | Messaging domain owner TBD | Recipient | Summary notification only | Required | Active role/context if known | `/messages` |
 | `ESCROW_FUNDED` | `PLANNED` | Contract Service | Student/Tutor | Required after confirmation | Required | `STUDENT`/`TUTOR` | `/payments` or `/contracts` |
-| `DISPUTE_RESOLVED` | `PLANNED` | Contract Service | Student/Tutor/Admin | Required | Required | Context-specific | `/contracts` |
+| `DISPUTE_OPENED` | `PARTIAL` | Contract Service | Tutor | Persistent notification implemented after confirmed opening | Implemented through Notification Service WebSocket | `TUTOR` | Portal `complaints` |
+| `DISPUTE_RESOLVED` | `PARTIAL` | Contract Service | Student/Tutor | Persistent notification implemented after confirmed resolution | Implemented through Notification Service WebSocket | `STUDENT`/`TUTOR` | `/contracts` or Portal `complaints` |
 
 ## 16. WebSocket Matrix
 

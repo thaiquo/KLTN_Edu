@@ -377,6 +377,7 @@ public class SessionAttendanceService {
         String mySubmissionText = null;
         String mySubmissionFileUrl = null;
         LocalDateTime mySubmittedAt = null;
+        AttendanceOutcome myFinalOutcome = null;
 
         if (studentId != null) {
             SessionAttendance myAtt = attendances.stream()
@@ -388,11 +389,23 @@ public class SessionAttendanceService {
                 mySubmissionText = myAtt.getSubmissionText();
                 mySubmissionFileUrl = myAtt.getSubmissionFileUrl();
                 mySubmittedAt = myAtt.getSubmittedAt();
+                myFinalOutcome = myAtt.getFinalOutcome();
             }
-        } else {
-            boolean tutorChecked = attendances.stream().anyMatch(a -> Boolean.TRUE.equals(a.getTutorChecked()));
-            myCheckedIn = tutorChecked;
         }
+
+        boolean tutorCheckedIn = attendances.stream().anyMatch(a -> Boolean.TRUE.equals(a.getTutorChecked()));
+        if (studentId == null) {
+            myCheckedIn = tutorCheckedIn;
+        }
+        int bothPresentCount = (int) attendances.stream()
+                .filter(a -> a.getFinalOutcome() == AttendanceOutcome.BOTH_PRESENT)
+                .count();
+        int studentAbsentCount = (int) attendances.stream()
+                .filter(a -> a.getFinalOutcome() == AttendanceOutcome.STUDENT_ABSENT_TUTOR_PRESENT)
+                .count();
+        int tutorAbsentCount = (int) attendances.stream()
+                .filter(a -> a.getFinalOutcome() == AttendanceOutcome.TUTOR_ABSENT)
+                .count();
 
         return new ClassSessionDtos.ClassSessionResponse(
                 session.getId(),
@@ -413,7 +426,13 @@ public class SessionAttendanceService {
                 myCheckedIn,
                 mySubmissionText,
                 mySubmissionFileUrl,
-                mySubmittedAt
+                mySubmittedAt,
+                tutorCheckedIn,
+                myFinalOutcome,
+                bothPresentCount,
+                studentAbsentCount,
+                tutorAbsentCount,
+                session.isSettlementDispatched()
         );
     }
 

@@ -167,7 +167,9 @@ export interface DisputeDto {
   settlementId: string;
   sessionId: number;
   complainantId: number;
+  complainantRole: "STUDENT" | "TUTOR";
   type: string;
+  reason: string;
   status: string;
   submittedAt: string;
   resolution: string | null;
@@ -178,6 +180,13 @@ export interface DisputeDto {
   openTxHash: string | null;
   resolveTxHash: string | null;
   tutorResponse: string | null;
+  tutorRespondedAt: string | null;
+  studentEvidenceObjectKey: string | null;
+  studentEvidenceContentType: string | null;
+  studentEvidenceSha256: string | null;
+  tutorEvidenceObjectKey: string | null;
+  tutorEvidenceContentType: string | null;
+  tutorEvidenceSha256: string | null;
   studentWallet: string;
   tutorWallet: string;
   classroomReviewerEmail: string | null;

@@ -46,6 +46,12 @@ export interface ClassSessionItem {
   mySubmissionText?: string;
   mySubmissionFileUrl?: string;
   mySubmittedAt?: string;
+  tutorCheckedIn?: boolean;
+  myFinalOutcome?: "BOTH_PRESENT" | "STUDENT_ABSENT_TUTOR_PRESENT" | "TUTOR_ABSENT";
+  bothPresentCount?: number;
+  studentAbsentCount?: number;
+  tutorAbsentCount?: number;
+  settlementDispatched?: boolean;
 }
 
 export interface AttendanceRecord {
@@ -75,6 +81,18 @@ interface Props {
   onDisputeClick?: (session: ClassSessionItem) => void;
 }
 
+const getDayOfWeekName = (dateStr?: string): string => {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr + "T00:00:00");
+    const day = d.getDay();
+    const map = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+    return map[day] || '';
+  } catch {
+    return '';
+  }
+};
+
 export const ClassSessionsTimeline: React.FC<Props> = ({
   classRoomId,
   classRoomName,
@@ -88,7 +106,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   const [sessions, setSessions] = useState<ClassSessionItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState('');
-  const [activeTab, setActiveTab] = useState<"ALL" | "UPCOMING" | "COMPLETED">("ALL");
+  const [activeTab, setActiveTab] = useState<"FOCUSED" | "ALL" | "UPCOMING" | "COMPLETED">("FOCUSED");
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -192,7 +210,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       await apiRequest(`/api/learning/sessions/${sessionId}/student-checkin`, {
         method: "POST"
       });
-      showToast("Điểm danh vào học thành công! Đã mở khóa bài tập buổi học.", "success");
+      showToast("Điểm danh vào học thành công! Đã mở khóa link vào phòng học và bài tập.", "success");
       fetchSessions();
     } catch (err: any) {
       showToast(err.message || "Không thể điểm danh ngoài khung giờ học!", "error");
@@ -339,13 +357,29 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   const completedSessions = useMemo(() => sessions.filter((s) => s.status === "COMPLETED"), [sessions]);
   const upcomingSessions = useMemo(() => sessions.filter((s) => s.status !== "COMPLETED"), [sessions]);
 
+  // 2 buổi trọng tâm mặc định: buổi gần nhất đã qua và buổi tiếp theo
+  const focusedSessions = useMemo(() => {
+    const lastCompleted = completedSessions.length > 0 ? completedSessions[completedSessions.length - 1] : null;
+    const nextUpcoming = upcomingSessions.length > 0 ? upcomingSessions[0] : null;
+
+    if (lastCompleted && nextUpcoming) {
+      return [lastCompleted, nextUpcoming];
+    }
+    if (!lastCompleted && nextUpcoming) {
+      return upcomingSessions.slice(0, 2);
+    }
+    if (lastCompleted && !nextUpcoming) {
+      return completedSessions.slice(-2);
+    }
+    return sessions.slice(0, 2);
+  }, [completedSessions, upcomingSessions, sessions]);
+
   const filteredSessions = useMemo(() => {
+    if (activeTab === "FOCUSED") return focusedSessions;
     if (activeTab === "UPCOMING") return upcomingSessions;
     if (activeTab === "COMPLETED") return completedSessions;
     return sessions;
-  }, [sessions, activeTab, upcomingSessions, completedSessions]);
-
-  const completionPercent = sessions.length > 0 ? Math.round((completedSessions.length / sessions.length) * 100) : 0;
+  }, [sessions, activeTab, focusedSessions, upcomingSessions, completedSessions]);
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -358,121 +392,547 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               : "bg-rose-50 text-rose-800 border-rose-200"
           }`}
         >
-          {toastMessage.type === "success" ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <AlertCircle className="w-5 h-5 text-rose-600" />}
+          {toastMessage.type === "success" ? (
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+          )}
           <span>{toastMessage.text}</span>
         </div>
       )}
 
       {/* Header with Classroom Meeting Link */}
-      <div className="p-6 bg-gradient-to-r from-indigo-950 via-slate-900 to-blue-950 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
-              Lịch Học & Lịch Sử Buổi Học
-            </span>
-          </div>
-          <h2 className="text-xl font-bold">{classRoomName || "Chi Tiết Tiến Trình Buổi Học"}</h2>
-          <p className="text-indigo-200 text-sm mt-0.5">
-            Điểm danh độc lập 2 bên trong khung giờ • Nộp bài tập • Tự động giải ngân Smart Contract Escrow
-          </p>
-        </div>
+      {(() => {
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const activeSessionForStudent = sessions.find((s) => isStrictSessionActive(s));
+        const todaySessionForStudent = sessions.find(
+          (s) => s.sessionDate === todayStr && (s.status === 'SCHEDULED' || s.status === 'IN_PROGRESS')
+        );
+        const nextUpcomingForStudent = sessions
+          .filter((s) => s.status !== 'COMPLETED' && s.sessionDate >= todayStr)
+          .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate) || a.sequenceNumber - b.sequenceNumber)[0]
+          || sessions.find((s) => s.status !== 'COMPLETED');
+        const isStudentCheckedInForCurrent = Boolean(
+          activeSessionForStudent?.myCheckedIn ||
+          todaySessionForStudent?.myCheckedIn ||
+          sessions.some((s) => s.status === 'IN_PROGRESS' && s.myCheckedIn)
+        );
+        const isSessionActiveNow = Boolean(activeSessionForStudent);
+        const canAccessMeetingLink = currentUserRole !== 'STUDENT' || isStudentCheckedInForCurrent;
 
-        {/* Meeting Link Action Card */}
-        <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-xl border border-white/20">
-          <div className="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center text-white shrink-0">
-            <Video className="w-5 h-5" />
-          </div>
-          <div className="max-w-[220px]">
-            <div className="text-xs text-indigo-200 font-medium">Link Phòng Học Cố Định</div>
-            <div className="text-sm font-semibold truncate text-white">
-              {meetingLink || "Chưa thiết lập"}
-            </div>
-          </div>
-          {meetingLink && (
-            <a
-              href={meetingLink.startsWith("http") ? meetingLink : `https://${meetingLink}`}
-              target="_blank"
-              rel="noreferrer"
-              className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md shrink-0"
-            >
-              <span>Vào Lớp</span>
-              <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          )}
-          {currentUserRole === "TUTOR" && (
-            <button
-              onClick={() => {
-                setNewMeetingLink(meetingLink || "");
-                setShowEditMeetingModal(true);
-              }}
-              className="p-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-all"
-              title="Đổi link phòng học"
-            >
-              <Edit3 className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Overview Progress & Tab Bar */}
-      {sessions.length > 0 && (
-        <div className="border-b border-slate-100 bg-slate-50/70 p-4 sm:px-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            {/* Progress bar */}
-            <div className="flex-1 max-w-md">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-700 mb-1.5">
-                <span className="flex items-center gap-1.5">
-                  <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
-                  Tiến độ khóa học: {completedSessions.length}/{sessions.length} buổi
+        return (
+          <div className="p-6 bg-gradient-to-r from-indigo-950 via-slate-900 to-blue-950 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-500/30 text-indigo-200 border border-indigo-400/30">
+                  Lịch Học & Lịch Sử Buổi Học
                 </span>
-                <span className="text-indigo-600">{completionPercent}%</span>
               </div>
-              <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-gradient-to-r from-indigo-600 to-emerald-500 rounded-full transition-all duration-500"
-                  style={{ width: `${completionPercent}%` }}
-                />
-              </div>
+              <h2 className="text-xl font-bold">{classRoomName || "Chi Tiết Tiến Trình Buổi Học"}</h2>
+              <p className="text-indigo-200 text-sm mt-0.5">
+                Điểm danh độc lập 2 bên trong khung giờ • Nộp bài tập • Tự động giải ngân Smart Contract Escrow
+              </p>
             </div>
 
-            {/* Navigation Tabs */}
-            <div className="flex items-center gap-1.5 bg-slate-200/70 p-1 rounded-xl">
-              <button
-                type="button"
-                onClick={() => setActiveTab("ALL")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  activeTab === "ALL"
-                    ? "bg-white text-indigo-700 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Tất cả ({sessions.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("UPCOMING")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  activeTab === "UPCOMING"
-                    ? "bg-white text-indigo-700 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Sắp tới ({upcomingSessions.length})
-              </button>
+            {/* Meeting Link Action Card */}
+            <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-xl border border-white/20">
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                !canAccessMeetingLink
+                  ? "bg-amber-500/20 text-amber-300 border border-amber-400/30"
+                  : "bg-indigo-600 text-white"
+              }`}>
+                {!canAccessMeetingLink ? <Lock className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+              </div>
+              <div className="max-w-[230px]">
+                <div className="text-xs text-indigo-200 font-medium">Link Phòng Học Trực Tuyến</div>
+                <div className="text-sm font-semibold truncate text-white">
+                  {!canAccessMeetingLink ? (
+                    <span className="text-amber-200 text-xs font-bold flex items-center gap-1">
+                      {isSessionActiveNow ? (
+                        "Cần điểm danh để mở link"
+                      ) : todaySessionForStudent ? (
+                        `Mở lúc ${todaySessionForStudent.startTime}`
+                      ) : nextUpcomingForStudent ? (
+                        `Mở lúc ${nextUpcomingForStudent.startTime} ngày ${nextUpcomingForStudent.sessionDate}`
+                      ) : (
+                        "Chưa mở điểm danh"
+                      )}
+                    </span>
+                  ) : (
+                    meetingLink || "Chưa thiết lập"
+                  )}
+                </div>
+              </div>
+              {canAccessMeetingLink && meetingLink && (
+                <a
+                  href={meetingLink.startsWith("http") ? meetingLink : `https://${meetingLink}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md shrink-0"
+                >
+                  <span>Vào Lớp</span>
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              )}
+              {!canAccessMeetingLink && currentUserRole === "STUDENT" && (
+                isSessionActiveNow ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const targetId = activeSessionForStudent ? `session-${activeSessionForStudent.id}` : "sessions-timeline-list";
+                      const el = document.getElementById(targetId);
+                      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }}
+                    className="px-3.5 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shrink-0 animate-bounce"
+                    title="Buổi học đang diễn ra. Bấm để điểm danh ngay"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Điểm Danh Ngay</span>
+                  </button>
+                ) : (
+                  <div
+                    className="px-3.5 py-2 bg-white/10 text-slate-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 shrink-0 border border-white/10"
+                    title="Chưa đến giờ học. Điểm danh chỉ mở trong khung giờ học."
+                  >
+                    <Lock className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Chưa mở điểm danh</span>
+                  </div>
+                )
+              )}
+              {currentUserRole === "TUTOR" && (
+                <button
+                  onClick={() => {
+                    setNewMeetingLink(meetingLink || "");
+                    setShowEditMeetingModal(true);
+                  }}
+                  className="p-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-all"
+                  title="Đổi link phòng học"
+                >
+                  <Edit3 className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 1. Hero Spotlight Card: Buổi Học Hôm Nay / Buổi Học Kế Tiếp */}
+      {sessions.length > 0 && (() => {
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const activeSession = sessions.find((s) => isStrictSessionActive(s));
+        const todaySession = sessions.find(
+          (s) => s.sessionDate === todayStr && (s.status === 'SCHEDULED' || s.status === 'IN_PROGRESS')
+        );
+        const upcomingSessionsList = sessions
+          .filter((s) => s.status !== 'COMPLETED' && s.sessionDate >= todayStr)
+          .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate) || a.sequenceNumber - b.sequenceNumber);
+        const nextUpcomingSession = upcomingSessionsList[0] || sessions.find((s) => s.status !== 'COMPLETED');
+        const spotlight = activeSession || todaySession || nextUpcomingSession;
+
+        if (!spotlight && completedSessions.length === sessions.length && sessions.length > 0) {
+          return (
+            <div className="p-5 bg-gradient-to-r from-emerald-950 via-teal-900 to-emerald-900 text-white border-b border-emerald-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-white/10 backdrop-blur-md rounded-2xl text-emerald-300 border border-white/20">
+                  <Award className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-display font-black text-base text-white">Khóa học đã hoàn tất toàn bộ {sessions.length} buổi học!</h3>
+                  <p className="text-emerald-200 text-xs mt-0.5">Bạn có thể xem lại toàn bộ lịch sử điểm danh, bài giảng và bài tập đã hoàn thành bên dưới.</p>
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => setActiveTab("COMPLETED")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
-                  activeTab === "COMPLETED"
-                    ? "bg-white text-indigo-700 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
+                className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-black transition-all shadow-md shrink-0"
               >
-                <History className="w-3 h-3" />
-                <span>Lịch sử ({completedSessions.length})</span>
+                Xem lịch sử khóa học
               </button>
             </div>
+          );
+        }
+
+        if (!spotlight) return null;
+
+        const isToday = spotlight.sessionDate === todayStr;
+        const isActiveNow = isStrictSessionActive(spotlight);
+        const isCheckedIn = spotlight.myCheckedIn === true;
+        const dayName = getDayOfWeekName(spotlight.sessionDate);
+
+        return (
+          <div className={`p-5 sm:p-6 border-b transition-all ${
+            isActiveNow
+              ? "bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-amber-300 ring-2 ring-amber-400/20"
+              : isToday
+              ? "bg-gradient-to-r from-indigo-50/90 via-blue-50/70 to-indigo-50/90 border-indigo-200"
+              : "bg-slate-50/90 border-slate-200"
+          }`}>
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              {/* Left side: Sequence & Info */}
+              <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex flex-col items-center justify-center font-bold text-xs shrink-0 shadow-xs ${
+                  isActiveNow
+                    ? "bg-rose-600 text-white animate-pulse"
+                    : isToday
+                    ? "bg-amber-500 text-white"
+                    : "bg-indigo-600 text-white"
+                }`}>
+                  <span className="text-[10px] uppercase font-semibold opacity-90">Buổi</span>
+                  <span className="text-lg sm:text-xl leading-none font-black font-display">{spotlight.sequenceNumber}</span>
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                    {isActiveNow ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-600 text-white flex items-center gap-1.5 shadow-xs animate-bounce">
+                        <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                        BUỔI HỌC HÔM NAY · ĐANG DIỄN RA
+                      </span>
+                    ) : isToday ? (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-500 text-white flex items-center gap-1.5 shadow-xs">
+                        <Clock className="w-3.5 h-3.5" />
+                        BUỔI HỌC HÔM NAY
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-indigo-700 text-white flex items-center gap-1.5 shadow-xs">
+                        <Calendar className="w-3.5 h-3.5" />
+                        BUỔI HỌC KẾ TIẾP
+                      </span>
+                    )}
+
+                    <span className="text-xs text-slate-600 font-bold flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{dayName ? `${dayName}, ` : ""}{spotlight.sessionDate}</span>
+                    </span>
+                    <span className="text-xs text-slate-600 font-bold flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      <span>{spotlight.startTime} - {spotlight.endTime}</span>
+                    </span>
+                  </div>
+
+                  <h3 className="font-display font-black text-slate-950 text-base sm:text-lg">
+                    {spotlight.topic || `Buổi học #${spotlight.sequenceNumber}`}
+                  </h3>
+
+                  {spotlight.assignmentTitle && (
+                    <p className="text-xs text-slate-600 mt-1 flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                      <span>Bài tập về nhà: <strong className="text-slate-900">{spotlight.assignmentTitle}</strong></span>
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Right side: Attendance Check-in & Meeting Link Action */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 shrink-0">
+                {currentUserRole === 'STUDENT' ? (
+                  isCheckedIn ? (
+                    <div className="flex items-center gap-2.5 flex-wrap">
+                      <span className="px-3.5 py-2.5 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-black flex items-center gap-1.5 border border-emerald-300 shadow-2xs">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        Đã Điểm Danh Có Mặt
+                      </span>
+                      {meetingLink && (
+                        <a
+                          href={meetingLink.startsWith("http") ? meetingLink : `https://${meetingLink}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md active:scale-95"
+                        >
+                          <Video className="w-4 h-4" />
+                          <span>Vào Phòng Học (Google Meet)</span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
+                    </div>
+                  ) : isActiveNow ? (
+                    <div className="flex flex-col sm:items-end gap-1.5">
+                      <button
+                        disabled={actionLoading}
+                        onClick={() => handleStudentCheckin(spotlight.id)}
+                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md ring-2 ring-emerald-400 ring-offset-1 animate-bounce"
+                      >
+                        {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                        <span>Điểm Danh Vào Học Ngay</span>
+                      </button>
+                      <span className="text-[11px] text-amber-700 font-bold flex items-center gap-1">
+                        <Lock className="w-3.5 h-3.5" />
+                        Điểm danh có mặt để mở link phòng học
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs bg-white px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold shadow-2xs">
+                      <Lock className="w-4 h-4 text-amber-500" />
+                      <span>{isToday ? `Mở điểm danh lúc ${spotlight.startTime}` : `Mở điểm danh lúc ${spotlight.startTime} ngày ${spotlight.sessionDate}`}</span>
+                    </div>
+                  )
+                ) : (
+                  /* Tutor Quick Action */
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {spotlight.myCheckedIn ? (
+                      <span className="px-3.5 py-2 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-black flex items-center gap-1.5 border border-emerald-300">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        Gia sư đã điểm danh
+                      </span>
+                    ) : (
+                      <button
+                        disabled={!isActiveNow || actionLoading}
+                        onClick={() => handleTutorDirectCheckin(spotlight.id)}
+                        className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-xs ${
+                          isActiveNow ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                        }`}
+                      >
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>{isActiveNow ? "Điểm Danh Vào Dạy" : "Chưa Đến Giờ Dạy"}</span>
+                      </button>
+                    )}
+                    {meetingLink && (
+                      <a
+                        href={meetingLink.startsWith("http") ? meetingLink : `https://${meetingLink}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1"
+                      >
+                        <Video className="w-3.5 h-3.5" />
+                        <span>Vào Phòng Dạy</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
+        );
+      })()}
+
+      {/* 2. Lộ Trình Các Buổi Học & Lịch Trình Chi Tiết (Không dùng %, hiển thị ngày giờ cụ thể) */}
+      {sessions.length > 0 && (() => {
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const activeSession = sessions.find((s) => isStrictSessionActive(s));
+        const todaySession = sessions.find(
+          (s) => s.sessionDate === todayStr && (s.status === 'SCHEDULED' || s.status === 'IN_PROGRESS')
+        );
+        const nextSession = sessions
+          .filter((s) => s.status !== 'COMPLETED' && s.sessionDate >= todayStr)
+          .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate) || a.sequenceNumber - b.sequenceNumber)[0]
+          || sessions.find((s) => s.status !== 'COMPLETED');
+        const currentStep = (activeSession || todaySession || nextSession)?.sequenceNumber || sessions.length;
+        const remainingCount = Math.max(0, sessions.length - completedSessions.length);
+
+        return (
+          <div className="p-4 sm:p-5 bg-white border-b border-slate-200">
+            {/* Header: rõ ràng thông tin số buổi, buổi đang học, không dùng % */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 shadow-2xs">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 font-display">
+                    Lộ Trình Buổi Học Khóa Này
+                  </h4>
+                  <p className="text-xs text-slate-600 font-medium mt-0.5">
+                    Tổng số: <strong className="text-slate-900 font-black">{sessions.length} buổi</strong>
+                    <span className="mx-1.5 text-slate-300">•</span>
+                    Đã hoàn thành: <strong className="text-emerald-700 font-black">{completedSessions.length} buổi</strong>
+                    <span className="mx-1.5 text-slate-300">•</span>
+                    Đang học: <strong className="text-indigo-700 font-black">Buổi {currentStep}</strong>
+                    <span className="mx-1.5 text-slate-300">•</span>
+                    Còn lại: <strong className="text-amber-700 font-black">{remainingCount} buổi</strong>
+                  </p>
+                </div>
+              </div>
+
+              {/* Status pill badge */}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-800 text-xs font-black border border-indigo-200">
+                  Buổi hiện tại: Buổi {currentStep}/{sessions.length}
+                </span>
+              </div>
+            </div>
+
+            {/* Stepper nodes track */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1 scrollbar-thin">
+              {sessions.map((s) => {
+                const isPassed = s.status === 'COMPLETED';
+                const isCurrent = s.sequenceNumber === currentStep;
+                const dayName = getDayOfWeekName(s.sessionDate);
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => {
+                      if (activeTab === "FOCUSED") setActiveTab("ALL");
+                      setTimeout(() => {
+                        const el = document.getElementById(`session-${s.id}`);
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      }, 50);
+                    }}
+                    title={`Buổi ${s.sequenceNumber}: ${dayName ? `${dayName}, ` : ""}${s.sessionDate} (${s.startTime} - ${s.endTime})`}
+                    className="flex flex-col items-center min-w-[78px] text-center group cursor-pointer transition-all shrink-0"
+                  >
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs transition-all shadow-2xs ${
+                        isPassed
+                          ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                          : isCurrent
+                          ? "bg-indigo-600 text-white ring-4 ring-indigo-200 scale-105 shadow-md"
+                          : "bg-slate-50 text-slate-600 border border-slate-200 group-hover:border-indigo-300 group-hover:bg-indigo-50/50"
+                      }`}
+                    >
+                      {isPassed ? <CheckCircle2 className="w-4 h-4" /> : s.sequenceNumber}
+                    </div>
+                    <span className={`text-[11px] font-bold mt-1 truncate max-w-[80px] ${isCurrent ? "text-indigo-700 font-black" : "text-slate-700"}`}>
+                      Buổi {s.sequenceNumber}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-semibold">
+                      {s.sessionDate?.slice(5)}
+                    </span>
+                    <span
+                      className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-md mt-0.5 ${
+                        isPassed
+                          ? "bg-emerald-100 text-emerald-800"
+                          : isCurrent
+                          ? "bg-indigo-100 text-indigo-800 font-black"
+                          : "bg-slate-100 text-slate-500"
+                      }`}
+                    >
+                      {isPassed ? "Đã xong" : isCurrent ? "Đang học" : "Sắp tới"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Chi tiết lịch trình các buổi học tiếp theo với ngày giờ thời gian cụ thể */}
+            {upcomingSessions.length > 0 && (
+              <div className="mt-3.5 pt-3.5 border-t border-slate-100">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 mb-2.5 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Lịch trình các buổi học tiếp theo (Ngày & Giờ cụ thể):</span>
+                </div>
+                <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                  {upcomingSessions.map((s) => {
+                    const isNext = s.id === (activeSession || todaySession || nextSession)?.id;
+                    const dayName = getDayOfWeekName(s.sessionDate);
+                    return (
+                      <div
+                        key={s.id}
+                        onClick={() => {
+                          if (activeTab === "FOCUSED") setActiveTab("ALL");
+                          setTimeout(() => {
+                            document.getElementById(`session-${s.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          }, 50);
+                        }}
+                        className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
+                          isNext
+                            ? "bg-indigo-50/80 border-indigo-300 ring-1 ring-indigo-200 hover:bg-indigo-100/70"
+                            : "bg-slate-50/70 border-slate-200 hover:bg-slate-100/70 hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1 mb-1">
+                          <span className="font-black text-slate-900 font-display text-xs">
+                            Buổi {s.sequenceNumber}: {s.topic || `Buổi học #${s.sequenceNumber}`}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                            isNext ? "bg-indigo-600 text-white" : "bg-slate-200 text-slate-700"
+                          }`}>
+                            {isNext ? "Kế tiếp" : "Chưa tới"}
+                          </span>
+                        </div>
+                        <div className="text-slate-800 font-bold flex items-center gap-1 mt-1">
+                          <Calendar className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                          <span>{dayName ? `${dayName}, ` : ""}{s.sessionDate}</span>
+                        </div>
+                        <div className="text-slate-600 font-medium flex items-center gap-1 mt-0.5">
+                          <Clock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>Thời gian: <b className="text-slate-900">{s.startTime} - {s.endTime}</b></span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* 3. Tab Filter Bar (Mặc định hiển thị 2 buổi: gần nhất đã qua & buổi tiếp theo) */}
+      {sessions.length > 0 && (
+        <div className="border-b border-slate-200 bg-slate-50/80 p-3.5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-black text-slate-500 uppercase tracking-wider">Danh Sách Buổi Học</span>
+            {activeTab === "FOCUSED" && (
+              <span className="text-[11px] text-slate-500 font-medium hidden md:inline">
+                (Đang hiển thị 2 buổi: gần nhất đã qua & tiếp theo)
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-slate-200/70 p-1 rounded-xl flex-wrap">
+            <button
+              type="button"
+              onClick={() => setActiveTab("FOCUSED")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === "FOCUSED"
+                  ? "bg-white text-indigo-700 shadow-xs font-black"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Gần nhất & Tiếp theo ({focusedSessions.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("UPCOMING")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeTab === "UPCOMING"
+                  ? "bg-white text-indigo-700 shadow-xs font-black"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Sắp tới ({upcomingSessions.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("COMPLETED")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                activeTab === "COMPLETED"
+                  ? "bg-white text-indigo-700 shadow-xs font-black"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>Lịch sử buổi đã học ({completedSessions.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("ALL")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                activeTab === "ALL"
+                  ? "bg-white text-indigo-700 shadow-xs font-black"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Tất cả ({sessions.length})
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Focus Mode Notice when only 2 sessions are shown */}
+      {activeTab === "FOCUSED" && sessions.length > focusedSessions.length && (
+        <div className="mx-6 mt-4 p-3 bg-indigo-50/80 border border-indigo-200/80 rounded-xl flex items-center justify-between text-xs text-indigo-950 shadow-2xs">
+          <span>💡 Mặc định hiển thị 2 buổi trọng tâm (buổi gần nhất đã qua và buổi tiếp theo).</span>
+          <button
+            type="button"
+            onClick={() => setActiveTab("ALL")}
+            className="font-bold underline text-indigo-700 hover:text-indigo-900 ml-2 shrink-0 cursor-pointer"
+          >
+            Xem tất cả ({sessions.length} buổi) →
+          </button>
         </div>
       )}
 
@@ -516,18 +976,38 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               : "Không có buổi học nào trong danh mục này."}
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4" id="sessions-timeline-list">
             {filteredSessions.map((session) => {
               const active = isStrictSessionActive(session);
               const isCompleted = session.status === "COMPLETED";
               const isTutorOrAdmin = currentUserRole === "TUTOR" || currentUserRole === "ADMIN" || currentUserRole === "STAFF";
-              const isStudentUnlocked = session.myCheckedIn || (session.status === "COMPLETED" && (session.presentCount || 0) > 0);
+              const isStudentUnlocked = session.myCheckedIn === true;
               const canAccessAssignment = isTutorOrAdmin || isStudentUnlocked;
               const hasSubmittedHomework = !!(session.mySubmissionText || session.mySubmissionFileUrl);
+              const tutorWasPresent = session.tutorCheckedIn === true;
+              const finalizedOutcomeCount = (session.bothPresentCount || 0)
+                + (session.studentAbsentCount || 0)
+                + (session.tutorAbsentCount || 0);
+              const completedOutcomeLabel = currentUserRole === "STUDENT" && session.myFinalOutcome
+                ? session.myFinalOutcome === "BOTH_PRESENT"
+                  ? "Bạn và gia sư cùng có mặt (BOTH_PRESENT)"
+                  : session.myFinalOutcome === "STUDENT_ABSENT_TUTOR_PRESENT"
+                    ? "Bạn vắng, gia sư có mặt (STUDENT_ABSENT_TUTOR_PRESENT)"
+                    : "Gia sư vắng (TUTOR_ABSENT)"
+                : (session.totalAttendees || 0) === 0
+                  ? "Không có học viên trong sổ điểm danh"
+                  : finalizedOutcomeCount === 0
+                    ? "Chưa có dữ liệu kết quả điểm danh"
+                : (session.tutorAbsentCount || 0) > 0
+                  ? `Gia sư vắng: ${session.tutorAbsentCount}/${session.totalAttendees || 0} học viên bị ảnh hưởng (TUTOR_ABSENT)`
+                  : (session.studentAbsentCount || 0) > 0
+                    ? `Cùng có mặt: ${session.bothPresentCount || 0} • Học viên vắng: ${session.studentAbsentCount || 0}`
+                    : `Cùng có mặt: ${session.bothPresentCount || 0}/${session.totalAttendees || 0} (BOTH_PRESENT)`;
 
               return (
                 <div
                   key={session.id}
+                  id={`session-${session.id}`}
                   className={`p-5 rounded-xl border transition-all ${
                     active
                       ? "bg-amber-50/60 border-amber-300 shadow-sm ring-2 ring-amber-400/20"
@@ -609,23 +1089,39 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                           <div className="mt-2.5 p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs">
                             <div className="flex items-center gap-3 flex-wrap">
                               <span className="font-semibold text-slate-700 flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                Gia sư: <strong className="text-emerald-700 font-bold">Đã vào dạy</strong>
+                                {session.tutorCheckedIn === true
+                                  ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  : <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
+                                Gia sư:{" "}
+                                <strong className={`font-bold ${session.tutorCheckedIn === true ? "text-emerald-700" : "text-rose-700"}`}>
+                                  {session.tutorCheckedIn === true ? "Đã vào dạy" : session.tutorCheckedIn === false ? "Vắng" : "Chưa có dữ liệu"}
+                                </strong>
                               </span>
                               <span className="text-slate-300">•</span>
                               <span className="font-semibold text-slate-700 flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                Học viên: <strong className="text-emerald-700 font-bold">{session.presentCount || 0}/{session.totalAttendees || 1} có mặt</strong>
+                                {(session.presentCount || 0) > 0
+                                  ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  : <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
+                                Học viên:{" "}
+                                <strong className={`font-bold ${(session.presentCount || 0) > 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                                  {session.presentCount || 0}/{session.totalAttendees || 0} có mặt
+                                </strong>
                               </span>
                               <span className="text-slate-300">•</span>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">
-                                Kết quả: Cả 2 cùng có mặt (BOTH_PRESENT)
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                tutorWasPresent && finalizedOutcomeCount > 0 && (session.studentAbsentCount || 0) === 0
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-rose-100 text-rose-800"
+                              }`}>
+                                Kết quả: {completedOutcomeLabel}
                               </span>
                             </div>
-                            <div className="text-[11px] font-bold text-indigo-700 flex items-center gap-1 bg-white/80 px-2 py-0.5 rounded-md border border-indigo-200">
-                              <Clock className="w-3 h-3 text-indigo-500" />
-                              <span>Đã mở đề xuất quyết toán On-chain (Đếm ngược 24h chuyển ví)</span>
-                            </div>
+                            {session.settlementDispatched && (
+                              <div className="text-[11px] font-bold text-indigo-700 flex items-center gap-1 bg-white/80 px-2 py-0.5 rounded-md border border-indigo-200">
+                                <Clock className="w-3 h-3 text-indigo-500" />
+                                <span>Đã gửi kết quả điểm danh sang hệ thống quyết toán</span>
+                              </div>
+                            )}
                           </div>
                         )}
 
@@ -828,23 +1324,51 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                       {currentUserRole === "STUDENT" && (
                         <>
                           {!isCompleted && !session.myCheckedIn && (
-                            <button
-                              disabled={!active || actionLoading}
-                              onClick={() => handleStudentCheckin(session.id)}
-                              className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
-                                active
-                                  ? "bg-emerald-600 hover:bg-emerald-700 text-white animate-bounce"
-                                  : "bg-slate-200 text-slate-400 cursor-not-allowed"
-                              }`}
-                              title={
-                                active
-                                  ? "Bấm để điểm danh vào học"
-                                  : "Chỉ mở điểm danh trong khung giờ học " + session.startTime + " - " + session.endTime
-                              }
-                            >
-                              <CheckCircle2 className="w-4 h-4" />
-                              <span>{active ? "Điểm Danh Vào Học" : "Chưa Đến Giờ Điểm Danh"}</span>
-                            </button>
+                            <div className="flex flex-col items-end gap-1.5">
+                              <button
+                                disabled={!active || actionLoading}
+                                onClick={() => handleStudentCheckin(session.id)}
+                                className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
+                                  active
+                                    ? "bg-emerald-600 hover:bg-emerald-700 text-white animate-bounce ring-2 ring-emerald-400 ring-offset-1"
+                                    : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                                }`}
+                                title={
+                                  active
+                                    ? "Bấm để điểm danh vào học và nhận link phòng học"
+                                    : "Chỉ mở điểm danh trong khung giờ học " + session.startTime + " - " + session.endTime
+                                }
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                                <span>{active ? "Điểm Danh Vào Học" : "Chưa Đến Giờ Điểm Danh"}</span>
+                              </button>
+                              <span className="text-[11px] text-amber-600 font-semibold flex items-center gap-1">
+                                <Lock className="w-3 h-3" />
+                                Điểm danh có mặt để lấy link vào phòng học
+                              </span>
+                            </div>
+                          )}
+
+                          {!isCompleted && session.myCheckedIn && (
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="px-3 py-2 bg-emerald-100 text-emerald-800 rounded-lg text-xs font-bold flex items-center gap-1.5 border border-emerald-300 shadow-2xs">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                <span>Đã Điểm Danh Có Mặt</span>
+                              </span>
+                              {meetingLink && (
+                                <a
+                                  href={meetingLink.startsWith("http") ? meetingLink : `https://${meetingLink}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-md animate-pulse"
+                                  title="Mở link Google Meet / Zoom để vào phòng học"
+                                >
+                                  <Video className="w-4 h-4" />
+                                  <span>Vào Phòng Học</span>
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </a>
+                              )}
+                            </div>
                           )}
 
                           {isCompleted && onDisputeClick && (

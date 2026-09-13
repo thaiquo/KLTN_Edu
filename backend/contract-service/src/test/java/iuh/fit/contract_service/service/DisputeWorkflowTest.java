@@ -14,6 +14,7 @@ import iuh.fit.contract_service.enums.SettlementOutcome;
 import iuh.fit.contract_service.enums.SettlementStatus;
 import iuh.fit.contract_service.repository.ContractAgreementRepository;
 import iuh.fit.contract_service.repository.DisputeRepository;
+import iuh.fit.contract_service.repository.DisputeEvidenceRepository;
 import iuh.fit.contract_service.repository.SessionSettlementRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,9 +36,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.times;
 
 @SpringBootTest
 class DisputeWorkflowTest {
+
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private NotificationDispatcher notificationDispatcher;
 
     @Autowired
     private DisputeWorkflowService workflowService;
@@ -50,6 +59,9 @@ class DisputeWorkflowTest {
 
     @Autowired
     private DisputeRepository disputeRepository;
+
+    @Autowired
+    private DisputeEvidenceRepository disputeEvidenceRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -96,6 +108,8 @@ class DisputeWorkflowTest {
         BlockchainTransactionIntentResult result = workflowService.initiateDisputeOpening(
                 settlement.getId(),
                 101L, // student ID
+                "STUDENT",
+                "Tutor did not teach the recorded session",
                 evidenceHash,
                 "disputes/session1_evidence.pdf",
                 "application/pdf",
@@ -108,9 +122,66 @@ class DisputeWorkflowTest {
         Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
         assertEquals(DisputeStatus.OPENING, dispute.getStatus());
         assertEquals(101L, dispute.getComplainantId());
+        assertEquals("STUDENT", dispute.getComplainantRole());
+        assertEquals("Tutor did not teach the recorded session", dispute.getReason());
+        assertEquals(1, disputeEvidenceRepository.findByDisputeId(dispute.getId()).size());
 
         SessionSettlement updatedSettlement = sessionSettlementRepository.findById(settlement.getId()).orElseThrow();
         assertEquals(SettlementStatus.DISPUTE_OPENING, updatedSettlement.getStatus());
+        verify(notificationDispatcher).sendAsync(any(), any(), anyString(), anyString(),
+                anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void tutorCanSubmitPrivateComplaintWithin24hAndImmediatelyHoldOwnStudentSettlement() {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        insertAgreement(agreementId, onchainAgreementId, Hash.sha3String("terms-v1"),
+                "ACTIVE", 1, "staff1@educonnect.com");
+
+        ContractAgreement agreement = agreementRepository.findById(agreementId).orElseThrow();
+        SessionSettlement settlement = SessionSettlement.create(
+                agreement, 1L, Hash.sha3String("EDUCONNECT:SESSION:1"), SettlementOutcome.BOTH_PRESENT,
+                BigInteger.valueOf(100_000_000L), "0x" + "a".repeat(64));
+        settlement.markProposed(OffsetDateTime.now(ZoneOffset.UTC).plusHours(20), "0x" + "b".repeat(64));
+        sessionSettlementRepository.save(settlement);
+
+        workflowService.initiateDisputeOpening(
+                settlement.getId(), 102L, "TUTOR", "Student disrupted the session",
+                "0x" + "c".repeat(64), "disputes/tutor-evidence.pdf", "application/pdf", null);
+
+        Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
+        assertEquals("TUTOR", dispute.getComplainantRole());
+        assertEquals("STUDENT_MISCONDUCT", dispute.getType());
+        assertEquals(DisputeStatus.OPENING, dispute.getStatus());
+        assertTrue(disputeEvidenceRepository.findByDisputeId(dispute.getId()).stream()
+                .anyMatch(item -> "TUTOR".equals(item.getSubmittedByRole())));
+        assertEquals(SettlementStatus.DISPUTE_OPENING,
+                sessionSettlementRepository.findById(settlement.getId()).orElseThrow().getStatus());
+        verifyNoInteractions(notificationDispatcher);
+    }
+
+    @Test
+    void studentCanOpenDisputeWithoutOptionalEvidence() {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        insertAgreement(agreementId, onchainAgreementId, Hash.sha3String("terms-v1"),
+                "ACTIVE", 1, "staff1@educonnect.com");
+
+        ContractAgreement agreement = agreementRepository.findById(agreementId).orElseThrow();
+        SessionSettlement settlement = SessionSettlement.create(
+                agreement, 1L, Hash.sha3String("EDUCONNECT:SESSION:1"), SettlementOutcome.BOTH_PRESENT,
+                BigInteger.valueOf(100_000_000L), "0x" + "a".repeat(64));
+        settlement.markProposed(OffsetDateTime.now(ZoneOffset.UTC).plusHours(20), "0x" + "b".repeat(64));
+        sessionSettlementRepository.save(settlement);
+
+        workflowService.initiateDisputeOpening(
+                settlement.getId(), 101L, "STUDENT", "Tutor was absent", "0x" + "c".repeat(64),
+                null, null, null);
+
+        Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
+        assertEquals("Tutor was absent", dispute.getReason());
+        assertTrue(disputeEvidenceRepository.findByDisputeId(dispute.getId()).isEmpty());
     }
 
     @Test
@@ -133,6 +204,8 @@ class DisputeWorkflowTest {
         assertThrows(IllegalStateException.class, () -> workflowService.initiateDisputeOpening(
                 settlement.getId(),
                 101L,
+                "STUDENT",
+                "Tutor did not teach the recorded session",
                 "0x" + "c".repeat(64),
                 "obj_key", "application/pdf", "sha256"));
     }
@@ -156,6 +229,8 @@ class DisputeWorkflowTest {
         assertThrows(SecurityException.class, () -> workflowService.initiateDisputeOpening(
                 settlement.getId(),
                 999L, // wrong student
+                "STUDENT",
+                "Tutor did not teach the recorded session",
                 "0x" + "c".repeat(64),
                 "obj_key", "application/pdf", "sha256"));
     }
@@ -177,7 +252,8 @@ class DisputeWorkflowTest {
         sessionSettlementRepository.save(settlement);
 
         workflowService.initiateDisputeOpening(
-                settlement.getId(), 101L, "0x" + "c".repeat(64), "obj_key", "application/pdf", "sha256");
+                settlement.getId(), 101L, "STUDENT", "Tutor did not teach the recorded session",
+                "0x" + "c".repeat(64), "obj_key", "application/pdf", "sha256");
 
         String txHash = "0x" + "d".repeat(64);
         Map<String, String> attributes = new LinkedHashMap<>();
@@ -216,6 +292,16 @@ class DisputeWorkflowTest {
         Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
         assertEquals(DisputeStatus.OPEN, dispute.getStatus());
         assertEquals(txHash, dispute.getOpenTxHash());
+
+        Dispute responded = workflowService.submitTutorResponse(
+                dispute.getId(), 102L, "I joined the class and attached my evidence", "https://evidence.test/tutor.png");
+        assertEquals("I joined the class and attached my evidence", responded.getTutorResponse());
+        assertNotNull(responded.getTutorRespondedAt());
+        assertTrue(disputeEvidenceRepository.findByDisputeId(dispute.getId()).stream()
+                .anyMatch(item -> "TUTOR".equals(item.getSubmittedByRole())
+                        && "https://evidence.test/tutor.png".equals(item.getObjectKey())
+                        && item.getSha256() != null
+                        && item.getSha256().length() == 64));
     }
 
     @Test
@@ -235,7 +321,8 @@ class DisputeWorkflowTest {
         sessionSettlementRepository.save(settlement);
 
         workflowService.initiateDisputeOpening(
-                settlement.getId(), 101L, "0x" + "c".repeat(64), "obj_key", "application/pdf", "sha256");
+                settlement.getId(), 101L, "STUDENT", "Tutor did not teach the recorded session",
+                "0x" + "c".repeat(64), "obj_key", "application/pdf", "sha256");
 
         Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
         dispute.markOpen("0x" + "d".repeat(64));
@@ -269,7 +356,8 @@ class DisputeWorkflowTest {
         sessionSettlementRepository.save(settlement);
 
         workflowService.initiateDisputeOpening(
-                settlement.getId(), 101L, "0x" + "c".repeat(64), "obj_key", "application/pdf", "sha256");
+                settlement.getId(), 101L, "STUDENT", "Tutor did not teach the recorded session",
+                "0x" + "c".repeat(64), "obj_key", "application/pdf", "sha256");
 
         Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
         dispute.markOpen("0x" + "d".repeat(64));
@@ -299,7 +387,8 @@ class DisputeWorkflowTest {
         sessionSettlementRepository.save(settlement);
 
         workflowService.initiateDisputeOpening(
-                settlement.getId(), 101L, "0x" + "c".repeat(64), "obj_key", "application/pdf", "sha256");
+                settlement.getId(), 101L, "STUDENT", "Tutor did not teach the recorded session",
+                "0x" + "c".repeat(64), "obj_key", "application/pdf", "sha256");
 
         Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
         dispute.markOpen("0x" + "d".repeat(64));
@@ -353,6 +442,57 @@ class DisputeWorkflowTest {
 
         ContractAgreement activeAgreement = agreementRepository.findById(agreementId).orElseThrow();
         assertEquals(ContractAgreementStatus.ACTIVE, activeAgreement.getStatus());
+    }
+
+    @Test
+    void tutorComplaintResolutionUsesTutorSemanticsAndDoesNotNotifyStudent() throws Exception {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        insertAgreement(agreementId, onchainAgreementId, Hash.sha3String("terms-v1"),
+                "ACTIVE", 1, "staff_reviewer@educonnect.com");
+
+        ContractAgreement agreement = agreementRepository.findById(agreementId).orElseThrow();
+        String onchainSessionId = Hash.sha3String("EDUCONNECT:SESSION:1");
+        SessionSettlement settlement = SessionSettlement.create(
+                agreement, 1L, onchainSessionId, SettlementOutcome.BOTH_PRESENT,
+                BigInteger.valueOf(100_000_000L), "0x" + "a".repeat(64));
+        settlement.markProposed(OffsetDateTime.now(ZoneOffset.UTC).plusHours(12), "0x" + "b".repeat(64));
+        sessionSettlementRepository.save(settlement);
+
+        workflowService.initiateDisputeOpening(
+                settlement.getId(), 102L, "TUTOR", "Student misconduct",
+                "0x" + "c".repeat(64), null, null, null);
+        Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
+        dispute.markOpen("0x" + "d".repeat(64));
+        disputeRepository.save(dispute);
+        workflowService.initiateDisputeResolution(
+                dispute.getId(), 201L, "staff_reviewer@educonnect.com", "STAFF",
+                true, "Tutor evidence accepted", "0x" + "f".repeat(64));
+
+        Map<String, String> attributes = new LinkedHashMap<>();
+        attributes.put("agreementId", onchainAgreementId);
+        attributes.put("sessionId", onchainSessionId);
+        // V1's on-chain flag is tutor-fraud-centric, so false maps to an
+        // approved Tutor-originated complaint and the normal Tutor payout branch.
+        attributes.put("complaintApproved", "false");
+        attributes.put("resolutionHash", "0x" + "f".repeat(64));
+        DecodedEscrowEvent decoded = new DecodedEscrowEvent(
+                EscrowEventType.TUTOR_FRAUD_DISPUTE_RESOLVED,
+                onchainAgreementId,
+                onchainSessionId,
+                attributes);
+        BlockchainLog log = new BlockchainLog(
+                ESCROW, List.of("0x" + "2".repeat(64)), "0x", 140L,
+                "0x" + "e".repeat(64), "0x" + "9".repeat(64), 0L);
+        ProcessedEvent event = ProcessedEvent.blockchainLog(
+                CHAIN_ID, ESCROW, log, "TUTOR_FRAUD_DISPUTE_RESOLVED",
+                objectMapper.writeValueAsString(decoded), OffsetDateTime.now(ZoneOffset.UTC));
+
+        assertTrue(workflowService.processConfirmedDisputeResolvedEvent(event));
+        assertEquals(DisputeStatus.APPROVED,
+                disputeRepository.findById(dispute.getId()).orElseThrow().getStatus());
+        verify(notificationDispatcher, times(1)).sendAsync(
+                any(), any(), anyString(), anyString(), anyString(), anyString(), anyString());
     }
 
     private void insertAgreement(UUID id, String onchainAgreementId, String termsHash, String status, int totalSessions, String reviewerEmail) {

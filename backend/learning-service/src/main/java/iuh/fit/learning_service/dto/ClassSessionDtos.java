@@ -28,7 +28,13 @@ public class ClassSessionDtos {
             Boolean myCheckedIn,
             String mySubmissionText,
             String mySubmissionFileUrl,
-            LocalDateTime mySubmittedAt
+            LocalDateTime mySubmittedAt,
+            Boolean tutorCheckedIn,
+            AttendanceOutcome myFinalOutcome,
+            Integer bothPresentCount,
+            Integer studentAbsentCount,
+            Integer tutorAbsentCount,
+            Boolean settlementDispatched
     ) {}
 
     public record UpdateSessionDetailsRequest(

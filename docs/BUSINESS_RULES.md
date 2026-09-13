@@ -112,6 +112,16 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
 - Payment: Student thực hiện nghiệp vụ thanh toán/ký quỹ phía học viên.
 - Income: Tutor theo dõi khoản thu nhập/giải ngân, không đồng nhất với Student payment.
 - Complaint: khi phát sinh vấn đề, Staff tiếp nhận và xử lý khiếu nại theo quy trình.
+
+### Quy tắc khiếu nại và quyết toán theo buổi
+
+- Mỗi học viên có một hợp đồng escrow riêng với gia sư. Vì vậy điểm danh, đề xuất quyết toán, khiếu nại và giải ngân của cùng một buổi được xử lý độc lập theo từng học viên, không khóa toàn bộ lớp.
+- Học viên và gia sư chỉ được gửi khiếu nại cho hợp đồng của chính mình khi đề xuất quyết toán còn trong cửa sổ 24 giờ và chưa giải ngân.
+- Ngay khi yêu cầu khiếu nại hợp lệ được ghi nhận, settlement của học viên liên quan chuyển sang trạng thái giữ tiền; tác vụ giải ngân hết hạn 24 giờ không được chọn settlement này.
+- Khi học viên khiếu nại, gia sư của lớp được thông báo ngay và được xem nội dung, bằng chứng của học viên; gia sư có thể gửi giải trình/bằng chứng riêng cho Staff/Admin.
+- Khi gia sư chủ động khiếu nại, nội dung, bằng chứng và kết quả xử lý là báo cáo riêng cho Staff/Admin; học viên liên quan không được xem hồ sơ khiếu nại này.
+- Admin hoặc Staff phụ trách lớp là bên phân xử. Với Smart Contract V1 hiện tại, luồng phân xử on-chain chỉ áp dụng an toàn cho đề xuất `BOTH_PRESENT`; các loại kết quả điểm danh khác cần phiên bản hợp đồng mới trước khi mở rộng khiếu nại on-chain.
+- Khóa link phòng học trực tuyến trước khi điểm danh: Học viên chỉ được mở khóa link phòng học (Google Meet/Zoom) sau khi đã bấm "Điểm danh có mặt" trong khung giờ của buổi học. Quy tắc này ngăn chặn triệt để trường hợp học viên vào phòng học thẳng nhưng quên điểm danh, dẫn đến hệ thống chốt vắng mặt (`STUDENT_ABSENT_TUTOR_PRESENT`) và gây thiệt hại tài chính vô lý cho gia sư.
 - Staff moderation: Staff kiểm duyệt nội dung, giám sát lớp, quản lý vi phạm, hỗ trợ người dùng.
 - Admin management: Admin quản lý người dùng, danh mục, Blockchain, thanh toán và thống kê.
 

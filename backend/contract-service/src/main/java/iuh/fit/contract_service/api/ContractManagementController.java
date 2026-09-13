@@ -9,6 +9,7 @@ import iuh.fit.contract_service.entity.EscrowPayment;
 import iuh.fit.contract_service.entity.SessionSettlement;
 import iuh.fit.contract_service.entity.BlockchainTransaction;
 import iuh.fit.contract_service.entity.Dispute;
+import iuh.fit.contract_service.entity.DisputeEvidence;
 import iuh.fit.contract_service.enums.ContractAgreementStatus;
 import iuh.fit.contract_service.enums.DisputeStatus;
 import iuh.fit.contract_service.enums.SettlementOutcome;
@@ -19,6 +20,7 @@ import iuh.fit.contract_service.repository.ContractAgreementRepository;
 import iuh.fit.contract_service.repository.SessionSettlementRepository;
 import iuh.fit.contract_service.repository.BlockchainTransactionRepository;
 import iuh.fit.contract_service.repository.DisputeRepository;
+import iuh.fit.contract_service.repository.DisputeEvidenceRepository;
 import iuh.fit.contract_service.repository.ProcessedEventRepository;
 import iuh.fit.contract_service.service.AgreementLifecycleWorkflowService;
 import iuh.fit.contract_service.service.DisputeWorkflowService;
@@ -38,7 +40,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.OffsetDateTime;
-import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -56,6 +57,7 @@ public class ContractManagementController {
     private final SessionSettlementRepository settlementRepository;
     private final BlockchainTransactionRepository transactionRepository;
     private final DisputeRepository disputeRepository;
+    private final DisputeEvidenceRepository disputeEvidenceRepository;
     private final DisputeWorkflowService disputeWorkflowService;
     private final SessionSettlementWorkflowService settlementWorkflowService;
     private final AgreementLifecycleWorkflowService lifecycleWorkflowService;
@@ -77,6 +79,7 @@ public class ContractManagementController {
             SessionSettlementRepository settlementRepository,
             BlockchainTransactionRepository transactionRepository,
             DisputeRepository disputeRepository,
+            DisputeEvidenceRepository disputeEvidenceRepository,
             DisputeWorkflowService disputeWorkflowService,
             SessionSettlementWorkflowService settlementWorkflowService,
             AgreementLifecycleWorkflowService lifecycleWorkflowService,
@@ -96,6 +99,7 @@ public class ContractManagementController {
         this.settlementRepository = settlementRepository;
         this.transactionRepository = transactionRepository;
         this.disputeRepository = disputeRepository;
+        this.disputeEvidenceRepository = disputeEvidenceRepository;
         this.disputeWorkflowService = disputeWorkflowService;
         this.settlementWorkflowService = settlementWorkflowService;
         this.lifecycleWorkflowService = lifecycleWorkflowService;
@@ -276,7 +280,10 @@ public class ContractManagementController {
                 .tutorName(request.tutorName())
                 .tutorEmail(request.tutorEmail())
                 .tutorPhone(request.tutorPhone())
-                .classroomReviewerEmail(request.classroomReviewerEmail() != null ? request.classroomReviewerEmail() : request.tutorEmail())
+                .classroomReviewerEmail(request.classroomReviewerEmail() != null
+                        && !request.classroomReviewerEmail().isBlank()
+                        ? request.classroomReviewerEmail().trim()
+                        : null)
                 .studentWallet(studentWallet.toLowerCase(Locale.ROOT))
                 .tutorWallet(request.tutorWallet().toLowerCase(Locale.ROOT))
                 .platformWallet(platformWallet)
@@ -732,6 +739,9 @@ public class ContractManagementController {
             @PathVariable Long sessionId,
             @RequestBody OpenDisputeRequest body) {
         try {
+            if (body == null || body.reason() == null || body.reason().isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Dispute reason is required."));
+            }
             ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
             ContractAgreement agreement = agreementRepository.findById(agreementId)
                     .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Agreement not found"));
@@ -745,6 +755,8 @@ public class ContractManagementController {
             BlockchainTransactionIntentResult result = disputeWorkflowService.initiateDisputeOpening(
                     settlement.getId(),
                     currentUser.userId(),
+                    currentUser.activeRole(),
+                    body.reason(),
                     evidenceHash,
                     body.evidenceObjectKey(),
                     body.contentType(),
@@ -879,7 +891,7 @@ public class ContractManagementController {
         List<DisputeSummaryDto> page = (start >= filtered.size())
                 ? Collections.emptyList()
                 : filtered.subList(start, end).stream()
-                        .map(this::toDisputeDto)
+                        .map(dispute -> toDisputeDto(dispute, currentUser))
                         .collect(Collectors.toList());
 
         return ResponseEntity.ok(new PageImpl<>(page, pageable, filtered.size()));
@@ -890,7 +902,7 @@ public class ContractManagementController {
         ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
         return disputeRepository.findById(id)
                 .filter(dispute -> accessControl.canViewDispute(dispute, currentUser))
-                .map(this::toDisputeDto)
+                .map(dispute -> toDisputeDto(dispute, currentUser))
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
@@ -968,16 +980,23 @@ public class ContractManagementController {
 
         ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
         accessControl.requireCanSign(dispute.getSettlement().getAgreement(), "TUTOR", currentUser);
+        if (!"STUDENT".equalsIgnoreCase(dispute.getComplainantRole())) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "Tutor can respond only to a complaint submitted by the Student."));
+        }
         if (dispute.getStatus() != DisputeStatus.OPEN) {
             return ResponseEntity.badRequest().body(Map.of("error", "Only open disputes accept tutor evidence."));
         }
-        if (body.responseText() == null || body.responseText().isBlank()) {
+        if (body == null || body.responseText() == null || body.responseText().isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "Tutor response is required."));
         }
-        dispute.setTutorResponse(body.responseText() + (body.evidenceFileUrl() != null ? " [File: " + body.evidenceFileUrl() + "]" : ""));
-        dispute.setTutorRespondedAt(Instant.now());
-        Dispute saved = disputeRepository.save(dispute);
-        return ResponseEntity.ok(toDisputeDto(saved));
+        try {
+            Dispute saved = disputeWorkflowService.submitTutorResponse(
+                    id, currentUser.userId(), body.responseText(), body.evidenceFileUrl());
+            return ResponseEntity.ok(toDisputeDto(saved, currentUser));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
     }
 
     public record LegacyProposeSettlementRequest(
@@ -1435,17 +1454,23 @@ public class ContractManagementController {
         );
     }
 
-    private DisputeSummaryDto toDisputeDto(Dispute d) {
+    private DisputeSummaryDto toDisputeDto(Dispute d, ContractUserPrincipal viewer) {
         SessionSettlement s = d.getSettlement();
         ContractAgreement a = s != null ? s.getAgreement() : null;
+        List<DisputeEvidence> evidence = disputeEvidenceRepository.findByDisputeId(d.getId());
+        DisputeEvidence studentEvidence = latestEvidenceForRole(evidence, "STUDENT");
+        boolean canViewTutorSubmission = viewer != null
+                && (viewer.hasActiveAuthority("TUTOR")
+                || viewer.hasActiveAuthority("STAFF")
+                || viewer.hasActiveAuthority("ADMIN"));
+        DisputeEvidence tutorEvidence = canViewTutorSubmission ? latestEvidenceForRole(evidence, "TUTOR") : null;
         return new DisputeSummaryDto(
                 d.getId().toString(),
                 a != null ? a.getId().toString() : null,
                 a != null ? a.getOnchainAgreementId() : null,
                 s != null ? s.getId().toString() : null,
                 s != null ? s.getSessionId() : null,
-                d.getComplainantId(),
-                d.getType(),
+                d.getComplainantId(), d.getComplainantRole(), d.getType(), d.getReason(),
                 d.getStatus() != null ? d.getStatus().name() : null,
                 d.getSubmittedAt() != null ? d.getSubmittedAt().toString() : null,
                 d.getResolution(),
@@ -1453,15 +1478,27 @@ public class ContractManagementController {
                 d.getResolvedByEmail(),
                 d.getResolvedByRole(),
                 d.getResolvedAt() != null ? d.getResolvedAt().toString() : null,
-                d.getOpenTxHash(),
-                d.getResolveTxHash(),
-                d.getTutorResponse(),
+                d.getOpenTxHash(), d.getResolveTxHash(), canViewTutorSubmission ? d.getTutorResponse() : null,
+                canViewTutorSubmission && d.getTutorRespondedAt() != null ? d.getTutorRespondedAt().toString() : null,
+                studentEvidence != null ? studentEvidence.getObjectKey() : null,
+                studentEvidence != null ? studentEvidence.getContentType() : null,
+                studentEvidence != null ? studentEvidence.getSha256() : null,
+                tutorEvidence != null ? tutorEvidence.getObjectKey() : null,
+                tutorEvidence != null ? tutorEvidence.getContentType() : null,
+                tutorEvidence != null ? tutorEvidence.getSha256() : null,
                 a != null ? a.getStudentWallet() : null,
                 a != null ? a.getTutorWallet() : null,
                 a != null ? a.getClassroomReviewerEmail() : null,
                 s != null && s.getDisputeDeadline() != null ? s.getDisputeDeadline().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null,
                 d.getCreatedAt() != null ? d.getCreatedAt().toString() : null
         );
+    }
+
+    private DisputeEvidence latestEvidenceForRole(List<DisputeEvidence> evidence, String role) {
+        return evidence.stream()
+                .filter(item -> role.equalsIgnoreCase(item.getSubmittedByRole()))
+                .max(Comparator.comparing(DisputeEvidence::getCreatedAt))
+                .orElse(null);
     }
 
     private double toUsdc(BigInteger units, short decimals) {
@@ -1510,10 +1547,12 @@ public class ContractManagementController {
     public record DisputeSummaryDto(
             String id, String agreementId, String onchainAgreementId,
             String settlementId, Long sessionId,
-            Long complainantId, String type, String status,
+            Long complainantId, String complainantRole, String type, String reason, String status,
             String submittedAt, String resolution, String resolutionReason,
             String resolvedByEmail, String resolvedByRole, String resolvedAt,
-            String openTxHash, String resolveTxHash, String tutorResponse,
+            String openTxHash, String resolveTxHash, String tutorResponse, String tutorRespondedAt,
+            String studentEvidenceObjectKey, String studentEvidenceContentType, String studentEvidenceSha256,
+            String tutorEvidenceObjectKey, String tutorEvidenceContentType, String tutorEvidenceSha256,
             String studentWallet, String tutorWallet, String classroomReviewerEmail,
             String disputeDeadline, String createdAt) {}
 

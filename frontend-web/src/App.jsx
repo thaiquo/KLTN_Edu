@@ -261,6 +261,7 @@ export default function App() {
             <Route path="/student/my-schedule" element={<Navigate to="/my-schedule" replace />} />
             <Route path="/student/contracts" element={<Navigate to="/contracts" replace />} />
             <Route path="/student/classes" element={<Navigate to="/my-classes" replace />} />
+            <Route path="/student/my-classes" element={<Navigate to="/my-classes" replace />} />
             <Route path="/student/messages" element={<Navigate to="/messages" replace />} />
 
             {/* Account / Tutor */}

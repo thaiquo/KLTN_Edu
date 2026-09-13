@@ -246,7 +246,10 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
         tutorWallet: tutorWallet,
         pricePerSessionVnd: pricePerSession,
         totalSessions: totalSessions,
-        classroomReviewerEmail: user?.email,
+        // Preserve the Staff member who actually reviewed the classroom. Using the
+        // tutor email here would incorrectly block that Staff member from handling
+        // a later attendance dispute for this agreement.
+        classroomReviewerEmail: classSnapshot.reviewedByEmail || undefined,
         classDescription: classSnapshot.description || "",
         learningMode: classSnapshot.learningMode,
         meetingLink: classSnapshot.meetingLink || "",

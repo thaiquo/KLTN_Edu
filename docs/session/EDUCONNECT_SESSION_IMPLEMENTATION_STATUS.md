@@ -89,6 +89,10 @@ TỔNG THỂ PHÂN HỆ BUỔI HỌC & ĐIỂM DANH:    [ 100% ] ── ✅ HOÀ
     - Tạo `TutorSessionManagement.tsx` và thêm menu "Quản lý Buổi học" trên Sidebar Gia sư.
     - Tạo `StudentClassManagement.tsx` làm lại toàn bộ trang "Lớp học của tôi" của Học viên bằng dữ liệu thật, kết nối hợp đồng Escrow on-chain.
     - Tích hợp Gamified Gated Assignment: Học viên chưa điểm danh $\rightarrow$ Khóa đề bài; điểm danh thành công $\rightarrow$ Mở khóa xem đề và tải file tài liệu đính kèm.
+    - Cải tiến UX không gian học tập học viên (`ClassSessionsTimeline.tsx`):
+      + **Khóa điểm danh ngoài khung giờ**: Nút check-in chỉ mở khi đúng ngày và trong khung giờ `[startTime, endTime]`. Ngoài giờ hiển thị trạng thái khóa kèm ngày giờ mở cụ thể.
+      + **Lộ trình số liệu rõ ràng không dùng `%`**: Hiển thị tổng số buổi, số buổi đã xong, buổi đang học, số buổi còn lại; kèm danh sách lịch trình cụ thể từng ngày trong tuần, ngày tháng và khung giờ chi tiết.
+      + **Mặc định 2 buổi trọng tâm (`FOCUSED`)**: Khi vào lớp mặc định chỉ hiển thị 2 buổi (buổi gần nhất đã qua để xem lại/làm bài và buổi tiếp theo để chuẩn bị), có các tab lọc nhanh sang "Sắp tới", "Lịch sử", "Tất cả".
   - Hoàn thành **Giai đoạn 5**: 
     - Vá triệt để lỗi đá văng Logout trong `client.js` khi gặp lỗi 401 cục bộ.
     - Cấu hình mở rộng `permitAll()` cho `GET /api/classes/**` và `/api/sessions/**` trong `SecurityConfig.java`.

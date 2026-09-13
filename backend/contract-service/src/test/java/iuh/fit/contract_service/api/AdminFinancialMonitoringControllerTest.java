@@ -3,8 +3,10 @@ package iuh.fit.contract_service.api;
 import iuh.fit.contract_service.config.security.ContractAccessControl;
 import iuh.fit.contract_service.config.security.ContractUserPrincipal;
 import iuh.fit.contract_service.config.security.CurrentUserContext;
+import iuh.fit.contract_service.command.BlockchainTransactionIntentResult;
 import iuh.fit.contract_service.entity.ContractAgreement;
 import iuh.fit.contract_service.entity.SessionSettlement;
+import iuh.fit.contract_service.enums.BlockchainTransactionStatus;
 import iuh.fit.contract_service.enums.ContractAgreementStatus;
 import iuh.fit.contract_service.enums.SettlementOutcome;
 import iuh.fit.contract_service.enums.SettlementStatus;
@@ -25,6 +27,8 @@ import java.util.*;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class AdminFinancialMonitoringControllerTest {
@@ -33,6 +37,7 @@ class AdminFinancialMonitoringControllerTest {
     @Mock private SessionSettlementRepository settlementRepository;
     @Mock private BlockchainTransactionRepository transactionRepository;
     @Mock private DisputeRepository disputeRepository;
+    @Mock private DisputeEvidenceRepository disputeEvidenceRepository;
     @Mock private DisputeWorkflowService disputeWorkflowService;
     @Mock private SessionSettlementWorkflowService settlementWorkflowService;
     @Mock private AgreementLifecycleWorkflowService lifecycleWorkflowService;
@@ -58,6 +63,7 @@ class AdminFinancialMonitoringControllerTest {
                 settlementRepository,
                 transactionRepository,
                 disputeRepository,
+                disputeEvidenceRepository,
                 disputeWorkflowService,
                 settlementWorkflowService,
                 lifecycleWorkflowService,
@@ -163,5 +169,51 @@ class AdminFinancialMonitoringControllerTest {
         assertThat(response.getBody().getContent().get(0).tutorAmountUsdc()).isEqualTo(0.51);
         assertThat(response.getBody().getContent().get(0).platformAmountUsdc()).isEqualTo(0.09);
         assertThat(response.getBody().getContent().get(0).finalizeTxHash()).isEqualTo("0xfinalize");
+    }
+
+    @Test
+    void internalAutoProposeCreatesIndependentSettlementForEachStudentInSameClass() {
+        ContractAgreement first = activeAgreement(4L, 10L);
+        ContractAgreement second = activeAgreement(4L, 11L);
+        when(agreementRepository.findAll()).thenReturn(List.of(first, second));
+        when(operationalFundingPolicy.isFunded(first)).thenReturn(true);
+        when(operationalFundingPolicy.isFunded(second)).thenReturn(true);
+        when(settlementRepository.findByAgreementIdAndSessionId(first.getId(), 27L)).thenReturn(Optional.empty());
+        when(settlementRepository.findByAgreementIdAndSessionId(second.getId(), 27L)).thenReturn(Optional.empty());
+        when(settlementWorkflowService.initiateSessionProposal(
+                eq(first.getId()), eq(27L), eq(SettlementOutcome.BOTH_PRESENT), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(new BlockchainTransactionIntentResult(
+                        UUID.randomUUID(), "first", BlockchainTransactionStatus.CREATED, true));
+        when(settlementWorkflowService.initiateSessionProposal(
+                eq(second.getId()), eq(27L), eq(SettlementOutcome.STUDENT_ABSENT_TUTOR_PRESENT), org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(new BlockchainTransactionIntentResult(
+                        UUID.randomUUID(), "second", BlockchainTransactionStatus.CREATED, true));
+
+        var body = new ContractManagementController.InternalAutoProposeRequest(List.of(
+                new ContractManagementController.StudentAttendanceOutcome(10L, "BOTH_PRESENT"),
+                new ContractManagementController.StudentAttendanceOutcome(11L, "STUDENT_ABSENT_TUTOR_PRESENT")));
+
+        ResponseEntity<?> response = controller.internalAutoProposeSettlement(4L, 27L, body);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> responseBody = (Map<String, Object>) response.getBody();
+        assertThat((List<?>) responseBody.get("proposals")).hasSize(2);
+        verify(settlementWorkflowService).initiateSessionProposal(
+                eq(first.getId()), eq(27L), eq(SettlementOutcome.BOTH_PRESENT), org.mockito.ArgumentMatchers.anyString());
+        verify(settlementWorkflowService).initiateSessionProposal(
+                eq(second.getId()), eq(27L), eq(SettlementOutcome.STUDENT_ABSENT_TUTOR_PRESENT), org.mockito.ArgumentMatchers.anyString());
+    }
+
+    private ContractAgreement activeAgreement(Long classroomId, Long studentId) {
+        ContractAgreement agreement = new ContractAgreement();
+        agreement.setId(UUID.randomUUID());
+        agreement.setClassroomId(classroomId);
+        agreement.setStudentId(studentId);
+        agreement.setTutorId(20L);
+        agreement.setStudentEmail("student" + studentId + "@test.com");
+        agreement.setTutorEmail("tutor@test.com");
+        agreement.setStatus(ContractAgreementStatus.ACTIVE);
+        return agreement;
     }
 }

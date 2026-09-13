@@ -1,9 +1,15 @@
 package iuh.fit.contract_service.config.security;
 
 import iuh.fit.contract_service.entity.ContractAgreement;
+import iuh.fit.contract_service.entity.Dispute;
+import iuh.fit.contract_service.entity.SessionSettlement;
+import iuh.fit.contract_service.enums.DisputeStatus;
+import iuh.fit.contract_service.enums.SettlementOutcome;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigInteger;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -127,6 +133,37 @@ class ContractAccessControlTest {
                 .hasMessageContaining("403");
     }
 
+    @Test
+    void studentAndTutorCanOpenDisputeOnlyForTheirOwnAgreement() {
+        ContractAgreement agreement = agreement(1L, "student@example.com", 2L, "tutor@example.com", "staff@example.com");
+        ContractUserPrincipal student = user(1L, "student@example.com", "STUDENT", "STUDENT");
+        ContractUserPrincipal tutor = user(2L, "tutor@example.com", "TUTOR", "TUTOR");
+        ContractUserPrincipal otherTutor = user(3L, "other-tutor@example.com", "TUTOR", "TUTOR");
+
+        accessControl.requireCanOpenDispute(agreement, student);
+        accessControl.requireCanOpenDispute(agreement, tutor);
+
+        assertThatThrownBy(() -> accessControl.requireCanOpenDispute(agreement, otherTutor))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("403");
+    }
+
+    @Test
+    void tutorSeesStudentComplaintButStudentCannotSeeTutorPrivateComplaint() {
+        ContractAgreement agreement = agreement(1L, "student@example.com", 2L, "tutor@example.com", "staff@example.com");
+        ContractUserPrincipal student = user(1L, "student@example.com", "STUDENT", "STUDENT");
+        ContractUserPrincipal tutor = user(2L, "tutor@example.com", "TUTOR", "TUTOR");
+        Dispute studentComplaint = dispute(agreement, "STUDENT", 1L);
+        Dispute tutorComplaint = dispute(agreement, "TUTOR", 2L);
+
+        assertThat(accessControl.canViewDispute(studentComplaint, tutor)).isTrue();
+        assertThat(accessControl.canViewDispute(studentComplaint, student)).isTrue();
+        assertThat(accessControl.canViewDispute(tutorComplaint, tutor)).isTrue();
+        assertThat(accessControl.canViewDispute(tutorComplaint, student)).isFalse();
+        assertThat(accessControl.filterDisputes(List.of(studentComplaint, tutorComplaint), student))
+                .containsExactly(studentComplaint);
+    }
+
     private ContractUserPrincipal user(Long userId, String email, String activeRole, String... roles) {
         return new ContractUserPrincipal(userId, email, activeRole, List.of(roles));
     }
@@ -139,6 +176,26 @@ class ContractAccessControlTest {
                 .tutorId(tutorId)
                 .tutorEmail(tutorEmail)
                 .classroomReviewerEmail(reviewerEmail)
+                .build();
+    }
+
+    private Dispute dispute(ContractAgreement agreement, String complainantRole, Long complainantId) {
+        SessionSettlement settlement = SessionSettlement.create(
+                agreement,
+                1L,
+                "0x" + "a".repeat(64),
+                SettlementOutcome.BOTH_PRESENT,
+                BigInteger.valueOf(600_000),
+                "0x" + "b".repeat(64));
+        return Dispute.builder()
+                .id(UUID.randomUUID())
+                .settlement(settlement)
+                .type("STUDENT".equals(complainantRole) ? "TUTOR_FRAUD" : "STUDENT_MISCONDUCT")
+                .reason("Attendance complaint")
+                .complainantId(complainantId)
+                .complainantRole(complainantRole)
+                .submittedAt(Instant.now())
+                .status(DisputeStatus.OPEN)
                 .build();
     }
 }
