@@ -350,7 +350,7 @@ export function StudentSchedulePage() {
                               </p>
                             )}
 
-                            {session.meetingLink && (
+                            {session.status !== 'COMPLETED' && (
                               <Link
                                 to={session.classRoomId ? `/my-classes?classId=${session.classRoomId}` : '/my-classes'}
                                 className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-black text-white hover:bg-indigo-700 transition-colors mt-1 shadow-2xs"
@@ -513,7 +513,7 @@ export function StudentSchedulePage() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {session.meetingLink ? (
+                      {session.status !== 'COMPLETED' ? (
                         <Link
                           to={session.classRoomId ? `/my-classes?classId=${session.classRoomId}` : '/my-classes'}
                           className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-black text-white hover:bg-indigo-700 transition-colors shadow-2xs"

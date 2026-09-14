@@ -20,6 +20,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -134,6 +135,32 @@ class ClassRoomServiceTest {
                 "REJECTED",
                 "Need clearer syllabus",
                 "staff@example.com");
+    }
+
+    @Test
+    void publicClassResponseDoesNotExposeMeetingLink() {
+        ClassRoom classRoom = classRoom("tutor@example.com", ClassRoomStatus.PUBLISHED);
+        classRoom.setId(77L);
+        classRoom.setName("Math 10");
+        classRoom.setMeetingLink("https://meet.example/private-room");
+        when(classRoomRepository.findByIdWithDetails(77L)).thenReturn(Optional.of(classRoom));
+
+        var response = service.getPublicClassById(77L);
+
+        assertThat(response.meetingLink()).isNull();
+    }
+
+    @Test
+    void tutorClassResponseStillContainsMeetingLink() {
+        ClassRoom classRoom = classRoom("tutor@example.com", ClassRoomStatus.PUBLISHED);
+        classRoom.setId(77L);
+        classRoom.setName("Math 10");
+        classRoom.setMeetingLink("https://meet.example/private-room");
+        when(classRoomRepository.findByIdWithDetails(77L)).thenReturn(Optional.of(classRoom));
+
+        var response = service.getClassById("tutor@example.com", 77L);
+
+        assertThat(response.meetingLink()).isEqualTo("https://meet.example/private-room");
     }
 
     private ClassRoom classRoom(String tutorEmail, ClassRoomStatus status) {

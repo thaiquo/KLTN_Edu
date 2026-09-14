@@ -13,6 +13,7 @@ import {
   Loader2,
   RotateCcw,
   Search,
+  ShieldAlert,
   ShieldCheck,
   Video,
   Wallet,
@@ -23,7 +24,8 @@ import {
   Filter,
   ArrowLeft,
   ArrowRight,
-  ChevronRight
+  ChevronRight,
+  Radio
 } from 'lucide-react';
 import { classApi } from '../../api/classes';
 import { contractsApi } from '../../api/contractsApi';
@@ -31,6 +33,7 @@ import { useFeedback } from '../../components/feedback/useFeedback';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import { StudentEmptyState, StudentPageScaffold } from './StudentPageScaffold';
 import { ClassSessionsTimeline } from '../../components/classroom/ClassSessionsTimeline';
+import { isClassLiveNow } from '../../utils/scheduleUtils';
 
 const STATUS_META = {
   ENROLLED: { label: 'Đang học', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -48,8 +51,32 @@ const DAY_LABELS = {
   4: 'Thứ Tư',
   5: 'Thứ Năm',
   6: 'Thứ Sáu',
-  7: 'Thứ Bảy'
+  7: 'Thứ Bảy',
+  8: 'Chủ Nhật'
 };
+
+const SHORT_DAY_LABELS = {
+  1: 'CN',
+  2: 'T2',
+  3: 'T3',
+  4: 'T4',
+  5: 'T5',
+  6: 'T6',
+  7: 'T7',
+  8: 'CN'
+};
+
+function formatDayLabel(day) {
+  const d = Number(day);
+  if (d === 1 || d === 8) return 'Chủ Nhật';
+  return DAY_LABELS[d] || `Thứ ${d}`;
+}
+
+function formatShortDayLabel(day) {
+  const d = Number(day);
+  if (d === 1 || d === 8) return 'CN';
+  return SHORT_DAY_LABELS[d] || `T${d}`;
+}
 
 export function StudentMyClassesPage() {
   const [requests, setRequests] = useState([]);
@@ -64,16 +91,25 @@ export function StudentMyClassesPage() {
   const selectedClassId = searchParams.get('classId');
 
   const [agreementsMap, setAgreementsMap] = useState({});
+  const [scheduleData, setScheduleData] = useState(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, []);
 
   async function loadRequests() {
     setLoading(true);
     setError('');
     try {
-      const [data, agreementsData] = await Promise.all([
+      const [data, agreementsData, sched] = await Promise.all([
         classApi.getMyEnrollmentRequests(),
-        contractsApi.listAgreements({ size: 100 }).catch(() => [])
+        contractsApi.listAgreements({ size: 100 }).catch(() => []),
+        classApi.getStudentSchedule().catch(() => null)
       ]);
       setRequests(normalizeRequests(data));
+      setScheduleData(sched);
       const agrContent = Array.isArray(agreementsData) ? agreementsData : (agreementsData?.content || []);
       const map = {};
       agrContent.forEach((agr) => {
@@ -103,6 +139,53 @@ export function StudentMyClassesPage() {
     });
   }, [requests]);
 
+  const sessionsByClassId = useMemo(() => {
+    const map = new Map();
+    const list = scheduleData?.upcomingSessions || scheduleData?.sessions;
+    if (Array.isArray(list)) {
+      list.forEach((s) => {
+        const cid = Number(s.classRoomId);
+        if (!map.has(cid)) map.set(cid, []);
+        map.get(cid).push(s);
+      });
+    }
+    return map;
+  }, [scheduleData]);
+
+  const schedulesByClassId = useMemo(() => {
+    const map = new Map();
+    if (Array.isArray(scheduleData?.recurringSchedules)) {
+      scheduleData.recurringSchedules.forEach((s) => {
+        const cid = Number(s.classRoomId);
+        if (!map.has(cid)) map.set(cid, []);
+        map.get(cid).push(s);
+      });
+    }
+    return map;
+  }, [scheduleData]);
+
+  const isLiveMap = useMemo(() => {
+    const map = new Map();
+    enrolledClasses.forEach((req) => {
+      const cid = Number(req.classRoomId);
+      const classSessions = sessionsByClassId.get(cid) || [];
+      const classSchedules = schedulesByClassId.get(cid) || [];
+      const liveCheck = isClassLiveNow({
+        schedules: classSchedules,
+        sessions: classSessions,
+        currentDate: currentTime
+      });
+      if (liveCheck.isLive) {
+        map.set(cid, liveCheck);
+      }
+    });
+    return map;
+  }, [enrolledClasses, sessionsByClassId, schedulesByClassId, currentTime]);
+
+  const activeLiveClasses = useMemo(() => {
+    return enrolledClasses.filter((req) => isLiveMap.has(Number(req.classRoomId)));
+  }, [enrolledClasses, isLiveMap]);
+
   const pendingEscrowCount = useMemo(() => {
     return requests.filter((r) => normalizeStatus(r.status) === 'ACCEPTED').length;
   }, [requests]);
@@ -122,10 +205,18 @@ export function StudentMyClassesPage() {
   const filteredRequests = useMemo(() => {
     return enrolledClasses.filter((req) => {
       const status = normalizeStatus(req.status);
-      const matchFilter =
-        activeFilter === 'ALL' ||
-        status === activeFilter ||
-        (activeFilter === 'COMPLETED' && (status === 'COMPLETED' || req.isCompleted));
+      const isLive = isLiveMap.has(Number(req.classRoomId));
+
+      let matchFilter = true;
+      if (activeFilter === 'LIVE') {
+        matchFilter = isLive;
+      } else if (activeFilter === 'COMPLETED') {
+        matchFilter = status === 'COMPLETED' || req.isCompleted;
+      } else if (activeFilter === 'ENROLLED') {
+        matchFilter = status === 'ENROLLED';
+      } else if (activeFilter !== 'ALL') {
+        matchFilter = status === activeFilter;
+      }
 
       if (!matchFilter) return false;
 
@@ -136,7 +227,18 @@ export function StudentMyClassesPage() {
       const note = (req.note || '').toLowerCase();
       return name.includes(query) || tutor.includes(query) || note.includes(query);
     });
-  }, [enrolledClasses, activeFilter, searchQuery]);
+  }, [enrolledClasses, activeFilter, searchQuery, isLiveMap]);
+
+  const sortedFilteredRequests = useMemo(() => {
+    return [...filteredRequests].sort((a, b) => {
+      const aLive = isLiveMap.has(Number(a.classRoomId)) ? 1 : 0;
+      const bLive = isLiveMap.has(Number(b.classRoomId)) ? 1 : 0;
+      if (aLive !== bLive) {
+        return bLive - aLive;
+      }
+      return 0;
+    });
+  }, [filteredRequests, isLiveMap]);
 
   const selectedClass = useMemo(() => {
     if (!selectedClassId) return null;
@@ -189,26 +291,42 @@ export function StudentMyClassesPage() {
       actions={
         <div className="flex items-center gap-2.5">
           {selectedClass ? (
-            <button
-              type="button"
-              onClick={handleBackToList}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-100 shadow-xs"
-            >
-              <ArrowLeft size={16} />
-              Quay lại danh sách lớp
-            </button>
+            <>
+              <Link
+                to="/student/complaints"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50/70 px-4 text-xs font-extrabold text-rose-700 transition-colors hover:bg-rose-100 shadow-xs"
+              >
+                <ShieldAlert size={16} />
+                Khiếu nại buổi học
+              </Link>
+              <button
+                type="button"
+                onClick={handleBackToList}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-extrabold text-slate-700 transition-colors hover:bg-slate-100 shadow-xs"
+              >
+                <ArrowLeft size={16} />
+                Quay lại danh sách lớp
+              </button>
+            </>
           ) : (
             <>
               <Link
+                to="/student/complaints"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50/70 px-4 text-xs font-extrabold text-rose-700 transition-colors hover:bg-rose-100 shadow-xs"
+              >
+                <ShieldAlert size={16} />
+                Khiếu nại của tôi
+              </Link>
+              <Link
                 to="/contracts"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 text-sm font-bold text-indigo-700 transition-colors hover:bg-indigo-100/70 shadow-xs"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/60 px-4 text-xs font-extrabold text-indigo-700 transition-colors hover:bg-indigo-100/70 shadow-xs"
               >
                 <ShieldCheck size={16} />
                 Hợp đồng & Ký quỹ
               </Link>
               <Link
                 to="/classes"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-bold text-white transition-colors hover:bg-primary shadow-xs"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-xs font-extrabold text-white transition-colors hover:bg-primary shadow-xs"
               >
                 <BookOpen size={16} />
                 Tìm lớp mới
@@ -218,6 +336,65 @@ export function StudentMyClassesPage() {
         </div>
       }
     >
+      {/* Live Class Alert Banner (only shown in list view if any class is currently live) */}
+      {!selectedClassId && activeLiveClasses.length > 0 && (
+        <div className="relative overflow-hidden rounded-2xl border-2 border-emerald-500 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 p-4 sm:p-5 text-white shadow-lg shadow-emerald-600/20">
+          <div className="pointer-events-none absolute -right-6 -bottom-6 h-32 w-32 rounded-full bg-white/10 blur-xl" />
+          <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="relative flex items-center justify-center w-11 h-11 rounded-xl bg-white/20 backdrop-blur-sm border border-white/30 text-white shrink-0 shadow-sm">
+                <Radio className="animate-pulse" size={22} />
+                <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-85"></span>
+                  <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-rose-500 border-2 border-emerald-700"></span>
+                </span>
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-black bg-rose-500 text-white uppercase tracking-wider animate-pulse shadow-xs">
+                    <span className="h-1.5 w-1.5 rounded-full bg-white animate-ping" />
+                    Đang Diễn Ra
+                  </span>
+                  <h3 className="text-sm sm:text-base font-black font-display text-white">
+                    {activeLiveClasses.length === 1
+                      ? `Lớp "${activeLiveClasses[0].className || `Lớp #${activeLiveClasses[0].classRoomId}`}" đang diễn ra!`
+                      : `Bạn có ${activeLiveClasses.length} lớp học đang diễn ra ngay lúc này!`}
+                  </h3>
+                </div>
+                <p className="text-xs text-emerald-100 mt-1 leading-relaxed font-medium">
+                  {activeLiveClasses.length === 1 && isLiveMap.get(Number(activeLiveClasses[0].classRoomId))?.message
+                    ? `${isLiveMap.get(Number(activeLiveClasses[0].classRoomId)).message}. Nhấn "Vào Lớp Ngay" để tham gia và điểm danh buổi học.`
+                    : 'Hãy vào lớp ngay để không bỏ lỡ kiến thức và điểm danh buổi học trực tuyến cùng gia sư.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {activeLiveClasses.length === 1 ? (
+                <button
+                  type="button"
+                  onClick={() => handleSelectClass(activeLiveClasses[0].classRoomId)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-white hover:bg-emerald-50 px-4 py-2.5 text-xs font-black text-emerald-900 shadow-md transition-all hover:scale-[1.02] active:scale-95 shrink-0 cursor-pointer"
+                >
+                  <Video size={15} className="text-emerald-700 animate-pulse" />
+                  <span>Vào Lớp Ngay</span>
+                  <ArrowRight size={14} className="text-emerald-700" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setActiveFilter('LIVE')}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-white hover:bg-emerald-50 px-4 py-2.5 text-xs font-black text-emerald-900 shadow-md transition-all hover:scale-[1.02] active:scale-95 shrink-0 cursor-pointer"
+                >
+                  <span>Xem {activeLiveClasses.length} lớp đang diễn ra</span>
+                  <ArrowRight size={14} className="text-emerald-700" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Pending Contracts & Escrow Banner (only shown in list view) */}
       {!selectedClassId && pendingEscrowCount > 0 && (
         <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-50 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
@@ -322,6 +499,23 @@ export function StudentMyClassesPage() {
               >
                 Tất cả lớp ({enrolledClasses.length})
               </button>
+              {activeLiveClasses.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setActiveFilter('LIVE')}
+                  className={`relative px-3.5 py-1.5 rounded-xl text-xs font-black transition-all shrink-0 flex items-center gap-1.5 ${
+                    activeFilter === 'LIVE'
+                      ? 'bg-rose-600 text-white shadow-md ring-2 ring-rose-400/40'
+                      : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
+                  }`}
+                >
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600"></span>
+                  </span>
+                  <span>Đang diễn ra ({activeLiveClasses.length})</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setActiveFilter('ENROLLED')}
@@ -374,13 +568,17 @@ export function StudentMyClassesPage() {
                 Đang tải danh sách lớp học của bạn...
               </div>
             </section>
-          ) : filteredRequests.length > 0 ? (
+          ) : sortedFilteredRequests.length > 0 ? (
             <section className="grid gap-5 sm:grid-cols-2">
-              {filteredRequests.map((request) => (
+              {sortedFilteredRequests.map((request) => (
                 <ClassSummaryCard
                   key={request.id}
                   request={request}
                   agreement={agreementsMap[request.classRoomId]}
+                  liveCheckFromParent={isLiveMap.get(Number(request.classRoomId))}
+                  sessions={sessionsByClassId.get(Number(request.classRoomId))}
+                  recurringSchedules={schedulesByClassId.get(Number(request.classRoomId))}
+                  currentTime={currentTime}
                   onSelectClass={() => handleSelectClass(request.classRoomId)}
                 />
               ))}
@@ -403,7 +601,15 @@ export function StudentMyClassesPage() {
 /**
  * Clean Class Card for List View (NO inline dropdowns!)
  */
-function ClassSummaryCard({ request, agreement, onSelectClass }) {
+function ClassSummaryCard({
+  request,
+  agreement,
+  onSelectClass,
+  liveCheckFromParent,
+  sessions,
+  recurringSchedules,
+  currentTime
+}) {
   const [classroomDetails, setClassroomDetails] = useState(null);
 
   const status = normalizeStatus(request.status);
@@ -428,10 +634,41 @@ function ClassSummaryCard({ request, agreement, onSelectClass }) {
     };
   }, [request.classRoomId]);
 
+  const liveCheck = useMemo(() => {
+    if (liveCheckFromParent?.isLive) {
+      return liveCheckFromParent;
+    }
+    const classSchedules = classroomDetails?.schedules || recurringSchedules || [];
+    const classSessions = sessions || [];
+    return isClassLiveNow({
+      schedules: classSchedules,
+      sessions: classSessions,
+      currentDate: currentTime || new Date()
+    });
+  }, [liveCheckFromParent, classroomDetails, recurringSchedules, sessions, currentTime]);
+
+  const isLive = Boolean(liveCheck?.isLive);
+
+  const weeklyDaysSummary = useMemo(() => {
+    if (!classroomDetails?.schedules || classroomDetails.schedules.length === 0) return null;
+    const sorted = [...classroomDetails.schedules].sort((a, b) => Number(a.dayOfWeek) - Number(b.dayOfWeek));
+    const days = sorted.map((s) => formatShortDayLabel(s.dayOfWeek));
+    return Array.from(new Set(days)).join(' • ');
+  }, [classroomDetails]);
+
+  const weeklyScheduleSummary = useMemo(() => {
+    const sessionsCount = classroomDetails?.sessionsPerWeek || classroomDetails?.schedules?.length;
+    if (!sessionsCount && !weeklyDaysSummary) return null;
+    if (sessionsCount && weeklyDaysSummary) return `${sessionsCount} buổi/tuần (${weeklyDaysSummary})`;
+    if (sessionsCount) return `${sessionsCount} buổi/tuần`;
+    return weeklyDaysSummary;
+  }, [classroomDetails, weeklyDaysSummary]);
+
   const schedulesText = useMemo(() => {
     if (!classroomDetails?.schedules || classroomDetails.schedules.length === 0) return null;
-    return classroomDetails.schedules
-      .map((s) => `${DAY_LABELS[s.dayOfWeek] || `T${s.dayOfWeek}`}: ${s.startTime?.slice(0, 5)} - ${s.endTime?.slice(0, 5)}`)
+    return [...classroomDetails.schedules]
+      .sort((a, b) => Number(a.dayOfWeek) - Number(b.dayOfWeek) || String(a.startTime).localeCompare(String(a.startTime)))
+      .map((s) => `${formatDayLabel(s.dayOfWeek)}: ${s.startTime?.slice(0, 5)} - ${s.endTime?.slice(0, 5)}`)
       .join(' • ');
   }, [classroomDetails]);
 
@@ -447,12 +684,43 @@ function ClassSummaryCard({ request, agreement, onSelectClass }) {
   return (
     <article
       onClick={onSelectClass}
-      className="group rounded-2xl border border-slate-200 bg-white p-5 md:p-6 shadow-xs hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer flex flex-col justify-between"
+      className={`group relative rounded-2xl p-5 md:p-6 transition-all cursor-pointer flex flex-col justify-between ${
+        isLive
+          ? 'live-class-card-pulse border-2 border-emerald-500 bg-gradient-to-b from-emerald-50/70 via-white to-white ring-2 ring-emerald-500 shadow-xl shadow-emerald-500/20 hover:shadow-2xl'
+          : 'border border-slate-200 bg-white shadow-xs hover:shadow-md hover:border-indigo-300'
+      }`}
     >
       <div>
+        {/* Active Live Banner inside Card Header */}
+        {isLive && (
+          <div className="mb-3.5 flex items-center justify-between gap-2 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 px-3.5 py-2 text-white shadow-md shadow-emerald-600/25 animate-pulse">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="relative flex h-2.5 w-2.5 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-90"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-400"></span>
+              </span>
+              <span className="text-[11px] font-black tracking-wide uppercase font-display truncate">
+                Lớp học đang diễn ra ngay lúc này!
+              </span>
+            </div>
+            <span className="text-[10px] font-extrabold bg-white/20 backdrop-blur-xs px-2 py-0.5 rounded-md text-white shrink-0">
+              {liveCheck.message ? liveCheck.message.split('(')[0].trim() : 'Vào học ngay'}
+            </span>
+          </div>
+        )}
+
         {/* Top Header */}
         <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {isLive && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-300 bg-rose-100/90 px-2.5 py-0.5 text-xs font-black text-rose-800 animate-pulse shadow-xs">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600"></span>
+                </span>
+                LIVE
+              </span>
+            )}
             <span className={`rounded-full border px-3 py-0.5 text-xs font-black ${meta.className}`}>
               {meta.label}
             </span>
@@ -470,17 +738,25 @@ function ClassSummaryCard({ request, agreement, onSelectClass }) {
         </div>
 
         {/* Class Name */}
-        <h3 className="font-display text-lg font-black text-slate-900 group-hover:text-indigo-600 transition-colors line-clamp-1">
+        <h3 className={`font-display text-lg font-black transition-colors line-clamp-1 ${
+          isLive ? 'text-emerald-950 group-hover:text-emerald-700' : 'text-slate-900 group-hover:text-indigo-600'
+        }`}>
           {request.className || `Lớp học #${request.classRoomId}`}
         </h3>
 
         {/* Tutor info */}
-        <div className="mt-3.5 flex items-center gap-3 bg-slate-50/80 p-3 rounded-xl border border-slate-200/80">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-2xs">
+        <div className={`mt-3.5 flex items-center gap-3 p-3 rounded-xl border transition-colors ${
+          isLive ? 'bg-white/90 border-emerald-200/80 shadow-xs' : 'bg-slate-50/80 border-slate-200/80'
+        }`}>
+          <div className={`w-10 h-10 rounded-xl text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-2xs ${
+            isLive ? 'bg-gradient-to-br from-emerald-600 to-teal-700' : 'bg-gradient-to-br from-indigo-600 to-blue-700'
+          }`}>
             <GraduationCap size={20} />
           </div>
           <div className="min-w-0 flex-1">
-            <span className="text-[10px] uppercase font-bold text-indigo-700 block tracking-wider">
+            <span className={`text-[10px] uppercase font-bold block tracking-wider ${
+              isLive ? 'text-emerald-700' : 'text-indigo-700'
+            }`}>
               Gia sư phụ trách:
             </span>
             <strong className="text-slate-900 font-black text-sm block truncate">
@@ -495,15 +771,19 @@ function ClassSummaryCard({ request, agreement, onSelectClass }) {
 
         {/* Class Meta Grid */}
         <div className="mt-3.5 grid grid-cols-2 gap-2 text-xs font-semibold text-slate-700">
-          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex items-center gap-2">
-            <BookOpen size={15} className="text-indigo-600 shrink-0" />
+          <div className={`p-2.5 rounded-xl border flex items-center gap-2 ${
+            isLive ? 'bg-white border-emerald-100' : 'bg-slate-50 border-slate-100'
+          }`}>
+            <BookOpen size={15} className={isLive ? 'text-emerald-600 shrink-0' : 'text-indigo-600 shrink-0'} />
             <div>
               <span className="text-[10px] text-slate-400 block font-bold">Quy mô:</span>
               <span className="font-bold text-slate-900">{totalSessions} buổi học</span>
             </div>
           </div>
 
-          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex items-center gap-2">
+          <div className={`p-2.5 rounded-xl border flex items-center gap-2 ${
+            isLive ? 'bg-white border-emerald-100' : 'bg-slate-50 border-slate-100'
+          }`}>
             <Wallet size={15} className="text-emerald-600 shrink-0" />
             <div>
               <span className="text-[10px] text-slate-400 block font-bold">Học phí:</span>
@@ -511,12 +791,33 @@ function ClassSummaryCard({ request, agreement, onSelectClass }) {
             </div>
           </div>
 
-          {schedulesText && (
-            <div className="col-span-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex items-center gap-2">
-              <Clock size={15} className="text-amber-600 shrink-0" />
-              <div className="truncate">
-                <span className="text-[10px] text-slate-400 block font-bold">Lịch học hàng tuần:</span>
-                <span className="font-bold text-slate-900 truncate block">{schedulesText}</span>
+          {(schedulesText || weeklyScheduleSummary) && (
+            <div className={`col-span-2 p-2.5 rounded-xl border flex items-start gap-2.5 transition-colors ${
+              isLive
+                ? 'bg-emerald-100/70 border-emerald-300 text-emerald-950 shadow-2xs'
+                : 'bg-slate-50 border-slate-100 text-slate-700'
+            }`}>
+              <Clock size={16} className={`shrink-0 mt-0.5 ${isLive ? 'text-emerald-700 animate-pulse' : 'text-amber-600'}`} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2 flex-wrap mb-0.5">
+                  <span className={`text-[10px] font-bold uppercase tracking-wider ${isLive ? 'text-emerald-800' : 'text-slate-400'}`}>
+                    Lịch học hàng tuần:
+                  </span>
+                  {weeklyScheduleSummary && (
+                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${
+                      isLive
+                        ? 'text-emerald-900 bg-white border-emerald-300 shadow-2xs'
+                        : 'text-indigo-700 bg-indigo-50 border-indigo-200/80'
+                    }`}>
+                      {weeklyScheduleSummary}
+                    </span>
+                  )}
+                </div>
+                {schedulesText && (
+                  <span className={`font-bold text-xs truncate block ${isLive ? 'text-emerald-950 font-black' : 'text-slate-900'}`} title={schedulesText}>
+                    {schedulesText}
+                  </span>
+                )}
               </div>
             </div>
           )}
@@ -524,8 +825,12 @@ function ClassSummaryCard({ request, agreement, onSelectClass }) {
       </div>
 
       {/* Action Footer */}
-      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between gap-3">
-        <span className="text-xs font-bold text-indigo-600 flex items-center gap-1 group-hover:underline">
+      <div className={`mt-4 pt-3 border-t flex items-center justify-between gap-3 ${
+        isLive ? 'border-emerald-200' : 'border-slate-100'
+      }`}>
+        <span className={`text-xs font-bold flex items-center gap-1 ${
+          isLive ? 'text-emerald-700 font-black' : 'text-indigo-600 group-hover:underline'
+        }`}>
           <span>Xem chi tiết buổi học & điểm danh</span>
         </span>
 
@@ -535,10 +840,27 @@ function ClassSummaryCard({ request, agreement, onSelectClass }) {
             e.stopPropagation();
             onSelectClass();
           }}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 text-white hover:bg-primary font-bold text-xs shadow-xs transition-all group-hover:translate-x-0.5"
+          className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs shadow-md transition-all ${
+            isLive
+              ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 text-white ring-4 ring-emerald-500/30 scale-[1.03] hover:scale-105 animate-pulse cursor-pointer'
+              : 'bg-slate-900 text-white hover:bg-primary shadow-xs group-hover:translate-x-0.5 cursor-pointer'
+          }`}
         >
-          <span>Vào Lớp Học</span>
-          <ArrowRight size={14} />
+          {isLive ? (
+            <>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-80"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+              </span>
+              <span>Vào Lớp Ngay</span>
+              <ArrowRight size={14} />
+            </>
+          ) : (
+            <>
+              <span>Vào Lớp Học</span>
+              <ArrowRight size={14} />
+            </>
+          )}
         </button>
       </div>
     </article>
@@ -571,10 +893,26 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) 
     };
   }, [classRoomId]);
 
+  const weeklyDaysSummary = useMemo(() => {
+    if (!classroomDetails?.schedules || classroomDetails.schedules.length === 0) return null;
+    const sorted = [...classroomDetails.schedules].sort((a, b) => Number(a.dayOfWeek) - Number(b.dayOfWeek));
+    const days = sorted.map((s) => formatShortDayLabel(s.dayOfWeek));
+    return Array.from(new Set(days)).join(' • ');
+  }, [classroomDetails]);
+
+  const weeklyScheduleSummary = useMemo(() => {
+    const sessions = classroomDetails?.sessionsPerWeek || classroomDetails?.schedules?.length;
+    if (!sessions && !weeklyDaysSummary) return null;
+    if (sessions && weeklyDaysSummary) return `${sessions} buổi/tuần (${weeklyDaysSummary})`;
+    if (sessions) return `${sessions} buổi/tuần`;
+    return weeklyDaysSummary;
+  }, [classroomDetails, weeklyDaysSummary]);
+
   const schedulesText = useMemo(() => {
     if (!classroomDetails?.schedules || classroomDetails.schedules.length === 0) return null;
-    return classroomDetails.schedules
-      .map((s) => `${DAY_LABELS[s.dayOfWeek] || `T${s.dayOfWeek}`}: ${s.startTime?.slice(0, 5)} - ${s.endTime?.slice(0, 5)}`)
+    return [...classroomDetails.schedules]
+      .sort((a, b) => Number(a.dayOfWeek) - Number(b.dayOfWeek) || String(a.startTime).localeCompare(String(a.startTime)))
+      .map((s) => `${formatDayLabel(s.dayOfWeek)}: ${s.startTime?.slice(0, 5)} - ${s.endTime?.slice(0, 5)}`)
       .join(' • ');
   }, [classroomDetails]);
 
@@ -637,12 +975,19 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) 
             )}
 
             {/* Quick badges */}
-            <div className="mt-3.5 flex items-center gap-3 flex-wrap text-xs">
+            <div className="mt-3.5 flex items-center gap-2.5 flex-wrap text-xs">
               <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 font-bold text-slate-800">
                 <GraduationCap size={15} className="text-indigo-600" />
                 <span>Gia sư: {tutorName}</span>
                 <span className="text-slate-400 font-normal">({classroomDetails?.tutorEmail || request?.tutorEmail})</span>
               </div>
+
+              {weeklyScheduleSummary && (
+                <div className="flex items-center gap-2 bg-indigo-50/80 px-3 py-1.5 rounded-xl border border-indigo-200 font-bold text-indigo-900">
+                  <Calendar size={15} className="text-indigo-600" />
+                  <span>Lịch học tuần: <b className="text-indigo-950 font-black">{weeklyScheduleSummary}</b></span>
+                </div>
+              )}
 
               {schedulesText && (
                 <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 font-bold text-slate-800">
@@ -658,6 +1003,19 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) 
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Khai Giảng</span>
               <span className="font-bold text-slate-900">{classroomDetails?.startDate || "Chưa có"}</span>
             </div>
+            {weeklyScheduleSummary && (
+              <div className="px-4 py-2.5 rounded-xl bg-indigo-50/80 border border-indigo-200 text-xs">
+                <span className="text-indigo-600 block text-[10px] uppercase font-bold">Số Buổi Trong Tuần</span>
+                <span className="font-bold text-indigo-950">
+                  {classroomDetails?.sessionsPerWeek || classroomDetails?.schedules?.length || 1} buổi/tuần
+                </span>
+                {weeklyDaysSummary && (
+                  <span className="text-[11px] font-black text-indigo-700 block mt-0.5">
+                    {weeklyDaysSummary}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="px-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs">
               <span className="text-slate-400 block text-[10px] uppercase font-bold">Quy Mô Khóa Học</span>
               <span className="font-bold text-slate-900">{classroomDetails?.totalSessions || agreement?.totalSessions || 12} buổi</span>
@@ -678,6 +1036,8 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) 
         classRoomId={classRoomId}
         classRoomName={request?.className || classroomDetails?.name}
         meetingLink={meetingLink}
+        learningMode={classroomDetails?.learningMode || request?.learningMode}
+        address={classroomDetails?.address || request?.address}
         currentUserRole="STUDENT"
       />
     </div>

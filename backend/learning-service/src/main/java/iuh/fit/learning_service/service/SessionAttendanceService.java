@@ -140,6 +140,20 @@ public class SessionAttendanceService {
         log.info("Tutor {} updated meeting link for ClassRoom #{} to {}", tutorEmail, classRoomId, meetingLink);
     }
 
+    @Transactional(readOnly = true)
+    public String getMeetingLinkAfterStudentCheckIn(Long sessionId, Long studentId) {
+        ClassSession session = classSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Buổi học không tồn tại: " + sessionId));
+        sessionAccessControl.requireStudent(session.getClassRoom(), studentId);
+        SessionAttendance attendance = sessionAttendanceRepository.findBySessionIdAndStudentId(sessionId, studentId)
+                .orElseThrow(() -> new ForbiddenException("Chưa có bản ghi điểm danh cho buổi học này"));
+        if (!Boolean.TRUE.equals(attendance.getStudentChecked())) {
+            throw new ForbiddenException("Học viên phải điểm danh trước khi nhận link phòng học");
+        }
+        String meetingLink = session.getClassRoom().getMeetingLink();
+        return meetingLink != null ? meetingLink : "";
+    }
+
     /**
      * Học viên tự bấm Check-in điểm danh vào học bất kỳ thời điểm nào TRONG KHUNG GIỜ HỌC [start_time, end_time].
      */

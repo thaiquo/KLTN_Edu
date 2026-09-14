@@ -909,7 +909,7 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
                       <p>1.2. Tổng số buổi học theo thỏa thuận là <strong>{totalSessions} buổi</strong>, học phí đơn giá <strong>{pricePerSession.toLocaleString("vi-VN")} VNĐ / buổi</strong>.</p>
                       <p>1.3. Hình thức học tập: <strong>{classSnapshot?.learningMode === "ONLINE" ? "Trực tuyến (Online)" : "Trực tiếp (Offline)"}</strong>; thời lượng <strong>{classSnapshot?.durationPerSessionMinutes} phút/buổi</strong>; từ <strong>{classSnapshot?.startDate}</strong> đến <strong>{classSnapshot?.endDate}</strong>.</p>
                       {(classSnapshot?.schedules || []).map((schedule: any, index: number) => (
-                        <p key={`${schedule.dayOfWeek}-${schedule.startTime}-${index}`}>Lịch cố định: <strong>Thứ {schedule.dayOfWeek === 8 ? "Chủ Nhật" : schedule.dayOfWeek}, {schedule.startTime} - {schedule.endTime}</strong>.</p>
+                        <p key={`${schedule.dayOfWeek}-${schedule.startTime}-${index}`}>Lịch cố định: <strong>{Number(schedule.dayOfWeek) === 8 || Number(schedule.dayOfWeek) === 1 ? "Chủ Nhật" : `Thứ ${schedule.dayOfWeek}`}, {schedule.startTime} - {schedule.endTime}</strong>.</p>
                       ))}
                       {classSnapshot?.learningMode === "ONLINE" ? (
                         <p>Phòng học trực tuyến: <strong className="break-all">{classSnapshot?.meetingLink}</strong>.</p>

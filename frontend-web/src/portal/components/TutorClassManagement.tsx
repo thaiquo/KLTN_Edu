@@ -679,7 +679,7 @@ export function TutorClassManagement() {
                 <div className="flex items-center gap-1.5 flex-wrap pt-2">
                   <span className="text-[10px] font-black uppercase text-slate-400 mr-1">Lịch học:</span>
                   {cls.schedules.map(s => {
-                    const dayLabel = VIETNAMESE_DAYS.find(d => d.value === s.dayOfWeek)?.label || `T${s.dayOfWeek}`;
+                    const dayLabel = VIETNAMESE_DAYS.find(d => d.value === Number(s.dayOfWeek))?.label || (Number(s.dayOfWeek) === 8 || Number(s.dayOfWeek) === 1 ? "CN" : `T${s.dayOfWeek}`);
                     return (
                       <span key={s.id} className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold border border-slate-200">
                         {dayLabel} ({s.startTime} - {s.endTime})
@@ -935,7 +935,7 @@ export function TutorClassManagement() {
                   </label>
                   <div className="flex items-center gap-2 flex-wrap">
                     {detailModalClass.schedules.map(s => {
-                      const dayLabel = VIETNAMESE_DAYS.find(d => d.value === s.dayOfWeek)?.label || `T${s.dayOfWeek}`;
+                      const dayLabel = VIETNAMESE_DAYS.find(d => d.value === Number(s.dayOfWeek))?.label || (Number(s.dayOfWeek) === 8 || Number(s.dayOfWeek) === 1 ? "CN" : `T${s.dayOfWeek}`);
                       return (
                         <span key={s.id} className="px-3 py-1 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 shadow-2xs">
                           {dayLabel}: {s.startTime} - {s.endTime}

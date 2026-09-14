@@ -283,7 +283,7 @@ export function TutorAvailabilityScheduler() {
         && timeToMinutes(occupied.endTime) <= timeToMinutes(slot.endTime)
     ));
     if (uncoveredClass) {
-      const dayLabel = VIETNAMESE_DAYS.find(day => day.value === uncoveredClass.dayOfWeek)?.label || `Thứ ${uncoveredClass.dayOfWeek}`;
+      const dayLabel = VIETNAMESE_DAYS.find(day => day.value === Number(uncoveredClass.dayOfWeek))?.label || (Number(uncoveredClass.dayOfWeek) === 8 || Number(uncoveredClass.dayOfWeek) === 1 ? "Chủ nhật" : `Thứ ${uncoveredClass.dayOfWeek}`);
       currentErrors.push(`Lịch rảnh phải bao phủ lớp "${uncoveredClass.className}" (${dayLabel} ${uncoveredClass.startTime} - ${uncoveredClass.endTime})`);
     }
 

@@ -249,6 +249,17 @@ public class DisputeWorkflowService {
             Long tutorId,
             String responseText,
             String evidenceObjectKey) {
+        return submitTutorResponse(disputeId, tutorId, responseText, evidenceObjectKey, "text/uri-list", null);
+    }
+
+    @Transactional
+    public Dispute submitTutorResponse(
+            UUID disputeId,
+            Long tutorId,
+            String responseText,
+            String evidenceObjectKey,
+            String evidenceContentType,
+            String evidenceSha256) {
         Dispute dispute = disputeRepository.findById(disputeId)
                 .orElseThrow(() -> new IllegalArgumentException("Dispute not found: " + disputeId));
         if (dispute.getStatus() != DisputeStatus.OPEN) {
@@ -274,7 +285,17 @@ public class DisputeWorkflowService {
         dispute.setTutorResponse(normalizedResponse);
         dispute.setTutorRespondedAt(Instant.now());
         Dispute saved = disputeRepository.save(dispute);
-        saveEvidenceIfPresent(saved, tutorId, "TUTOR", evidenceObjectKey, "text/uri-list", null);
+        saveEvidenceIfPresent(saved, tutorId, "TUTOR", evidenceObjectKey, evidenceContentType, evidenceSha256);
+
+        notificationDispatcher.sendAsync(
+                agreement.getStudentEmail(),
+                agreement.getStudentId(),
+                "Gia sư đã phản hồi đối chất Buổi #" + dispute.getSettlement().getSessionId(),
+                "Gia sư đã gửi nội dung đối chất và minh chứng cho khiếu nại của bạn ở lớp " + safeClassName(agreement)
+                        + ". Vui lòng vào mục Khiếu nại của tôi để theo dõi.",
+                "DISPUTE_UPDATED",
+                "DISPUTE",
+                dispute.getId().toString());
 
         return saved;
     }
@@ -288,6 +309,14 @@ public class DisputeWorkflowService {
             boolean complaintApproved,
             String resolutionReason,
             String resolutionHash) {
+
+        String normalizedResolutionReason = resolutionReason != null ? resolutionReason.trim() : "";
+        if (normalizedResolutionReason.isBlank()) {
+            throw new IllegalArgumentException("Dispute resolution reason is required");
+        }
+        if (normalizedResolutionReason.length() > 4000) {
+            throw new IllegalArgumentException("Dispute resolution reason must not exceed 4000 characters");
+        }
 
         Dispute dispute = disputeRepository.findById(disputeId)
                 .orElseThrow(() -> new IllegalArgumentException("Dispute not found: " + disputeId));
@@ -343,7 +372,7 @@ public class DisputeWorkflowService {
 
         BlockchainTransactionIntentResult intentResult = commandService.createIntent(command);
 
-        dispute.setResolutionReason(resolutionReason);
+        dispute.setResolutionReason(normalizedResolutionReason);
         dispute.setResolvedByUserId(resolverUserId);
         dispute.setResolvedByEmail(resolverEmail);
         dispute.setResolvedByRole(resolverRole.toUpperCase(Locale.ROOT));
@@ -471,6 +500,10 @@ public class DisputeWorkflowService {
         if (normalizedObjectKey.length() > 1024) {
             throw new IllegalArgumentException("Evidence link must not exceed 1024 characters");
         }
+        String normalizedContentType = contentType != null ? contentType.trim() : null;
+        if (normalizedContentType != null && normalizedContentType.length() > 120) {
+            throw new IllegalArgumentException("Evidence content type must not exceed 120 characters");
+        }
         if (disputeEvidenceRepository.existsByDisputeIdAndObjectKey(dispute.getId(), normalizedObjectKey)) {
             return;
         }
@@ -485,7 +518,7 @@ public class DisputeWorkflowService {
                 .submittedByUserId(submittedByUserId)
                 .submittedByRole(submittedByRole)
                 .objectKey(normalizedObjectKey)
-                .contentType(contentType)
+                .contentType(normalizedContentType)
                 .sha256(normalizedSha256)
                 .build();
         disputeEvidenceRepository.save(evidence);

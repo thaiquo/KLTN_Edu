@@ -245,12 +245,12 @@ public class ClassRoomService {
         String address = null;
         if (request.learningMode() == LearningMode.ONLINE) {
             if (request.meetingLink() == null || request.meetingLink().trim().isEmpty()) {
-                throw new BadRequestException("Meeting link is required for ONLINE classes");
+                throw new BadRequestException("Link phòng học trực tuyến là bắt buộc đối với lớp học Online");
             }
             meetingLink = request.meetingLink().trim();
         } else if (request.learningMode() == LearningMode.OFFLINE) {
             if (request.address() == null || request.address().trim().isEmpty()) {
-                throw new BadRequestException("Address is required for OFFLINE classes");
+                throw new BadRequestException("Địa chỉ học trực tiếp là bắt buộc đối với lớp học Offline");
             }
             address = request.address().trim();
         }
@@ -797,6 +797,11 @@ public class ClassRoomService {
         long availableSlots = Math.max(0, c.getMaxStudents() - acceptedCount);
         boolean isBufferPoolFull = (pendingCount + acceptedCount) >= maxPending;
 
+        String visibleMeetingLink = c.getMeetingLink();
+        if (c.getLearningMode() == LearningMode.ONLINE && (visibleMeetingLink == null || visibleMeetingLink.isBlank())) {
+            visibleMeetingLink = "https://meet.google.com/edu-class-" + (c.getId() != null ? c.getId() : "online");
+        }
+
         return new ClassRoomDtos.ClassRoomResponse(
                 c.getId(),
                 c.getTutorSubjectRegistration() != null ? c.getTutorSubjectRegistration().getId() : null,
@@ -808,7 +813,7 @@ public class ClassRoomService {
                 c.getName(),
                 c.getDescription(),
                 c.getLearningMode(),
-                c.getMeetingLink(),
+                visibleMeetingLink,
                 c.getAddress(),
                 c.getMaxStudents(),
                 maxPending,

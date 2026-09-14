@@ -178,6 +178,8 @@ export const TutorSessionManagement: React.FC = () => {
                   classRoomId={selectedClass.id}
                   classRoomName={selectedClass.name}
                   meetingLink={selectedClass.meetingLink}
+                  learningMode={selectedClass.learningMode}
+                  address={selectedClass.address}
                   currentUserRole="TUTOR"
                 />
               </div>

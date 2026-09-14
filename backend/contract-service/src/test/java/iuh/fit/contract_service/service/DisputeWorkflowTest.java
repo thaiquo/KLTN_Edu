@@ -371,6 +371,33 @@ class DisputeWorkflowTest {
     }
 
     @Test
+    void resolutionRequiresMeaningfulAuditReason() {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        insertAgreement(agreementId, onchainAgreementId, Hash.sha3String("terms-v1"),
+                "ACTIVE", 1, "staff_reviewer@educonnect.com");
+
+        ContractAgreement agreement = agreementRepository.findById(agreementId).orElseThrow();
+        SessionSettlement settlement = SessionSettlement.create(
+                agreement, 1L, Hash.sha3String("EDUCONNECT:SESSION:1"), SettlementOutcome.BOTH_PRESENT,
+                BigInteger.valueOf(100_000_000L), "0x" + "a".repeat(64));
+        settlement.markProposed(OffsetDateTime.now(ZoneOffset.UTC).plusHours(12), "0x" + "b".repeat(64));
+        sessionSettlementRepository.save(settlement);
+
+        workflowService.initiateDisputeOpening(
+                settlement.getId(), 101L, "STUDENT", "Tutor did not teach the recorded session",
+                "0x" + "c".repeat(64), null, null, null);
+        Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
+        dispute.markOpen("0x" + "d".repeat(64));
+        disputeRepository.save(dispute);
+
+        assertThrows(IllegalArgumentException.class, () -> workflowService.initiateDisputeResolution(
+                dispute.getId(), 999L, "admin@educonnect.com", "ADMIN", true,
+                "   ", "0x" + "f".repeat(64)));
+        assertEquals(DisputeStatus.OPEN, disputeRepository.findById(dispute.getId()).orElseThrow().getStatus());
+    }
+
+    @Test
     void processConfirmedDisputeResolvedEventMarksOnlyDisputeUntilSessionSettledEvent() throws Exception {
         UUID agreementId = UUID.randomUUID();
         String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);

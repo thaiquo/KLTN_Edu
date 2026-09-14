@@ -446,7 +446,7 @@ public class EnrollmentRequestService {
                             classRoom.getName(),
                             classRoom.getTutorEmail(),
                             classRoom.getTutorFullName(),
-                            classRoom.getMeetingLink(),
+                            null,
                             classRoom.getAddress(),
                             classRoom.getLearningMode() != null ? classRoom.getLearningMode().name() : "ONLINE",
                             schedule.getDayOfWeek(),
@@ -479,7 +479,7 @@ public class EnrollmentRequestService {
                         session.getStartTime(),
                         session.getEndTime(),
                         session.getStatus() != null ? session.getStatus().name() : "SCHEDULED",
-                        session.getClassRoom().getMeetingLink(),
+                        null,
                         session.getAssignmentTitle() != null && !session.getAssignmentTitle().isBlank()
                 ));
             }

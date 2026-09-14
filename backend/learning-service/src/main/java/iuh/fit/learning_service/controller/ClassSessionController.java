@@ -11,6 +11,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
@@ -96,6 +97,18 @@ public class ClassSessionController {
         Long studentId = authentication != null && authentication.getDetails() instanceof Number value ? value.longValue() : null;
         SessionAttendanceResponse response = sessionAttendanceService.studentCheckIn(sessionId, studentId);
         return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/sessions/{sessionId}/student-meeting-link")
+    @PreAuthorize("hasRole('STUDENT')")
+    public ResponseEntity<Map<String, String>> getStudentMeetingLink(
+            Authentication authentication,
+            @PathVariable Long sessionId
+    ) {
+        Long studentId = authentication != null && authentication.getDetails() instanceof Number value ? value.longValue() : null;
+        String meetingLink = sessionAttendanceService.getMeetingLinkAfterStudentCheckIn(sessionId, studentId);
+        return ResponseEntity.ok().header("Cache-Control", "no-store")
+                .body(Map.of("meetingLink", meetingLink));
     }
 
     /**

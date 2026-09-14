@@ -410,7 +410,7 @@ export function ClassApprovalReview() {
                         )}
                       </div>
                       <div className="text-[10px] text-slate-500 mt-0.5">
-                        {cls.sessionsPerWeek} buổi/tuần ({cls.schedules.map(s => `T${s.dayOfWeek}`).join(", ")})
+                        {cls.sessionsPerWeek} buổi/tuần ({cls.schedules.map(s => Number(s.dayOfWeek) === 8 || Number(s.dayOfWeek) === 1 ? "CN" : `T${s.dayOfWeek}`).join(", ")})
                       </div>
                     </td>
 
@@ -557,7 +557,7 @@ export function ClassApprovalReview() {
               <span className="text-[10px] font-black uppercase text-slate-400 block">Lịch học hàng tuần</span>
               <div className="flex flex-wrap gap-2">
                 {selectedClass.schedules.map(s => {
-                  const day = VIETNAMESE_DAYS.find(d => d.value === s.dayOfWeek)?.label || `Thứ ${s.dayOfWeek}`;
+                  const day = VIETNAMESE_DAYS.find(d => d.value === Number(s.dayOfWeek))?.label || (Number(s.dayOfWeek) === 8 || Number(s.dayOfWeek) === 1 ? "Chủ nhật" : `Thứ ${s.dayOfWeek}`);
                   return (
                     <div key={s.id} className="px-3 py-1.5 bg-brand-primary/10 text-brand-primary rounded-xl border border-brand-primary/20 font-bold">
                       {day}: {s.startTime} - {s.endTime}

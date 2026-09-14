@@ -250,10 +250,13 @@ public class ContractManagementController {
         String tokenAddress = network.tokenAddress();
         short tokenDecimals = (short) network.tokenDecimals();
         var snapshotService = new ContractTermsSnapshotService();
+        String contractMeetingLink = "ONLINE".equalsIgnoreCase(request.learningMode())
+                ? ContractTermsSnapshotService.PROTECTED_MEETING_LINK
+                : request.meetingLink();
         String termsJson = snapshotService.serialize(new ContractTermsSnapshot(
                 ContractTermsSnapshotService.SCHEMA_VERSION,
                 new ContractTermsSnapshot.ClassroomTerms(request.className(), request.classDescription(),
-                        request.learningMode(), request.meetingPlatform(), request.meetingLink(), request.learningAddress(),
+                        request.learningMode(), request.meetingPlatform(), contractMeetingLink, request.learningAddress(),
                         request.courseStartDate(), request.courseEndDate(), request.durationPerSessionMinutes(),
                         request.schedules() == null ? List.of() : request.schedules(),
                         request.syllabus() == null ? List.of() : request.syllabus()),
@@ -742,6 +745,10 @@ public class ContractManagementController {
             if (body == null || body.reason() == null || body.reason().isBlank()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Dispute reason is required."));
             }
+            String normalizedReason = body.reason().trim();
+            String normalizedEvidenceObjectKey = body.evidenceObjectKey() != null
+                    ? body.evidenceObjectKey().trim()
+                    : null;
             ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
             ContractAgreement agreement = agreementRepository.findById(agreementId)
                     .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Agreement not found"));
@@ -751,14 +758,14 @@ public class ContractManagementController {
 
             String evidenceHash = resolveBytes32Hash(
                     body.evidenceHash(),
-                    "DISPUTE:" + agreementId + ":" + sessionId + ":" + nullToBlank(body.reason()) + ":" + nullToBlank(body.evidenceObjectKey()));
+                    "DISPUTE:" + agreementId + ":" + sessionId + ":" + normalizedReason + ":" + nullToBlank(normalizedEvidenceObjectKey));
             BlockchainTransactionIntentResult result = disputeWorkflowService.initiateDisputeOpening(
                     settlement.getId(),
                     currentUser.userId(),
                     currentUser.activeRole(),
-                    body.reason(),
+                    normalizedReason,
                     evidenceHash,
-                    body.evidenceObjectKey(),
+                    normalizedEvidenceObjectKey,
                     body.contentType(),
                     body.sha256());
 
@@ -923,6 +930,11 @@ public class ContractManagementController {
 
         Dispute dispute = disputeRepository.findById(id).orElse(null);
         if (dispute == null) return ResponseEntity.notFound().build();
+        if (body == null || body.reason() == null || body.reason().isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Vui lòng nhập lý do phán quyết khiếu nại."));
+        }
+        String normalizedReason = body.reason().trim();
 
         // STAFF scope check
         if (currentUser.hasActiveAuthority("STAFF")) {
@@ -936,14 +948,14 @@ public class ContractManagementController {
         try {
             // Build a simple audit hash from the reason text
             String resolutionHash = org.web3j.crypto.Hash.sha3String(
-                    "RESOLVE:" + id + ":" + body.reason());
+                    "RESOLVE:" + id + ":" + normalizedReason);
             BlockchainTransactionIntentResult result = disputeWorkflowService.initiateDisputeResolution(
                     id,
                     currentUser.userId(),
                     currentUser.email(),
                     currentUser.activeRole(),
                     body.approved(),
-                    body.reason(),
+                    normalizedReason,
                     resolutionHash
             );
             return ResponseEntity.ok(Map.of(
@@ -1464,6 +1476,11 @@ public class ContractManagementController {
                 || viewer.hasActiveAuthority("STAFF")
                 || viewer.hasActiveAuthority("ADMIN"));
         DisputeEvidence tutorEvidence = canViewTutorSubmission ? latestEvidenceForRole(evidence, "TUTOR") : null;
+        List<DisputeEvidenceDto> visibleEvidence = evidence.stream()
+                .filter(item -> "STUDENT".equalsIgnoreCase(item.getSubmittedByRole()) || canViewTutorSubmission)
+                .sorted(Comparator.comparing(DisputeEvidence::getCreatedAt))
+                .map(this::toDisputeEvidenceDto)
+                .toList();
         return new DisputeSummaryDto(
                 d.getId().toString(),
                 a != null ? a.getId().toString() : null,
@@ -1490,8 +1507,19 @@ public class ContractManagementController {
                 a != null ? a.getTutorWallet() : null,
                 a != null ? a.getClassroomReviewerEmail() : null,
                 s != null && s.getDisputeDeadline() != null ? s.getDisputeDeadline().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null,
-                d.getCreatedAt() != null ? d.getCreatedAt().toString() : null
+                d.getCreatedAt() != null ? d.getCreatedAt().toString() : null,
+                visibleEvidence
         );
+    }
+
+    private DisputeEvidenceDto toDisputeEvidenceDto(DisputeEvidence evidence) {
+        return new DisputeEvidenceDto(
+                evidence.getId().toString(),
+                evidence.getSubmittedByRole(),
+                evidence.getObjectKey(),
+                evidence.getContentType(),
+                evidence.getSha256(),
+                evidence.getCreatedAt() != null ? evidence.getCreatedAt().toString() : null);
     }
 
     private DisputeEvidence latestEvidenceForRole(List<DisputeEvidence> evidence, String role) {
@@ -1554,7 +1582,16 @@ public class ContractManagementController {
             String studentEvidenceObjectKey, String studentEvidenceContentType, String studentEvidenceSha256,
             String tutorEvidenceObjectKey, String tutorEvidenceContentType, String tutorEvidenceSha256,
             String studentWallet, String tutorWallet, String classroomReviewerEmail,
-            String disputeDeadline, String createdAt) {}
+            String disputeDeadline, String createdAt,
+            List<DisputeEvidenceDto> evidenceItems) {}
+
+    public record DisputeEvidenceDto(
+            String id,
+            String submittedByRole,
+            String objectKey,
+            String contentType,
+            String sha256,
+            String createdAt) {}
 
     public record ResolveDisputeRequest(boolean approved, String reason) {}
 

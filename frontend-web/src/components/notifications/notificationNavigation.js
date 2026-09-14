@@ -71,7 +71,7 @@ export function getNotificationTarget(notification, activeRole) {
     if (role === 'TUTOR' || role === 'STAFF' || role === 'ADMIN') {
       return target('/dashboard', 'complaints');
     }
-    return target('/contracts');
+    return target('/student/complaints');
   }
 
   return null;

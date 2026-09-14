@@ -274,4 +274,45 @@ class SessionAttendanceServiceTest {
         assertThat(response.studentAbsentCount()).isEqualTo(1);
         assertThat(response.tutorAbsentCount()).isZero();
     }
+
+    @Test
+    @DisplayName("meeting link is returned only after this student checked in during the session")
+    void meetingLinkRequiresCurrentStudentCheckIn() {
+        session.setSessionDate(LocalDate.now());
+        session.setStartTime("00:00");
+        session.setEndTime("23:59");
+        classRoom.setMeetingLink("https://meet.example/secured-room");
+        SessionAttendance attendance = new SessionAttendance();
+        attendance.setSession(session);
+        attendance.setStudentId(201L);
+        attendance.setStudentChecked(true);
+
+        when(classSessionRepository.findById(1L)).thenReturn(Optional.of(session));
+        when(sessionAttendanceRepository.findBySessionIdAndStudentId(1L, 201L))
+                .thenReturn(Optional.of(attendance));
+
+        assertThat(sessionAttendanceService.getMeetingLinkAfterStudentCheckIn(1L, 201L))
+                .isEqualTo("https://meet.example/secured-room");
+        verify(sessionAccessControl).requireStudent(classRoom, 201L);
+    }
+
+    @Test
+    @DisplayName("meeting link remains forbidden before this student checks in")
+    void meetingLinkRejectsStudentWithoutCheckIn() {
+        session.setSessionDate(LocalDate.now());
+        session.setStartTime("00:00");
+        session.setEndTime("23:59");
+        classRoom.setMeetingLink("https://meet.example/secured-room");
+        SessionAttendance attendance = new SessionAttendance();
+        attendance.setSession(session);
+        attendance.setStudentId(201L);
+        attendance.setStudentChecked(false);
+
+        when(classSessionRepository.findById(1L)).thenReturn(Optional.of(session));
+        when(sessionAttendanceRepository.findBySessionIdAndStudentId(1L, 201L))
+                .thenReturn(Optional.of(attendance));
+
+        assertThatThrownBy(() -> sessionAttendanceService.getMeetingLinkAfterStudentCheckIn(1L, 201L))
+                .isInstanceOf(ForbiddenException.class);
+    }
 }

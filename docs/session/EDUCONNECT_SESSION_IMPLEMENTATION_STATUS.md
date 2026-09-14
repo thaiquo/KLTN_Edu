@@ -93,9 +93,30 @@ TỔNG THỂ PHÂN HỆ BUỔI HỌC & ĐIỂM DANH:    [ 100% ] ── ✅ HOÀ
       + **Khóa điểm danh ngoài khung giờ**: Nút check-in chỉ mở khi đúng ngày và trong khung giờ `[startTime, endTime]`. Ngoài giờ hiển thị trạng thái khóa kèm ngày giờ mở cụ thể.
       + **Lộ trình số liệu rõ ràng không dùng `%`**: Hiển thị tổng số buổi, số buổi đã xong, buổi đang học, số buổi còn lại; kèm danh sách lịch trình cụ thể từng ngày trong tuần, ngày tháng và khung giờ chi tiết.
       + **Mặc định 2 buổi trọng tâm (`FOCUSED`)**: Khi vào lớp mặc định chỉ hiển thị 2 buổi (buổi gần nhất đã qua để xem lại/làm bài và buổi tiếp theo để chuẩn bị), có các tab lọc nhanh sang "Sắp tới", "Lịch sử", "Tất cả".
+    - Tối ưu hóa & Bảo vệ luồng Ký quỹ Escrow Web3 (`EscrowPaymentModal.tsx`, `EscrowContractsView.tsx`):
+      + **Khắc phục cảnh báo sai số dư sau khi nạp cọc**: Ẩn triệt để cảnh báo thiếu tiền khi trạng thái đã sang `isPaymentDone` (`PAYMENT_CONFIRMING` / `ACTIVE`).
+      + **Đóng băng nút thanh toán khi thiếu tiền**: Tự động kiểm tra số dư USDC trước khi nạp. Nếu thiếu, nút chuyển sang màu xám đóng băng (`🔒 Đóng băng: Thiếu X.XX USDC`), con trỏ chuột `cursor-not-allowed`, chặn gọi MetaMask hoặc Smart Contract ở cả 2 bước Approve và Deposit.
+      + **Hiển thị cảnh báo số dư trên thẻ danh sách**: Thẻ hợp đồng tự hiển thị trạng thái thiếu số dư và số tiền cần nạp thêm trước khi bấm mở modal.
   - Hoàn thành **Giai đoạn 5**: 
     - Vá triệt để lỗi đá văng Logout trong `client.js` khi gặp lỗi 401 cục bộ.
     - Cấu hình mở rộng `permitAll()` cho `GET /api/classes/**` và `/api/sessions/**` trong `SecurityConfig.java`.
     - Bảo mật phân quyền nghiêm ngặt danh sách hợp đồng theo email/userId của học viên trong `ContractManagementController.java`.
     - Chuyển đổi RPC Sepolia sang `ethereum-sepolia-rpc.publicnode.com` ổn định 100%.
     - Tất cả service (`learning-service`, `contract-service`, `frontend-web`) đều `BUILD SUCCESS`.
+
+---
+
+## ⚖️ SẴN SÀNG CHO KIỂM THỬ KHIẾU NẠI (DISPUTE TESTING READINESS)
+
+### 1. Ràng Buộc Nghiệp Vụ Trọng Tâm
+* **Thời hạn Khiếu nại 24h**: Học viên và Gia sư có 24 giờ sau khi buổi học kết thúc và kết quả điểm danh được gửi sang `contract-service` (trạng thái `PROPOSED` on-chain).
+* **Đóng băng giải ngân cá nhân hóa (Per-Student Escrow)**:
+  * Mỗi học viên có một Hợp đồng Escrow độc lập.
+  * Nếu học viên A khiếu nại $\rightarrow$ Chỉ phong tỏa tiền buổi học của học viên A. Học viên B trong cùng lớp nếu không khiếu nại vẫn được hệ thống tự động giải ngân sau 24h.
+* **Luồng Minh Chứng & Phân Quyền Hiển Thị**:
+  * **Học viên khiếu nại**: Gia sư nhận thông báo chuông (Notification) tức thời, được xem nội dung khiếu nại và bằng chứng học viên đính kèm. Gia sư có quyền nộp giải trình đối chất (`tutor_response` & file ảnh).
+  * **Gia sư khiếu nại**: Nội dung này là báo cáo riêng gửi cho Staff/Admin, học viên **không được xem**.
+* **Phân xử Trọng tài (Arbitration)**:
+  * **Staff phụ trách lớp** hoặc **Admin** vào `DisputeManagementPanel.tsx` xem đối chất 2 bên.
+  * **Chấp thuận khiếu nại (Approve)** $\rightarrow$ Hoàn 100% tiền buổi học về ví học viên (Học viên thắng).
+  * **Bác bỏ khiếu nại (Reject)** $\rightarrow$ Giải ngân 85% cho gia sư và 15% phí sàn (Gia sư thắng).

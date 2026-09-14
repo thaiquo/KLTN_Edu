@@ -429,7 +429,7 @@ export function ContractDocumentModal({ agreementId, onClose, onSignedSuccess }:
                     <div className="pl-4 border-l-2 border-slate-300 space-y-0.5 pt-1 text-[11px]">
                       <p className="font-bold">Lịch học cố định hàng tuần:</p>
                       {document.learningTerms.schedules.map((s, idx) => (
-                        <p key={idx}>- Thứ {s.dayOfWeek === 8 ? "Chủ Nhật" : s.dayOfWeek}: {s.startTime} đến {s.endTime}</p>
+                        <p key={idx}>- {Number(s.dayOfWeek) === 8 || Number(s.dayOfWeek) === 1 ? "Chủ Nhật" : `Thứ ${s.dayOfWeek}`}: {s.startTime} đến {s.endTime}</p>
                       ))}
                     </div>
                   )}

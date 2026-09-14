@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Search,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   UserRound,
@@ -379,6 +380,14 @@ export function HomeHeader() {
                     Hợp đồng của tôi
                   </Link>
                   <Link
+                    to="/student/complaints"
+                    onClick={closeMenu}
+                    className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <ShieldAlert size={17} />
+                    Khiếu nại của tôi
+                  </Link>
+                  <Link
                     to="/student/wallet"
                     onClick={closeMenu}
                     className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
@@ -393,6 +402,51 @@ export function HomeHeader() {
                   >
                     <Settings size={17} />
                     Cài đặt
+                  </Link>
+                </>
+              )}
+
+              {user?.activeRole === 'TUTOR' && (
+                <>
+                  <Link
+                    to="/dashboard"
+                    onClick={closeMenu}
+                    className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <LayoutDashboard size={17} />
+                    Dashboard Gia sư
+                  </Link>
+                  <Link
+                    to="/dashboard?tab=my-classes"
+                    onClick={closeMenu}
+                    className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <BookOpen size={17} />
+                    Lớp học của tôi
+                  </Link>
+                  <Link
+                    to="/dashboard?tab=contracts"
+                    onClick={closeMenu}
+                    className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <FileText size={17} />
+                    Hợp đồng & Ký quỹ
+                  </Link>
+                  <Link
+                    to="/dashboard?tab=complaints"
+                    onClick={closeMenu}
+                    className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <ShieldAlert size={17} />
+                    Khiếu nại lớp học
+                  </Link>
+                  <Link
+                    to="/dashboard?tab=wallet"
+                    onClick={closeMenu}
+                    className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <WalletCards size={17} />
+                    Ví của tôi
                   </Link>
                 </>
               )}
@@ -487,6 +541,10 @@ function AccountMenu({ user, roleAction, roleActionError, onStudentTutorAction, 
             Hợp đồng của tôi
           </MenuLink>
 
+          <MenuLink to="/student/complaints" icon={<ShieldAlert size={16} />} onClick={onClose}>
+            Khiếu nại của tôi
+          </MenuLink>
+
           <MenuLink to="/student/wallet" icon={<WalletCards size={16} />} onClick={onClose}>
             Ví của tôi
           </MenuLink>
@@ -521,6 +579,42 @@ function AccountMenu({ user, roleAction, roleActionError, onStudentTutorAction, 
               )}
             </div>
           )}
+        </>
+      ) : user?.activeRole === 'TUTOR' ? (
+        <>
+          <MenuLink to="/dashboard" icon={<LayoutDashboard size={16} />} onClick={onClose}>
+            Dashboard Gia sư
+          </MenuLink>
+
+          <MenuLink to="/dashboard?tab=my-classes" icon={<BookOpen size={16} />} onClick={onClose}>
+            Lớp học của tôi
+          </MenuLink>
+
+          <MenuLink to="/dashboard?tab=contracts" icon={<FileText size={16} />} onClick={onClose}>
+            Hợp đồng & Ký quỹ
+          </MenuLink>
+
+          <MenuLink to="/dashboard?tab=complaints" icon={<ShieldAlert size={16} />} onClick={onClose}>
+            Khiếu nại lớp học
+          </MenuLink>
+
+          <MenuLink to="/dashboard?tab=wallet" icon={<WalletCards size={16} />} onClick={onClose}>
+            Ví của tôi
+          </MenuLink>
+
+          <div className="my-1 border-t border-slate-100" />
+
+          <MenuLink to="/profile" icon={<UserRound size={16} />} onClick={onClose}>
+            Hồ sơ cá nhân
+          </MenuLink>
+
+          <MenuLink to="/profile" icon={<Settings size={16} />} onClick={onClose}>
+            Cài đặt tài khoản
+          </MenuLink>
+
+          <MenuLink to="/profile/password" icon={<KeyRound size={16} />} onClick={onClose}>
+            Đổi mật khẩu
+          </MenuLink>
         </>
       ) : (
         <>

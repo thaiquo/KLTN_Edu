@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Users,
   HelpCircle,
@@ -280,9 +281,12 @@ interface AppProps {
 
 export default function App({ user, onLogout }: AppProps) {
   const feedback = useFeedback();
+  const [searchParams, setSearchParams] = useSearchParams();
   // Global States holding data consistently across tabs
   const [activeRole] = useState<UserRole>(user.currentRole || user.role || "student");
+  const requestedTab = searchParams.get("tab");
   const [currentPage, setCurrentPage] = useState<string>(() => {
+    if (requestedTab) return requestedTab;
     return activeRole === "staff" ? "tutor-approval" : "dashboard";
   });
   const [searchValue, setSearchValue] = useState("");
@@ -313,10 +317,19 @@ export default function App({ user, onLogout }: AppProps) {
   const restrictedTutor = activeRole === "tutor" && (tutorApplicationLoading || tutorApplicationFetching || tutorApplicationStatus !== "APPROVED");
   const fullTutorAccess = activeRole === "tutor" && !restrictedTutor;
 
+  useEffect(() => {
+    if (requestedTab && requestedTab !== currentPage) {
+      if (!restrictedTutor || !FULL_TUTOR_PAGE_IDS.has(requestedTab)) {
+        setCurrentPage(requestedTab);
+      }
+    }
+  }, [requestedTab, restrictedTutor]);
+
   const handleNavigate = React.useCallback((page: string) => {
     if (page === "settings-password") {
       setSettingsTab("password");
       setCurrentPage("settings");
+      setSearchParams({ tab: "settings" });
       return;
     }
 
@@ -326,17 +339,20 @@ export default function App({ user, onLogout }: AppProps) {
 
     if (restrictedTutor && FULL_TUTOR_PAGE_IDS.has(page)) {
       setCurrentPage("dashboard");
+      setSearchParams({ tab: "dashboard" });
       return;
     }
 
     setCurrentPage(page);
-  }, [restrictedTutor]);
+    setSearchParams({ tab: page });
+  }, [restrictedTutor, setSearchParams]);
 
   useEffect(() => {
     if (restrictedTutor && FULL_TUTOR_PAGE_IDS.has(currentPage) && currentPage !== "dashboard") {
       setCurrentPage("dashboard");
+      setSearchParams({ tab: "dashboard" });
     }
-  }, [currentPage, restrictedTutor]);
+  }, [currentPage, restrictedTutor, setSearchParams]);
 
   // Interaction handlers
   const handleStartSession = () => {

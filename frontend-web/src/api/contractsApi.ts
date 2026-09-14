@@ -192,6 +192,14 @@ export interface DisputeDto {
   classroomReviewerEmail: string | null;
   disputeDeadline: string | null;
   createdAt: string;
+  evidenceItems: Array<{
+    id: string;
+    submittedByRole: "STUDENT" | "TUTOR";
+    objectKey: string;
+    contentType: string | null;
+    sha256: string;
+    createdAt: string | null;
+  }>;
 }
 
 export interface AdminFinancialOverview {
@@ -312,6 +320,21 @@ export const contractsApi = {
     });
   },
 
+  openDisputeWithFile(
+    agreementId: string,
+    sessionId: number,
+    reason: string,
+    file: File
+  ): Promise<{ success: boolean; agreementId: string; settlementId: string; transactionStatus: string; filename: string; sha256: string }> {
+    const formData = new FormData();
+    formData.append("reason", reason);
+    formData.append("file", file);
+    return apiRequest(`/api/contracts/agreements/${agreementId}/settlements/${sessionId}/dispute-file`, {
+      method: "POST",
+      body: formData,
+    });
+  },
+
   getAcceptances(agreementId: string): Promise<any[]> {
     return apiRequest(`/api/contracts/agreements/${agreementId}/acceptances`);
   },
@@ -350,6 +373,24 @@ export const contractsApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+  },
+
+  submitTutorDisputeEvidenceFile(
+    disputeId: string,
+    responseText: string,
+    file: File
+  ): Promise<{ success: boolean; disputeId: string; filename: string; sha256: string }> {
+    const formData = new FormData();
+    formData.append("responseText", responseText);
+    formData.append("file", file);
+    return apiRequest(`/api/contracts/disputes/${disputeId}/tutor-evidence-file`, {
+      method: "PUT",
+      body: formData,
+    });
+  },
+
+  getDisputeEvidenceFile(disputeId: string, evidenceId: string): Promise<Blob> {
+    return apiBlobRequest(`/api/contracts/disputes/${disputeId}/evidence/${evidenceId}/content`);
   },
 
   expireAgreement(id: string): Promise<{ success: boolean; agreementId: string; transactionStatus: string }> {

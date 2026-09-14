@@ -436,7 +436,7 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
           <div className="flex items-center gap-2 flex-wrap">
             {classRoom.schedules && classRoom.schedules.length > 0 ? (
               classRoom.schedules.map((s) => {
-                const dayLabel = VIETNAMESE_DAYS.find((d) => d.value === s.dayOfWeek)?.label || `T${s.dayOfWeek}`;
+                const dayLabel = VIETNAMESE_DAYS.find((d) => d.value === Number(s.dayOfWeek))?.label || (Number(s.dayOfWeek) === 8 || Number(s.dayOfWeek) === 1 ? "CN" : `T${s.dayOfWeek}`);
                 return (
                   <span key={s.id} className="px-3.5 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 shadow-2xs">
                     {dayLabel}: {s.startTime} - {s.endTime}

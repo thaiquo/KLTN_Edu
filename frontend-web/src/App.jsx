@@ -18,6 +18,7 @@ import { ClassMarketplacePage } from './pages/class/ClassMarketplacePage';
 import { TutorProfilePage } from './pages/tutor/TutorProfilePage';
 import { TeachingRegistrationPage } from './pages/tutor/TeachingRegistrationPage';
 import { StudentContractsPage } from './pages/student/StudentContractsPage';
+import { StudentComplaintsPage } from './pages/student/StudentComplaintsPage';
 import { StudentMatchingPage } from './pages/student/StudentMatchingPage';
 import { StudentMessagesPage } from './pages/student/StudentMessagesPage';
 import { StudentMyClassesPage } from './pages/student/StudentMyClassesPage';
@@ -246,6 +247,7 @@ export default function App() {
                 </ProtectedStudentPage>
               }
             />
+            <Route path="/student/complaints" element={<ProtectedStudentPage><StudentComplaintsPage /></ProtectedStudentPage>} />
             <Route path="/payments" element={<Navigate to="/student/wallet" replace />} />
             <Route
               path="/student/wallet"
@@ -263,6 +265,9 @@ export default function App() {
             <Route path="/student/classes" element={<Navigate to="/my-classes" replace />} />
             <Route path="/student/my-classes" element={<Navigate to="/my-classes" replace />} />
             <Route path="/student/messages" element={<Navigate to="/messages" replace />} />
+            <Route path="/student/my-complaints" element={<Navigate to="/student/complaints" replace />} />
+            <Route path="/my-complaints" element={<Navigate to="/student/complaints" replace />} />
+            <Route path="/complaints" element={<Navigate to="/student/complaints" replace />} />
 
             {/* Account / Tutor */}
             <Route path="/profile" element={<ProtectedProfile />} />

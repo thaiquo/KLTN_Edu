@@ -310,6 +310,21 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
     return filteredClasses[0] || null;
   }, [filteredClasses, selectedClassId]);
 
+  const selectedClassWeeklyDays = useMemo(() => {
+    if (!selectedClass?.schedules || selectedClass.schedules.length === 0) return null;
+    const sorted = [...selectedClass.schedules].sort((a, b) => Number(a.dayOfWeek) - Number(b.dayOfWeek));
+    const days = sorted.map((s: any) => (Number(s.dayOfWeek) === 8 || Number(s.dayOfWeek) === 1 ? 'CN' : `T${s.dayOfWeek}`));
+    return Array.from(new Set(days)).join(' • ');
+  }, [selectedClass]);
+
+  const selectedClassWeeklySummary = useMemo(() => {
+    const sessions = selectedClass?.sessionsPerWeek || selectedClass?.schedules?.length;
+    if (!sessions && !selectedClassWeeklyDays) return null;
+    if (sessions && selectedClassWeeklyDays) return `${sessions} buổi/tuần (${selectedClassWeeklyDays})`;
+    if (sessions) return `${sessions} buổi/tuần`;
+    return selectedClassWeeklyDays;
+  }, [selectedClass, selectedClassWeeklyDays]);
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16">
       {/* 1. Header Banner */}
@@ -537,15 +552,23 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
                   </div>
                   <h2 className="text-xl font-black text-slate-900">{selectedClass.name}</h2>
                   <p className="text-xs text-slate-500 mt-1 line-clamp-1">{selectedClass.description}</p>
-                  {selectedClass.nextSession && (
-                    <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">
-                      <Clock className="w-4 h-4 text-emerald-600" />
-                      <span>
-                        Buổi gần nhất: {selectedClass.nextSession.label}
-                        {selectedClass.nextSession.startTime ? ` · ${selectedClass.nextSession.startTime}${selectedClass.nextSession.endTime ? ` - ${selectedClass.nextSession.endTime}` : ""}` : ""}
-                      </span>
-                    </div>
-                  )}
+                  <div className="mt-3 flex items-center gap-2 flex-wrap">
+                    {selectedClassWeeklySummary && (
+                      <div className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-900">
+                        <Calendar className="w-4 h-4 text-indigo-600" />
+                        <span>Lịch học tuần: <b>{selectedClassWeeklySummary}</b></span>
+                      </div>
+                    )}
+                    {selectedClass.nextSession && (
+                      <div className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800">
+                        <Clock className="w-4 h-4 text-emerald-600" />
+                        <span>
+                          Buổi gần nhất: {selectedClass.nextSession.label}
+                          {selectedClass.nextSession.startTime ? ` · ${selectedClass.nextSession.startTime}${selectedClass.nextSession.endTime ? ` - ${selectedClass.nextSession.endTime}` : ""}` : ""}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0 flex-wrap">
@@ -553,6 +576,19 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">Khai Giảng</span>
                     <span className="font-bold text-slate-800">{selectedClass.startDate || "Chưa có"}</span>
                   </div>
+                  {selectedClassWeeklySummary && (
+                    <div className="px-3.5 py-2 rounded-xl bg-indigo-50 border border-indigo-200 text-xs">
+                      <span className="text-indigo-600 block text-[10px] uppercase font-bold">Số Buổi Trong Tuần</span>
+                      <span className="font-bold text-indigo-950">
+                        {selectedClass.sessionsPerWeek || selectedClass.schedules?.length || 1} buổi/tuần
+                      </span>
+                      {selectedClassWeeklyDays && (
+                        <span className="text-[11px] font-black text-indigo-700 block mt-0.5">
+                          {selectedClassWeeklyDays}
+                        </span>
+                      )}
+                    </div>
+                  )}
                   <div className="px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs">
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">Tổng Số Buổi</span>
                     <span className="font-bold text-slate-800">{selectedClass.totalSessions || 12} buổi</span>
@@ -571,7 +607,9 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
                 <ClassSessionsTimeline
                   classRoomId={selectedClass.id}
                   classRoomName={selectedClass.name}
-                  meetingLink={selectedClass.meetingLink}
+                  meetingLink={selectedClass.meetingLink || ''}
+                  learningMode={selectedClass.learningMode}
+                  address={selectedClass.address}
                   currentUserRole="STUDENT"
                 />
               </div>

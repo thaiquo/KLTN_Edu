@@ -280,7 +280,7 @@ export function PublicTutorProfilePage() {
                             {/* Schedules */}
                             <div className="flex items-center gap-1 flex-wrap pt-1">
                               {cls.schedules && cls.schedules.map((s) => {
-                                const dayLabel = VIETNAMESE_DAYS.find((d) => d.value === s.dayOfWeek)?.label || `T${s.dayOfWeek}`;
+                                const dayLabel = VIETNAMESE_DAYS.find((d) => d.value === Number(s.dayOfWeek))?.label || (Number(s.dayOfWeek) === 8 || Number(s.dayOfWeek) === 1 ? "CN" : `T${s.dayOfWeek}`);
                                 return (
                                   <span key={s.id} className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[9px] font-bold border border-slate-200">
                                     {dayLabel} ({s.startTime}-{s.endTime})

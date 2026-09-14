@@ -12,6 +12,7 @@ import java.util.Optional;
 @Service
 public class ContractTermsSnapshotService {
     public static final String SCHEMA_VERSION = "contract-terms-v2";
+    public static final String PROTECTED_MEETING_LINK = "Chỉ cung cấp cho học viên sau khi điểm danh trong giờ học";
 
     private final ObjectMapper objectMapper = new ObjectMapper()
             .configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, true)

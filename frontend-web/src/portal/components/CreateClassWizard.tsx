@@ -165,7 +165,7 @@ function computeNetFreeIntervals(rawSlots: SavedSlot[], occupiedSlots: OccupiedS
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
     let slotCounter = 1;
-    const baseDayLabel = VIETNAMESE_DAYS.find(d => d.value === dayNum)?.label || `Thứ ${dayNum}`;
+    const baseDayLabel = VIETNAMESE_DAYS.find(d => d.value === Number(dayNum))?.label || (Number(dayNum) === 8 || Number(dayNum) === 1 ? "Chủ nhật" : `Thứ ${dayNum}`);
 
     for (const raw of dayRawSlots) {
       let curr = timeToMinutes(raw.startTime);
@@ -239,7 +239,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
   const [bufferPoolRatioPercent, setBufferPoolRatioPercent] = useState<number>(150);
   const [maxPendingRequests, setMaxPendingRequests] = useState<number | "">(30);
   const [learningMode, setLearningMode] = useState<"ONLINE" | "OFFLINE">("ONLINE");
-  const [meetingLink, setMeetingLink] = useState("");
+  const [meetingLink, setMeetingLink] = useState<string>("");
   const [address, setAddress] = useState("");
   const [pricePerSession, setPricePerSession] = useState<number | "">("");
 
@@ -604,7 +604,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
 
     configuredSessions.forEach((sess, idx) => {
       const interval = netFreeIntervals.find(i => i.id === sess.freeIntervalId);
-      const dayLabel = VIETNAMESE_DAYS.find(d => d.value === sess.dayOfWeek)?.label || `Thứ ${sess.dayOfWeek}`;
+      const dayLabel = VIETNAMESE_DAYS.find(d => d.value === Number(sess.dayOfWeek))?.label || (Number(sess.dayOfWeek) === 8 || Number(sess.dayOfWeek) === 1 ? "Chủ nhật" : `Thứ ${sess.dayOfWeek}`);
 
       if (!interval) {
         sessionErrors.push(`Buổi ${idx + 1}: Chưa chọn Khung giờ rảnh khả dụng.`);
@@ -992,7 +992,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
             {learningMode === "ONLINE" ? (
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                  Link phòng học Online (Google Meet, Zoom, Teams) <span className="text-rose-500">*</span>
+                  Link phòng học Online (Google Meet, Zoom, Teams...) <span className="text-rose-500">*</span>
                 </label>
                 <input 
                   type="url"
@@ -1001,6 +1001,9 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
                   placeholder="https://meet.google.com/abc-defg-hij hoặc https://zoom.us/j/..."
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:border-brand-primary transition-all"
                 />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Gia sư nhập link phòng học trực tuyến. Link này sẽ được dùng chung làm link mặc định cho các buổi học của lớp.
+                </p>
               </div>
             ) : (
               <div>
@@ -1113,7 +1116,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
                 </span>
                 <div className="flex flex-wrap gap-2">
                   {availableSlots.map((slot, idx) => {
-                    const dayLabel = VIETNAMESE_DAYS.find(d => d.value === slot.dayOfWeek)?.label || `Thứ ${slot.dayOfWeek}`;
+                    const dayLabel = VIETNAMESE_DAYS.find(d => d.value === Number(slot.dayOfWeek))?.label || (Number(slot.dayOfWeek) === 8 || Number(slot.dayOfWeek) === 1 ? "Chủ nhật" : `Thứ ${slot.dayOfWeek}`);
                     return (
                       <span key={idx} className="px-2.5 py-1 rounded-lg bg-sky-50 text-sky-800 text-[11px] font-bold border border-sky-200">
                         {dayLabel}: {slot.startTime} - {slot.endTime}
@@ -1132,7 +1135,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
                 </span>
                 <div className="flex flex-wrap gap-2">
                   {occupiedSlots.map((occ, idx) => {
-                    const dayLabel = VIETNAMESE_DAYS.find(d => d.value === occ.dayOfWeek)?.label || `T${occ.dayOfWeek}`;
+                    const dayLabel = VIETNAMESE_DAYS.find(d => d.value === Number(occ.dayOfWeek))?.label || (Number(occ.dayOfWeek) === 8 || Number(occ.dayOfWeek) === 1 ? "CN" : `T${occ.dayOfWeek}`);
                     return (
                       <span key={idx} className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 text-[11px] font-bold border border-rose-200 flex items-center gap-1">
                         <ShieldAlert className="w-3.5 h-3.5 text-rose-600 shrink-0" />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ShieldAlert,
   AlertTriangle,
@@ -12,7 +12,14 @@ import {
   Hash,
   RefreshCw,
   Info,
-  Lock
+  Lock,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  X,
+  ShieldCheck,
+  GraduationCap
 } from 'lucide-react';
 import { EtherscanLink } from '../common/EtherscanLink';
 import { DEFAULT_CHAIN_ID } from '../../web3/web3Config';
@@ -56,6 +63,7 @@ interface EligibleDisputeSession {
 }
 
 const DISPUTE_STATUS_META: Record<string, { label: string; className: string }> = {
+  FAILED_RETRYABLE: { label: 'CẦN KIỂM TRA LẠI - TIỀN VẪN ĐƯỢC GIỮ', className: 'bg-orange-100 text-orange-800 border border-orange-200' },
   OPENING: { label: 'ĐANG XÁC NHẬN MỞ KHIẾU NẠI', className: 'bg-blue-100 text-blue-800 border border-blue-200' },
   OPEN: { label: 'ĐANG MỞ KHIẾU NẠI', className: 'bg-amber-100 text-amber-800 border border-amber-200' },
   RESOLUTION_PENDING: { label: 'ĐANG XÁC NHẬN PHÁN QUYẾT', className: 'bg-indigo-100 text-indigo-800 border border-indigo-200' },
@@ -73,19 +81,28 @@ export function DisputeManagementPanel({
   const [disputes, setDisputes] = useState<DisputeDto[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState('');
+  const [historyStatus, setHistoryStatus] = useState('ALL');
+  const [historyOrigin, setHistoryOrigin] = useState('ALL');
+  const [historyPage, setHistoryPage] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchDisputes = useCallback(async () => {
     setDataLoading(true);
     setDataError('');
     try {
-      const res = await contractsApi.listDisputes({ page: 0, size: 50 });
-      setDisputes(res?.content ?? (Array.isArray(res) ? res : []));
+      const first = await contractsApi.listDisputes({ page: 0, size: 100 });
+      const items = [...(first?.content ?? [])];
+      for (let page = 1; page < (first?.totalPages ?? 1); page++) {
+        const next = await contractsApi.listDisputes({ page, size: 100 });
+        items.push(...(next.content ?? []));
+      }
+      setDisputes(items);
     } catch (err: any) {
       setDataError(err?.message || 'Không thể tải danh sách khiếu nại.');
     } finally {
       setDataLoading(false);
     }
-  }, []);
+  }, [activeRole]);
 
   useEffect(() => {
     fetchDisputes();
@@ -101,6 +118,7 @@ export function DisputeManagementPanel({
   const [eligibleSessionsLoading, setEligibleSessionsLoading] = useState(false);
   const [reasonInput, setReasonInput] = useState<string>('');
   const [evidenceTextInput, setEvidenceTextInput] = useState<string>('');
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -113,6 +131,7 @@ export function DisputeManagementPanel({
   const [selectedDisputeForTutor, setSelectedDisputeForTutor] = useState<DisputeDto | null>(null);
   const [tutorResponseText, setTutorResponseText] = useState('');
   const [tutorEvidenceUrl, setTutorEvidenceUrl] = useState('');
+  const [tutorEvidenceFile, setTutorEvidenceFile] = useState<File | null>(null);
   const [isTutorSubmitting, setIsTutorSubmitting] = useState(false);
 
   const fetchEligibleDisputeSessions = useCallback(async () => {
@@ -162,6 +181,7 @@ export function DisputeManagementPanel({
 
   const handleOpenTutorModal = (dispute: DisputeDto) => {
     setSelectedDisputeForTutor(dispute);
+    setTutorEvidenceFile(null);
     const rawResponse = dispute.tutorResponse || '';
     const fileMatch = rawResponse.match(/\s*\[File:\s*([^\]]+)\]$/);
     if (fileMatch) {
@@ -185,16 +205,25 @@ export function DisputeManagementPanel({
     try {
       setIsTutorSubmitting(true);
       setActionError(null);
-      await contractsApi.submitTutorDisputeEvidence(selectedDisputeForTutor.id, {
-        responseText: tutorResponseText.trim(),
-        evidenceFileUrl: tutorEvidenceUrl.trim() || undefined,
-      });
+      if (tutorEvidenceFile) {
+        await contractsApi.submitTutorDisputeEvidenceFile(
+          selectedDisputeForTutor.id,
+          tutorResponseText.trim(),
+          tutorEvidenceFile
+        );
+      } else {
+        await contractsApi.submitTutorDisputeEvidence(selectedDisputeForTutor.id, {
+          responseText: tutorResponseText.trim(),
+          evidenceFileUrl: tutorEvidenceUrl.trim() || undefined,
+        });
+      }
 
       setActionSuccess('Đã gửi giải trình và minh chứng đối chất thành công!');
       setIsTutorModalOpen(false);
       setSelectedDisputeForTutor(null);
       setTutorResponseText('');
       setTutorEvidenceUrl('');
+      setTutorEvidenceFile(null);
       await fetchDisputes();
     } catch (err: any) {
       setActionError(err?.reason || err?.message || 'Không thể gửi giải trình.');
@@ -217,16 +246,26 @@ export function DisputeManagementPanel({
     try {
       setIsSubmitting(true);
       setActionError(null);
-      await contractsApi.openDispute(agreementIdInput.trim(), Number(sessionIdInput), {
-        reason: reasonInput.trim(),
-        evidenceObjectKey: evidenceTextInput.trim() || undefined,
-        contentType: evidenceTextInput.trim() ? 'text/uri-list' : undefined,
-      });
+      if (evidenceFile) {
+        await contractsApi.openDisputeWithFile(
+          agreementIdInput.trim(),
+          Number(sessionIdInput),
+          reasonInput.trim(),
+          evidenceFile
+        );
+      } else {
+        await contractsApi.openDispute(agreementIdInput.trim(), Number(sessionIdInput), {
+          reason: reasonInput.trim(),
+          evidenceObjectKey: evidenceTextInput.trim() || undefined,
+          contentType: evidenceTextInput.trim() ? 'text/uri-list' : undefined,
+        });
+      }
 
       setActionSuccess(`Đã gửi yêu cầu khiếu nại cho buổi #${sessionIdInput}. Đang chờ xác nhận blockchain.`);
       setIsCreateModalOpen(false);
       setReasonInput('');
       setEvidenceTextInput('');
+      setEvidenceFile(null);
       await fetchDisputes();
       await fetchEligibleDisputeSessions();
     } catch (err: any) {
@@ -271,6 +310,107 @@ export function DisputeManagementPanel({
     return false;
   };
 
+  const openManagedEvidence = async (disputeId: string, evidenceId: string) => {
+    const previewWindow = window.open('', '_blank');
+    if (previewWindow) previewWindow.opener = null;
+    try {
+      const blob = await contractsApi.getDisputeEvidenceFile(disputeId, evidenceId);
+      const url = URL.createObjectURL(blob);
+      if (previewWindow) previewWindow.location.href = url;
+      else throw new Error('Trình duyệt đã chặn cửa sổ xem minh chứng.');
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err: any) {
+      previewWindow?.close();
+      setActionError(err?.message || 'Không thể mở file minh chứng.');
+    }
+  };
+
+  const selectedStudentEvidenceItems = selectedDisputeForTutor?.evidenceItems
+    ?.filter((item) => item.submittedByRole === 'STUDENT') || [];
+  const selectedStudentEvidence = selectedStudentEvidenceItems.length > 0
+    ? selectedStudentEvidenceItems[selectedStudentEvidenceItems.length - 1]
+    : undefined;
+
+  const kpis = useMemo(() => {
+    const total = disputes.length;
+    const pending = disputes.filter(
+      (d) => d.status === 'OPEN' || d.status === 'OPENING' || d.status === 'RESOLUTION_PENDING'
+    ).length;
+    const approved = disputes.filter((d) => d.status === 'APPROVED').length;
+    const rejected = disputes.filter((d) => d.status === 'REJECTED').length;
+    const tutorOriginCount = disputes.filter((d) => d.complainantRole === 'TUTOR').length;
+    const studentOriginCount = disputes.filter((d) => d.complainantRole === 'STUDENT').length;
+    const tutorNeedsActionCount = disputes.filter(
+      (d) => d.complainantRole === 'STUDENT' && d.status === 'OPEN' && !d.tutorResponse
+    ).length;
+
+    return {
+      total,
+      pending,
+      approved,
+      rejected,
+      tutorOriginCount,
+      studentOriginCount,
+      tutorNeedsActionCount,
+    };
+  }, [disputes]);
+
+  const historyItems = useMemo(() => {
+    return disputes.filter((dispute) => {
+      const resolved = dispute.status === 'APPROVED' || dispute.status === 'REJECTED';
+      const matchesStatus =
+        historyStatus === 'ALL' ||
+        (historyStatus === 'PENDING' && !resolved) ||
+        (historyStatus === 'RESOLVED' && resolved) ||
+        (historyStatus === 'NEEDS_RESPONSE' &&
+          dispute.complainantRole === 'STUDENT' &&
+          dispute.status === 'OPEN' &&
+          !dispute.tutorResponse) ||
+        historyStatus === dispute.status;
+
+      const matchesOrigin =
+        historyOrigin === 'ALL' || dispute.complainantRole === historyOrigin;
+
+      if (!matchesStatus || !matchesOrigin) return false;
+
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.trim().toLowerCase();
+      const matchId = String(dispute.id).toLowerCase().includes(q);
+      const matchAgreement = String(dispute.agreementId || '').toLowerCase().includes(q);
+      const matchSession =
+        `buổi ${dispute.sessionId}`.includes(q) ||
+        `#${dispute.sessionId}`.includes(q) ||
+        String(dispute.sessionId) === q;
+      const matchReason = (dispute.reason || '').toLowerCase().includes(q);
+      const matchResolution = (dispute.resolutionReason || '').toLowerCase().includes(q);
+      const matchStudent = (
+        dispute.studentName ||
+        dispute.studentEmail ||
+        dispute.studentWallet ||
+        ''
+      ).toLowerCase().includes(q);
+      const matchTutor = (
+        dispute.tutorName ||
+        dispute.tutorWallet ||
+        ''
+      ).toLowerCase().includes(q);
+
+      return (
+        matchId ||
+        matchAgreement ||
+        matchSession ||
+        matchReason ||
+        matchResolution ||
+        matchStudent ||
+        matchTutor
+      );
+    });
+  }, [disputes, historyStatus, historyOrigin, searchQuery]);
+
+  const historyPages = Math.max(1, Math.ceil(historyItems.length / 10));
+  const currentHistoryPage = Math.min(historyPage, historyPages - 1);
+  const visibleHistory = historyItems.slice(currentHistoryPage * 10, (currentHistoryPage + 1) * 10);
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* Header Banner */}
@@ -281,7 +421,7 @@ export function DisputeManagementPanel({
           </div>
           <div>
             <h2 className="font-display font-black text-xl lg:text-2xl text-slate-900">
-              Trung Tâm Quản Lý & Phân Xử Khiếu Nại (Dispute Resolution)
+              {activeRole === 'student' || activeRole === 'tutor' ? 'Lịch sử & Theo dõi khiếu nại' : 'Quản lý & Phân xử khiếu nại'}
             </h2>
             <p className="text-xs text-slate-500 font-semibold mt-0.5">
               {activeRole === 'tutor'
@@ -333,7 +473,222 @@ export function DisputeManagementPanel({
         </div>
       )}
 
-      {/* Dispute List Cards */}
+      {/* Metric KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+            {activeRole === 'tutor' ? 'Tổng khiếu nại liên quan' : 'Tổng số khiếu nại'}
+          </span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-slate-900 block">{kpis.total}</span>
+            <span className="text-xs text-slate-400 font-semibold">đơn</span>
+          </div>
+        </div>
+
+        <div className="bg-amber-50/70 p-4 rounded-2xl border border-amber-200/80 shadow-2xs space-y-1">
+          <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider block">
+            Đang chờ xem xét & phân xử
+          </span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-amber-900 block">{kpis.pending}</span>
+            <span className="text-xs text-amber-600 font-semibold">đang mở</span>
+          </div>
+        </div>
+
+        <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200/80 shadow-2xs space-y-1">
+          <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">
+            Chấp thuận (Hoàn tiền học viên)
+          </span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-emerald-900 block">{kpis.approved}</span>
+            <span className="text-xs text-emerald-600 font-semibold">đã xử lý</span>
+          </div>
+        </div>
+
+        <div className="bg-rose-50/70 p-4 rounded-2xl border border-rose-200/80 shadow-2xs space-y-1">
+          <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider block">
+            Bác bỏ (Giải ngân gia sư)
+          </span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-rose-900 block">{kpis.rejected}</span>
+            <span className="text-xs text-rose-600 font-semibold">kết thúc</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Modern Filter, Search & Tab Controls */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+        {/* Top bar: Search + Refresh */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setHistoryPage(0);
+              }}
+              placeholder="Tìm theo mã hợp đồng, số buổi học, lý do khiếu nại, kết quả phân xử..."
+              className="w-full pl-10 pr-9 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:border-rose-500 transition-all"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setHistoryPage(0);
+                }}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            disabled={dataLoading}
+            onClick={() => fetchDisputes()}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shrink-0 disabled:opacity-50"
+            title="Làm mới danh sách khiếu nại"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${dataLoading ? 'animate-spin text-rose-600' : 'text-slate-500'}`} />
+            <span>{dataLoading ? 'Đang tải...' : 'Làm mới'}</span>
+          </button>
+        </div>
+
+        {/* Second row: Status tabs & Tutor origin segmented controls */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-3 border-t border-slate-100">
+          {/* Status filter tabs */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1 flex items-center gap-1">
+              <Filter className="w-3 h-3" /> Trạng thái:
+            </span>
+            <button
+              type="button"
+              onClick={() => { setHistoryStatus('ALL'); setHistoryPage(0); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                historyStatus === 'ALL'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80 hover:text-slate-900'
+              }`}
+            >
+              Tất cả ({kpis.total})
+            </button>
+            <button
+              type="button"
+              onClick={() => { setHistoryStatus('PENDING'); setHistoryPage(0); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                historyStatus === 'PENDING'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'bg-amber-50 text-amber-800 border border-amber-200/60 hover:bg-amber-100'
+              }`}
+            >
+              Đang chờ xử lý ({kpis.pending})
+            </button>
+            <button
+              type="button"
+              onClick={() => { setHistoryStatus('RESOLVED'); setHistoryPage(0); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                historyStatus === 'RESOLVED'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-blue-50 text-blue-800 border border-blue-200/60 hover:bg-blue-100'
+              }`}
+            >
+              Đã giải quyết ({kpis.approved + kpis.rejected})
+            </button>
+            <button
+              type="button"
+              onClick={() => { setHistoryStatus('APPROVED'); setHistoryPage(0); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                historyStatus === 'APPROVED'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-emerald-50 text-emerald-800 border border-emerald-200/60 hover:bg-emerald-100'
+              }`}
+            >
+              Chấp thuận ({kpis.approved})
+            </button>
+            <button
+              type="button"
+              onClick={() => { setHistoryStatus('REJECTED'); setHistoryPage(0); }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                historyStatus === 'REJECTED'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'bg-rose-50 text-rose-800 border border-rose-200/60 hover:bg-rose-100'
+              }`}
+            >
+              Bác bỏ ({kpis.rejected})
+            </button>
+
+            {activeRole === 'tutor' && kpis.tutorNeedsActionCount > 0 && (
+              <button
+                type="button"
+                onClick={() => { setHistoryStatus('NEEDS_RESPONSE'); setHistoryPage(0); }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 animate-pulse ${
+                  historyStatus === 'NEEDS_RESPONSE'
+                    ? 'bg-rose-600 text-white shadow-xs'
+                    : 'bg-rose-100 text-rose-800 border border-rose-300'
+                }`}
+              >
+                <AlertTriangle className="w-3 h-3" />
+                <span>Cần nộp giải trình ({kpis.tutorNeedsActionCount})</span>
+              </button>
+            )}
+          </div>
+
+          {/* Tutor Origin Segmented Selector */}
+          {activeRole === 'tutor' && (
+            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl shrink-0">
+              <button
+                type="button"
+                onClick={() => { setHistoryOrigin('ALL'); setHistoryPage(0); }}
+                className={`px-3 py-1 rounded-xl text-xs font-extrabold transition-all ${
+                  historyOrigin === 'ALL'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Tất cả đơn
+              </button>
+              <button
+                type="button"
+                onClick={() => { setHistoryOrigin('TUTOR'); setHistoryPage(0); }}
+                className={`px-3 py-1 rounded-xl text-xs font-extrabold transition-all ${
+                  historyOrigin === 'TUTOR'
+                    ? 'bg-white text-purple-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Đơn tôi gửi ({kpis.tutorOriginCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => { setHistoryOrigin('STUDENT'); setHistoryPage(0); }}
+                className={`px-3 py-1 rounded-xl text-xs font-extrabold transition-all ${
+                  historyOrigin === 'STUDENT'
+                    ? 'bg-white text-amber-700 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Đơn học viên gửi ({kpis.studentOriginCount})
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Results summary counter */}
+        <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100/80">
+          <span>
+            Hiển thị <strong>{historyItems.length === 0 ? 0 : currentHistoryPage * 10 + 1} - {Math.min((currentHistoryPage + 1) * 10, historyItems.length)}</strong> trong tổng số <strong>{historyItems.length}</strong> khiếu nại phù hợp
+          </span>
+          {historyPages > 1 && (
+            <span>
+              Trang {currentHistoryPage + 1} / {historyPages}
+            </span>
+          )}
+        </div>
+      </div>
       <div className="space-y-4">
         {dataLoading && (
           <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
@@ -346,14 +701,14 @@ export function DisputeManagementPanel({
             {dataError}
           </div>
         )}
-        {!dataLoading && !dataError && disputes.length === 0 ? (
+        {!dataLoading && !dataError && historyItems.length === 0 ? (
           <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 text-slate-400">
             <ShieldAlert className="w-12 h-12 mx-auto mb-3 opacity-40 text-slate-400" />
-            <p className="font-bold text-sm text-slate-600">Không có khiếu nại nào cần xử lý</p>
-            <p className="text-xs text-slate-400 mt-1">Mọi buổi học đều diễn ra an toàn và đúng tiến độ.</p>
+            <p className="font-bold text-sm text-slate-600">Chưa có khiếu nại phù hợp</p>
+            <p className="text-xs text-slate-400 mt-1">Đơn đã gửi sẽ được lưu tại đây, kể cả sau khi đã giải quyết. Thử chọn tất cả lịch sử để xem lại.</p>
           </div>
         ) : !dataLoading && (
-          disputes.map((dispute) => {
+          visibleHistory.map((dispute) => {
             const hasResolvePermission = canStaffResolve(dispute);
             const statusMeta = DISPUTE_STATUS_META[dispute.status] || {
               label: dispute.status,
@@ -364,6 +719,33 @@ export function DisputeManagementPanel({
               : dispute.complainantRole === 'TUTOR' && dispute.status === 'REJECTED'
                 ? { ...statusMeta, label: 'BÁC KHIẾU NẠI GIA SƯ' }
                 : statusMeta;
+            const allEvidence = dispute.evidenceItems?.length
+              ? dispute.evidenceItems
+              : [
+                  dispute.studentEvidenceObjectKey ? {
+                    id: `${dispute.id}-student-legacy`,
+                    submittedByRole: 'STUDENT' as const,
+                    objectKey: dispute.studentEvidenceObjectKey,
+                    contentType: dispute.studentEvidenceContentType,
+                    sha256: dispute.studentEvidenceSha256 || '',
+                    createdAt: dispute.createdAt,
+                  } : null,
+                  dispute.tutorEvidenceObjectKey ? {
+                    id: `${dispute.id}-tutor-legacy`,
+                    submittedByRole: 'TUTOR' as const,
+                    objectKey: dispute.tutorEvidenceObjectKey,
+                    contentType: dispute.tutorEvidenceContentType,
+                    sha256: dispute.tutorEvidenceSha256 || '',
+                    createdAt: dispute.tutorRespondedAt,
+                  } : null,
+                ].filter((item): item is NonNullable<typeof item> => item !== null);
+
+            const complainantEvidence = allEvidence.filter(
+              (item) => item.submittedByRole === dispute.complainantRole
+            );
+            const tutorCounterEvidence = allEvidence.filter(
+              (item) => item.submittedByRole === 'TUTOR' && dispute.complainantRole === 'STUDENT'
+            );
 
             return (
               <div
@@ -372,12 +754,23 @@ export function DisputeManagementPanel({
               >
                 {/* Header Row */}
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span
                       className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${effectiveStatusMeta.className}`}
                     >
                       {effectiveStatusMeta.label}
                     </span>
+                    {dispute.complainantRole === 'TUTOR' ? (
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1">
+                        <User className="w-3 h-3" />
+                        {activeRole === 'tutor' ? 'ĐƠN TÔI ĐÃ GỬI (GIA SƯ)' : 'KHIẾU NẠI TỪ GIA SƯ'}
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                        <User className="w-3 h-3" />
+                        {activeRole === 'student' ? 'ĐƠN KHIẾU NẠI CỦA TÔI' : 'KHIẾU NẠI TỪ HỌC VIÊN'}
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 text-xs text-slate-500">
@@ -390,6 +783,51 @@ export function DisputeManagementPanel({
                     )}
                   </div>
                 </div>
+
+                {(dispute.resolutionReason || dispute.resolvedAt || dispute.status === 'APPROVED' || dispute.status === 'REJECTED' || dispute.status === 'RESOLUTION_PENDING') && (
+                  <div className={`rounded-2xl p-4 text-sm space-y-2 border ${
+                    dispute.status === 'APPROVED'
+                      ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
+                      : dispute.status === 'REJECTED'
+                      ? 'bg-rose-50/90 border-rose-200 text-rose-950'
+                      : 'bg-indigo-50/90 border-indigo-200 text-indigo-950'
+                  }`}>
+                    <div className="flex items-start gap-2.5">
+                      {dispute.status === 'APPROVED' ? (
+                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                      ) : dispute.status === 'REJECTED' ? (
+                        <XCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                      ) : (
+                        <Clock className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-sm">
+                          {dispute.status === 'RESOLUTION_PENDING'
+                            ? 'Quyết định phân xử đang chờ xác nhận on-chain'
+                            : dispute.status === 'APPROVED'
+                            ? dispute.complainantRole === 'TUTOR'
+                              ? 'Kết quả: Chấp thuận khiếu nại của gia sư (Giải ngân cho gia sư)'
+                              : 'Kết quả: Chấp thuận khiếu nại (Hoàn tiền học phí cho học viên)'
+                            : dispute.complainantRole === 'TUTOR'
+                            ? 'Kết quả: Bác bỏ khiếu nại của gia sư'
+                            : 'Kết quả: Bác bỏ khiếu nại (Giải ngân học phí cho gia sư)'}
+                        </h4>
+                        <p className="whitespace-pre-wrap mt-1 text-xs leading-relaxed font-medium">
+                          {dispute.resolutionReason || 'Không có ghi chú thêm về lý do phân xử.'}
+                        </p>
+                        <div className="flex items-center gap-3 mt-2 pt-2 border-t border-black/5 text-[11px] opacity-80 flex-wrap">
+                          <span>Phân xử bởi: <strong>{dispute.resolvedByEmail || dispute.resolvedByRole || 'Staff/Admin'}</strong></span>
+                          {dispute.resolvedAt && (
+                            <span>Thời gian: {new Date(dispute.resolvedAt).toLocaleString('vi-VN')}</span>
+                          )}
+                          {dispute.status === 'RESOLUTION_PENDING' && (
+                            <span className="text-indigo-700 font-bold">Tiền đang được giữ ký quỹ chờ mạng blockchain xác nhận.</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Main Content Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -414,44 +852,46 @@ export function DisputeManagementPanel({
                       <p className="text-xs text-slate-700 font-medium pl-5 whitespace-pre-wrap">
                         {dispute.reason || 'Chưa có nội dung khiếu nại.'}
                       </p>
-                      {dispute.complainantRole === 'STUDENT' && dispute.studentEvidenceObjectKey && (
-                        <div className="pl-5 pt-1 space-y-1">
-                          <a
-                            href={dispute.studentEvidenceObjectKey.startsWith('http')
-                              ? dispute.studentEvidenceObjectKey
-                              : `https://${dispute.studentEvidenceObjectKey}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-700 font-bold border border-rose-200 rounded-lg text-[11px]"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            Xem bằng chứng của học viên
-                          </a>
-                          {dispute.studentEvidenceSha256 && (
-                            <p className="font-mono text-[10px] text-slate-400 break-all">
-                              SHA-256: {dispute.studentEvidenceSha256}
-                            </p>
-                          )}
-                        </div>
-                      )}
-                      {dispute.complainantRole === 'TUTOR' && dispute.tutorEvidenceObjectKey && (
-                        <div className="pl-5 pt-1 space-y-1">
-                          <a
-                            href={dispute.tutorEvidenceObjectKey.startsWith('http')
-                              ? dispute.tutorEvidenceObjectKey
-                              : `https://${dispute.tutorEvidenceObjectKey}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-700 font-bold border border-rose-200 rounded-lg text-[11px]"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            Xem bằng chứng gia sư gửi Staff/Admin
-                          </a>
-                          {dispute.tutorEvidenceSha256 && (
-                            <p className="font-mono text-[10px] text-slate-400 break-all">
-                              SHA-256: {dispute.tutorEvidenceSha256}
-                            </p>
-                          )}
+                      {complainantEvidence.length > 0 && (
+                        <div className="pl-5 pt-1 space-y-2">
+                          {complainantEvidence.map((evidence, index) => (
+                            <div key={evidence.id} className="rounded-xl border border-rose-100 bg-white/80 p-2.5">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                {evidence.objectKey.startsWith('disputes/') ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => openManagedEvidence(dispute.id, evidence.id)}
+                                    className="inline-flex items-center gap-1 text-rose-700 font-bold text-[11px] hover:underline"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                    File minh chứng người khiếu nại #{index + 1}
+                                  </button>
+                                ) : (
+                                  <a
+                                    href={evidence.objectKey.startsWith('http')
+                                      ? evidence.objectKey
+                                      : `https://${evidence.objectKey}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 text-rose-700 font-bold text-[11px] hover:underline"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                    Link minh chứng #{index + 1}
+                                  </a>
+                                )}
+                                {evidence.createdAt && (
+                                  <span className="text-[10px] text-slate-400">
+                                    {new Date(evidence.createdAt).toLocaleString('vi-VN')}
+                                  </span>
+                                )}
+                              </div>
+                              {evidence.sha256 && (
+                                <p className="mt-1 font-mono text-[10px] text-slate-400 break-all">
+                                  SHA-256: {evidence.sha256}
+                                </p>
+                              )}
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>
@@ -459,13 +899,13 @@ export function DisputeManagementPanel({
                     {dispute.complainantRole === 'STUDENT' && dispute.tutorResponse ? (() => {
                       const fileMatch = dispute.tutorResponse.match(/\s*\[File:\s*([^\]]+)\]$/);
                       const textOnly = fileMatch ? dispute.tutorResponse.replace(fileMatch[0], '') : dispute.tutorResponse;
-                      const fileUrl = dispute.tutorEvidenceObjectKey || (fileMatch ? fileMatch[1] : null);
+                      const legacyFileUrl = dispute.tutorEvidenceObjectKey || (fileMatch ? fileMatch[1] : null);
                       return (
-                        <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs space-y-2">
+                        <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs space-y-2.5">
                           <div className="flex items-center justify-between gap-2">
                             <div className="flex items-center gap-1.5 font-bold text-slate-700">
                               <FileText className="w-4 h-4 text-indigo-600" />
-                              <span>Phản hồi & Minh chứng từ gia sư:</span>
+                              <span>Phản hồi & Minh chứng đối chất từ gia sư:</span>
                             </div>
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                               {dispute.tutorRespondedAt
@@ -473,18 +913,73 @@ export function DisputeManagementPanel({
                                 : 'Đã nộp đối chất'}
                             </span>
                           </div>
-                          <p className="text-slate-700 text-xs pl-5 leading-relaxed">{textOnly}</p>
-                          {fileUrl && (
+                          <p className="text-slate-700 text-xs pl-5 leading-relaxed font-medium">{textOnly}</p>
+
+                          {/* Managed or structured Tutor Evidence items */}
+                          {tutorCounterEvidence.length > 0 && (
+                            <div className="pl-5 pt-1 space-y-2">
+                              {tutorCounterEvidence.map((evidence, idx) => (
+                                <div key={evidence.id} className="rounded-xl border border-indigo-100 bg-white p-2.5">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    {evidence.objectKey.startsWith('disputes/') ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => openManagedEvidence(dispute.id, evidence.id)}
+                                        className="inline-flex items-center gap-1 text-indigo-700 font-bold text-[11px] hover:underline"
+                                      >
+                                        <ExternalLink className="w-3.5 h-3.5" />
+                                        File đối chất gia sư #{idx + 1}
+                                      </button>
+                                    ) : (
+                                      <a
+                                        href={evidence.objectKey.startsWith('http') ? evidence.objectKey : `https://${evidence.objectKey}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1 text-indigo-700 font-bold text-[11px] hover:underline"
+                                      >
+                                        <ExternalLink className="w-3.5 h-3.5" />
+                                        Link đối chất #{idx + 1}
+                                      </a>
+                                    )}
+                                    {evidence.createdAt && (
+                                      <span className="text-[10px] text-slate-400">
+                                        {new Date(evidence.createdAt).toLocaleString('vi-VN')}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {evidence.sha256 && (
+                                    <p className="mt-1 font-mono text-[10px] text-slate-400 break-all">
+                                      SHA-256: {evidence.sha256}
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Fallback legacy single link if not in tutorCounterEvidence */}
+                          {legacyFileUrl && tutorCounterEvidence.length === 0 && (
                             <div className="pl-5 pt-1">
-                              <a
-                                href={fileUrl.startsWith('http') ? fileUrl : `https://${fileUrl}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 text-indigo-700 font-bold border border-indigo-200 rounded-lg text-[11px] shadow-2xs transition-all"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5 text-indigo-500" />
-                                <span>Xem file tài liệu / link minh chứng của gia sư</span>
-                              </a>
+                              {legacyFileUrl.startsWith('disputes/') ? (
+                                <button
+                                  type="button"
+                                  onClick={() => openManagedEvidence(dispute.id, `${dispute.id}-tutor-legacy`)}
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 text-indigo-700 font-bold border border-indigo-200 rounded-lg text-[11px] shadow-2xs transition-all"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5 text-indigo-500" />
+                                  <span>Xem file đối chất của gia sư</span>
+                                </button>
+                              ) : (
+                                <a
+                                  href={legacyFileUrl.startsWith('http') ? legacyFileUrl : `https://${legacyFileUrl}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 text-indigo-700 font-bold border border-indigo-200 rounded-lg text-[11px] shadow-2xs transition-all"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5 text-indigo-500" />
+                                  <span>Xem file tài liệu / link minh chứng của gia sư</span>
+                                </a>
+                              )}
                             </div>
                           )}
                         </div>
@@ -582,7 +1077,6 @@ export function DisputeManagementPanel({
                     </button>
                   </div>
                 )}
-
                 {/* Footer Resolution Actions (Staff / Admin only) */}
                 {(activeRole === 'admin' || activeRole === 'staff') && dispute.status === 'OPEN' && (
                   <div className="border-t border-slate-100 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 p-4 rounded-2xl">
@@ -633,6 +1127,74 @@ export function DisputeManagementPanel({
           })
         )}
       </div>
+
+      {/* Bottom Pagination Controls */}
+      {historyPages > 1 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+          <span className="text-xs font-semibold text-slate-500">
+            Trang {currentHistoryPage + 1} của {historyPages} ({historyItems.length} khiếu nại)
+          </span>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              disabled={currentHistoryPage === 0}
+              onClick={() => {
+                setHistoryPage(currentHistoryPage - 1);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Trước</span>
+            </button>
+
+            {Array.from({ length: historyPages }, (_, i) => i).map((pageIdx) => {
+              if (
+                historyPages > 7 &&
+                Math.abs(currentHistoryPage - pageIdx) > 2 &&
+                pageIdx !== 0 &&
+                pageIdx !== historyPages - 1
+              ) {
+                if (Math.abs(currentHistoryPage - pageIdx) === 3) {
+                  return <span key={pageIdx} className="px-1 text-xs text-slate-400">...</span>;
+                }
+                return null;
+              }
+              return (
+                <button
+                  key={pageIdx}
+                  type="button"
+                  onClick={() => {
+                    setHistoryPage(pageIdx);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className={`w-8 h-8 rounded-xl text-xs font-extrabold transition-colors ${
+                    currentHistoryPage === pageIdx
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {pageIdx + 1}
+                </button>
+              );
+            })}
+
+            <button
+              type="button"
+              disabled={currentHistoryPage + 1 >= historyPages}
+              onClick={() => {
+                setHistoryPage(currentHistoryPage + 1);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+            >
+              <span>Sau</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Create Dispute Modal for Student or Tutor */}
       {isCreateModalOpen && (
@@ -706,13 +1268,25 @@ export function DisputeManagementPanel({
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Đường dẫn bằng chứng (không bắt buộc)</label>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Tải file minh chứng (không bắt buộc)</label>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,audio/*,application/pdf,text/plain,.doc,.docx,.xls,.xlsx"
+                  onChange={(event) => setEvidenceFile(event.target.files?.[0] || null)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-rose-50 file:px-3 file:py-1.5 file:font-bold file:text-rose-700"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">Ảnh, video, âm thanh, PDF, TXT, Word hoặc Excel; tối đa 50 MB.</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">Hoặc đường dẫn bằng chứng</label>
                 <input
                   type="text"
                   value={evidenceTextInput}
                   onChange={(e) => setEvidenceTextInput(e.target.value)}
+                  disabled={!!evidenceFile}
                   placeholder="Link Google Drive, S3 hình ảnh hoặc file log..."
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-rose-500"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-rose-500 disabled:bg-slate-100"
                 />
               </div>
 
@@ -778,17 +1352,27 @@ export function DisputeManagementPanel({
                 <p className="text-slate-700 pl-5 whitespace-pre-wrap">
                   {selectedDisputeForTutor.reason || 'Học viên phản ánh sai lệch điểm danh của buổi học.'}
                 </p>
-                {selectedDisputeForTutor.studentEvidenceObjectKey && (
-                  <a
-                    href={selectedDisputeForTutor.studentEvidenceObjectKey.startsWith('http')
-                      ? selectedDisputeForTutor.studentEvidenceObjectKey
-                      : `https://${selectedDisputeForTutor.studentEvidenceObjectKey}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-rose-700 font-bold underline pl-5"
-                  >
-                    <ExternalLink className="w-3 h-3" /> Xem bằng chứng học viên gửi
-                  </a>
+                {(selectedStudentEvidence || selectedDisputeForTutor.studentEvidenceObjectKey) && (
+                  selectedStudentEvidence?.objectKey.startsWith('disputes/') ? (
+                    <button
+                      type="button"
+                      onClick={() => openManagedEvidence(selectedDisputeForTutor.id, selectedStudentEvidence.id)}
+                      className="inline-flex items-center gap-1 text-rose-700 font-bold underline pl-5"
+                    >
+                      <ExternalLink className="w-3 h-3" /> Xem file học viên gửi
+                    </button>
+                  ) : (
+                    <a
+                      href={(selectedStudentEvidence?.objectKey || selectedDisputeForTutor.studentEvidenceObjectKey || '').startsWith('http')
+                        ? (selectedStudentEvidence?.objectKey || selectedDisputeForTutor.studentEvidenceObjectKey || '')
+                        : `https://${selectedStudentEvidence?.objectKey || selectedDisputeForTutor.studentEvidenceObjectKey}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-rose-700 font-bold underline pl-5"
+                    >
+                      <ExternalLink className="w-3 h-3" /> Xem link học viên gửi
+                    </a>
+                  )
                 )}
               </div>
 
@@ -808,14 +1392,28 @@ export function DisputeManagementPanel({
 
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
-                  Đường dẫn tài liệu / ảnh chụp / video đối chất
+                  Tải file minh chứng đối chất
+                </label>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,audio/*,application/pdf,text/plain,.doc,.docx,.xls,.xlsx"
+                  onChange={(event) => setTutorEvidenceFile(event.target.files?.[0] || null)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:font-bold file:text-indigo-700"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">Ảnh, video, âm thanh, PDF, TXT, Word hoặc Excel; tối đa 50 MB.</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Hoặc đường dẫn tài liệu / ảnh chụp / video đối chất
                 </label>
                 <input
                   type="text"
                   value={tutorEvidenceUrl}
                   onChange={(e) => setTutorEvidenceUrl(e.target.value)}
+                  disabled={!!tutorEvidenceFile}
                   placeholder="Link Google Drive, ảnh chụp màn hình điểm danh, video record..."
-                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 disabled:bg-slate-100"
                 />
                 <p className="text-[11px] text-slate-400 mt-1">
                   Nhập link Google Drive hoặc file lưu trữ ảnh màn hình điểm danh, video ghi hình buổi học để Staff/Admin đối chiếu.
