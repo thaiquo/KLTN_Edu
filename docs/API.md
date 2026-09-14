@@ -29,7 +29,8 @@ from confirmed financial data. See [runtime semantics](ESCROW_HARDENING_2026-09-
 | Enrollment/Join Request | `learning-service` | Student class enrollment requests and tutor accept/reject flows. |
 | Contract/Escrow/Settlement | `contract-service` | Contract agreement, signing, document, payment submission, transaction, settlement, dispute, expiry, cancellation/refund, and blockchain workflow APIs. Funding/session/lifecycle state transitions require confirmed blockchain events where Solidity emits authoritative events. Deployment/runtime hardening remains partial end-to-end. |
 | Notification | `notification-service` | Persistent user notifications, unread count, mark one read, mark all read, and limited realtime notification delivery for the authenticated recipient account. |
-| AI Matching | Not implemented as a service | Target/planned support for search/recommendation/ranking. |
+| Chat | `notification-service` | Conversation/message persistence, participant-scoped REST APIs and raw WebSocket delivery. Web Portal integration is still partial. |
+| AI Matching | `ai-service` skeleton | Only `/api/ai/health` is implemented; recommendation/ranking/RAG/vector APIs do not exist yet. |
 
 ## 3. Current API Groups
 
@@ -59,6 +60,8 @@ Current large API groups with source evidence:
 - Notification realtime delivery through `/ws/notifications` for supported persisted notification events.
 
 Contract Service contains workflow/service logic, persistence, and REST controllers for agreement listing/detail, signing, document view/artifacts, payment submission, transactions, settlements, disputes, expiration, and cancellation/refund. Browser payment submission records an escrow `fundAgreement` transaction as `PAYMENT_CONFIRMING`; it must not mark the agreement `ACTIVE`, lock escrow funds, notify activation, or activate the learning enrollment until a confirmed `AgreementFunded` blockchain event is ingested. Session settlement, payout/refund distribution, agreement completion, expiration, cancellation, and unused refund state are likewise driven by confirmed escrow events rather than by receipt-only success.
+
+Dispute file evidence uses multipart endpoints in `DisputeEvidenceController`. Files are stored through Contract Service's local/S3 artifact abstraction; the current root environment selects S3. The database stores object key, submitting user/role, media type, SHA-256 and creation time. File content is streamed only after dispute visibility and reviewer-scope authorization; clients never receive a public permanent S3 URL.
 
 Contract Service authentication now follows the same browser-cookie baseline as the other protected services: it reads the current account from the `access_token` JWT cookie and derives `userId`, `email`, `activeRole`, and `roles` server-side. Contract list/detail/document/sign/payment/dispute/transaction authorization must not trust frontend-supplied `role`, `userId`, `email`, `X-User-Role`, `X-User-Id`, or `X-User-Email`.
 
@@ -178,6 +181,46 @@ Current Contract Service protected APIs derive identity from the authenticated c
 | Dispute list/detail/open/resolve | `access_token` cookie JWT | Student or Tutor opens only their own per-Student agreement's `BOTH_PRESENT`/`PROPOSED` settlement before its 24h deadline; reason is required and evidence is optional. Submission immediately holds only that agreement settlement. Tutor sees Student-origin complaints and may send a private response/evidence to Staff/Admin. Student cannot list or read Tutor-origin complaints and cannot read the Tutor's private response/evidence. Assigned Staff/Admin resolution requires matching active authority. Browser UI must not directly call operator/arbitrator-only Solidity functions. |
 | Agreement expire/cancel | `access_token` cookie JWT | Assigned Staff/Admin can enqueue lifecycle transactions. Scheduler also queues overdue WAITING_PAYMENT expiry. Local agreement status changes only after confirmed escrow lifecycle events. |
 | Transaction list/detail | `access_token` cookie JWT | Staff/Admin active roles can view administrative transaction lists; Student/Tutor sees own agreement transactions. |
+
+## 3.5 Session, attendance and settlement bridge
+
+| Method | Endpoint | Rule |
+| --- | --- | --- |
+| `GET` | `/api/classes/{classId}/sessions` | Returns session timeline subject to classroom access rules. |
+| `PUT` | `/api/classes/{classId}/meeting-link` | Tutor updates the classroom-level link; later sessions read the new value. |
+| `POST` | `/api/sessions/{sessionId}/student-checkin` | Current Student checks in for themself inside the session window. |
+| `GET` | `/api/sessions/{sessionId}/student-meeting-link` | Returns link only after the current Student's valid check-in. |
+| `POST` | `/api/sessions/{sessionId}/tutor-attendance` | Tutor checks in for teaching; the request cannot mark Students present. |
+| `POST` | `/api/sessions/{sessionId}/homework-submission` | Checked-in Student submits homework on their attendance record. |
+| `POST` | `/api/contracts/internal/classrooms/{classroomId}/sessions/{sessionId}/auto-propose` | Signed internal Learning call; proposes one settlement for every eligible agreement and defaults missing/corrupt attendance to `TUTOR_ABSENT`. |
+
+Learning keeps `settlementDispatched=false` until Contract returns a successful proposal list. A worker retries completed sessions after restart; Contract independently finalizes only confirmed `PROPOSED` settlements whose on-chain deadline expired and which are not disputed.
+
+## 3.6 Dispute and evidence API
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/contracts/agreements/{agreementId}/settlements/{sessionId}/dispute` | Open with required text reason and optional evidence hash/legacy metadata. |
+| `POST multipart` | `/api/contracts/agreements/{agreementId}/settlements/{sessionId}/dispute-file` | Store one managed evidence file and open the dispute. |
+| `GET` | `/api/contracts/disputes` | Role-scoped history/list. Student sees only Student-visible own cases; Tutor/Admin/Staff follow their own scope. |
+| `GET` | `/api/contracts/disputes/{id}` | Detail with visibility filtering for private Tutor-origin data/evidence. |
+| `PUT` | `/api/contracts/disputes/{id}/tutor-evidence` | Tutor response text/legacy file metadata during response window. |
+| `PUT multipart` | `/api/contracts/disputes/{id}/tutor-evidence-file` | Tutor response plus managed file during response window. |
+| `GET` | `/api/contracts/disputes/{disputeId}/evidence/{evidenceId}/content` | Authorized inline content stream with `nosniff`. |
+| `POST` | `/api/contracts/disputes/{id}/resolve` | Admin/assigned Staff queues on-chain resolution after response or response deadline. |
+
+Managed file policy: maximum 50 MB; JPEG/PNG/WebP/GIF, MP4/WebM/QuickTime, MP3/MP4 audio/WAV, PDF, TXT, DOC/DOCX and XLS/XLSX. Reason/response text is stored independently of file evidence.
+
+## 3.7 Chat API status
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/chat/conversations` | List conversations owned by authenticated email. |
+| `GET` | `/api/chat/conversations/{id}/messages` | Require participant, mark received messages read and return ordered history. |
+| `POST` | `/api/chat/messages` | Create/reuse conversation and persist a participant-validated message. |
+| WebSocket | `/ws/chat` | Push `NEW_MESSAGE` to sender and recipient authenticated sessions. |
+
+Backend chat is implemented, but current Portal `MessagesView` still uses `INITIAL_CONVERSATIONS` and simulated replies. Therefore UC008 remains partial from the user's perspective.
 
 ## 4. API Status Principle
 

@@ -21,6 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -213,6 +214,34 @@ class SessionAttendanceServiceTest {
 
         assertThat(attendance.getFinalOutcome()).isEqualTo(AttendanceOutcome.TUTOR_ABSENT);
         assertThat(session.getStatus()).isEqualTo(ClassSessionStatus.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("tutor check-in cannot mark a student present")
+    void tutorCheckInDoesNotChangeStudentAttendance() {
+        session.setSessionDate(LocalDate.now());
+        session.setStartTime(LocalTime.MIN.toString());
+        session.setEndTime(LocalTime.MAX.toString());
+
+        SessionAttendance attendance = new SessionAttendance();
+        attendance.setId(103L);
+        attendance.setSession(session);
+        attendance.setStudentId(201L);
+        attendance.setStudentChecked(false);
+        attendance.setTutorChecked(false);
+
+        when(classSessionRepository.findById(1L)).thenReturn(Optional.of(session));
+        when(sessionAttendanceRepository.findBySessionId(1L)).thenReturn(List.of(attendance));
+        when(sessionAttendanceRepository.save(any(SessionAttendance.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(classSessionRepository.save(any(ClassSession.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(sessionAccessControl.currentStudentId()).thenReturn(null);
+
+        sessionAttendanceService.tutorCheckIn(
+                1L, "tutor@edu.vn", new ClassSessionDtos.TutorAttendanceRequest(List.of(201L), "legacy payload"));
+
+        assertThat(attendance.getTutorChecked()).isTrue();
+        assertThat(attendance.getStudentChecked()).isFalse();
+        assertThat(attendance.getStudentCheckedAt()).isNull();
     }
 
     @Test

@@ -104,7 +104,7 @@ public class DisputeEvidenceController {
             @RequestPart("file") MultipartFile file) {
         DisputeEvidenceStorageService.StoredEvidence stored = null;
         try {
-            Dispute dispute = disputes.findById(id)
+            Dispute dispute = disputes.findByIdWithSettlementAndAgreement(id)
                     .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Dispute not found"));
             ContractUserPrincipal user = currentUserContext.requireCurrentUser();
             accessControl.requireCanSign(dispute.getSettlement().getAgreement(), "TUTOR", user);
@@ -113,6 +113,9 @@ public class DisputeEvidenceController {
             }
             if (dispute.getStatus() != DisputeStatus.OPEN) {
                 throw new IllegalStateException("Chỉ khiếu nại đang mở mới nhận minh chứng gia sư.");
+            }
+            if (!workflow.isTutorResponseWindowOpen(dispute, java.time.Instant.now())) {
+                throw new IllegalStateException("Đã hết thời hạn 24 giờ để gia sư gửi hoặc cập nhật giải trình.");
             }
             stored = evidenceStorage.store(
                     dispute.getSettlement().getAgreement().getId(),
@@ -140,7 +143,7 @@ public class DisputeEvidenceController {
     public ResponseEntity<byte[]> readEvidence(
             @PathVariable UUID disputeId,
             @PathVariable UUID evidenceId) {
-        Dispute dispute = disputes.findById(disputeId)
+        Dispute dispute = disputes.findByIdWithSettlementAndAgreement(disputeId)
                 .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Dispute not found"));
         ContractUserPrincipal user = currentUserContext.requireCurrentUser();
         if (!accessControl.canViewDispute(dispute, user)
@@ -155,6 +158,10 @@ public class DisputeEvidenceController {
         DisputeEvidence evidence = evidenceRepository.findById(evidenceId)
                 .filter(item -> item.getDispute().getId().equals(disputeId))
                 .orElseThrow(() -> new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Evidence not found"));
+        if (user.hasActiveAuthority("STUDENT")
+                && !"STUDENT".equalsIgnoreCase(evidence.getSubmittedByRole())) {
+            throw new ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Evidence not found");
+        }
         byte[] bytes = evidenceStorage.read(evidence.getObjectKey());
         MediaType contentType;
         try {

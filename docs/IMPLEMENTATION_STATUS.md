@@ -1,219 +1,144 @@
-# EduConnect Implementation Status
+# EduConnect — Trạng thái triển khai
 
-2026-09-12 escrow follow-up: the existing master contract is retained. Shared funding validation,
-legacy quarantine, audited failure recovery, exact rounding and confirmed financial projections are implemented
-and tested. Backend settlement and dispute flows pass isolated Anvil integration tests. See
-[current-deployment evidence and limits](ESCROW_HARDENING_2026-09-12.md).
-The first real Sepolia payout was confirmed at Sepolia block `11688753`: 0.51 USDC reached the tutor,
-0.09 USDC reached the platform, and the agreement now has 4.2 USDC remaining. This is an end-to-end
-proof for this one normal settlement, not a claim that every production concern or complaint type is complete.
+> Audit theo source, migration, test và bằng chứng runtime đến **2026-09-14**.  
+> `IMPLEMENTED` chỉ dùng khi flow chính có đủ backend/persistence/security/client evidence; không đồng nghĩa production-ready tuyệt đối.
 
-## 1. Status Definitions
+## 1. Định nghĩa
 
-- `IMPLEMENTED`: flow chính đã có implementation đủ bằng chứng.
-- `PARTIAL`: đã có một phần implementation nhưng chưa hoàn chỉnh.
-- `PLANNED`: thuộc target design và dự kiến triển khai sau.
-- `NOT_IMPLEMENTED`: target có nhưng source hiện chưa có implementation.
-- `KNOWN_CONFLICT`: implementation hiện tại có mâu thuẫn đã xác định.
-- `NEEDS_VERIFICATION`: chưa đủ bằng chứng kết luận.
+- `IMPLEMENTED`: flow chính trong phạm vi ghi chú đã có đủ bằng chứng.
+- `PARTIAL`: đã có thành phần thật nhưng người dùng hoặc vận hành chưa đi hết flow.
+- `SKELETON`: module chạy được nhưng chỉ có khung/health.
+- `NOT_IMPLEMENTED`: chưa có implementation nghiệp vụ.
+- `LIMITED`: đã chạy nhưng bị giới hạn bởi thiết kế/version/deployment.
+- `NEEDS_VERIFICATION`: source có dấu hiệu nhưng chưa đủ bằng chứng end-to-end.
 
-## 2. Service Status
+## 2. Tổng quan service
 
-| Service | Responsibility | Status | Notes |
-|---|---|---|---|
-| `api-gateway` | Spring Cloud Gateway route account-service, learning-service, notification-service, and WebSocket paths. | IMPLEMENTED | Routes are configured in `backend/api-gateway/src/main/resources/application.properties`. No gateway JWT verification filter found. |
-| `account-service` | Auth, short-lived JWT cookie, refresh token rotation/session revocation, OTP, users, roles, student/tutor profile, tutor application, staff approval, admin user operations, S3 avatar/documents, RabbitMQ events. | IMPLEMENTED | Main source under `backend/account-service/src/main/java`. |
-| `learning-service` | Subject/catalog, tutor subject registrations, availability, classes, schedules/chapters, enrollment requests, rolling weekly sessions, attendance, homework gating, and RabbitMQ/Contract integration. | IMPLEMENTED | Core class/join/catalog flows exist; rolling session generation, strict session attendance check-in, homework gating, and automatic settlement proposal dispatch to contract-service are implemented with tests. |
-| `contract-service` | Contract agreement, escrow payment, settlement, dispute, lifecycle refund/expiry, blockchain transaction dispatch, Web3j read/write/event ingestion, and internal auto-propose bridge. | IMPLEMENTED | Entities/workflows and REST controllers exist for agreement listing/detail, signing, document view, payment submission, transactions, settlement propose/finalize, per-Student auto-propose, Student/Tutor dispute opening with persisted role/reason/optional evidence, private Tutor submissions, Staff/Admin resolution, expiry, and cancellation/refund. Protected contract APIs derive caller identity from the `access_token` cookie JWT. A valid complaint immediately holds its own settlement. The 24h window and 85/15, 45/10/45, 0/0/100 settlement distributions are implemented. |
-| `notification-service` | Persistent user notifications, read/unread REST APIs, RabbitMQ event consumers, event idempotency, frontend Bell integration, and limited realtime notification delivery. | PARTIAL | Backend foundation exists with Flyway/JPA persistence, consumers for tutor application reviewed, teaching registration reviewed, subject request reviewed, and enrollment request events, plus raw WebSocket delivery for newly persisted notifications. Student and Portal Bell UI use REST list/unread/read APIs with realtime query invalidation and module-level click navigation to existing routes/Portal pages. Reviewer-audience notifications remain blocked until producer events carry reviewer recipient ids. |
-| `eureka-server` | Listed in root Maven modules. | NEEDS_VERIFICATION | Directory contains only build output under `target/`; no active source/pom found in current scan. |
-| `ai-service` | Target AI Matching service. | NOT_IMPLEMENTED | No module/source/config found. |
+| Service | Trạng thái | Bằng chứng và giới hạn |
+| --- | --- | --- |
+| `api-gateway` | IMPLEMENTED | Route Account/Learning/Contract/Notification/Chat/AI và bốn WebSocket route; credentialed CORS. Gateway không phải identity authority. |
+| `account-service` | IMPLEMENTED | Auth cookie JWT, OTP, refresh rotation/revocation, role/activeRole, profile, wallet, Tutor application/documents, Staff/Admin management, S3, mail, RabbitMQ. |
+| `learning-service` | IMPLEMENTED | Catalog, Tutor registration/availability, classroom, enrollment, rolling session, attendance, meeting-link gate, homework và settlement delivery. |
+| `contract-service` | IMPLEMENTED + LIMITED | Agreement/signing/document/funding/settlement/refund/dispute/evidence/transaction recovery chạy thật trên Sepolia; V1 dispute chỉ cho `BOTH_PRESENT`, legacy rows bị cách ly và ops còn giới hạn. |
+| `notification-service` | IMPLEMENTED/PARTIAL | Notification persistence, REST, Rabbit consumer, WebSocket hoạt động cho event đã nối. Chat backend có persistence/API/WebSocket nhưng Web Messages chưa nối. |
+| `ai-service` | SKELETON | Có Spring Boot module và `GET /api/ai/health`; chưa có matching/RAG/model/vector. |
+| `frontend-web` | IMPLEMENTED/PARTIAL | Flow chính Account/Learning/Contract/Dispute/Wallet/Notification có dữ liệu thật; một số Portal dashboard/message vẫn chứa mock state. |
+| `mobile-app` | PARTIAL | Login/register/home cơ bản; không có parity với Web. |
 
-Feedback/notification/realtime architecture rules are maintained in `docs/FEEDBACK_NOTIFICATION_SPEC.md`. That living spec distinguishes local UI feedback, persistent notification, Bell center behavior, RabbitMQ events, WebSocket delivery, and TanStack Query invalidation. `PLANNED` rows in that spec are future requirements only, not implementation requests.
+## 3. Trạng thái use case
 
-## 3. Use Case Implementation Status
+| UC | Use case | Backend | Web | Mobile | Kết luận |
+| --- | --- | --- | --- | --- | --- |
+| UC001 | Đăng ký | IMPLEMENTED | IMPLEMENTED | PARTIAL | OTP email hoàn chỉnh trên Web. |
+| UC002 | Đăng nhập | IMPLEMENTED | IMPLEMENTED | PARTIAL | Cookie access/refresh, refresh rotation và logout/revoke. |
+| UC003 | Tra cứu | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Search/filter gia sư và lớp; chưa phải AI search. |
+| UC004 | Student quản lý yêu cầu tham gia | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Gửi, xem, hủy. |
+| UC005 | Student quản lý thông tin cá nhân | IMPLEMENTED | IMPLEMENTED | PARTIAL | Profile/avatar/password/wallet trên Web. |
+| UC006 | Student/Tutor quản lý hợp đồng | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Snapshot, ký EIP-712, artifact, lifecycle và scope theo actor. |
+| UC007 | Bài đăng tìm gia sư | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | Chưa có domain/controller. |
+| UC008 | Tin nhắn Student–Tutor | IMPLEMENTED | PARTIAL | NOT_IMPLEMENTED | Backend persistence/API/WebSocket có; Portal vẫn dùng mock/in-memory. |
+| UC009 | Xem thông tin lớp | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Marketplace/list/detail và lớp đã tham gia. |
+| UC010 | Student quản lý bài tập | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Xem/nộp text/file; nội dung bị gate bằng điểm danh. |
+| UC011 | Student thanh toán/ký quỹ | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | `approve` + `fundAgreement`; ACTIVE chỉ sau confirmed event. |
+| UC012 | Tutor quản lý hồ sơ | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | DRAFT/PENDING/REJECTED/APPROVED và document flow. |
+| UC013 | Tutor quản lý yêu cầu tham gia | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Accept/reject; ENROLLED sau funding confirm. |
+| UC014 | Tutor quản lý lịch rảnh | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | API/UI hiện có. |
+| UC015 | Tutor quản lý lớp | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Create/update/visibility/schedule/chapter/student capacity. |
+| UC016 | Buổi học và điểm danh | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Rolling sessions, điểm danh độc lập, auto-finalize, link gate. |
+| UC017 | Tutor quản lý bài tập | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Chủ đề, đề/file, xem bài nộp/chấm. |
+| UC018 | Tutor theo dõi thu nhập | IMPLEMENTED/PARTIAL | IMPLEMENTED/PARTIAL | NOT_IMPLEMENTED | Wallet/settlement có số confirmed; chưa có báo cáo kế toán chuyên sâu. |
+| UC019 | Staff kiểm duyệt nội dung | IMPLEMENTED/PARTIAL | IMPLEMENTED/PARTIAL | NOT_IMPLEMENTED | Tutor, teaching registration, catalog suggestion và class review; không có post moderation vì UC007 chưa có. |
+| UC020 | Quản lý vi phạm | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | Chưa có violation module. |
+| UC021 | Giám sát lớp | PARTIAL | PARTIAL | NOT_IMPLEMENTED | Có class/contract/dispute view theo reviewer; chưa có monitoring tổng hợp hoàn chỉnh. |
+| UC022 | Xử lý khiếu nại | IMPLEMENTED + LIMITED | IMPLEMENTED | NOT_IMPLEMENTED | Per-agreement, history, S3 evidence, Tutor response window, Staff/Admin arbitration; V1 chỉ `BOTH_PRESENT`. |
+| UC023 | Hỗ trợ người dùng | PARTIAL | PARTIAL | NOT_IMPLEMENTED | Chưa có support-ticket domain riêng. |
+| UC024 | Admin quản lý người dùng | IMPLEMENTED | IMPLEMENTED/PARTIAL | NOT_IMPLEMENTED | List/detail/status hiện có. |
+| UC025 | Admin quản lý danh mục | IMPLEMENTED | IMPLEMENTED/PARTIAL | NOT_IMPLEMENTED | CRUD/import catalog hiện có. |
+| UC026 | Admin quản lý blockchain | IMPLEMENTED/PARTIAL | IMPLEMENTED/PARTIAL | NOT_IMPLEMENTED | Transaction/financial audit có; chưa có full operator observability/multi-RPC. |
+| UC027 | Admin quản lý thanh toán | IMPLEMENTED/PARTIAL | IMPLEMENTED/PARTIAL | NOT_IMPLEMENTED | Financial overview/settlement/transaction list có; chưa phải hệ kế toán đầy đủ. |
+| UC028 | Báo cáo thống kê | PARTIAL | PARTIAL | NOT_IMPLEMENTED | Có dashboard/stats rời rạc, chưa có reporting suite. |
 
-| UC | Use Case | Backend | Web | Mobile | Overall | Notes |
-|---|---|---|---|---|---|---|
-| UC001 | Đăng ký | IMPLEMENTED | IMPLEMENTED | PARTIAL | PARTIAL | Backend/Web include OTP verification; mobile has basic register call but no full OTP flow. |
-| UC002 | Đăng nhập | IMPLEMENTED | IMPLEMENTED | PARTIAL | IMPLEMENTED | Account login sets `access_token` and `refresh_token` cookies; Web refresh retry exists; mobile login is basic. |
-| UC003 | Tra cứu | PARTIAL | IMPLEMENTED | NOT_IMPLEMENTED | PARTIAL | Tutor/class public search exists; student post search not found. |
-| UC004 | Quản lý yêu cầu tham gia lớp | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Enrollment request send/cancel/list exists. |
-| UC005 | Quản lý thông tin cá nhân | IMPLEMENTED | IMPLEMENTED | PARTIAL | IMPLEMENTED | Profile/password/avatar exist on Web/backend; mobile only restores user basic state. |
-| UC006 | Quản lý hợp đồng | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Contract entities/workflows and REST APIs exist. Student `/contracts` reuses the shared real contract view; blockchain registration and confirmed funding workflows exist, while deployment/runtime hardening remains partial. |
-| UC007 | Quản lý bài đăng tìm gia sư | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | No backend entity/controller found. |
-| UC008 | Quản lý tin nhắn | NOT_IMPLEMENTED | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Web has mock/in-memory messaging UI; no backend persistence/API found. |
-| UC009 | Xem thông tin lớp học | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Public class list/detail flow exists. |
-| UC010 | Quản lý bài tập | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Tutor assigns homework per session; checked-in students can view and submit text/file evidence; Tutor can review submissions. |
-| UC011 | Quản lý thanh toán | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Escrow/payment data exists. Student Web keeps `/payments` as the payment/escrow entry point and uses `/student/wallet` as wallet-focused access. Browser funding uses escrow `fundAgreement`; submitted txHash enters `PAYMENT_CONFIRMING`, and backend activation waits for confirmed `AgreementFunded`. Address/deployment verification remains incomplete. |
-| UC012 | Quản lý hồ sơ gia sư | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Tutor application/profile/documents are implemented. |
-| UC013 | Quản lý yêu cầu tham gia lớp | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Tutor accept/reject/list requests exists. |
-| UC014 | Quản lý lịch rảnh | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Tutor availability API/UI exists. |
-| UC015 | Quản lý lớp học | PARTIAL | IMPLEMENTED | NOT_IMPLEMENTED | PARTIAL | Class create/update/visibility exists; full learning lifecycle is incomplete. |
-| UC016 | Quản lý buổi học & Điểm danh | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | ClassSession and one SessionAttendance row per enrolled Student are generated for rolling weekly sessions. Student My Classes features a dedicated class workspace (switching from list to workspace without awkward inline accordions) highlighting "Buổi học hôm nay", interactive Course Roadmap Stepper ("xem học đến buổi mấy"), and full session history. Tutor and each Student check in independently within the session window; online meeting link is gated until check-in, and finalized outcomes feed the automatic settlement bridge. |
-| UC017 | Quản lý bài tập theo buổi | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Tutor assigns topic/homework/attachments per session. Student can only access assignment details after check-in. |
-| UC018 | Theo dõi thu nhập | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Settlement/payment data exists; no complete tutor income flow found. |
-| UC019 | Kiểm duyệt nội dung | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Tutor approval, subject/class review exist; post moderation not found. |
-| UC020 | Quản lý vi phạm | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | No violation module found. |
-| UC021 | Giám sát lớp học | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Admin/staff class review/management exists, not full monitoring. |
-| UC022 | Xử lý khiếu nại | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | IMPLEMENTED | Student and Tutor can complain within 24h on their own per-Student settlement. Tutor sees and is notified immediately about Student complaints; Tutor-origin complaints and Tutor counter-evidence remain private from Student. Admin/assigned Staff resolves the shared queue. V1 on-chain arbitration remains limited to `BOTH_PRESENT`. |
-| UC023 | Hỗ trợ người dùng | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Admin/staff user management exists; no support ticket module found. |
-| UC024 | Quản lý người dùng | IMPLEMENTED | PARTIAL | NOT_IMPLEMENTED | IMPLEMENTED | Admin/staff user APIs exist. |
-| UC025 | Quản lý danh mục | IMPLEMENTED | PARTIAL | NOT_IMPLEMENTED | IMPLEMENTED | Admin teaching catalog APIs exist. |
-| UC026 | Quản lý Blockchain | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Backend Web3j read/write/event ingestion exists; frontend funding/read ABI aligns to current Solidity for active Web3 use, and post-active lifecycle writes are backend-owned durable transactions. Sepolia deployment evidence remains partial. |
-| UC027 | Quản lý thanh toán | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Admin payment monitoring is not complete. |
-| UC028 | Báo cáo thống kê | PARTIAL | PARTIAL | NOT_IMPLEMENTED | PARTIAL | Some dashboards/stats exist; no comprehensive reporting flow found. |
+## 4. Trạng thái theo phân hệ
 
-## 4. Feature Status
+### Account và security
 
-| Feature | Status | Notes |
-|---|---|---|
-| Authentication | IMPLEMENTED | Account service login/register/OTP/password reset/logout plus refresh token rotation/revocation; Web CSRF-aware API client retries refresh once on 401. |
-| Student Profile | IMPLEMENTED | User profile and activate-student flows exist. |
-| Tutor Profile | IMPLEMENTED | Tutor profile and public tutor APIs exist. |
-| Tutor Registration | IMPLEMENTED | Tutor registration creates a `DRAFT` tutor application; current review submission requires identity documents only. |
-| Tutor Approval | IMPLEMENTED | Staff tutor application approval/rejection exists; `DRAFT`/`PENDING`/`REJECTED` Tutors can use restricted Tutor context, while APPROVED is required for full Tutor operations such as class/teaching registration. |
-| Search | PARTIAL | Tutor/class search exists; AI ranking and student post search are missing. |
-| Tutor Availability | IMPLEMENTED | API/UI exist. |
-| Class | PARTIAL | Class recruitment and review exist; full learning lifecycle incomplete. |
-| Join Request | IMPLEMENTED | Student request and tutor accept/reject/cancel flows exist. |
-| Student Post | NOT_IMPLEMENTED | No source evidence found. |
-| Messaging | PARTIAL | Web mock UI only; backend persistence/API not found. |
-| Contract | PARTIAL | Contract-service entities/workflows, REST APIs, Tutor contract flow, and Student `/contracts` shared contract view exist; registration/funding workflows require confirmed blockchain events before state activation. |
-| Session | IMPLEMENTED | ClassSession entity, rolling generator, timeline UI, topic & meeting link management implemented. |
-| Attendance | IMPLEMENTED | SessionAttendance entity, student check-in, tutor check-in, strict window validation, auto-finalize scheduler, outcome resolution (BOTH_PRESENT, STUDENT_ABSENT_TUTOR_PRESENT, TUTOR_ABSENT). |
-| Homework | IMPLEMENTED | Assignment title, description, and file attachment per session; access gated to checked-in students. |
-| Payment | PARTIAL | Escrow payment entities/workflows exist. Student `Thanh toán & Ký quỹ` remains a payment/escrow entry point, while `Ví của tôi` is a wallet-focused Web3 access point reusing `MyWalletView`. Payment submission records a funding txHash as confirmation-pending; it does not activate the agreement until `AgreementFunded` is confirmed. |
-| Income | PARTIAL | Settlement data supports income concept; no complete tutor income API found. |
-| Complaint | PARTIAL | Contract dispute workflow/evidence exists; full complaint module not found. |
-| Notification | PARTIAL | Backend Notification Service has persistence, read/unread REST APIs, JWT-cookie recipient ownership checks, RabbitMQ consumers for recipient-available tutor application, teaching registration, subject request, class review, and enrollment events, idempotency by `eventId` + `recipientUserId`, frontend REST Bell UI with mark-read-on-click plus module-level navigation, and raw WebSocket delivery for newly persisted notifications in the supported event slice. Exact-item deep links and archive/delete remain not implemented. |
-| AI Matching | NOT_IMPLEMENTED | No ai-service, Qdrant, Spring AI, embedding, or ranking implementation found. |
-| Blockchain | PARTIAL | Solidity + Web3j implemented; Web has wallet-focused access through Student `/student/wallet` and Tutor Portal `wallet`, both reusing `MyWalletView`; funding confirmation is event-driven, while address/deployment verification and Sepolia evidence remain partial. |
-| Escrow | PARTIAL | Smart Contract ERC-20 escrow implemented; app funding uses escrow `fundAgreement` and backend activation requires confirmed `AgreementFunded`. |
-| Settlement | IMPLEMENTED | Smart Contract, backend workflow/API, event ingestion, amount persistence, Audit Timeline UI controls, and automatic bridge from finalized learning sessions to contract settlement proposals with 24h dispute window. |
-| Refund | PARTIAL | Smart Contract cancellation/unused refund, backend workflow/API/event ingestion, and admin/staff UI action exist; broader accounting/income reporting remains partial. |
-| Dispute | PARTIAL | Smart Contract, backend workflow/API/event ingestion, and UI dispute management exist for per-Student `BOTH_PRESENT` disputes. Student/Tutor may submit during the 24h window and submission immediately blocks finalization. Tutor receives an immediate Bell notification and sees Student complaint content/evidence. Tutor-origin complaints plus Tutor responses/evidence are hidden from Student and visible to assigned Staff/Admin. Broader on-chain complaint outcomes require a newer Solidity contract. |
-| Admin Management | IMPLEMENTED | User/catalog/class review APIs exist in part; reports/payment/blockchain admin are partial. |
+- IMPLEMENTED: register, verify/resend OTP, login, refresh, switch role, logout, forgot/reset password.
+- IMPLEMENTED: short-lived `access_token` và rotating `refresh_token` trong HttpOnly cookie; CSRF double-submit cookie/header cho state-changing browser request.
+- IMPLEMENTED: multi-role + `activeRole`; quyền Tutor đầy đủ chỉ khi Tutor/TutorApplication `APPROVED`.
+- IMPLEMENTED: avatar, profile, password, wallet address, geography reference.
+- IMPLEMENTED: Tutor identity evidence trên S3, SHA-256 và presigned access.
 
-## 5. Infrastructure Status
+### Learning
 
-| Infrastructure | Status | Notes |
-|---|---|---|
-| PostgreSQL | IMPLEMENTED | Services use PostgreSQL `kltn_db` with separate Flyway history tables. |
-| RabbitMQ | PARTIAL | Account/Learning events exist; Contract integration not wired via RabbitMQ. |
-| S3 | IMPLEMENTED | Account-service implements avatar and tutor document storage. |
-| Docker | PARTIAL | `docker-compose.yml` provides PostgreSQL and RabbitMQ only. |
-| Qdrant | NOT_IMPLEMENTED | No container/config/source found. |
-| Blockchain | PARTIAL | Solidity + Web3j implemented; Web has wallet-focused access through Student `/student/wallet` and Tutor Portal `wallet`, both reusing `MyWalletView`; funding confirmation is event-driven, while address/deployment verification and Sepolia evidence remain partial. |
-| Sepolia | PARTIAL | Deployed bytecode and operator/arbitrator roles were verified at the configured address on 2026-09-11. Current local agreements/payment rows are not reconciled: four locally `ACTIVE` agreements are `NONE` on-chain, and historical payments transferred 38.4 USDC directly to the escrow address without `fundAgreement`, leaving the tokens unallocated in V1. Backend operator credentials are not configured/enabled. |
+- IMPLEMENTED: normalized teaching catalog, Tutor teaching registration, evidence và Staff/Admin review.
+- IMPLEMENTED: availability, classroom/schedule/chapter, public marketplace, review/visibility, enrollment lifecycle.
+- IMPLEMENTED: rolling session generation, startup/periodic catch-up, một attendance row trên mỗi Student đã enrol.
+- IMPLEMENTED: Student/Tutor tự điểm danh; Tutor chỉ xem ai có/không có mặt và không thể đánh dấu hộ Student.
+- IMPLEMENTED: meeting link nằm cấp classroom; Tutor cập nhật được và các buổi dùng giá trị mới. Student chỉ đọc được sau check-in.
+- IMPLEMENTED: homework description/file bị ẩn trước check-in; submission dùng attendance-owned record.
+- IMPLEMENTED: delivery worker retry các session `COMPLETED` có `settlementDispatched=false`.
 
-## 6. Known Conflicts
+### Contract, document và escrow
 
-### Web3 ABI mismatch
+- IMPLEMENTED: canonical `terms_json`/`terms_hash`, hai chữ ký EIP-712 được backend recover/verify theo ví đã chốt.
+- IMPLEMENTED: poi-tl sinh DOCX, Gotenberg chuyển PDF, local/S3 storage abstraction và artifact hash/status.
+- IMPLEMENTED: durable backend blockchain pipeline, idempotency, locking, preflight, dispatch, receipt watch, event cursor/processed-event.
+- IMPLEMENTED: funding confirmation, per-session proposal/finalization, cancellation/refund unused và expiration.
+- IMPLEMENTED: settlement distribution amounts lưu từ event, wallet/audit timeline dùng thời điểm/hash confirmed.
+- IMPLEMENTED: catch-up sau restart và bounded auto-retry cho lỗi chắc chắn trước broadcast.
+- LIMITED: chỉ một operator instance và một RPC primary; unknown receipt/confirmed revert không tự retry mù.
+- LIMITED: bốn agreement legacy raw-transfer được `legacy_excluded`, chỉ còn giá trị audit.
 
-Solidity source of truth:
+### Dispute
 
-- `blockchain/src/interfaces/IEduConnectEscrow.sol`
-- `blockchain/src/EduConnectEscrow.sol`
-- `agreementId` and `sessionId` are `bytes32`.
-- `registerAgreement(bytes32,address,address,bytes32,uint256,uint256,uint32)`.
-- Settlement uses `proposeSessionSettlement(...)` and `finalizeSession(...)`.
-- Refund cancellation uses `cancelAgreementAndRefundUnused(bytes32,bytes32)`.
+- IMPLEMENTED: Student hoặc Tutor mở đơn cho agreement của chính mình trong cửa sổ proposal 24 giờ.
+- IMPLEMENTED: khi đơn hợp lệ được ghi nhận, settlement bị giữ và scheduler không finalize.
+- IMPLEMENTED: text reason; file ảnh/video/audio/PDF/TXT/Word/Excel tối đa 50 MB; S3 object key + SHA-256 metadata.
+- IMPLEMENTED: Student thấy đơn của mình; Tutor thấy Student-origin complaint; Staff theo reviewer và Admin thấy theo quyền.
+- IMPLEMENTED: Tutor response/evidence là dữ liệu riêng cho Tutor/Staff/Admin; Student không đọc được.
+- IMPLEMENTED: Tutor có 24 giờ từ `submittedAt`; Staff/Admin xử lý khi có phản hồi hoặc sau hạn; không có arbitration deadline tiếp theo.
+- IMPLEMENTED: approve hoàn 100%; reject trả 85/15 cho đề xuất `BOTH_PRESENT`.
+- LIMITED: Solidity V1 không mở dispute on-chain cho `STUDENT_ABSENT_TUTOR_PRESENT` hoặc `TUTOR_ABSENT`.
 
-Frontend current ABI:
+### Notification và chat
 
-- `frontend-web/src/web3/web3Config.ts`
-- Uses `uint256 agreementId`.
-- Declares old/different functions such as `settleSessionProposal(...)`, `cancelAndRefundAgreement(uint256)`, and `getDispute(...)`.
-- Event signatures also use `uint256` and old fields.
+- IMPLEMENTED: Notification CRUD read state, unread count, mark one/all, recipient ownership, idempotent Rabbit consumer, `/ws/notifications`.
+- IMPLEMENTED theo producer hiện có: Tutor application, teaching registration, subject request, class review, enrollment và một số contract/settlement/dispute notification gửi nội bộ.
+- PARTIAL: chưa phải mọi session/homework action đều phát persistent notification; exact-item deep link/archive/delete chưa đầy đủ.
+- IMPLEMENTED backend chat: conversation/message tables, participant authorization, unread marking, REST và `/ws/chat`.
+- PARTIAL Web chat: API client tồn tại nhưng `MessagesView` vẫn nhận `INITIAL_CONVERSATIONS` và sinh phản hồi giả.
 
-Status: `KNOWN_CONFLICT`. Frontend Web3 flow must not be treated as complete until ABI, addresses, and wrapper logic match Solidity.
+### AI
 
-### Web3 local address mismatch
+- SKELETON: module Maven/Spring Boot port 8085, Gateway route và health endpoint.
+- NOT_IMPLEMENTED: hard-filter orchestration, scoring/ranking, embeddings, Qdrant, RAG, LLM/chatbot, eval/monitoring.
 
-Current frontend defaults in `frontend-web/src/web3/web3Config.ts` set Anvil `escrow` to `0x5Fb...` and `usdc` to `0xe7f...`. Phase 2 audit found Anvil deployment evidence with token at `0x5fb...` and escrow at `0xe7f...`.
+## 5. Bằng chứng Sepolia hiện tại
 
-Status: `KNOWN_CONFLICT`. Verify current deployment artifact before using Web3 UI.
+- Master escrow: `0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3`.
+- Circle Sepolia test USDC: `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`.
+- Funding thật đã được `AgreementFunded` ingest cho agreement hoạt động.
+- Payout `BOTH_PRESENT` 0.6 USDC: 0.51 Tutor + 0.09 Platform, tx `0xd835b8ae250b20141feb32d26eb081ca1a0d532c9c6780b9622812c91990dc2`.
+- Refund `TUTOR_ABSENT` 0.6 USDC cho Student, tx `0xf608981a95f001b0cc5bd338995bd2cb54cc4addcf35b15957e06536005a3ec1`.
 
-### Security JWT extraction
+Đây là bằng chứng cho các kịch bản cụ thể, không phải cam kết production SLA cho mọi điều kiện mạng.
 
-Account service `JwtAuthenticationFilter`, Learning service `CookieJwtAuthenticationFilter`, Notification service auth, and Contract service auth read browser JWT from HttpOnly cookie `access_token`.
+## 6. Kiểm chứng gần nhất
 
-Contract Service now uses JWT claims (`userId`, subject email, `activeRole`, and `roles`) for agreement/document/sign/payment/dispute/transaction authorization. Frontend `role`, `userId`, `email` query parameters and `X-User-*` headers are not authoritative for Contract Service authorization.
+- Contract: 14 test scheduler/transaction restart-recovery đã pass ngày 2026-09-14.
+- Learning: 12 test attendance + settlement delivery đã pass ngày 2026-09-14.
+- Trước đó: 35 Solidity unit/fuzz/invariant test pass; isolated Anvil end-to-end pass; frontend TypeScript và Vite build pass theo escrow hardening report.
+- Database runtime ngày 2026-09-14: mọi session `COMPLETED` đều đã `settlement_dispatched=true`; không có failed transaction hợp lệ/actionable; legacy failures được cách ly.
 
-Status: resolved for Account/Learning browser token extraction. Browser architecture remains cookie-based and must not be documented as Bearer-only.
+## 7. Việc còn lại ưu tiên
 
-### Tutor application lifecycle and restricted mode
+1. Nối Portal Messages vào chat API/WebSocket, bỏ mock conversation/reply.
+2. Triển khai AI Matching thật hoặc giữ UI ở trạng thái “chưa sẵn sàng”, không quảng bá như đã dùng AI.
+3. Hoàn thiện mobile theo các flow Web cần thiết.
+4. Bổ sung violation/support ticket và reporting tổng hợp.
+5. Tăng cường production ops: multi-RPC/failover, operator HA an toàn, metrics/alerting, backup/restore drill.
+6. Nếu cần khiếu nại cho outcome ngoài `BOTH_PRESENT`, thiết kế/deploy Solidity version mới; không vá lệch backend với V1.
 
-Tutor application lifecycle now distinguishes account existence from Staff review submission:
+## 8. Nguyên tắc cập nhật
 
-- New Tutor registration creates a `TutorApplication` in `DRAFT`.
-- `DRAFT` means the Tutor account/application exists but has not been submitted for Staff review.
-- Current submit/resubmit completeness requires identity evidence only: CCCD/CMND front + back, or passport.
-- Submit/resubmit changes the application to `PENDING`.
-- Staff approval changes application/Tutor status to `APPROVED`.
-- Staff rejection changes application/Tutor status to `REJECTED` and preserves the rejection reason.
-
-Tutor `DRAFT`, `PENDING`, and `REJECTED` can authenticate with `activeRole=TUTOR` for restricted onboarding/profile correction when using the Tutor login flow. Account Service withholds `ROLE_TUTOR` unless Tutor status is `APPROVED`; Learning Service uses a local approval projection from Account events as the priority source for full Tutor authority, with a signed JWT `tutorStatus=APPROVED` fallback when projection has not arrived yet. `POST /api/auth/switch-role` is stricter: switching into Tutor mode is allowed only when both Tutor and TutorApplication are `APPROVED`, so Student -> Tutor cannot bypass Staff approval.
-
-Status: IMPLEMENTED for backend auth/authorization and Web restricted routing. Mobile is out of scope for this status.
-
-## 7. Planned Major Work
-
-- AI Matching service with hard filtering, content-based scoring, weighted scoring, semantic similarity, Qdrant and Spring AI.
-- Student post / tutor-search post domain.
-- Messaging backend persistence/API/realtime delivery.
-- Remaining realtime/persistent notifications for ordinary session, attendance and homework activity (the underlying session, attendance, homework, submission and grading flows are implemented).
-- Complete Contract blockchain registration/funding semantics, settlement/refund/dispute runtime flow, and remaining payment/admin hardening.
-- Payment/income APIs and admin payment management.
-- End-to-end Learning session completed -> Contract settlement -> Blockchain flow.
-- Reviewer-recipient event payloads, broader producer coverage for all notification-worthy events, and richer Notification WebSocket integration beyond the current persisted-notification creation slice. Tutor-recipient teaching registration review notifications are implemented; reviewer-audience teaching registration submission notifications remain future work.
-- Mobile expansion beyond auth/home.
-- Sepolia deployment evidence and environment documentation.
-- Frontend ABI/address alignment with Solidity.
-
-## 8. Update Rule
-
-Runtime follow-up (2026-09-11): operator supports a password secret file for
-unattended restarts and simulates transactions before signing. Secret-file,
-preflight, dispatcher integration and catch-up scheduler tests pass (12 tests).
-This does not change Sepolia readiness: the operator is disabled locally and the
-four legacy ACTIVE agreements still require funding reconciliation. No successful
-Sepolia per-session transfer is claimed by these tests.
-
-Subsequent runtime check on the same day: keystore password verified, operator
-enabled and Learning/Contract restarted. Five completed sessions replayed into ten
-proposals. Old intents fail sender validation (legacy Anvil platform wallet), and
-all four agreement IDs remain NONE on Sepolia. New agreement initiation now reads
-deployment addresses from the validated gateway. Root `.env` is shared with Vite;
-see `ENV_SETUP.md`. These findings supersede earlier local-operator-disabled notes.
-
-Latest runtime check on 2026-09-11: a fifth, correctly configured agreement was
-subsequently funded through `fundAgreement`; the confirmed `AgreementFunded`
-event activated local agreement `6355b191-333a-426b-8f24-a1f06177fd4c` and its
-Learning enrollment. The browser funding transaction is
-`0x3cafb9035e00c71030b1565be44eec51e22f734e6bbda6b6038522c25aab1e44`.
-No successful Sepolia per-session payout has yet been observed, so funding is
-verified but the first real payout remains pending an eligible completed session
-and its 24-hour on-chain dispute window.
-The fifth agreement's registration was a one-off recovery broadcast, not a live
-end-to-end proof of automatic registration; its local transaction audit metadata
-was reconciled from the confirmed Sepolia transaction.
-
-Current operational boundary: only a matching confirmed `AGREEMENT_FUNDED`
-processed event makes an ACTIVE agreement settlement-eligible. Four old ACTIVE
-rows across `Toán lớp 2 (2026-001)` and `Vật lý 11 (001 -2026)` have no such
-event and are now excluded from automatic proposals, settlement/refund actions,
-and financial KPIs. They remain visible only as legacy audit records. Admin can
-audit all contracts; Staff is restricted to assigned classroom/reviewer scope;
-neither role can sign for Student or Tutor. Manual whole-agreement lifecycle
-actions (`expire`, `cancel/refund unused`) are Admin-only; Staff remains scoped
-to assigned monitoring, settlement management, and dispute resolution.
-
-Update this file when implementation changes significantly, especially when a feature moves:
-
-- `NOT_IMPLEMENTED` -> `PARTIAL`
-- `PARTIAL` -> `IMPLEMENTED`
-- `KNOWN_CONFLICT` -> resolved status
-
-Do not modify `docs/BUSINESS_RULES.md` only because implementation status changes. Business target and current implementation are separate.
+Khi source thay đổi, cập nhật file này dựa trên đủ bằng chứng: entity/migration + service + controller/security + client + test/runtime phù hợp. Không dùng UI mock, comment hoặc tên file làm bằng chứng duy nhất cho `IMPLEMENTED`.

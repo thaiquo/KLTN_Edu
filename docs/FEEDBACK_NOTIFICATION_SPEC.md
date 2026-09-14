@@ -21,7 +21,7 @@ This spec covers:
 - TanStack Query invalidation.
 - Current and future event behavior.
 
-This spec is documentation only. Current source includes a backend Notification Service foundation, frontend Bell integration, and limited notification WebSocket delivery. Entries marked `PLANNED` remain future requirements only.
+This spec is documentation only. Current source includes persistent Notification/Bell APIs, limited notification WebSocket delivery, and a persisted Chat REST/WebSocket backend. Portal chat still uses mock state. Entries marked `PLANNED` remain future requirements only.
 
 ## 2. Status Model
 
@@ -62,6 +62,8 @@ Do not replace REST with WebSocket. WebSocket is delivery, not source of truth.
 | Student Bell | `frontend-web/src/components/home/HomeHeader.jsx` | `IMPLEMENTED` | Uses shared REST Bell dropdown with real unread count, latest notifications, read state, mark-one-read, and mark-all-read. |
 | Portal Bell | `frontend-web/src/portal/components/Header.tsx` | `IMPLEMENTED` | Uses shared REST Bell dropdown for Tutor/Staff/Admin with the same account-wide notification source. |
 | Notification service | `backend/notification-service` | `PARTIAL` | Backend persistence, REST read/unread API, JWT-cookie security, RabbitMQ consumers, event idempotency, and raw WebSocket delivery exist for a limited event slice. |
+| Chat backend | `backend/notification-service` | `IMPLEMENTED` | Conversation/message persistence, participant checks, read marking, REST and `/ws/chat` exist. |
+| Chat Web UI | `frontend-web/src/portal/components/MessagesView.tsx` | `PARTIAL` | Still uses `INITIAL_CONVERSATIONS`, local state and simulated replies instead of the implemented backend API. |
 | TutorApplication cache | `frontend-web/src/hooks/useTutorApplication.js` | `IMPLEMENTED` | TanStack Query key `["tutorApplication", "me"]`. |
 
 Future frontend code must not create browser `alert()`, browser `confirm()`, or arbitrary local toast systems for normal action feedback. Use `useFeedback()` unless a business-input modal is required.
@@ -208,24 +210,24 @@ These are target events derived from current project scope and docs. They are no
 | `ENROLLMENT_ACCEPTED` | `IMPLEMENTED` | Learning Service | Student | Tutor toast | Yes | Yes through Notification Service WebSocket | Yes | `/my-classes` | Tutor accept emits Rabbit event, Notification Service persists Student notification, and frontend refreshes Student request state through `realtime:event`. |
 | `ENROLLMENT_REJECTED` | `IMPLEMENTED` | Learning Service | Student | Tutor toast | Yes | Yes through Notification Service WebSocket | Yes | `/my-classes` | Tutor reject and auto-reject on full class emit Rabbit events, Notification Service persists Student notification, and frontend refreshes Student request state. |
 | `ENROLLMENT_CANCELLED` | `IMPLEMENTED` | Learning Service | Tutor | Student toast | Yes | Yes through Notification Service WebSocket | Yes | `/dashboard` | Student cancel is meaningful because the Tutor pending queue changes, so Tutor receives a persistent notification and realtime refresh. |
-| `SESSION_CREATED` | `PLANNED` | Learning Service | Student | Tutor toast | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Session feature not implemented. |
-| `SESSION_UPDATED` | `PLANNED` | Learning Service | Student/Tutor | Toast | Yes when schedule-impacting | Recommended | Yes when schedule-impacting | `TBD / FUTURE ROUTE` | Session feature not implemented. |
-| `SESSION_CANCELLED` | `PLANNED` | Learning Service | Student/Tutor | Confirm before cancel, then toast | Yes | Required | Yes | `TBD / FUTURE ROUTE` | Session feature not implemented. |
+| `SESSION_CREATED` | `IMPLEMENTED` | Learning Service | Student | Tutor/local UI feedback | Optional | Not implemented as a dedicated event | No | `/my-classes` or Portal `my-classes` | Rolling sessions are generated and caught up automatically; dedicated creation notification is not wired. |
+| `SESSION_UPDATED` | `IMPLEMENTED` | Learning Service | Student/Tutor | Toast/inline refresh | Optional when schedule-impacting | Not implemented as a dedicated event | No | `/my-classes` or Portal `my-classes` | Session schedule and the Tutor-managed meeting link can be updated; later sessions use the current link. |
+| `SESSION_CANCELLED` | `PARTIAL` | Learning Service/Contract Service | Student/Tutor | Confirm before cancel, then authoritative state refresh | Recommended | Not implemented as a dedicated event | No | `/my-classes` or `/contracts` | Contract cancellation and unused-fund refund exist; notification coverage for every session-level cancellation path is not complete. |
 | `ATTENDANCE_RECORDED` | `PARTIAL` | Learning Service | Student/Tutor | Inline session-state refresh | Persistent only when correction/dispute-relevant | Not implemented | No | `/my-classes` or Portal `my-classes` | Attendance rows and independent Tutor/Student check-in are implemented; a dedicated attendance notification event is not. |
-| `HOMEWORK_CREATED` | `PLANNED` | Learning Service | Student | Tutor toast | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Homework feature not implemented. |
-| `HOMEWORK_UPDATED` | `PLANNED` | Learning Service | Student | Tutor toast | Yes when due date/content changes materially | Recommended | Yes when material | `TBD / FUTURE ROUTE` | Homework feature not implemented. |
-| `HOMEWORK_SUBMITTED` | `PLANNED` | Learning Service | Tutor | Student toast | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Homework submission not implemented. |
-| `HOMEWORK_GRADED` | `PLANNED` | Learning Service | Student | Tutor toast | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Homework grading not implemented. |
-| `CONTRACT_CREATED` | `PARTIAL` | Contract Service | Student/Tutor | Toast | Yes | Recommended | Yes | `/contracts` | Contract workflow partial; public REST flow missing. |
-| `CONTRACT_SIGNED` | `PARTIAL` | Contract Service | Counterparty | Important success for signer | Yes | Required | Yes | `/contracts` | Contract workflow partial; public REST flow missing. |
-| `CONTRACT_ACTIVATED` | `PARTIAL` | Contract Service | Student/Tutor | Important success | Yes | Required | Yes | `/contracts` | Contract workflow partial; public REST flow missing. |
-| `ESCROW_FUNDED` | `PARTIAL` | Contract Service | Student/Tutor | Financial progress and Important Success Modal | Yes | Required after authoritative confirmation | Yes | `/payments` or `/contracts` | Escrow/Web3 partial; REST integration incomplete. |
-| `SESSION_SETTLED` | `PLANNED` | Contract Service | Student/Tutor | Financial progress and Important Success Modal | Yes | Required after authoritative confirmation | Yes | `/payments` or `/contracts` | End-to-end learning-to-contract settlement missing. |
-| `PAYMENT_CONFIRMED` | `PARTIAL` | Contract Service | Student/Tutor/Admin as applicable | Financial progress and Important Success Modal | Yes | Required after authoritative confirmation | Yes | `/payments` | Payment flow partial. |
-| `REFUND_PROCESSED` | `PARTIAL` | Contract Service | Student/Tutor/Admin as applicable | Important Success Modal | Yes | Required after authoritative confirmation | Yes | `/payments` or `/contracts` | Refund workflow partial. |
+| `HOMEWORK_CREATED` | `IMPLEMENTED` | Learning Service | Student | Tutor toast/inline refresh | Optional | Not implemented as a dedicated event | No | `/my-classes` or Portal `my-classes` | Tutor can create homework text/file; Student content remains attendance-gated. |
+| `HOMEWORK_UPDATED` | `IMPLEMENTED` | Learning Service | Student | Toast/inline refresh | Optional when material | Not implemented as a dedicated event | No | `/my-classes` or Portal `my-classes` | Homework update exists; durable notification is not wired. |
+| `HOMEWORK_SUBMITTED` | `IMPLEMENTED` | Learning Service | Tutor | Student toast | Optional | Not implemented as a dedicated event | No | `/my-classes` or Portal `my-classes` | Student text/file submission exists and is tied to the attendance-owned record. |
+| `HOMEWORK_GRADED` | `IMPLEMENTED` | Learning Service | Student | Tutor toast | Recommended | Not implemented as a dedicated event | No | `/my-classes` or Portal `my-classes` | Tutor grading exists; persistent/realtime grade notification is not complete. |
+| `CONTRACT_CREATED` | `IMPLEMENTED` | Contract Service | Student/Tutor | Toast | Partial | Partial | Partial | `/contracts` | Public REST workflow, immutable snapshot and actor scope are implemented; event coverage is not universal. |
+| `CONTRACT_SIGNED` | `IMPLEMENTED` | Contract Service | Counterparty | Important success for signer | Partial | Partial | Partial | `/contracts` | EIP-712 acceptance and signed artifacts are implemented; notification coverage still requires per-path verification. |
+| `CONTRACT_ACTIVATED` | `IMPLEMENTED` | Contract Service | Student/Tutor | Important success | Partial | Partial | Partial | `/contracts` | Activation is driven by confirmed funding, not an optimistic browser state. |
+| `ESCROW_FUNDED` | `IMPLEMENTED` | Contract Service | Student/Tutor | Financial progress and Important Success Modal | Partial | Partial after authoritative confirmation | Partial | `/payments` or `/contracts` | `approve` + `fundAgreement`, receipt reconciliation and ACTIVE transition are implemented. |
+| `SESSION_SETTLED` | `IMPLEMENTED` | Learning/Contract Service | Student/Tutor | Financial progress and Important Success Modal | Partial | Partial after authoritative confirmation | Partial | `/payments` or `/contracts` | Learning delivery, proposal, 24-hour eligibility, on-chain finalization and recovery workers are implemented. |
+| `PAYMENT_CONFIRMED` | `IMPLEMENTED` | Contract Service | Student/Tutor/Admin as applicable | Financial progress and Important Success Modal | Partial | Partial after authoritative confirmation | Partial | `/payments` | Confirmed transaction history and wallet/financial views exist; notification coverage is not universal. |
+| `REFUND_PROCESSED` | `IMPLEMENTED` | Contract Service | Student/Tutor/Admin as applicable | Important Success Modal | Partial | Partial after authoritative confirmation | Partial | `/payments` or `/contracts` | Tutor-absent refund, unused-fund refund and dispute-approved refund paths exist. |
 | `DISPUTE_OPENED` | `PARTIAL` | Contract Service | Tutor | Confirm before submit, then toast | Immediate when a Student complaint is accepted locally | Notification Service WebSocket | Yes | Portal `complaints` | Tutor notification includes the persisted Student complaint reason. Submission immediately holds the per-Student settlement. Tutor-origin complaints are private Staff/Admin reports and do not notify the Student. Reviewer Bell delivery remains unavailable because agreements do not store reviewer user id. |
 | `DISPUTE_RESOLVED` | `PARTIAL` | Contract Service | Student/Tutor | Important Success Modal for resolver | Yes after confirmed on-chain resolution | Notification Service WebSocket | Yes | `/contracts` or Portal `complaints` | Both parties receive the authoritative resolution result; reviewer Bell delivery remains pending a reviewer recipient id. |
-| `MESSAGE_RECEIVED` | `PLANNED` | Messaging domain owner TBD | Recipient | Sender local send state | Yes, preferably summary only | Required | Yes, summary only | `/messages` | Messaging backend/API missing; web UI is mock/partial. |
+| `MESSAGE_RECEIVED` | `PARTIAL` | Notification Service chat domain | Recipient | Sender local send state | Optional summary | Backend `/ws/chat` implemented | Bell integration not implemented | `/messages` | Message persistence/API/WebSocket exist; current Portal UI is not connected. |
 | `COMPLAINT_CREATED` | `PLANNED` | Complaint/support domain owner TBD | Staff/Admin or counterparty as applicable | Confirm when sensitive, then toast | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Complaint/support module not implemented. |
 | `COMPLAINT_RESOLVED` | `PLANNED` | Complaint/support domain owner TBD | Reporter and affected users | Important success when current user resolves | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Complaint/support module not implemented. |
 | `MATCHING_READY` | `PLANNED` | AI Matching domain owner TBD | Student/Tutor depending matching flow | Toast only when generated from explicit action | Optional | Recommended only for long-running jobs | Optional | `/matching` | AI Matching service not implemented. |
@@ -251,10 +253,10 @@ These are target events derived from current project scope and docs. They are no
 | Enrollment | Request/accept/reject/cancel | `IMPLEMENTED` | REST APIs, RabbitMQ notification events, persistent notifications, Bell realtime delivery, and targeted frontend state refresh exist for request/accept/reject/cancel. |
 | Admin | User status | `IMPLEMENTED` | Local feedback; persistent notification optional only if user-facing account status notification is required. |
 | Admin | Catalog management | `IMPLEMENTED` | Local feedback only; no Bell notification required for normal catalog CRUD. |
-| Contract/Web3 | Contract/payment/escrow/dispute | `PARTIAL` | Use financial rules. Notification/realtime should wait for authoritative backend confirmation. |
-| Messaging | Messages | `PARTIAL` | Web mock/local UI exists; backend persistence/API/realtime are planned. |
+| Contract/Web3 | Contract/payment/escrow/dispute | `IMPLEMENTED + LIMITED` | Core flow is implemented; dispute V1 is limited to `BOTH_PRESENT`, and notification coverage is partial. Financial UI must wait for authoritative backend/on-chain confirmation. |
+| Messaging | Messages | `PARTIAL` | Backend persistence/API/realtime exist; Web Portal remains mock/local and must be connected. |
 | Notification | Persistent notifications and Bell center | `PARTIAL` | Backend Notification Service has persistence, REST list/unread/read APIs, JWT-cookie ownership checks, a limited Rabbit consumer slice, raw WebSocket delivery for persisted notification creation, and frontend Bell cache synchronization. |
-| AI Matching | Matching/recommendations | `PLANNED` | AI service not implemented. |
+| AI Matching | Matching/recommendations | `PLANNED` | AI Service has only a health skeleton; matching, embeddings, ranking and recommendation are not implemented. |
 
 ## 14. Feedback Matrix
 
@@ -286,7 +288,7 @@ These are target events derived from current project scope and docs. They are no
 | Admin | Catalog CRUD | `IMPLEMENTED` | `NORMAL_WRITE` | Destructive/status changes may confirm | Toast | Toast/inline | No by default | No |
 | Contract | Sign contract | `PARTIAL` | `FINANCIAL_CRITICAL` when tied to payment | Yes | Important Success Modal after authoritative state | Blocking error/toast | Yes | Required when implemented |
 | Payment | Fund escrow | `PARTIAL` | `FINANCIAL_CRITICAL` | Yes | Progress UI, then Important Success Modal after confirmation | Blocking error/toast | Yes after confirmation | Required after confirmation |
-| Messaging | Send message | `PLANNED` | `NORMAL_WRITE` | No | Local send state | Inline/toast | Yes for recipient summary | Required |
+| Messaging | Send message | `PARTIAL` | `NORMAL_WRITE` | No | Local send state | Inline/toast | Optional Bell summary | Backend realtime implemented; Web integration pending |
 | AI Matching | Generate matching | `PLANNED` | `IMPORTANT_WRITE` for long-running generation | Optional | Toast or result-ready state | Toast/inline | Optional | Recommended only for long-running jobs |
 
 ## 15. Notification Event Matrix
@@ -305,8 +307,8 @@ These are target events derived from current project scope and docs. They are no
 | `ENROLLMENT_ACCEPTED` | `IMPLEMENTED` | Learning Service | Student | Persistent notification implemented | Implemented through Notification Service WebSocket | `STUDENT` | `/my-classes` |
 | `ENROLLMENT_REJECTED` | `IMPLEMENTED` | Learning Service | Student | Persistent notification implemented | Implemented through Notification Service WebSocket | `STUDENT` | `/my-classes` |
 | `ENROLLMENT_CANCELLED` | `IMPLEMENTED` | Learning Service | Tutor | Persistent notification implemented | Implemented through Notification Service WebSocket | `TUTOR` | `/dashboard` |
-| `MESSAGE_RECEIVED` | `PLANNED` | Messaging domain owner TBD | Recipient | Summary notification only | Required | Active role/context if known | `/messages` |
-| `ESCROW_FUNDED` | `PLANNED` | Contract Service | Student/Tutor | Required after confirmation | Required | `STUDENT`/`TUTOR` | `/payments` or `/contracts` |
+| `MESSAGE_RECEIVED` | `PARTIAL` | Notification Service chat domain | Recipient | Chat message persists; Bell summary is not wired | Implemented through `/ws/chat` | Active role/context if known | `/messages` |
+| `ESCROW_FUNDED` | `PARTIAL` | Contract Service | Student/Tutor | Business flow implemented; persistent coverage requires per-path audit | Partial after authoritative confirmation | `STUDENT`/`TUTOR` | `/payments` or `/contracts` |
 | `DISPUTE_OPENED` | `PARTIAL` | Contract Service | Tutor | Persistent notification implemented after confirmed opening | Implemented through Notification Service WebSocket | `TUTOR` | Portal `complaints` |
 | `DISPUTE_RESOLVED` | `PARTIAL` | Contract Service | Student/Tutor | Persistent notification implemented after confirmed resolution | Implemented through Notification Service WebSocket | `STUDENT`/`TUTOR` | `/contracts` or Portal `complaints` |
 
@@ -321,7 +323,7 @@ These are target events derived from current project scope and docs. They are no
 | `CONTRACT_SIGNED` | `PLANNED` | Counterparty should know promptly once implemented. |
 | `ESCROW_FUNDED` | `PLANNED` | Financial state should update promptly after authoritative confirmation. |
 | `SESSION_CANCELLED` | `PLANNED` | Schedule impact is time-sensitive. |
-| `MESSAGE_RECEIVED` | `PLANNED` | Messaging requires online delivery. |
+| `MESSAGE_RECEIVED` | `IMPLEMENTED` backend | `/ws/chat` pushes persisted messages to authenticated sender/recipient sessions; Portal consumption remains pending. |
 
 ### REALTIME_RECOMMENDED
 
@@ -441,7 +443,7 @@ Do not treat wallet signature, transaction hash creation, or frontend optimistic
 
 ## 21. Messaging Rules
 
-Messaging backend persistence/API is currently missing. The web messaging UI is partial/mock and must not be treated as a complete feature.
+Messaging backend persistence/API is implemented in Notification Service. It stores conversations/messages, checks participants, marks received messages read, and pushes `NEW_MESSAGE` on `/ws/chat`. The Web Portal remains partial/mock and must not be treated as a complete end-to-end feature until it loads/sends through this backend.
 
 Future message send flow:
 
@@ -472,9 +474,9 @@ Current route targets that may be used:
 | `/profile` | `IMPLEMENTED` | Account profile and TutorApplication context section. |
 | `/profile/password` | `IMPLEMENTED` | Change password. |
 | `/my-classes` | `IMPLEMENTED` | Student enrollment/request page. |
-| `/messages` | `PARTIAL` | Student shell; backend messaging missing. |
-| `/contracts` | `PARTIAL` | Student contract page reuses the shared real contract view and Contract Service APIs; blockchain registration/funding semantics remain incomplete end-to-end. |
-| `/payments` | `PARTIAL` | Student shell; Web3/payment partial. |
+| `/messages` | `PARTIAL` | Student/Portal UI still mock; backend chat exists. |
+| `/contracts` | `IMPLEMENTED` | Shared real contract view uses Contract Service APIs; blockchain state is confirmed-event driven. |
+| `/payments` | `IMPLEMENTED` | Redirects to `/student/wallet`, which provides the current funding/wallet/settlement view. |
 | `/matching` | `PLANNED` | Student shell exists; AI service missing. |
 | `/dashboard` | `IMPLEMENTED` | Tutor/Staff/Admin portal shell depending role. |
 | `/tutor/teaching-registrations` | `IMPLEMENTED` | Tutor teaching registration page. |

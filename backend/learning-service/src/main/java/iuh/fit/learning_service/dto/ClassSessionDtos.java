@@ -67,6 +67,7 @@ public class ClassSessionDtos {
     ) {}
 
     public record TutorAttendanceRequest(
+            /** Deprecated and ignored. Students must check in themselves. */
             List<Long> presentStudentIds,
             String note
     ) {}

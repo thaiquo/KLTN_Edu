@@ -1,36 +1,32 @@
-# Quy Tắc Nghiệp Vụ
+# AI context — Quy tắc nghiệp vụ hiện tại
 
-Các quy tắc dưới đây được suy ra từ source NestJS cũ đã migration. Khi rewrite sang Java cần kiểm tra lại với yêu cầu thực tế của đồ án.
+> Tài liệu cũ từng được suy ra từ NestJS legacy đã được thay thế. AI/agent phải dùng [../BUSINESS_RULES.md](../BUSINESS_RULES.md) và [../IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md) làm nguồn hiện tại.
 
-## Dịch Vụ Xác Thực
+## Actor/role
 
-- Người dùng đăng ký bằng họ tên, email, số điện thoại, mật khẩu và role.
-- Role cũ đang hỗ trợ: `student`, `tutor`, `admin`.
-- Đăng nhập dùng email và mật khẩu.
-- JWT chứa user id, email và role.
+- Guest, Student, Tutor, Staff, Admin.
+- Browser dùng JWT cookie và `activeRole`.
+- Tutor chỉ có full teaching authority khi hồ sơ/application đã `APPROVED`.
 
-## Dịch Vụ Học Tập
+## Domain owner
 
-- Quy trình trở thành gia sư được xử lý thông qua tutor application.
-- Tutor application có các trạng thái: `pending`, `approved`, `rejected`, `withdrawn`.
-- Minh chứng theo môn học của gia sư có trạng thái duyệt: `pending`, `approved`, `rejected`.
-- Hình thức tính giá của gia sư gồm: `per_hour`, `per_session`, `per_30_days`, `per_course`.
-- Yêu cầu học và ghép nối trong source cũ được biểu diễn bằng `post` và `match_request`.
-- Lớp học có trạng thái: `draft`, `active`, `completed`, `cancelled`.
-- Enrollment có trạng thái: `active`, `pending`, `cancelled`, `completed`.
-- Buổi học có trạng thái: `scheduled`, `completed`.
-- Assignment có submission.
-- Certificate có trạng thái: `pending`, `approved`, `rejected`, `expired`, `revoked`, `needs_update`.
+- Account: identity, role, Student/Tutor profile và Tutor application.
+- Learning: catalog, availability, classroom, enrollment, session, attendance, homework.
+- Contract: agreement, signature/artifact, payment, escrow, settlement, dispute/evidence và blockchain projection.
+- Notification: persistent notification và chat.
+- AI: mới là skeleton, không có quyền đọc trực tiếp DB domain khác.
 
-## Dịch Vụ Hợp Đồng
+## Quy tắc tài chính cần bảo toàn
 
-- Contract có trạng thái: `draft`, `active`, `released`, `cancelled`.
-- Payment có trạng thái: `pending`, `paid`, `failed`, `refunded`.
-- Wallet thuộc về user và được dùng trong luồng thanh toán/hợp đồng.
+- Một Student có một agreement/escrow riêng.
+- `BOTH_PRESENT`: 85% Tutor, 15% Platform.
+- `STUDENT_ABSENT_TUTOR_PRESENT`: 45% Tutor, 10% Platform, hoàn 45% Student.
+- `TUTOR_ABSENT`: hoàn 100% Student.
+- Chỉ confirmed smart-contract event chứng minh payout/refund.
+- Dispute hợp lệ giữ đúng settlement; V1 chỉ dispute `BOTH_PRESENT`.
 
-## Dịch Vụ Thông Báo
+## Quy tắc dữ liệu cho AI tương lai
 
-- Notification thuộc về một user, gồm type, title, content và trạng thái đã đọc/chưa đọc.
-- Chat hỗ trợ conversation và message.
-- Loại message cũ gồm: `text`, `image`, `file`, `system`.
-- Source cũ có socket gateway để phát sự kiện realtime.
+- Không dùng CCCD/KYC, contract document, dispute evidence hoặc private chat làm dữ liệu model/vector nếu chưa có thiết kế privacy và consent rõ ràng.
+- AI không duyệt Tutor, không xác nhận attendance, không quyết định settlement/dispute và không bypass hard filter/authorization.
+- Search hiện tại là deterministic, không được gắn nhãn AI.

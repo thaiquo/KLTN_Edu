@@ -878,7 +878,8 @@ public class ContractManagementController {
             @PageableDefault(size = 20) Pageable pageable) {
 
         ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-        List<Dispute> filtered = accessControl.filterDisputes(disputeRepository.findAll(), currentUser);
+        List<Dispute> filtered = accessControl.filterDisputes(
+                disputeRepository.findAllWithSettlementAndAgreement(), currentUser);
 
         if (statusFilter != null && !statusFilter.isBlank()) {
             try {
@@ -907,7 +908,7 @@ public class ContractManagementController {
     @GetMapping("/disputes/{id}")
     public ResponseEntity<DisputeSummaryDto> getDispute(@PathVariable UUID id) {
         ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-        return disputeRepository.findById(id)
+        return disputeRepository.findByIdWithSettlementAndAgreement(id)
                 .filter(dispute -> accessControl.canViewDispute(dispute, currentUser))
                 .map(dispute -> toDisputeDto(dispute, currentUser))
                 .map(ResponseEntity::ok)
@@ -928,7 +929,7 @@ public class ContractManagementController {
                     .body(Map.of("error", "Chỉ Admin hoặc Staff mới có quyền xử lý khiếu nại."));
         }
 
-        Dispute dispute = disputeRepository.findById(id).orElse(null);
+        Dispute dispute = disputeRepository.findByIdWithSettlementAndAgreement(id).orElse(null);
         if (dispute == null) return ResponseEntity.notFound().build();
         if (body == null || body.reason() == null || body.reason().isBlank()) {
             return ResponseEntity.badRequest()
@@ -987,7 +988,7 @@ public class ContractManagementController {
     public ResponseEntity<?> submitTutorDisputeEvidence(
             @PathVariable UUID id,
             @RequestBody TutorEvidenceRequest body) {
-        Dispute dispute = disputeRepository.findById(id).orElse(null);
+        Dispute dispute = disputeRepository.findByIdWithSettlementAndAgreement(id).orElse(null);
         if (dispute == null) return ResponseEntity.notFound().build();
 
         ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
@@ -1379,7 +1380,8 @@ public class ContractManagementController {
                 s.getProposeTxHash(),
                 s.getFinalizeTxHash(),
                 s.getDisputeDeadline() != null ? s.getDisputeDeadline().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null,
-                s.getCreatedAt() != null ? s.getCreatedAt().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null
+                s.getCreatedAt() != null ? s.getCreatedAt().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null,
+                s.getUpdatedAt() != null ? s.getUpdatedAt().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null
         );
     }
 
@@ -1469,6 +1471,8 @@ public class ContractManagementController {
     private DisputeSummaryDto toDisputeDto(Dispute d, ContractUserPrincipal viewer) {
         SessionSettlement s = d.getSettlement();
         ContractAgreement a = s != null ? s.getAgreement() : null;
+        java.time.Instant now = java.time.Instant.now();
+        java.time.Instant tutorResponseDeadline = disputeWorkflowService.getTutorResponseDeadline(d);
         List<DisputeEvidence> evidence = disputeEvidenceRepository.findByDisputeId(d.getId());
         DisputeEvidence studentEvidence = latestEvidenceForRole(evidence, "STUDENT");
         boolean canViewTutorSubmission = viewer != null
@@ -1497,6 +1501,9 @@ public class ContractManagementController {
                 d.getResolvedAt() != null ? d.getResolvedAt().toString() : null,
                 d.getOpenTxHash(), d.getResolveTxHash(), canViewTutorSubmission ? d.getTutorResponse() : null,
                 canViewTutorSubmission && d.getTutorRespondedAt() != null ? d.getTutorRespondedAt().toString() : null,
+                tutorResponseDeadline != null ? tutorResponseDeadline.toString() : null,
+                disputeWorkflowService.isTutorResponseWindowOpen(d, now),
+                disputeWorkflowService.isReadyForResolution(d, now),
                 studentEvidence != null ? studentEvidence.getObjectKey() : null,
                 studentEvidence != null ? studentEvidence.getContentType() : null,
                 studentEvidence != null ? studentEvidence.getSha256() : null,
@@ -1508,7 +1515,14 @@ public class ContractManagementController {
                 a != null ? a.getClassroomReviewerEmail() : null,
                 s != null && s.getDisputeDeadline() != null ? s.getDisputeDeadline().format(DateTimeFormatter.ISO_OFFSET_DATE_TIME) : null,
                 d.getCreatedAt() != null ? d.getCreatedAt().toString() : null,
-                visibleEvidence
+                visibleEvidence,
+                a != null ? a.getClassroomId() : null,
+                a != null ? a.getClassName() : null,
+                a != null ? a.getStudentName() : null,
+                a != null ? a.getStudentEmail() : null,
+                a != null ? a.getTutorName() : null,
+                a != null ? a.getTutorEmail() : null,
+                a != null && a.getPricePerSessionUsdcUnits() != null ? toUsdc(a.getPricePerSessionUsdcUnits(), a.getTokenDecimals()) : null
         );
     }
 
@@ -1564,7 +1578,7 @@ public class ContractManagementController {
             double tutorAmountUsdc, double platformAmountUsdc, double studentRefundUsdc,
             String status,
             String proposeTxHash, String finalizeTxHash,
-            String disputeDeadline, String createdAt) {}
+            String disputeDeadline, String createdAt, String updatedAt) {}
 
     public record BlockchainTxDto(
             String id, String action, String transactionHash, String status,
@@ -1579,11 +1593,16 @@ public class ContractManagementController {
             String submittedAt, String resolution, String resolutionReason,
             String resolvedByEmail, String resolvedByRole, String resolvedAt,
             String openTxHash, String resolveTxHash, String tutorResponse, String tutorRespondedAt,
+            String tutorResponseDeadline, boolean tutorResponseWindowOpen, boolean readyForResolution,
             String studentEvidenceObjectKey, String studentEvidenceContentType, String studentEvidenceSha256,
             String tutorEvidenceObjectKey, String tutorEvidenceContentType, String tutorEvidenceSha256,
             String studentWallet, String tutorWallet, String classroomReviewerEmail,
             String disputeDeadline, String createdAt,
-            List<DisputeEvidenceDto> evidenceItems) {}
+            List<DisputeEvidenceDto> evidenceItems,
+            Long classroomId, String className,
+            String studentName, String studentEmail,
+            String tutorName, String tutorEmail,
+            Double sessionPriceUsdc) {}
 
     public record DisputeEvidenceDto(
             String id,

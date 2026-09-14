@@ -2,15 +2,25 @@ package iuh.fit.contract_service.repository;
 
 import iuh.fit.contract_service.entity.Dispute;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface DisputeRepository extends JpaRepository<Dispute, UUID> {
+
+    @EntityGraph(attributePaths = {"settlement", "settlement.agreement"})
+    @Query("SELECT d FROM Dispute d")
+    List<Dispute> findAllWithSettlementAndAgreement();
+
+    @EntityGraph(attributePaths = {"settlement", "settlement.agreement"})
+    @Query("SELECT d FROM Dispute d WHERE d.id = :id")
+    Optional<Dispute> findByIdWithSettlementAndAgreement(@Param("id") UUID id);
 
     Optional<Dispute> findBySettlementId(UUID settlementId);
 

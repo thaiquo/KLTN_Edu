@@ -1,260 +1,184 @@
-# EduConnect Blockchain Baseline
+# EduConnect — Blockchain, Escrow và Dispute
 
-Latest current-deployment decision and runtime hardening (2026-09-12):
-[Current escrow hardening](ESCROW_HARDENING_2026-09-12.md). Keep the existing Sepolia master contract.
-That report supersedes historical legacy-eligibility and operator-disabled notes below; older observations are retained as history.
+> Cập nhật theo Solidity, backend, frontend và runtime evidence đến **2026-09-14**.  
+> Chi tiết hardening lịch sử: [ESCROW_HARDENING_2026-09-12.md](ESCROW_HARDENING_2026-09-12.md).
 
-## 1. Purpose
+## 1. Phạm vi và nguồn sự thật
 
-Blockchain supports EduConnect contract management by recording/verifying agreement state and handling escrow-related flows.
+Blockchain dùng để đăng ký agreement, giữ USDC, quyết toán theo buổi, hoàn tiền và phân xử tutor-fraud dispute. Solidity là nguồn sự thật cho ABI, role, deadline, tỷ lệ và on-chain state.
 
-Target capabilities include:
+- Network vận hành hiện tại: Ethereum Sepolia (`11155111`).
+- Gas asset: Sepolia ETH.
+- Escrow asset: Circle Sepolia test USDC, 6 decimals.
+- Solidity: `0.8.36`, OpenZeppelin AccessControl/Pausable/ReentrancyGuard/SafeERC20.
+- Tooling: Foundry, Web3j backend, ethers.js/MetaMask/Reown Web.
 
-- contract integrity/recording;
-- escrow funding;
-- settlement/release;
-- refund;
-- dispute handling.
+Không mô tả ETH là tiền học phí. Không xem local status hoặc receipt đơn lẻ là bằng chứng tiền đã chuyển; authoritative financial transition cần event từ đúng escrow/chain được ingest.
 
-Current implementation is PARTIAL: Solidity contract source exists, Foundry tooling exists, Contract Service has Web3j integration, and Web has wallet code. Agreement registration/funding semantics are event-confirmed, but address/deployment/runtime hardening remains incomplete.
+## 2. Deployment hiện dùng
 
-## 2. Technology Baseline
+| Thành phần | Giá trị |
+| --- | --- |
+| Chain | Sepolia `11155111` |
+| `EduConnectEscrow` | `0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3` |
+| Test USDC | `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238` |
+| Operator/Arbitrator đã kiểm chứng | `0x10dd719B6a13e9d275990d706C2640ab6F1CA28e` |
 
-- Network: Ethereum-compatible network.
-- Target test network: Sepolia.
-- Current local evidence: Anvil deployment artifacts.
-- Smart Contract: Solidity `0.8.36`.
-- Tooling: Foundry.
-- Backend integration: Web3j in Contract Service.
-- Web integration: ethers.js and MetaMask/window.ethereum.
-- Escrow asset: ERC-20/USDC-style test token.
-- Gas asset: Sepolia ETH or local native ETH, depending on network.
+Frontend defaults hiện khớp deployment Sepolia và artifact Anvil: local token `0x5fb...aa3`, local escrow `0xe7f...512`. `ESCROW_ABI` dùng `bytes32 agreementId/sessionId` và các signature hiện khớp `IEduConnectEscrow.sol`.
 
-Important distinction:
+## 3. Smart contract V1
 
-- Sepolia ETH is for gas.
-- USDC/ERC-20 test token is the escrow asset.
+### Agreement
 
-Do not describe Sepolia ETH as the escrow asset.
+```text
+NONE → CREATED → FUNDED → COMPLETED
+                 └──────→ CANCELLED
+CREATED → EXPIRED
+```
 
-## 3. Smart Contract Source of Truth
+Các hàm chính:
 
-Solidity source is the source of truth for:
+- `registerAgreement(bytes32,address,address,bytes32,uint256,uint256,uint32)` — OPERATOR.
+- `fundAgreement(bytes32)` — chỉ Student wallet, đúng amount/allowance và trước payment deadline.
+- `expireAgreement(bytes32)` — OPERATOR, sau deadline khi chưa fund.
+- `cancelAgreementAndRefundUnused(bytes32,bytes32)` — ARBITRATOR, chỉ khi không có open session.
+- `getAgreement(bytes32)` — view.
 
-- function signatures;
-- argument types;
-- events;
-- roles;
-- escrow/dispute/settlement behavior.
+Raw ERC-20 `transfer` vào địa chỉ escrow **không phải funding**. Nó không gắn token vào agreement, không phát `AgreementFunded` và không bao giờ được dùng làm fallback.
 
-Frontend ABI and backend Web3 encoding/decoding must match Solidity before a Web3 flow can be considered complete.
+### Session
 
-## 4. Smart Contract Responsibilities
+```text
+NONE → PROPOSED ──hết 24h──> SETTLED hoặc REFUNDED
+           └──khiếu nại──> DISPUTED ──phân xử──> SETTLED hoặc REFUNDED
+```
 
-Current source centers on `EduConnectEscrow`.
+- `proposeSessionSettlement` mở deadline 24 giờ theo `block.timestamp`.
+- `finalizeSession` chỉ chạy khi deadline đã qua và status vẫn `PROPOSED`.
+- `openTutorFraudDispute` chỉ chấp nhận proposal `BOTH_PRESENT` trong deadline.
+- `resolveTutorFraudDispute` chỉ ARBITRATOR và yêu cầu resolution hash.
+- Agreement có `openSessions` để chặn hủy khi còn session chưa kết thúc.
 
-Main responsibilities:
+## 4. Quy tắc tiền
 
-- register an agreement using `bytes32 agreementId` and `bytes32 termsHash`;
-- fund an agreement with ERC-20 tokens;
-- propose session settlement;
-- finalize session settlement after the dispute window;
-- open and resolve tutor fraud disputes;
-- expire unfunded agreements;
-- cancel funded agreements and refund unused amount;
-- pause/unpause contract operations.
+| Outcome/final result | Tutor bps | Platform bps | Student refund |
+| --- | ---: | ---: | ---: |
+| `BOTH_PRESENT` | 8,500 | 1,500 | phần còn lại (thường 0%) |
+| `STUDENT_ABSENT_TUTOR_PRESENT` | 4,500 | 1,000 | phần còn lại (thường 45%) |
+| `TUTOR_ABSENT` | 0 | 0 | 100% |
+| Dispute approved | 0 | 0 | 100% |
+| Dispute rejected | 8,500 | 1,500 | phần còn lại |
 
-The contract uses OpenZeppelin access control, pausable behavior, reentrancy protection, and safe ERC-20 transfers.
+Smart contract tính Tutor và Platform bằng integer division/floor, rồi gán toàn bộ phần base-unit còn lại cho Student. Luôn kiểm tra bảo toàn:
 
-Escrow funding must call the escrow contract's `fundAgreement(bytes32 agreementId)` function after ERC-20 approval. A raw ERC-20 `transfer(...)` to the escrow address is not a valid agreement-funding operation because it bypasses agreement status checks, exact-amount accounting, and the `AgreementFunded` event.
+`sessionAmount = tutorAmount + platformAmount + studentRefund`.
 
-## 5. Off-chain vs On-chain
+## 5. Mô hình per-Student
 
-Off-chain owns full business data:
+Một lớp nhiều Student tạo nhiều agreement độc lập. Với cùng session sequence:
 
-- users, roles, profiles;
-- class/session/business workflow data;
-- full contract/business state;
-- transaction metadata and receipt tracking;
-- complaint/dispute evidence metadata.
+- Student A dispute → chỉ settlement của agreement A bị giữ.
+- Student B không dispute → agreement B vẫn được finalize sau deadline.
+- Refund/payout và lịch sử đều gắn `(agreementId, sessionId)`.
 
-On-chain owns compact verifiable state:
+Không có cơ chế “một Student khiếu nại thì hoàn cả lớp” trong V1. Tutor vắng được Learning chốt `TUTOR_ABSENT` riêng cho từng attendance/agreement và mọi Student có agreement hợp lệ đều nhận refund của phần mình.
 
-- agreement identifier and terms representation;
-- escrow funding state;
-- session settlement state;
-- dispute/refund/release events and state.
+## 6. Off-chain/on-chain boundary
 
-Do not put personal data or full contract text on-chain unless a confirmed design change requires it.
+Off-chain lưu:
 
-## 6. Backend Integration
+- user/profile/class/session/attendance;
+- full `terms_json`, signature, artifact;
+- transaction audit, settlement projection;
+- dispute reason/response và evidence object metadata.
 
-Current Contract Service includes Web3j-oriented components for:
+On-chain lưu compact hashes, wallet, amount, deadlines, agreement/session state và phát event. Không đưa PII, full contract text hoặc file evidence lên chain.
 
-- RPC reads;
-- calldata encoding for escrow functions;
-- operator transaction dispatch;
-- transaction receipt watching;
-- event log polling;
-- event decoding and ingestion;
-- blockchain cursor/processed-event persistence;
-- workflow updates from blockchain events.
-
-Funding workflow rule: payment submission records a txHash as `PAYMENT_CONFIRMING`; Contract Service marks the agreement `ACTIVE`, locks escrow payment metadata, sends activation notifications, and activates the linked Learning enrollment only after a confirmed `AgreementFunded` event is ingested.
+## 7. Funding flow
 
-## 7. Frontend Web3
-
-Current Web source includes:
-
-- MetaMask/window.ethereum wallet handling;
-- ethers BrowserProvider usage;
-- chain configuration for local Anvil and Sepolia;
-- ERC-20 approval/balance style ABI;
-- escrow contract interaction wrapper.
-
-Browser funding uses escrow `fundAgreement(bytes32 agreementId)` and should surface `PAYMENT_CONFIRMING` until backend event ingestion confirms `AgreementFunded`. The UI must not present tx submission as already-active escrow funding.
-
-## 8. Known Conflicts
-
-### Web3 Interface Verification
-
-Solidity uses `bytes32 agreementId` and `bytes32 sessionId` for escrow functions/events.
-
-Current frontend funding config aligns with `fundAgreement(bytes32)`, but the broader Web3 interface should still be verified against Solidity before treating all settlement/refund/dispute browser flows as complete.
-
-Status: PARTIAL.
-
-### Local Address Mismatch
-
-Current frontend defaults for local Anvil addresses appear reversed compared with existing Anvil deployment evidence:
-
-- deployment artifact: token at `0x5fbdb2315678afecb367f032d93f642f64180aa3`, escrow at `0xe7f1725e7734ce288f8367e1bb143e90bb3f0512`;
-- frontend default config uses escrow as `0x5FbDB...` and USDC as `0xe7f172...`.
-
-Status: KNOWN_CONFLICT until source/config is aligned.
-
-## 9. Sepolia Deployment Status
-
-Runtime verification on 2026-09-11 confirmed deployed bytecode at
-`0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3` on Sepolia. The deployment
-transaction sender `0x10dd719B6a13e9d275990d706C2640ab6F1CA28e` currently has both
-`OPERATOR_ROLE` and `ARBITRATOR_ROLE` and has Sepolia ETH for gas.
-
-The current database is not reconciled with that deployment. Four agreements
-marked `ACTIVE` locally return on-chain agreement status `NONE`. Their historical
-payment transactions called a smart-account execution endpoint which performed
-raw ERC-20 transfers to the escrow address instead of calling
-`fundAgreement(bytes32)`. The escrow address consequently holds 38.4 USDC
-(`38,400,000` base units with six decimals) that are not allocated to any agreement.
-The deployed V1 contract has no rescue/sweep function, so these historical raw
-transfers cannot be settled through the per-agreement functions.
-
-Do not treat a local `ACTIVE`/`LOCKED` row as proof of funding. A usable agreement
-must return on-chain status `FUNDED`, and activation must originate from an
-ingested, confirmed `AgreementFunded` event emitted by the configured escrow.
-
-The backend operator was enabled locally on 2026-09-11 after successful keystore
-decryption and role verification. Startup scheduling is
-catch-up based: confirmed proposals whose on-chain dispute deadline elapsed while
-the service was offline are queued for finalization after restart.
-
-The replay of five completed classes produced ten per-agreement proposals. Legacy
-intents contain the old Anvil platform address as sender and fail before signing.
-New agreement initiation now obtains platform wallet, chain, escrow and token
-from the validated configured deployment instead of hard-coded values. Existing
-signed agreements were not rewritten; they require an explicit replacement terms
-and funding process. The current master contract cannot allocate the historical
-direct token transfers. No successful per-session Sepolia payout is yet verified.
-
-Later runtime reconciliation on 2026-09-11 verified one correctly registered new
-agreement (`Vật lý lớp 9 (2026 -002)`, local id
-`6355b191-333a-426b-8f24-a1f06177fd4c`) at on-chain agreement id
-`0xd0327b1e4f0ac6b75eefe7b2445e63cb55756985be6a134282d44fb52b6708e9`.
-Registration transaction
-`0xd70e0051653e2166d1487ef30fb2549117f966fed36351c9a4bf4eefa3510b18`
-was successful in Sepolia block `11680831`, and the confirmed
-`AgreementRegistered` event moved the local agreement to `WAITING_PAYMENT`.
-This particular broadcast was performed by a one-off recovery script, so it is
-not production evidence that the automatic registration path completed end to
-end. The database transaction audit metadata was subsequently reconciled from
-the confirmed public transaction; the processed event remains the authoritative
-proof of the state transition.
-The on-chain agreement remains `CREATED`, with `remainingAmount=0`; therefore
-this proves registration only, not funding or settlement. Its amount is 4.8 USDC
-for eight sessions at 0.6 USDC/session, and its on-chain payment deadline is
-2026-09-12 08:45:12 UTC (the Solidity payment window is 24 hours, not 48 hours).
-
-Before the funding step, the Web modal was hardened to require the agreement's
-exact chain id before allowance, approval, or `fundAgreement`. Payment submission
-is also idempotent when the confirmed `AgreementFunded` event reaches the backend
-before the browser submits the same transaction hash. Neither change relaxes
-wallet ownership, amount, deadline, or confirmed-event checks.
-
-## 10. Blockchain Guardrails
-
-### Unattended session settlement runtime
-
-The operator unlocks its keystore once at service startup; it does not require
-human confirmation per session. Set `BLOCKCHAIN_OPERATOR_KEYSTORE_PASSWORD_FILE`
-to an absolute path to a protected UTF-8 secret file (outside the repository), or
-supply `BLOCKCHAIN_OPERATOR_KEYSTORE_PASSWORD` through the process environment.
-The environment password takes precedence. A mounted secret file supports server
-restarts without an interactive prompt. Never commit either secret.
-
-Required runtime settings: `BLOCKCHAIN_ENABLED=true`,
-`BLOCKCHAIN_OPERATOR_ENABLED=true`, operator address, keystore path, and one of
-the password sources above. Both Learning and Contract services must be running;
-opening the IDE alone starts no scheduler. After deployment the same workers run
-continuously while the services remain up. After downtime they catch up.
-
-Before signing each transaction, the operator checks the RPC chain ID and runs
-`eth_call` with the intended sender and calldata. A reverting preflight enters
-the existing bounded retry/failure pipeline without a broadcast or gas charge.
-Preflight cannot guarantee inclusion success if state changes after simulation.
-This isolates invalid legacy intents but does not repair unfunded agreements.
-
-The 24-hour deadline starts with the confirmed on-chain proposal, not the class
-end time. A previously unproposed old class still needs the full dispute window.
-Only confirmed settlement events establish USDC payout/refund success.
-
-### Operational funding boundary and legacy agreements
-
-Contract Service classifies an agreement as operationally funded only when its
-`escrow_payment.fund_tx_hash` matches an ingested `processed_event` of type
-`AGREEMENT_FUNDED` on the same chain. A local `ACTIVE` value by itself is not
-sufficient. Automatic session proposals and direct settlement/cancellation
-actions reject active/completed agreements without this evidence.
-
-The Admin/Staff contract view defaults to operational agreements. Legacy rows
-remain available under an explicit audit-only filter, are excluded from escrow
-and released-value KPIs, and expose no settlement or refund action. Admin may
-audit all agreements; Staff is limited by the assigned classroom reviewer.
-Neither role may sign on behalf of a Student or Tutor. Manual lifecycle
-operations such as explicit `expire` or whole-agreement `cancel/refund unused`
-are Admin-only operational actions; Staff handles assigned monitoring,
-settlement/dispute review, and dispute resolution scope rather than cancelling
-active agreements directly.
-
-Runtime verification on 2026-09-11 found four legacy agreement rows belonging
-to the two old classes without a confirmed funding event, and one operational
-agreement (`6355b191-333a-426b-8f24-a1f06177fd4c`, `Vật lý lớp 9 (2026 -002)`)
-with confirmed `AgreementFunded` evidence. The latter is the only current row
-eligible for the automatic per-session settlement pipeline.
-
-- Solidity is the ABI/interface source of truth.
-- ETH is not the escrow asset.
-- Do not hard-code private keys or wallet secrets.
-- Do not call the blockchain flow end-to-end complete while API, ABI, address, or deployment evidence is missing.
-- Do not publish PII/full contract content on-chain.
-- Do not send blockchain transactions during documentation/audit phases.
-
-## 11. Where to Audit
-
-For blockchain tasks, start with:
-
-- `blockchain/src`;
-- `blockchain/script`;
-- `blockchain/deployments`;
-- `backend/contract-service/src/main/java`;
-- `backend/contract-service/src/main/resources`;
-- `frontend-web/src/web3`.
+1. Hai bên ký EIP-712 off-chain; backend recover signer và đối chiếu ví.
+2. Backend operator đăng ký agreement; chỉ event `AgreementRegistered` chuyển local sang `WAITING_PAYMENT`.
+3. Student dùng MetaMask gọi USDC `approve(escrow, amount)` rồi `fundAgreement(bytes32)`.
+4. Browser gửi txHash ở trạng thái confirmation-pending.
+5. Contract event poller ingest confirmed `AgreementFunded` từ đúng chain/emitter/Student/amount.
+6. Local agreement thành `ACTIVE`, escrow `LOCKED`, Learning enrollment thành `ENROLLED`.
+
+Nếu browser submit txHash sau event ingest, API xử lý idempotent. Nếu gọi raw transfer, agreement không được active.
+
+## 8. Attendance → settlement
+
+1. Learning tự chốt session quá giờ thành một trong ba outcome.
+2. Delivery worker gửi outcome theo từng Student tới internal Contract endpoint.
+3. Contract chỉ chọn agreement operationally funded và queue `PROPOSE`.
+4. `SessionSettlementProposed` confirmed tạo `PROPOSED` + on-chain `disputeDeadline`.
+5. Không dispute: scheduler queue `FINALIZE` sau deadline.
+6. `SessionSettled` confirmed cập nhật terminal status, exact amounts, remaining escrow, transaction history và notification.
+
+24 giờ bắt đầu từ confirmed proposal, không phải giờ tan học hay lúc tạo DB row.
+
+## 9. Dispute/evidence
+
+- Student/Tutor chỉ mở trên agreement của mình; reason text bắt buộc, evidence file tùy chọn.
+- Managed evidence hỗ trợ image/video/audio/PDF/TXT/Word/Excel tối đa 50 MB.
+- Root runtime chọn S3; key: `disputes/{agreementId}/sessions/{sessionId}/{role}/{uuid}-{filename}`.
+- PostgreSQL lưu submitted user/role, object key, content type, SHA-256 và timestamp.
+- Content được stream qua authorized controller; Student không đọc Tutor-private evidence.
+- Valid application request queue `OPEN_DISPUTE`; tiền được coi là on-chain disputed khi event `TutorFraudDisputeOpened` được xác nhận.
+- Student-origin complaint cho Tutor 24 giờ phản hồi. Staff/Admin chỉ resolve sớm khi Tutor đã phản hồi, hoặc sau response deadline.
+- Không có arbitration deadline; settlement giữ đến khi event resolution/settlement xác nhận.
+
+Giới hạn V1: on-chain dispute chỉ cho `BOTH_PRESENT`. Muốn dispute các outcome khác phải thiết kế/deploy contract version mới và migrate có chủ đích.
+
+## 10. Backend transaction pipeline
+
+Mỗi write là durable `blockchain_transaction` intent:
+
+1. Tạo idempotency key/calldata hash.
+2. Pessimistic lock và serialize transaction theo operator sender.
+3. Kiểm tra operational funding/lifecycle.
+4. Kiểm tra chain/role/gas khi startup; `eth_call` preflight trước ký.
+5. Prepare ký, lưu nonce/expected hash/signed bytes.
+6. Broadcast và watch receipt.
+7. Poll escrow logs, deduplicate `processed_event`, rồi chuyển domain state.
+
+Trạng thái transaction: `CREATED → DISPATCHING → SUBMITTED → CONFIRMED|FAILED`.
+
+- Crash khi chưa prepare: stale watcher trả intent về queue sau timeout.
+- Đã ký nhưng broadcast không chắc chắn: giữ cùng hash/nonce/signed bytes, dò receipt và có thể rebroadcast cùng bytes.
+- Lỗi chắc chắn trước broadcast (`hash IS NULL`) tự retry sau cooldown 5 phút, tối đa 5 vòng audit; mỗi vòng dispatcher có tối đa 3 attempt mặc định.
+- Confirmed revert hoặc unknown outcome không tự tạo intent mới mù vì có nguy cơ tốn gas/duplicate; Admin recovery API kiểm tra state trước retry.
+
+## 11. Restart/catch-up
+
+Yêu cầu runtime: `BLOCKCHAIN_ENABLED=true`, `BLOCKCHAIN_OPERATOR_ENABLED=true`, đúng address/keystore password source, RPC, role và ETH gas.
+
+- Learning quét session quá giờ khi application ready và mỗi 60 giây.
+- Learning gửi lại completed session chưa acknowledged sau initial 5 giây và mỗi 30 giây.
+- Contract quét `PROPOSED` quá deadline sau initial 30 giây và mỗi 60 giây.
+- Dispatcher/receipt watcher chạy mỗi 5 giây.
+
+Nếu tất cả service tắt, không có giao dịch được gửi trong thời gian tắt. Sau restart worker đọc state bền vững và catch up. Dispute đang mở không bao giờ bị auto-finalize.
+
+## 12. Operational funding và legacy quarantine
+
+Agreement chỉ được settlement-eligible khi payment hash khớp `AGREEMENT_FUNDED` processed event trên đúng chain và escrow. Local `ACTIVE` không đủ.
+
+Bốn agreement lịch sử đã raw-transfer tổng 38.4 test USDC nhưng không tồn tại đúng on-chain agreement được đánh dấu `legacy_excluded`. Các settlement liên quan là `EXCLUDED_LEGACY`; record lỗi được giữ audit nhưng không retry, không vào KPI và không cung cấp action tài chính.
+
+V1 không có rescue/sweep cho excess raw-transfer balance; tài liệu không được hứa có thể phân bổ số token này.
+
+## 13. Bằng chứng runtime
+
+- Funding flow thật đã tạo `AgreementFunded` và kích hoạt agreement/enrollment.
+- `BOTH_PRESENT` 0.6 USDC: tx `0xd835b8ae250b20141feb32d26eb081ca1a0d532c9c6780b9622812c91990dc2`, block `11688753`, payout 0.51 Tutor + 0.09 Platform.
+- `TUTOR_ABSENT` 0.6 USDC: tx `0xf608981a95f001b0cc5bd338995bd2cb54cc4addcf35b15957e06536005a3ec1`, refund 0.6 Student.
+- 35 Foundry unit/fuzz/invariant tests đã pass trong đợt hardening; isolated Anvil backend flow cũng đã pass.
+- Ngày 2026-09-14, 14 test transaction/scheduler recovery pass; database không có actionable failed transaction và mọi completed Learning session đã được dispatch.
+
+## 14. Giới hạn vận hành
+
+- Một operator instance, chưa có distributed nonce/signer coordination.
+- Một primary RPC, chưa có multi-provider failover.
+- Sepolia/test USDC là môi trường thử nghiệm, không phải production mainnet accounting.
+- Phải giám sát ETH gas, RPC, event cursor, failed intent, overdue proposal và S3.
+- Không dùng `docker compose down -v` nếu muốn giữ PostgreSQL volume.

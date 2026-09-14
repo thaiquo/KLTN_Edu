@@ -1,6 +1,8 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   ShieldAlert,
+  ShieldCheck,
+  Shield,
   AlertTriangle,
   CheckCircle2,
   XCircle,
@@ -18,8 +20,21 @@ import {
   ChevronRight,
   Filter,
   X,
-  ShieldCheck,
-  GraduationCap
+  GraduationCap,
+  BookOpen,
+  Layers,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  Scale,
+  Calendar,
+  DollarSign,
+  Send,
+  MessageSquare,
+  Sparkles,
+  ArrowRight,
+  Building2,
+  Check
 } from 'lucide-react';
 import { EtherscanLink } from '../common/EtherscanLink';
 import { DEFAULT_CHAIN_ID } from '../../web3/web3Config';
@@ -56,26 +71,101 @@ interface DisputeManagementPanelProps {
 interface EligibleDisputeSession {
   key: string;
   agreementId: string;
+  classroomId: number;
   className: string;
   studentName?: string;
   sessionId: number;
   disputeDeadline: string;
 }
 
-const DISPUTE_STATUS_META: Record<string, { label: string; className: string }> = {
-  FAILED_RETRYABLE: { label: 'CẦN KIỂM TRA LẠI - TIỀN VẪN ĐƯỢC GIỮ', className: 'bg-orange-100 text-orange-800 border border-orange-200' },
-  OPENING: { label: 'ĐANG XÁC NHẬN MỞ KHIẾU NẠI', className: 'bg-blue-100 text-blue-800 border border-blue-200' },
-  OPEN: { label: 'ĐANG MỞ KHIẾU NẠI', className: 'bg-amber-100 text-amber-800 border border-amber-200' },
-  RESOLUTION_PENDING: { label: 'ĐANG XÁC NHẬN PHÁN QUYẾT', className: 'bg-indigo-100 text-indigo-800 border border-indigo-200' },
-  APPROVED: { label: 'CHẤP THUẬN - HOÀN TIỀN HỌC VIÊN', className: 'bg-emerald-100 text-emerald-800 border border-emerald-200' },
-  REJECTED: { label: 'BÁC BỎ - TRẢ TIỀN GIA SƯ', className: 'bg-rose-100 text-rose-800 border border-rose-200' },
+const DISPUTE_STATUS_META: Record<string, { label: string; className: string; badgeColor: string }> = {
+  FAILED_RETRYABLE: { label: 'CẦN THỬ LẠI - TIỀN VẪN ĐƯỢC GIỮ', className: 'bg-orange-100 text-orange-800 border border-orange-200', badgeColor: 'orange' },
+  OPENING: { label: 'ĐANG XÁC NHẬN MỞ KHIẾU NẠI', className: 'bg-blue-100 text-blue-800 border border-blue-200', badgeColor: 'blue' },
+  OPEN: { label: 'ĐANG MỞ KHIẾU NẠI', className: 'bg-amber-100 text-amber-800 border border-amber-200', badgeColor: 'amber' },
+  RESOLUTION_PENDING: { label: 'ĐANG XÁC NHẬN PHÁN QUYẾT', className: 'bg-indigo-100 text-indigo-800 border border-indigo-200', badgeColor: 'indigo' },
+  APPROVED: { label: 'CHẤP THUẬN - HOÀN TIỀN HỌC VIÊN', className: 'bg-emerald-100 text-emerald-800 border border-emerald-200', badgeColor: 'emerald' },
+  REJECTED: { label: 'BÁC BỎ - GIẢI NGÂN GIA SƯ', className: 'bg-rose-100 text-rose-800 border border-rose-200', badgeColor: 'rose' },
 };
+
+const isReadyForResolution = (dispute: DisputeDto, nowMs: number): boolean => {
+  if (dispute.status !== 'OPEN') return false;
+  if (dispute.complainantRole === 'TUTOR' || !!dispute.tutorResponse) return true;
+  if (!dispute.tutorResponseDeadline) return dispute.readyForResolution;
+  return nowMs >= new Date(dispute.tutorResponseDeadline).getTime();
+};
+
+const formatRemainingTime = (deadline: string, nowMs: number): string => {
+  const remainingMs = Math.max(0, new Date(deadline).getTime() - nowMs);
+  const totalMinutes = Math.ceil(remainingMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours} giờ ${minutes} phút` : `${minutes} phút`;
+};
+
+const formatExactTime = (dateStr?: string | null): string => {
+  if (!dateStr) return 'N/A';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return String(dateStr);
+  return d.toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+};
+
+interface ClassroomGroup {
+  groupKey: string;
+  classroomId: number | null;
+  className: string;
+  agreementId: string;
+  tutorName: string;
+  tutorEmail: string;
+  tutorWallet: string;
+  studentName: string;
+  studentEmail: string;
+  studentWallet: string;
+  classroomReviewerEmail?: string;
+  sessionPriceUsdc?: number;
+  totalDisputes: number;
+  pendingDisputes: number;
+  approvedDisputes: number;
+  rejectedDisputes: number;
+  needsTutorResponseDisputes: number;
+  sessions: {
+    sessionId: number;
+    disputes: DisputeDto[];
+  }[];
+}
 
 export function DisputeManagementPanel({
   activeRole,
   userEmail = '',
 }: DisputeManagementPanelProps) {
   const activeChainId = DEFAULT_CHAIN_ID;
+  const requestedSessionId = useMemo(() => {
+    const value = new URLSearchParams(window.location.search).get('sessionId');
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+  }, []);
+  const requestedClassroomId = useMemo(() => {
+    const value = new URLSearchParams(window.location.search).get('classroomId');
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+  }, []);
+  const requestedSessionHandled = useRef(false);
+  const [clockNow, setClockNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // View mode: GROUPED (by classroom) vs FLAT (all dispute cards)
+  const [viewMode, setViewMode] = useState<'GROUPED' | 'FLAT'>('GROUPED');
+  const [expandedClassrooms, setExpandedClassrooms] = useState<Record<string, boolean>>({});
 
   // Real data
   const [disputes, setDisputes] = useState<DisputeDto[]>([]);
@@ -85,6 +175,9 @@ export function DisputeManagementPanel({
   const [historyOrigin, setHistoryOrigin] = useState('ALL');
   const [historyPage, setHistoryPage] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Dispute Detail Modal state
+  const [selectedDisputeForDetail, setSelectedDisputeForDetail] = useState<DisputeDto | null>(null);
 
   const fetchDisputes = useCallback(async () => {
     setDataLoading(true);
@@ -102,7 +195,7 @@ export function DisputeManagementPanel({
     } finally {
       setDataLoading(false);
     }
-  }, [activeRole]);
+  }, []);
 
   useEffect(() => {
     fetchDisputes();
@@ -125,6 +218,8 @@ export function DisputeManagementPanel({
 
   // Resolution state
   const [resolvingId, setResolvingId] = useState<string | number | null>(null);
+  const [resolveReasonInput, setResolveReasonInput] = useState('');
+  const [resolveActionType, setResolveActionType] = useState<boolean | null>(null);
 
   // Tutor evidence state
   const [isTutorModalOpen, setIsTutorModalOpen] = useState(false);
@@ -156,6 +251,7 @@ export function DisputeManagementPanel({
           .map((settlement) => ({
             key: `${agreement.id}:${settlement.sessionId}`,
             agreementId: agreement.id,
+            classroomId: agreement.classroomId,
             className: agreement.className || `Lớp học #${agreement.classroomId}`,
             studentName: agreement.studentName,
             sessionId: settlement.sessionId,
@@ -163,9 +259,25 @@ export function DisputeManagementPanel({
           }))
       );
       setEligibleSessions(options);
-      if (options.length > 0) {
-        setAgreementIdInput(options[0].agreementId);
-        setSessionIdInput(String(options[0].sessionId));
+      const requestedOption = requestedSessionId == null
+        ? null
+        : options.find((option) => option.sessionId === requestedSessionId
+          && (requestedClassroomId == null || option.classroomId === requestedClassroomId));
+      const selectedOption = requestedOption ?? options[0];
+
+      if (selectedOption) {
+        setAgreementIdInput(selectedOption.agreementId);
+        setSessionIdInput(String(selectedOption.sessionId));
+      }
+
+      if (!requestedSessionHandled.current && requestedSessionId != null) {
+        requestedSessionHandled.current = true;
+        if (requestedOption) {
+          setActionError(null);
+          setIsCreateModalOpen(true);
+        } else {
+          setActionError(`Buổi #${requestedSessionId} chưa ở trạng thái có thể khiếu nại. Chỉ mở đơn khi cả hai đã có mặt, quyết toán đã được xác nhận và vẫn còn hạn 24 giờ.`);
+        }
       }
     } catch (err: any) {
       setActionError(err?.message || 'Không thể tải các buổi còn hạn khiếu nại.');
@@ -173,7 +285,7 @@ export function DisputeManagementPanel({
     } finally {
       setEligibleSessionsLoading(false);
     }
-  }, [activeRole]);
+  }, [activeRole, requestedSessionId, requestedClassroomId]);
 
   useEffect(() => {
     fetchEligibleDisputeSessions();
@@ -198,13 +310,15 @@ export function DisputeManagementPanel({
     e.preventDefault();
     if (!selectedDisputeForTutor) return;
     if (!tutorResponseText.trim()) {
-      setActionError('Vui lòng nhập nội dung giải trình.');
+      setActionError('Vui lòng nhập lời giải trình đối chất.');
       return;
     }
 
+    setIsTutorSubmitting(true);
+    setActionError(null);
+    setActionSuccess(null);
+
     try {
-      setIsTutorSubmitting(true);
-      setActionError(null);
       if (tutorEvidenceFile) {
         await contractsApi.submitTutorDisputeEvidenceFile(
           selectedDisputeForTutor.id,
@@ -218,15 +332,12 @@ export function DisputeManagementPanel({
         });
       }
 
-      setActionSuccess('Đã gửi giải trình và minh chứng đối chất thành công!');
+      setActionSuccess('Đã gửi phản hồi giải trình & bằng chứng đối chất thành công!');
       setIsTutorModalOpen(false);
       setSelectedDisputeForTutor(null);
-      setTutorResponseText('');
-      setTutorEvidenceUrl('');
-      setTutorEvidenceFile(null);
       await fetchDisputes();
     } catch (err: any) {
-      setActionError(err?.reason || err?.message || 'Không thể gửi giải trình.');
+      setActionError(err?.message || 'Không thể gửi phản hồi giải trình. Vui lòng thử lại.');
     } finally {
       setIsTutorSubmitting(false);
     }
@@ -234,34 +345,35 @@ export function DisputeManagementPanel({
 
   const handleCreateDispute = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!agreementIdInput || !eligibleSessions.some((item) => item.key === `${agreementIdInput}:${sessionIdInput}`)) {
-      setActionError('Buổi học không còn đủ điều kiện khiếu nại. Vui lòng tải lại danh sách.');
-      return;
-    }
-    if (!reasonInput) {
-      setActionError('Vui lòng nhập lý do khiếu nại.');
+    if (!agreementIdInput || !sessionIdInput || !reasonInput.trim()) {
+      setActionError('Vui lòng chọn buổi học và nhập lý do khiếu nại chi tiết.');
       return;
     }
 
+    setIsSubmitting(true);
+    setActionError(null);
+    setActionSuccess(null);
+
     try {
-      setIsSubmitting(true);
-      setActionError(null);
       if (evidenceFile) {
         await contractsApi.openDisputeWithFile(
-          agreementIdInput.trim(),
+          agreementIdInput,
           Number(sessionIdInput),
           reasonInput.trim(),
           evidenceFile
         );
       } else {
-        await contractsApi.openDispute(agreementIdInput.trim(), Number(sessionIdInput), {
-          reason: reasonInput.trim(),
-          evidenceObjectKey: evidenceTextInput.trim() || undefined,
-          contentType: evidenceTextInput.trim() ? 'text/uri-list' : undefined,
-        });
+        await contractsApi.openDispute(
+          agreementIdInput,
+          Number(sessionIdInput),
+          {
+            reason: reasonInput.trim(),
+            evidenceHash: evidenceTextInput.trim() || undefined,
+          }
+        );
       }
 
-      setActionSuccess(`Đã gửi yêu cầu khiếu nại cho buổi #${sessionIdInput}. Đang chờ xác nhận blockchain.`);
+      setActionSuccess(`Đã mở khiếu nại thành công cho Buổi học #${sessionIdInput}! Tiền ký quỹ của buổi học này đã được đóng băng.`);
       setIsCreateModalOpen(false);
       setReasonInput('');
       setEvidenceTextInput('');
@@ -269,79 +381,71 @@ export function DisputeManagementPanel({
       await fetchDisputes();
       await fetchEligibleDisputeSessions();
     } catch (err: any) {
-      setActionError(err?.reason || err?.message || 'Không thể tạo khiếu nại.');
+      setActionError(err?.message || 'Không thể gửi khiếu nại. Vui lòng kiểm tra lại thời hạn hoặc liên hệ hỗ trợ.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleResolve = async (dispute: DisputeDto, complaintApproved: boolean) => {
-    const resolutionLabel = dispute.complainantRole === 'TUTOR'
-      ? (complaintApproved ? 'chấp thuận khiếu nại của gia sư' : 'bác khiếu nại của gia sư')
-      : (complaintApproved ? 'chấp thuận hoàn tiền học viên' : 'bác khiếu nại của học viên');
-    const reason = window.prompt(
-      `Nhập lý do ${resolutionLabel}:`, ''
+  const handleResolve = async (dispute: DisputeDto, approved: boolean, customReason?: string) => {
+    const reason = customReason ?? window.prompt(
+      approved
+        ? 'Nhập lý do CHẤP THUẬN khiếu nại (100% học phí buổi học sẽ được hoàn trả lại cho học viên):'
+        : 'Nhập lý do BÁC BỎ khiếu nại (Học phí buổi học sẽ được giải ngân theo hợp đồng cho gia sư):',
+      approved ? 'Xác nhận gia sư có sai lệch giờ dạy/vắng mặt. Hoàn trả học phí.' : 'Gia sư đã cung cấp đủ minh chứng giảng dạy hợp lệ.'
     );
-    if (reason === null) return; // cancelled
+
+    if (reason === null) return;
+    if (!reason.trim()) {
+      alert('Vui lòng nhập lý do phân xử để đảm bảo tính minh bạch trên hệ thống.');
+      return;
+    }
+
+    setResolvingId(dispute.id);
+    setActionError(null);
+    setActionSuccess(null);
+
     try {
-      setResolvingId(dispute.id);
-      setActionError(null);
-      const result = await contractsApi.resolveDispute(dispute.id, complaintApproved, reason || 'Admin resolution');
-      setActionSuccess(
-        `Đã gửi yêu cầu phân xử: ${resolutionLabel}. Đang chờ xác nhận blockchain (${result.transactionStatus}).`
-      );
+      await contractsApi.resolveDispute(dispute.id, approved, reason.trim());
+      setActionSuccess(`Đã phân xử thành công khiếu nại Buổi #${dispute.sessionId}: ${approved ? 'CHẤP THUẬN (Hoàn tiền học viên)' : 'BÁC BỎ (Giải ngân gia sư)'}`);
+      if (selectedDisputeForDetail?.id === dispute.id) {
+        setSelectedDisputeForDetail(null);
+      }
       await fetchDisputes();
     } catch (err: any) {
-      setActionError(err?.reason || err?.message || 'Lỗi khi phân xử khiếu nại.');
+      setActionError(err?.message || 'Không thể thực hiện phân xử. Vui lòng kiểm tra quyền hạn của Staff/Admin.');
     } finally {
       setResolvingId(null);
     }
   };
 
-  // Check authorization for Staff
-  const canStaffResolve = (dispute: DisputeDto): boolean => {
+  const canStaffResolve = useCallback((dispute: DisputeDto) => {
     if (activeRole === 'admin') return true;
-    if (activeRole === 'staff') {
-      return (
-        !!dispute.classroomReviewerEmail &&
-        dispute.classroomReviewerEmail.toLowerCase() === userEmail.toLowerCase()
-      );
-    }
-    return false;
-  };
+    if (activeRole !== 'staff') return false;
+    if (!dispute.classroomReviewerEmail || !userEmail) return true;
+    return dispute.classroomReviewerEmail.trim().toLowerCase() === userEmail.trim().toLowerCase();
+  }, [activeRole, userEmail]);
 
-  const openManagedEvidence = async (disputeId: string, evidenceId: string) => {
-    const previewWindow = window.open('', '_blank');
-    if (previewWindow) previewWindow.opener = null;
+  const openManagedEvidence = async (disputeId: string | number, evidenceId: string) => {
     try {
-      const blob = await contractsApi.getDisputeEvidenceFile(disputeId, evidenceId);
+      const blob = await contractsApi.getDisputeEvidenceFile(String(disputeId), evidenceId);
       const url = URL.createObjectURL(blob);
-      if (previewWindow) previewWindow.location.href = url;
-      else throw new Error('Trình duyệt đã chặn cửa sổ xem minh chứng.');
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (err: any) {
-      previewWindow?.close();
-      setActionError(err?.message || 'Không thể mở file minh chứng.');
+      setActionError(err?.message || 'Không thể tải file minh chứng.');
     }
   };
-
-  const selectedStudentEvidenceItems = selectedDisputeForTutor?.evidenceItems
-    ?.filter((item) => item.submittedByRole === 'STUDENT') || [];
-  const selectedStudentEvidence = selectedStudentEvidenceItems.length > 0
-    ? selectedStudentEvidenceItems[selectedStudentEvidenceItems.length - 1]
-    : undefined;
 
   const kpis = useMemo(() => {
     const total = disputes.length;
-    const pending = disputes.filter(
-      (d) => d.status === 'OPEN' || d.status === 'OPENING' || d.status === 'RESOLUTION_PENDING'
-    ).length;
+    const pending = disputes.filter((d) => d.status === 'OPEN' || d.status === 'OPENING' || d.status === 'FAILED_RETRYABLE' || d.status === 'RESOLUTION_PENDING').length;
     const approved = disputes.filter((d) => d.status === 'APPROVED').length;
     const rejected = disputes.filter((d) => d.status === 'REJECTED').length;
     const tutorOriginCount = disputes.filter((d) => d.complainantRole === 'TUTOR').length;
     const studentOriginCount = disputes.filter((d) => d.complainantRole === 'STUDENT').length;
-    const tutorNeedsActionCount = disputes.filter(
-      (d) => d.complainantRole === 'STUDENT' && d.status === 'OPEN' && !d.tutorResponse
+    const tutorNeedsActionCount = disputes.filter((d) =>
+      d.complainantRole === 'STUDENT' && d.status === 'OPEN' && !d.tutorResponse
     ).length;
 
     return {
@@ -355,7 +459,7 @@ export function DisputeManagementPanel({
     };
   }, [disputes]);
 
-  const historyItems = useMemo(() => {
+  const filteredDisputes = useMemo(() => {
     return disputes.filter((dispute) => {
       const resolved = dispute.status === 'APPROVED' || dispute.status === 'REJECTED';
       const matchesStatus =
@@ -377,6 +481,7 @@ export function DisputeManagementPanel({
       const q = searchQuery.trim().toLowerCase();
       const matchId = String(dispute.id).toLowerCase().includes(q);
       const matchAgreement = String(dispute.agreementId || '').toLowerCase().includes(q);
+      const matchClassName = (dispute.className || '').toLowerCase().includes(q);
       const matchSession =
         `buổi ${dispute.sessionId}`.includes(q) ||
         `#${dispute.sessionId}`.includes(q) ||
@@ -391,6 +496,7 @@ export function DisputeManagementPanel({
       ).toLowerCase().includes(q);
       const matchTutor = (
         dispute.tutorName ||
+        dispute.tutorEmail ||
         dispute.tutorWallet ||
         ''
       ).toLowerCase().includes(q);
@@ -398,6 +504,7 @@ export function DisputeManagementPanel({
       return (
         matchId ||
         matchAgreement ||
+        matchClassName ||
         matchSession ||
         matchReason ||
         matchResolution ||
@@ -407,28 +514,103 @@ export function DisputeManagementPanel({
     });
   }, [disputes, historyStatus, historyOrigin, searchQuery]);
 
-  const historyPages = Math.max(1, Math.ceil(historyItems.length / 10));
+  // Grouped by Classroom
+  const classroomGroups = useMemo<ClassroomGroup[]>(() => {
+    const groupsMap = new Map<string, ClassroomGroup>();
+
+    for (const dispute of filteredDisputes) {
+      const groupKey = dispute.classroomId ? `class-${dispute.classroomId}` : `agree-${dispute.agreementId}`;
+      if (!groupsMap.has(groupKey)) {
+        groupsMap.set(groupKey, {
+          groupKey,
+          classroomId: dispute.classroomId ?? null,
+          className: dispute.className || (dispute.classroomId ? `Lớp học #${dispute.classroomId}` : `Hợp đồng #${dispute.agreementId?.slice(0, 8)}`),
+          agreementId: dispute.agreementId,
+          tutorName: dispute.tutorName || 'Gia sư',
+          tutorEmail: dispute.tutorEmail || '',
+          tutorWallet: dispute.tutorWallet,
+          studentName: dispute.studentName || 'Học viên',
+          studentEmail: dispute.studentEmail || '',
+          studentWallet: dispute.studentWallet,
+          classroomReviewerEmail: dispute.classroomReviewerEmail || undefined,
+          sessionPriceUsdc: dispute.sessionPriceUsdc || undefined,
+          totalDisputes: 0,
+          pendingDisputes: 0,
+          approvedDisputes: 0,
+          rejectedDisputes: 0,
+          needsTutorResponseDisputes: 0,
+          sessions: [],
+        });
+      }
+
+      const grp = groupsMap.get(groupKey)!;
+      grp.totalDisputes += 1;
+      const resolved = dispute.status === 'APPROVED' || dispute.status === 'REJECTED';
+      if (!resolved) grp.pendingDisputes += 1;
+      if (dispute.status === 'APPROVED') grp.approvedDisputes += 1;
+      if (dispute.status === 'REJECTED') grp.rejectedDisputes += 1;
+      if (dispute.complainantRole === 'STUDENT' && dispute.status === 'OPEN' && !dispute.tutorResponse) {
+        grp.needsTutorResponseDisputes += 1;
+      }
+
+      let sess = grp.sessions.find((s) => s.sessionId === dispute.sessionId);
+      if (!sess) {
+        sess = { sessionId: dispute.sessionId, disputes: [] };
+        grp.sessions.push(sess);
+      }
+      sess.disputes.push(dispute);
+    }
+
+    // Sort sessions in each classroom by sessionId asc
+    for (const grp of groupsMap.values()) {
+      grp.sessions.sort((a, b) => a.sessionId - b.sessionId);
+    }
+
+    return Array.from(groupsMap.values());
+  }, [filteredDisputes]);
+
+  const toggleClassroomExpand = (groupKey: string) => {
+    setExpandedClassrooms((prev) => ({
+      ...prev,
+      [groupKey]: prev[groupKey] === false ? true : false,
+    }));
+  };
+
+  const isClassroomExpanded = (groupKey: string) => {
+    return expandedClassrooms[groupKey] !== false; // Default expanded
+  };
+
+  const historyPages = Math.max(1, Math.ceil(filteredDisputes.length / 10));
   const currentHistoryPage = Math.min(historyPage, historyPages - 1);
-  const visibleHistory = historyItems.slice(currentHistoryPage * 10, (currentHistoryPage + 1) * 10);
+  const visibleFlatHistory = filteredDisputes.slice(currentHistoryPage * 10, (currentHistoryPage + 1) * 10);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-xs">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-rose-500 to-red-600 flex items-center justify-center text-white shadow-md shadow-rose-500/20">
             <ShieldAlert className="w-7 h-7" />
           </div>
           <div>
-            <h2 className="font-display font-black text-xl lg:text-2xl text-slate-900">
-              {activeRole === 'student' || activeRole === 'tutor' ? 'Lịch sử & Theo dõi khiếu nại' : 'Quản lý & Phân xử khiếu nại'}
-            </h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-display font-black text-xl lg:text-2xl text-slate-900">
+                {activeRole === 'student'
+                  ? 'Lịch sử & Theo dõi khiếu nại'
+                  : activeRole === 'tutor'
+                  ? 'Quản lý khiếu nại lớp học'
+                  : 'Quản lý & Phân xử khiếu nại Escrow'}
+              </h2>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
+                {activeRole === 'student' ? 'Học viên' : activeRole === 'tutor' ? 'Gia sư' : activeRole === 'admin' ? 'Quản trị viên' : 'Nhân viên'}
+              </span>
+            </div>
             <p className="text-xs text-slate-500 font-semibold mt-0.5">
               {activeRole === 'tutor'
-                ? 'Theo dõi khiếu nại các buổi học và gửi minh chứng đối chất cho Staff/Admin xem xét'
+                ? 'Theo dõi danh sách các lớp học bị khiếu nại, xem từng buổi và nộp minh chứng đối chất'
                 : activeRole === 'student'
-                ? 'Gửi và theo dõi khiếu nại minh bạch trên Smart Contract Escrow bảo vệ quyền lợi học tập'
-                : 'Phân xử minh bạch trên Smart Contract Escrow bảo vệ quyền lợi đôi bên'}
+                ? 'Theo dõi minh bạch tiến độ phân xử và hoàn tiền học phí theo từng lớp học & buổi học'
+                : 'Thẩm định hồ sơ đối chất của Gia sư và Học viên theo từng lớp học để ra phán quyết on-chain'}
             </p>
           </div>
         </div>
@@ -440,7 +622,7 @@ export function DisputeManagementPanel({
               setIsCreateModalOpen(true);
               fetchEligibleDisputeSessions();
             }}
-            className="flex items-center gap-2 px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-display font-black text-xs rounded-xl shadow-md hover:shadow-lg transition-all"
+            className="flex items-center gap-2 px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-display font-black text-xs rounded-xl shadow-md hover:shadow-lg transition-all shrink-0"
           >
             <AlertTriangle className="w-4 h-4" />
             <span>Gửi Khiếu Nại Buổi Học</span>
@@ -450,38 +632,38 @@ export function DisputeManagementPanel({
 
       {/* Notifications */}
       {actionSuccess && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 text-xs font-bold flex items-center justify-between">
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between gap-3 text-emerald-800 text-xs font-bold animate-in fade-in">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{actionSuccess}</span>
           </div>
-          <button onClick={() => setActionSuccess(null)} className="text-emerald-600 hover:underline">
-            Đóng
+          <button onClick={() => setActionSuccess(null)} className="text-emerald-600 hover:text-emerald-900">
+            <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
       {actionError && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-red-800 text-xs font-bold flex items-center justify-between">
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between gap-3 text-rose-800 text-xs font-bold animate-in fade-in">
           <div className="flex items-center gap-2">
-            <XCircle className="w-4 h-4 text-red-600" />
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
             <span>{actionError}</span>
           </div>
-          <button onClick={() => setActionError(null)} className="text-red-600 hover:underline">
-            Đóng
+          <button onClick={() => setActionError(null)} className="text-rose-600 hover:text-rose-900">
+            <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {/* Metric KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-            {activeRole === 'tutor' ? 'Tổng khiếu nại liên quan' : 'Tổng số khiếu nại'}
+      {/* KPI Stats Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
+          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+            Tổng số khiếu nại
           </span>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-black text-slate-900 block">{kpis.total}</span>
-            <span className="text-xs text-slate-400 font-semibold">đơn</span>
+            <span className="text-xs text-slate-400 font-semibold">đơn ({classroomGroups.length} lớp học)</span>
           </div>
         </div>
 
@@ -516,9 +698,9 @@ export function DisputeManagementPanel({
         </div>
       </div>
 
-      {/* Modern Filter, Search & Tab Controls */}
-      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-        {/* Top bar: Search + Refresh */}
+      {/* Modern Filter, Search & View Mode Switcher */}
+      <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-4">
+        {/* Top bar: Search + View Mode Switcher + Refresh */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -529,7 +711,7 @@ export function DisputeManagementPanel({
                 setSearchQuery(e.target.value);
                 setHistoryPage(0);
               }}
-              placeholder="Tìm theo mã hợp đồng, số buổi học, lý do khiếu nại, kết quả phân xử..."
+              placeholder="Tìm theo tên lớp học, môn học, số buổi, tên học viên/gia sư, lý do..."
               className="w-full pl-10 pr-9 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:border-rose-500 transition-all"
             />
             {searchQuery && (
@@ -546,21 +728,52 @@ export function DisputeManagementPanel({
             )}
           </div>
 
-          <button
-            type="button"
-            disabled={dataLoading}
-            onClick={() => fetchDisputes()}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shrink-0 disabled:opacity-50"
-            title="Làm mới danh sách khiếu nại"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${dataLoading ? 'animate-spin text-rose-600' : 'text-slate-500'}`} />
-            <span>{dataLoading ? 'Đang tải...' : 'Làm mới'}</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* View Mode Toggle */}
+            <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/60">
+              <button
+                type="button"
+                onClick={() => setViewMode('GROUPED')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all ${
+                  viewMode === 'GROUPED'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Gom nhóm theo Lớp học"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Xem theo Lớp học</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('FLAT')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all ${
+                  viewMode === 'FLAT'
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Xem danh sách đơn"
+              >
+                <Layers className="w-3.5 h-3.5 text-rose-600" />
+                <span>Danh sách đơn</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              disabled={dataLoading}
+              onClick={() => fetchDisputes()}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors shrink-0 disabled:opacity-50"
+              title="Làm mới danh sách khiếu nại"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${dataLoading ? 'animate-spin text-rose-600' : 'text-slate-500'}`} />
+              <span>{dataLoading ? 'Đang tải...' : 'Làm mới'}</span>
+            </button>
+          </div>
         </div>
 
-        {/* Second row: Status tabs & Tutor origin segmented controls */}
+        {/* Second row: Status filter tabs */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pt-3 border-t border-slate-100">
-          {/* Status filter tabs */}
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mr-1 flex items-center gap-1">
               <Filter className="w-3 h-3" /> Trạng thái:
@@ -637,7 +850,6 @@ export function DisputeManagementPanel({
             )}
           </div>
 
-          {/* Tutor Origin Segmented Selector */}
           {activeRole === 'tutor' && (
             <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl shrink-0">
               <button
@@ -676,522 +888,837 @@ export function DisputeManagementPanel({
             </div>
           )}
         </div>
-
-        {/* Results summary counter */}
-        <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100/80">
-          <span>
-            Hiển thị <strong>{historyItems.length === 0 ? 0 : currentHistoryPage * 10 + 1} - {Math.min((currentHistoryPage + 1) * 10, historyItems.length)}</strong> trong tổng số <strong>{historyItems.length}</strong> khiếu nại phù hợp
-          </span>
-          {historyPages > 1 && (
-            <span>
-              Trang {currentHistoryPage + 1} / {historyPages}
-            </span>
-          )}
-        </div>
       </div>
-      <div className="space-y-4">
-        {dataLoading && (
-          <div className="flex flex-col items-center justify-center py-16 gap-3 text-slate-400">
-            <Loader2 className="w-8 h-8 animate-spin text-rose-500" />
-            <span className="text-sm font-semibold">Đang tải danh sách khiếu nại...</span>
-          </div>
-        )}
-        {dataError && (
-          <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm font-semibold">
-            {dataError}
-          </div>
-        )}
-        {!dataLoading && !dataError && historyItems.length === 0 ? (
-          <div className="bg-white rounded-3xl p-12 text-center border border-slate-200 text-slate-400">
-            <ShieldAlert className="w-12 h-12 mx-auto mb-3 opacity-40 text-slate-400" />
-            <p className="font-bold text-sm text-slate-600">Chưa có khiếu nại phù hợp</p>
-            <p className="text-xs text-slate-400 mt-1">Đơn đã gửi sẽ được lưu tại đây, kể cả sau khi đã giải quyết. Thử chọn tất cả lịch sử để xem lại.</p>
-          </div>
-        ) : !dataLoading && (
-          visibleHistory.map((dispute) => {
-            const hasResolvePermission = canStaffResolve(dispute);
+
+      {/* Main Content Area */}
+      {dataLoading ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400 bg-white rounded-3xl border border-slate-200">
+          <Loader2 className="w-8 h-8 animate-spin text-rose-500" />
+          <span className="text-sm font-semibold">Đang tải danh sách khiếu nại...</span>
+        </div>
+      ) : filteredDisputes.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-3xl border border-slate-200 p-8 shadow-xs">
+          <ShieldAlert className="w-12 h-12 mx-auto mb-3 opacity-40 text-slate-400" />
+          <p className="font-bold text-base text-slate-700">Chưa có đơn khiếu nại nào phù hợp</p>
+          <p className="text-xs text-slate-400 mt-1">Các khiếu nại của lớp học sẽ được hiển thị và phân loại theo từng lớp tại đây.</p>
+        </div>
+      ) : viewMode === 'GROUPED' ? (
+        <div className="space-y-6">
+          {classroomGroups.map((group) => {
+            const isExpanded = isClassroomExpanded(group.groupKey);
+
+            return (
+              <div
+                key={group.groupKey}
+                className="bg-white rounded-3xl border border-slate-200/90 shadow-sm hover:shadow-md transition-all overflow-hidden"
+              >
+                {/* Classroom Header Banner */}
+                <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white p-5 sm:p-6">
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center text-white shrink-0 shadow-inner">
+                        <BookOpen className="w-6 h-6 text-rose-400" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <h3 className="font-display font-black text-lg sm:text-xl text-white">
+                            {group.className}
+                          </h3>
+                          {group.classroomId && (
+                            <span className="px-2.5 py-0.5 rounded-lg text-xs font-extrabold bg-white/15 text-white border border-white/20">
+                              Mã lớp #{group.classroomId}
+                            </span>
+                          )}
+                          <span className="px-2 py-0.5 rounded-lg text-[11px] font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                            HĐ: #{group.agreementId?.slice(0, 8)}
+                          </span>
+                        </div>
+
+                        {/* Sub details: Tutor, Student, Staff */}
+                        <div className="flex items-center gap-4 text-xs text-slate-300 font-medium mt-2 flex-wrap">
+                          <span className="flex items-center gap-1.5">
+                            <GraduationCap className="w-4 h-4 text-indigo-400" />
+                            Gia sư: <strong className="text-white">{group.tutorName}</strong>
+                            {group.tutorEmail && <span className="opacity-75">({group.tutorEmail})</span>}
+                          </span>
+                          {group.studentName && (
+                            <span className="flex items-center gap-1.5">
+                              <User className="w-4 h-4 text-emerald-400" />
+                              Học viên: <strong className="text-white">{group.studentName}</strong>
+                            </span>
+                          )}
+                          {group.classroomReviewerEmail && (
+                            <span className="flex items-center gap-1.5">
+                              <Building2 className="w-4 h-4 text-amber-400" />
+                              Staff phụ trách: <span className="font-mono text-amber-200">{group.classroomReviewerEmail}</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Classroom Dispute Stats & Collapse Button */}
+                    <div className="flex items-center gap-3 shrink-0 self-end lg:self-center">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-3 py-1 rounded-xl text-xs font-extrabold bg-white/10 text-white border border-white/20">
+                          {group.sessions.length} buổi có khiếu nại ({group.totalDisputes} đơn)
+                        </span>
+                        {group.pendingDisputes > 0 && (
+                          <span className="px-2.5 py-1 rounded-xl text-xs font-black bg-amber-500 text-slate-950 shadow-xs flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5" /> {group.pendingDisputes} đang chờ xử lý
+                          </span>
+                        )}
+                        {group.needsTutorResponseDisputes > 0 && activeRole === 'tutor' && (
+                          <span className="px-2.5 py-1 rounded-xl text-xs font-black bg-rose-500 text-white animate-pulse shadow-xs flex items-center gap-1">
+                            <AlertTriangle className="w-3.5 h-3.5" /> {group.needsTutorResponseDisputes} cần đối chất
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => toggleClassroomExpand(group.groupKey)}
+                        className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                        title={isExpanded ? 'Thu gọn danh sách buổi học' : 'Mở rộng danh sách buổi học'}
+                      >
+                        {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sessions list within Classroom */}
+                {isExpanded && (
+                  <div className="p-5 sm:p-6 bg-slate-50/50 space-y-4">
+                    <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase tracking-wider pb-2 border-b border-slate-200">
+                      <span>Danh sách các buổi học bị khiếu nại trong lớp ({group.sessions.length} buổi)</span>
+                      <span>Nhấn "Xem chi tiết" để xem hồ sơ & chứng cứ đối chất</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4">
+                      {group.sessions.map((sess) => {
+                        return (
+                          <div
+                            key={sess.sessionId}
+                            className="bg-white rounded-2xl border border-slate-200 shadow-2xs hover:border-slate-300 transition-all p-5 space-y-4"
+                          >
+                            {sess.disputes.map((dispute) => {
+                              const readyToResolve = isReadyForResolution(dispute, clockNow);
+                              const hasResolvePermission = canStaffResolve(dispute);
+                              const tutorResponseWindowOpen = dispute.complainantRole === 'STUDENT'
+                                && dispute.status === 'OPEN'
+                                && !!dispute.tutorResponseDeadline
+                                && clockNow < new Date(dispute.tutorResponseDeadline).getTime();
+                              const statusMeta = DISPUTE_STATUS_META[dispute.status] || {
+                                label: dispute.status,
+                                className: 'bg-slate-100 text-slate-700 border border-slate-200',
+                                badgeColor: 'slate'
+                              };
+
+                              return (
+                                <div key={dispute.id} className="space-y-4">
+                                  {/* Session Row Header */}
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                                    <div className="flex items-center gap-3 flex-wrap">
+                                      <div className="px-3 py-1.5 rounded-xl bg-slate-900 text-white font-display font-black text-xs shadow-xs flex items-center gap-1.5">
+                                        <Calendar className="w-3.5 h-3.5 text-rose-400" />
+                                        <span>BUỔI HỌC #{dispute.sessionId}</span>
+                                      </div>
+
+                                      <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${statusMeta.className}`}>
+                                        {statusMeta.label}
+                                      </span>
+
+                                      {dispute.complainantRole === 'STUDENT' ? (
+                                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-50 text-amber-800 border border-amber-200 flex items-center gap-1">
+                                          <User className="w-3 h-3 text-amber-600" />
+                                          Khiếu nại từ học viên ({dispute.studentName || `#${dispute.complainantId}`})
+                                        </span>
+                                      ) : (
+                                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-purple-50 text-purple-800 border border-purple-200 flex items-center gap-1">
+                                          <GraduationCap className="w-3 h-3 text-purple-600" />
+                                          Khiếu nại từ gia sư
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div className="flex items-center gap-2 text-xs text-slate-500 font-semibold">
+                                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                                      <span>Tạo lúc: {dispute.createdAt ? new Date(dispute.createdAt).toLocaleString('vi-VN') : 'N/A'}</span>
+                                    </div>
+                                  </div>
+
+                                  {/* Session Reason & Timeline Banner */}
+                                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                                    {/* Reason box (col 7) */}
+                                    <div className="lg:col-span-7 bg-rose-50/40 border border-rose-100 rounded-2xl p-4 space-y-2">
+                                      <div className="flex items-center gap-1.5 text-rose-900 font-bold text-xs">
+                                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                                        <span>Lý do khiếu nại của học viên:</span>
+                                      </div>
+                                      <p className="text-xs text-slate-800 font-medium leading-relaxed pl-5 whitespace-pre-wrap line-clamp-3">
+                                        {dispute.reason || 'Chưa có nội dung khiếu nại.'}
+                                      </p>
+                                    </div>
+
+                                    {/* Counter status / resolution box (col 5) */}
+                                    <div className="lg:col-span-5 bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col justify-between space-y-2">
+                                      <div>
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                                          {activeRole === 'student' ? 'Tiến độ xử lý khiếu nại:' : 'Trạng thái đối chất & phân xử:'}
+                                        </span>
+                                        {dispute.status === 'APPROVED' ? (
+                                          <div className="flex items-center gap-1.5 text-emerald-800 font-bold text-xs">
+                                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                            <span>Đã chấp thuận khiếu nại (Hoàn tiền học viên 100%)</span>
+                                          </div>
+                                        ) : dispute.status === 'REJECTED' ? (
+                                          <div className="flex items-center gap-1.5 text-rose-800 font-bold text-xs">
+                                            <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                                            <span>Đã bác bỏ khiếu nại (Giải ngân cho gia sư)</span>
+                                          </div>
+                                        ) : dispute.tutorResponse ? (
+                                          <div className="space-y-1">
+                                            <div className="flex items-center gap-1.5 text-emerald-800 font-bold text-xs">
+                                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                              <span>
+                                                {activeRole === 'student'
+                                                  ? `Gia sư đã nộp giải trình tới Staff phụ trách (${formatExactTime(dispute.tutorRespondedAt)})`
+                                                  : `Gia sư đã gửi giải trình (${formatExactTime(dispute.tutorRespondedAt)})`}
+                                              </span>
+                                            </div>
+                                            {(activeRole === 'admin' || activeRole === 'staff') && (
+                                              <div className="text-[11px] text-indigo-700 font-semibold pl-5">
+                                                ✨ Đã đủ hồ sơ đối chất. Admin/Staff có thể phân xử ngay.
+                                              </div>
+                                            )}
+                                          </div>
+                                        ) : tutorResponseWindowOpen ? (
+                                          <div className="space-y-1">
+                                            <div className="flex items-center gap-1.5 text-amber-800 font-bold text-xs">
+                                              <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-pulse" />
+                                              <span>
+                                                Gia sư còn <strong>{formatRemainingTime(dispute.tutorResponseDeadline!, clockNow)}</strong> để nộp giải trình
+                                              </span>
+                                            </div>
+                                            <div className="text-[11px] text-amber-700 pl-5">
+                                              Hạn chót: <strong>{formatExactTime(dispute.tutorResponseDeadline)}</strong>. Sau giờ này sẽ chuyển giao Staff/Admin phân xử.
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="space-y-1">
+                                            <div className="flex items-center gap-1.5 text-rose-800 font-bold text-xs">
+                                              <Clock className="w-4 h-4 text-rose-600 shrink-0" />
+                                              <span>Đã hết hạn giải trình ({formatExactTime(dispute.tutorResponseDeadline)})</span>
+                                            </div>
+                                            <div className="text-[11px] text-rose-700 font-semibold pl-5">
+                                              ⚡ Gia sư không gửi phản hồi. Staff/Admin có toàn quyền phân xử ngay.
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {/* Blockchain Proof Preview */}
+                                      {dispute.openTxHash && (
+                                        <div className="flex items-center justify-between text-[11px] pt-2 border-t border-slate-200/60">
+                                          <span className="text-slate-500 font-medium">Bằng chứng On-Chain:</span>
+                                          <EtherscanLink txHash={dispute.openTxHash} chainId={activeChainId} />
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Action Buttons Row */}
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedDisputeForDetail(dispute)}
+                                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold transition-all shadow-2xs"
+                                    >
+                                      <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                                      <span>
+                                        {activeRole === 'student'
+                                          ? 'Xem chi tiết khiếu nại & tiến trình'
+                                          : activeRole === 'tutor'
+                                          ? 'Xem nội dung khiếu nại & đối chất'
+                                          : 'Xem hồ sơ đối chất 2 bên & phân xử'}
+                                      </span>
+                                    </button>
+
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      {/* Tutor counter button */}
+                                      {activeRole === 'tutor' && dispute.complainantRole === 'STUDENT' && dispute.status === 'OPEN' && tutorResponseWindowOpen && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenTutorModal(dispute)}
+                                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-display font-black shadow-md hover:shadow-lg transition-all"
+                                        >
+                                          <Upload className="w-3.5 h-3.5" />
+                                          <span>{dispute.tutorResponse ? 'Cập nhật đối chất' : 'Nộp giải trình & minh chứng'}</span>
+                                        </button>
+                                      )}
+
+                                      {/* Staff / Admin quick resolve button */}
+                                      {(activeRole === 'admin' || activeRole === 'staff') && dispute.status === 'OPEN' && hasResolvePermission && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedDisputeForDetail(dispute)}
+                                          className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-display font-black shadow-md transition-all ${
+                                            readyToResolve
+                                              ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                                              : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                                          }`}
+                                        >
+                                          <Scale className="w-3.5 h-3.5" />
+                                          <span>{readyToResolve ? 'Tiến hành phân xử ngay' : 'Xem điều kiện phân xử'}</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* ========================================================================= */
+        /* MODE 2: FLAT LIST OF ALL DISPUTES                                         */
+        /* ========================================================================= */
+        <div className="space-y-4">
+          {visibleFlatHistory.map((dispute) => {
             const statusMeta = DISPUTE_STATUS_META[dispute.status] || {
               label: dispute.status,
               className: 'bg-slate-100 text-slate-700 border border-slate-200',
+              badgeColor: 'slate'
             };
-            const effectiveStatusMeta = dispute.complainantRole === 'TUTOR' && dispute.status === 'APPROVED'
-              ? { ...statusMeta, label: 'CHẤP THUẬN KHIẾU NẠI GIA SƯ' }
-              : dispute.complainantRole === 'TUTOR' && dispute.status === 'REJECTED'
-                ? { ...statusMeta, label: 'BÁC KHIẾU NẠI GIA SƯ' }
-                : statusMeta;
-            const allEvidence = dispute.evidenceItems?.length
-              ? dispute.evidenceItems
-              : [
-                  dispute.studentEvidenceObjectKey ? {
-                    id: `${dispute.id}-student-legacy`,
-                    submittedByRole: 'STUDENT' as const,
-                    objectKey: dispute.studentEvidenceObjectKey,
-                    contentType: dispute.studentEvidenceContentType,
-                    sha256: dispute.studentEvidenceSha256 || '',
-                    createdAt: dispute.createdAt,
-                  } : null,
-                  dispute.tutorEvidenceObjectKey ? {
-                    id: `${dispute.id}-tutor-legacy`,
-                    submittedByRole: 'TUTOR' as const,
-                    objectKey: dispute.tutorEvidenceObjectKey,
-                    contentType: dispute.tutorEvidenceContentType,
-                    sha256: dispute.tutorEvidenceSha256 || '',
-                    createdAt: dispute.tutorRespondedAt,
-                  } : null,
-                ].filter((item): item is NonNullable<typeof item> => item !== null);
-
-            const complainantEvidence = allEvidence.filter(
-              (item) => item.submittedByRole === dispute.complainantRole
-            );
-            const tutorCounterEvidence = allEvidence.filter(
-              (item) => item.submittedByRole === 'TUTOR' && dispute.complainantRole === 'STUDENT'
-            );
 
             return (
               <div
                 key={dispute.id}
-                className="bg-white rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all p-6 space-y-5"
+                className="bg-white rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all p-6 space-y-4"
               >
-                {/* Header Row */}
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span
-                      className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${effectiveStatusMeta.className}`}
-                    >
-                      {effectiveStatusMeta.label}
+                    <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${statusMeta.className}`}>
+                      {statusMeta.label}
                     </span>
-                    {dispute.complainantRole === 'TUTOR' ? (
-                      <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1">
-                        <User className="w-3 h-3" />
-                        {activeRole === 'tutor' ? 'ĐƠN TÔI ĐÃ GỬI (GIA SƯ)' : 'KHIẾU NẠI TỪ GIA SƯ'}
-                      </span>
-                    ) : (
-                      <span className="px-2.5 py-1 rounded-full text-[11px] font-extrabold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
-                        <User className="w-3 h-3" />
-                        {activeRole === 'student' ? 'ĐƠN KHIẾU NẠI CỦA TÔI' : 'KHIẾU NẠI TỪ HỌC VIÊN'}
-                      </span>
-                    )}
+                    <span className="px-2.5 py-1 rounded-xl text-xs font-extrabold bg-slate-900 text-white">
+                      {dispute.className || `Lớp học #${dispute.classroomId || '---'}`} • Buổi #{dispute.sessionId}
+                    </span>
                   </div>
 
-                  <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Tạo lúc: {dispute.createdAt ? new Date(dispute.createdAt).toLocaleString('vi-VN') : 'N/A'}</span>
-                    {dispute.disputeDeadline && (
-                      <span className="text-amber-700 font-bold bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200">
-                        Hạn: {new Date(dispute.disputeDeadline).toLocaleString('vi-VN')}
-                      </span>
-                    )}
-                  </div>
+                  <span className="text-xs text-slate-400 font-semibold">
+                    {new Date(dispute.createdAt).toLocaleString('vi-VN')}
+                  </span>
                 </div>
 
-                {(dispute.resolutionReason || dispute.resolvedAt || dispute.status === 'APPROVED' || dispute.status === 'REJECTED' || dispute.status === 'RESOLUTION_PENDING') && (
-                  <div className={`rounded-2xl p-4 text-sm space-y-2 border ${
-                    dispute.status === 'APPROVED'
-                      ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
-                      : dispute.status === 'REJECTED'
-                      ? 'bg-rose-50/90 border-rose-200 text-rose-950'
-                      : 'bg-indigo-50/90 border-indigo-200 text-indigo-950'
+                <div className="space-y-2">
+                  <div className="text-xs text-slate-500 font-bold">Lý do khiếu nại:</div>
+                  <p className="text-xs text-slate-800 bg-rose-50/50 p-3 rounded-xl border border-rose-100 font-medium">
+                    {dispute.reason}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  <span className="text-xs text-slate-500">
+                    Người gửi: <strong>{dispute.studentName || dispute.tutorName || `#${dispute.complainantId}`}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDisputeForDetail(dispute)}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-800"
+                  >
+                    <Eye className="w-3.5 h-3.5" /> Xem chi tiết
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Flat pagination */}
+          {historyPages > 1 && (
+            <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-200">
+              <span className="text-xs text-slate-500">Trang {currentHistoryPage + 1} / {historyPages}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={currentHistoryPage === 0}
+                  onClick={() => setHistoryPage(currentHistoryPage - 1)}
+                  className="px-3 py-1 rounded-lg border text-xs font-bold disabled:opacity-40"
+                >
+                  Trước
+                </button>
+                <button
+                  type="button"
+                  disabled={currentHistoryPage + 1 >= historyPages}
+                  onClick={() => setHistoryPage(currentHistoryPage + 1)}
+                  className="px-3 py-1 rounded-lg border text-xs font-bold disabled:opacity-40"
+                >
+                  Sau
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* DISPUTE DETAIL MODAL (SIDE-BY-SIDE FULL COMPARISON & RESOLUTION) */}
+      {selectedDisputeForDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full overflow-hidden border border-slate-200 my-8 max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 px-6 py-5 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center backdrop-blur-md">
+                  <ShieldAlert className="w-5 h-5 text-rose-400" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-display font-black text-lg text-white">
+                      Hồ Sơ Khiếu Nại Chi Tiết
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-lg text-xs font-bold bg-white/20 text-white">
+                      Buổi #{selectedDisputeForDetail.sessionId}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 font-semibold mt-0.5">
+                    {selectedDisputeForDetail.className || `Lớp học #${selectedDisputeForDetail.classroomId}`} • Hợp đồng #{selectedDisputeForDetail.agreementId?.slice(0, 8)}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedDisputeForDetail(null)}
+                className="text-white/80 hover:text-white p-1.5 rounded-xl bg-white/10 hover:bg-white/20 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Scrollable Body */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+              {/* Status Banner */}
+              <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-slate-500">Trạng thái:</span>
+                  <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider ${
+                    DISPUTE_STATUS_META[selectedDisputeForDetail.status]?.className || 'bg-slate-200 text-slate-800'
                   }`}>
-                    <div className="flex items-start gap-2.5">
-                      {dispute.status === 'APPROVED' ? (
-                        <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                      ) : dispute.status === 'REJECTED' ? (
-                        <XCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-                      ) : (
-                        <Clock className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-sm">
-                          {dispute.status === 'RESOLUTION_PENDING'
-                            ? 'Quyết định phân xử đang chờ xác nhận on-chain'
-                            : dispute.status === 'APPROVED'
-                            ? dispute.complainantRole === 'TUTOR'
-                              ? 'Kết quả: Chấp thuận khiếu nại của gia sư (Giải ngân cho gia sư)'
-                              : 'Kết quả: Chấp thuận khiếu nại (Hoàn tiền học phí cho học viên)'
-                            : dispute.complainantRole === 'TUTOR'
-                            ? 'Kết quả: Bác bỏ khiếu nại của gia sư'
-                            : 'Kết quả: Bác bỏ khiếu nại (Giải ngân học phí cho gia sư)'}
-                        </h4>
-                        <p className="whitespace-pre-wrap mt-1 text-xs leading-relaxed font-medium">
-                          {dispute.resolutionReason || 'Không có ghi chú thêm về lý do phân xử.'}
-                        </p>
-                        <div className="flex items-center gap-3 mt-2 pt-2 border-t border-black/5 text-[11px] opacity-80 flex-wrap">
-                          <span>Phân xử bởi: <strong>{dispute.resolvedByEmail || dispute.resolvedByRole || 'Staff/Admin'}</strong></span>
-                          {dispute.resolvedAt && (
-                            <span>Thời gian: {new Date(dispute.resolvedAt).toLocaleString('vi-VN')}</span>
-                          )}
-                          {dispute.status === 'RESOLUTION_PENDING' && (
-                            <span className="text-indigo-700 font-bold">Tiền đang được giữ ký quỹ chờ mạng blockchain xác nhận.</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Main Content Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Left Col: Session & Reason */}
-                  <div className="md:col-span-2 space-y-3">
-                    <div>
-                      <h4 className="font-bold text-slate-900 text-base">
-                        {dispute.complainantRole === 'TUTOR'
-                          ? 'Khiếu nại của gia sư gửi Staff/Admin'
-                          : 'Khiếu nại của học viên về buổi học'}
-                      </h4>
-                      <p className="text-xs text-slate-400 font-semibold">
-                        Hợp đồng #{dispute.agreementId?.slice(0,8)} - Buổi học #{dispute.sessionId}
-                      </p>
-                    </div>
-
-                    <div className="bg-rose-50/50 border border-rose-100 rounded-2xl p-4 space-y-2">
-                      <div className="flex items-center gap-1.5 text-rose-900 font-bold text-xs">
-                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                        <span>Lý do khiếu nại:</span>
-                      </div>
-                      <p className="text-xs text-slate-700 font-medium pl-5 whitespace-pre-wrap">
-                        {dispute.reason || 'Chưa có nội dung khiếu nại.'}
-                      </p>
-                      {complainantEvidence.length > 0 && (
-                        <div className="pl-5 pt-1 space-y-2">
-                          {complainantEvidence.map((evidence, index) => (
-                            <div key={evidence.id} className="rounded-xl border border-rose-100 bg-white/80 p-2.5">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                {evidence.objectKey.startsWith('disputes/') ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => openManagedEvidence(dispute.id, evidence.id)}
-                                    className="inline-flex items-center gap-1 text-rose-700 font-bold text-[11px] hover:underline"
-                                  >
-                                    <ExternalLink className="w-3.5 h-3.5" />
-                                    File minh chứng người khiếu nại #{index + 1}
-                                  </button>
-                                ) : (
-                                  <a
-                                    href={evidence.objectKey.startsWith('http')
-                                      ? evidence.objectKey
-                                      : `https://${evidence.objectKey}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="inline-flex items-center gap-1 text-rose-700 font-bold text-[11px] hover:underline"
-                                  >
-                                    <ExternalLink className="w-3.5 h-3.5" />
-                                    Link minh chứng #{index + 1}
-                                  </a>
-                                )}
-                                {evidence.createdAt && (
-                                  <span className="text-[10px] text-slate-400">
-                                    {new Date(evidence.createdAt).toLocaleString('vi-VN')}
-                                  </span>
-                                )}
-                              </div>
-                              {evidence.sha256 && (
-                                <p className="mt-1 font-mono text-[10px] text-slate-400 break-all">
-                                  SHA-256: {evidence.sha256}
-                                </p>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    {dispute.complainantRole === 'STUDENT' && dispute.tutorResponse ? (() => {
-                      const fileMatch = dispute.tutorResponse.match(/\s*\[File:\s*([^\]]+)\]$/);
-                      const textOnly = fileMatch ? dispute.tutorResponse.replace(fileMatch[0], '') : dispute.tutorResponse;
-                      const legacyFileUrl = dispute.tutorEvidenceObjectKey || (fileMatch ? fileMatch[1] : null);
-                      return (
-                        <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs space-y-2.5">
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-1.5 font-bold text-slate-700">
-                              <FileText className="w-4 h-4 text-indigo-600" />
-                              <span>Phản hồi & Minh chứng đối chất từ gia sư:</span>
-                            </div>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                              {dispute.tutorRespondedAt
-                                ? `Đã nộp ${new Date(dispute.tutorRespondedAt).toLocaleString('vi-VN')}`
-                                : 'Đã nộp đối chất'}
-                            </span>
-                          </div>
-                          <p className="text-slate-700 text-xs pl-5 leading-relaxed font-medium">{textOnly}</p>
-
-                          {/* Managed or structured Tutor Evidence items */}
-                          {tutorCounterEvidence.length > 0 && (
-                            <div className="pl-5 pt-1 space-y-2">
-                              {tutorCounterEvidence.map((evidence, idx) => (
-                                <div key={evidence.id} className="rounded-xl border border-indigo-100 bg-white p-2.5">
-                                  <div className="flex flex-wrap items-center justify-between gap-2">
-                                    {evidence.objectKey.startsWith('disputes/') ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => openManagedEvidence(dispute.id, evidence.id)}
-                                        className="inline-flex items-center gap-1 text-indigo-700 font-bold text-[11px] hover:underline"
-                                      >
-                                        <ExternalLink className="w-3.5 h-3.5" />
-                                        File đối chất gia sư #{idx + 1}
-                                      </button>
-                                    ) : (
-                                      <a
-                                        href={evidence.objectKey.startsWith('http') ? evidence.objectKey : `https://${evidence.objectKey}`}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-1 text-indigo-700 font-bold text-[11px] hover:underline"
-                                      >
-                                        <ExternalLink className="w-3.5 h-3.5" />
-                                        Link đối chất #{idx + 1}
-                                      </a>
-                                    )}
-                                    {evidence.createdAt && (
-                                      <span className="text-[10px] text-slate-400">
-                                        {new Date(evidence.createdAt).toLocaleString('vi-VN')}
-                                      </span>
-                                    )}
-                                  </div>
-                                  {evidence.sha256 && (
-                                    <p className="mt-1 font-mono text-[10px] text-slate-400 break-all">
-                                      SHA-256: {evidence.sha256}
-                                    </p>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Fallback legacy single link if not in tutorCounterEvidence */}
-                          {legacyFileUrl && tutorCounterEvidence.length === 0 && (
-                            <div className="pl-5 pt-1">
-                              {legacyFileUrl.startsWith('disputes/') ? (
-                                <button
-                                  type="button"
-                                  onClick={() => openManagedEvidence(dispute.id, `${dispute.id}-tutor-legacy`)}
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 text-indigo-700 font-bold border border-indigo-200 rounded-lg text-[11px] shadow-2xs transition-all"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5 text-indigo-500" />
-                                  <span>Xem file đối chất của gia sư</span>
-                                </button>
-                              ) : (
-                                <a
-                                  href={legacyFileUrl.startsWith('http') ? legacyFileUrl : `https://${legacyFileUrl}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 text-indigo-700 font-bold border border-indigo-200 rounded-lg text-[11px] shadow-2xs transition-all"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5 text-indigo-500" />
-                                  <span>Xem file tài liệu / link minh chứng của gia sư</span>
-                                </a>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })() : dispute.complainantRole === 'STUDENT' ? (
-                      <div className="bg-amber-50/50 border border-dashed border-amber-200 rounded-2xl p-3 text-xs text-amber-800 flex items-center gap-2">
-                        <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-                        <span>Chưa có phản hồi đối chất từ gia sư.</span>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {/* Right Col: Parties & Blockchain Audit Links */}
-                  <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-4 space-y-3 flex flex-col justify-between">
-                    <div className="space-y-2.5 text-xs">
-                      <div>
-                        <span className="text-slate-400 font-semibold block text-[11px]">
-                          {dispute.complainantRole === 'TUTOR' ? 'Gia sư khiếu nại:' : 'Học viên khiếu nại:'}
-                        </span>
-                        <span className="font-bold text-slate-800">#{dispute.complainantId}</span>
-                        <div className="mt-0.5">
-                          <EtherscanLink
-                            address={dispute.complainantRole === 'TUTOR' ? dispute.tutorWallet : dispute.studentWallet}
-                            chainId={activeChainId}
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <span className="text-slate-400 font-semibold block text-[11px]">
-                          {dispute.complainantRole === 'TUTOR' ? 'Học viên liên quan:' : 'Gia sư bị khiếu nại:'}
-                        </span>
-                        <span className="font-bold text-slate-800">
-                          {dispute.complainantRole === 'TUTOR' ? 'Ví học viên' : 'Ví gia sư'}
-                        </span>
-                        <div className="mt-0.5">
-                          <EtherscanLink
-                            address={dispute.complainantRole === 'TUTOR' ? dispute.studentWallet : dispute.tutorWallet}
-                            chainId={activeChainId}
-                          />
-                        </div>
-                      </div>
-
-                      {dispute.classroomReviewerEmail && (
-                        <div className="border-t border-slate-200/60 pt-2">
-                          <span className="text-slate-400 font-semibold block text-[10px] uppercase tracking-wider">
-                            Staff phụ trách lớp:
-                          </span>
-                          <span className="font-mono text-xs font-bold text-blue-700">
-                            {dispute.classroomReviewerEmail}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Blockchain Tx Audit */}
-                    <div className="border-t border-slate-200/60 pt-2.5 space-y-1.5">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                        Minh chứng On-chain
-                      </span>
-                      {dispute.openTxHash && (
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-slate-500 text-[11px]">Tx Mở khiếu nại:</span>
-                          <EtherscanLink txHash={dispute.openTxHash} chainId={activeChainId} />
-                        </div>
-                      )}
-                      {dispute.resolveTxHash && (
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-slate-500 text-[11px]">Tx Phân xử:</span>
-                          <EtherscanLink txHash={dispute.resolveTxHash} chainId={activeChainId} />
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                    {DISPUTE_STATUS_META[selectedDisputeForDetail.status]?.label || selectedDisputeForDetail.status}
+                  </span>
                 </div>
 
-                {/* Tutor Actions (Submit / Update Counter Evidence) */}
-                {activeRole === 'tutor' && dispute.complainantRole === 'STUDENT' && dispute.status === 'OPEN' && (
-                  <div className="border-t border-slate-100 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-indigo-50/50 p-4 rounded-2xl">
-                    <div className="flex items-center gap-2 text-xs text-indigo-900 font-medium">
-                      <Info className="w-4 h-4 text-indigo-600 shrink-0" />
+                <div className="flex items-center gap-4 text-slate-600 font-medium text-xs flex-wrap">
+                  <div>
+                    Mở lúc: <strong className="text-slate-900">{formatExactTime(selectedDisputeForDetail.createdAt)}</strong>
+                  </div>
+                  {selectedDisputeForDetail.tutorResponseDeadline && selectedDisputeForDetail.status === 'OPEN' && (
+                    <div className="px-2.5 py-1 rounded-xl bg-amber-100/70 border border-amber-200 text-amber-900 font-bold text-[11px] flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5 text-amber-700" />
                       <span>
-                        {dispute.tutorResponse
-                          ? 'Bạn đã nộp giải trình đối chất. Bạn có thể cập nhật lại trước khi Staff/Admin phân xử.'
-                          : 'Học viên đã mở khiếu nại cho buổi học này. Vui lòng gửi giải trình và bằng chứng để bảo vệ quyền lợi.'}
+                        Hạn giải trình: <strong>{formatExactTime(selectedDisputeForDetail.tutorResponseDeadline)}</strong>
+                        {clockNow < new Date(selectedDisputeForDetail.tutorResponseDeadline).getTime()
+                          ? ` (Còn ${formatRemainingTime(selectedDisputeForDetail.tutorResponseDeadline, clockNow)})`
+                          : ' (Đã hết hạn)'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Side-by-side Evidence & Statements */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Column 1: Student Claim */}
+                <div className="bg-rose-50/40 border border-rose-200 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center justify-between border-b border-rose-200/80 pb-3">
+                    <div className="flex items-center gap-2 font-display font-black text-sm text-rose-900">
+                      <User className="w-4 h-4 text-rose-600" />
+                      <span>HỌC VIÊN KHIẾU NẠI</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800">
+                      Bên khiếu nại
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5 text-xs text-slate-700">
+                    <div>Họ và tên: <strong className="text-slate-900">{selectedDisputeForDetail.studentName || 'Học viên'}</strong></div>
+                    {selectedDisputeForDetail.studentEmail && (
+                      <div>Email: <span className="font-mono text-slate-600">{selectedDisputeForDetail.studentEmail}</span></div>
+                    )}
+                    <div>
+                      Ví học viên:
+                      <div className="mt-0.5">
+                        <EtherscanLink address={selectedDisputeForDetail.studentWallet} chainId={activeChainId} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5 pt-2 border-t border-rose-200/60">
+                    <span className="font-bold text-rose-900 block">Lý do khiếu nại chi tiết:</span>
+                    <p className="bg-white p-3 rounded-xl border border-rose-100 text-slate-800 font-medium leading-relaxed whitespace-pre-wrap">
+                      {selectedDisputeForDetail.reason}
+                    </p>
+                  </div>
+
+                  {/* Student Evidence Files */}
+                  {selectedDisputeForDetail.evidenceItems?.filter((e) => e.submittedByRole === 'STUDENT').length > 0 && (
+                    <div className="space-y-2 pt-2 border-t border-rose-200/60">
+                      <span className="font-bold text-rose-900 block">File / Minh chứng đính kèm:</span>
+                      {selectedDisputeForDetail.evidenceItems.filter((e) => e.submittedByRole === 'STUDENT').map((ev, idx) => (
+                        <div key={ev.id} className="bg-white p-2.5 rounded-xl border border-rose-100 flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openManagedEvidence(selectedDisputeForDetail.id, ev.id)}
+                            className="inline-flex items-center gap-1.5 text-rose-700 font-bold hover:underline"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>File minh chứng học viên #{idx + 1}</span>
+                          </button>
+                          {ev.sha256 && (
+                            <span className="text-[10px] font-mono text-slate-400">SHA-256: {ev.sha256.slice(0, 10)}...</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Column 2: Dependent on Active Role */}
+                {activeRole === 'student' ? (
+                  /* ========================================================================= */
+                  /* STUDENT VIEW: Confidential Process & Review Status (NO TUTOR LEAKS)       */
+                  /* ========================================================================= */
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+                      <div className="flex items-center gap-2 font-display font-black text-sm text-slate-800">
+                        <Shield className="w-4 h-4 text-indigo-600" />
+                        <span>TIẾN TRÌNH & THẨM ĐỊNH TỪ BAN QUẢN TRỊ</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        Bảo mật hệ thống
                       </span>
                     </div>
 
-                    <button
-                      onClick={() => handleOpenTutorModal(dispute)}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-display font-black text-xs rounded-xl shadow-sm hover:shadow transition-all flex items-center gap-1.5 shrink-0"
-                    >
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>{dispute.tutorResponse ? 'Cập Nhật Giải Trình' : 'Gửi Giải Trình & Minh Chứng'}</span>
-                    </button>
-                  </div>
-                )}
-                {/* Footer Resolution Actions (Staff / Admin only) */}
-                {(activeRole === 'admin' || activeRole === 'staff') && dispute.status === 'OPEN' && (
-                  <div className="border-t border-slate-100 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50 p-4 rounded-2xl">
-                    <div className="flex items-center gap-2 text-xs">
-                      {hasResolvePermission ? (
-                        <span className="text-emerald-700 font-bold flex items-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          <span>Bạn có quyền phân xử khiếu nại này ({activeRole === 'admin' ? 'ADMIN' : 'STAFF PHỤ TRÁCH'}).</span>
-                        </span>
+                    <div className="space-y-2 text-xs text-slate-700">
+                      <div>Gia sư lớp học: <strong className="text-slate-900">{selectedDisputeForDetail.tutorName || 'Gia sư'}</strong></div>
+                      {selectedDisputeForDetail.tutorEmail && (
+                        <div>Email gia sư: <span className="font-mono text-slate-600">{selectedDisputeForDetail.tutorEmail}</span></div>
+                      )}
+                      <div>
+                        Staff phụ trách thẩm định: <strong className="text-indigo-900">{selectedDisputeForDetail.classroomReviewerEmail || 'Ban Quản Trị Hệ Thống'}</strong>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 pt-2 border-t border-slate-200">
+                      <span className="font-bold text-slate-800 block">Trạng thái giải trình từ gia sư:</span>
+                      {selectedDisputeForDetail.tutorRespondedAt ? (
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 space-y-2">
+                          <div className="flex items-center gap-1.5 text-emerald-900 font-bold text-xs">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>Gia sư đã nộp giải trình tới Staff lúc {formatExactTime(selectedDisputeForDetail.tutorRespondedAt)}</span>
+                          </div>
+                          <p className="text-[11px] text-emerald-800 leading-relaxed">
+                            🔒 <em>Nhằm đảm bảo tính khách quan, bảo mật và tránh xung đột hai chiều, toàn bộ tài liệu giải trình của gia sư được chuyển trực tiếp cho Hội đồng phân xử (Staff/Admin) độc lập thẩm định.</em>
+                          </p>
+                        </div>
+                      ) : selectedDisputeForDetail.tutorResponseDeadline && clockNow < new Date(selectedDisputeForDetail.tutorResponseDeadline).getTime() ? (
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-amber-900 font-bold text-xs">
+                            <Clock className="w-4 h-4 text-amber-600 shrink-0 animate-pulse" />
+                            <span>Đang trong thời hạn gia sư gửi giải trình</span>
+                          </div>
+                          <p className="text-[11px] text-amber-800">
+                            Gia sư còn <strong>{formatRemainingTime(selectedDisputeForDetail.tutorResponseDeadline, clockNow)}</strong> (đến đúng <strong>{formatExactTime(selectedDisputeForDetail.tutorResponseDeadline)}</strong>) để gửi phản hồi và minh chứng đối chất tới Staff phụ trách.
+                          </p>
+                          <p className="text-[10px] text-amber-700 font-medium">
+                            Sau thời gian này nếu gia sư không phản hồi, Staff/Admin sẽ toàn quyền phân xử bảo vệ quyền lợi của bạn.
+                          </p>
+                        </div>
                       ) : (
-                        <span className="text-amber-700 font-bold flex items-center gap-1.5">
-                          <Lock className="w-4 h-4 text-amber-600" />
-                          <span>Chỉ Staff đã duyệt lớp học này hoặc Quản trị viên (ADMIN) mới có quyền phân xử.</span>
-                        </span>
+                        <div className="bg-slate-100 border border-slate-200 rounded-xl p-3.5 text-slate-700 text-xs space-y-1">
+                          <div className="font-bold text-rose-700">⏳ Đã hết thời hạn gửi giải trình 24h ({formatExactTime(selectedDisputeForDetail.tutorResponseDeadline)})</div>
+                          <p className="text-[11px] text-slate-600">Gia sư đã không gửi phản hồi trong thời hạn quy định. Staff/Admin đang tiến hành phân xử trên cơ sở dữ liệu hệ thống và minh chứng của bạn.</p>
+                        </div>
                       )}
                     </div>
 
-                    {hasResolvePermission && (
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => handleResolve(dispute, false)}
-                          disabled={resolvingId === dispute.id}
-                          className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold rounded-xl transition-all disabled:opacity-50"
-                        >
-                          {resolvingId === dispute.id
-                            ? 'Đang gửi tx...'
-                            : dispute.complainantRole === 'TUTOR'
-                              ? 'Bác khiếu nại (Hoàn tiền học viên)'
-                              : 'Bác bỏ khiếu nại (Trả tiền gia sư)'}
-                        </button>
-                        <button
-                          onClick={() => handleResolve(dispute, true)}
-                          disabled={resolvingId === dispute.id}
-                          className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl shadow-md hover:shadow transition-all disabled:opacity-50"
-                        >
-                          {resolvingId === dispute.id
-                            ? 'Đang gửi tx...'
-                            : dispute.complainantRole === 'TUTOR'
-                              ? 'Chấp thuận (Trả tiền gia sư)'
-                              : 'Chấp thuận (Hoàn tiền học viên)'}
-                        </button>
+                    <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3 text-[11px] text-indigo-900 space-y-1">
+                      <div className="font-bold flex items-center gap-1">
+                        <Lock className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Bảo vệ ký quỹ Escrow:</span>
+                      </div>
+                      <p>
+                        Khoản học phí Buổi học #{selectedDisputeForDetail.sessionId} ({selectedDisputeForDetail.sessionPriceUsdc ? `${selectedDisputeForDetail.sessionPriceUsdc} USDC` : '100% học phí buổi'}) đang được bảo lưu an toàn trên Smart Contract cho đến khi có phán quyết chính thức từ Staff/Admin.
+                      </p>
+                    </div>
+                  </div>
+                ) : activeRole === 'tutor' ? (
+                  /* ========================================================================= */
+                  /* TUTOR VIEW: Tutor's Own Response & Evidence Upload                        */
+                  /* ========================================================================= */
+                  <div className="bg-indigo-50/40 border border-indigo-200 rounded-2xl p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-indigo-200/80 pb-3">
+                      <div className="flex items-center gap-2 font-display font-black text-sm text-indigo-900">
+                        <GraduationCap className="w-4 h-4 text-indigo-600" />
+                        <span>BẢN GIẢI TRÌNH CỦA BẠN (GIA SƯ)</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                        Hồ sơ đối chất
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 pt-2">
+                      <span className="font-bold text-indigo-900 block">Nội dung giải trình đối chất của bạn:</span>
+                      {selectedDisputeForDetail.tutorResponse ? (
+                        <div className="space-y-2">
+                          <p className="bg-white p-3 rounded-xl border border-indigo-100 text-slate-800 font-medium leading-relaxed whitespace-pre-wrap">
+                            {selectedDisputeForDetail.tutorResponse}
+                          </p>
+                          <div className="text-[11px] text-emerald-700 font-bold flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Đã gửi lúc {formatExactTime(selectedDisputeForDetail.tutorRespondedAt)}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-white p-3.5 rounded-xl border border-dashed border-amber-300 text-amber-800 font-medium space-y-3">
+                          {selectedDisputeForDetail.tutorResponseDeadline && clockNow < new Date(selectedDisputeForDetail.tutorResponseDeadline).getTime() ? (
+                            <>
+                              <div>
+                                ⏳ Bạn chưa nộp bản giải trình. Còn <strong>{formatRemainingTime(selectedDisputeForDetail.tutorResponseDeadline, clockNow)}</strong> (đến đúng <strong>{formatExactTime(selectedDisputeForDetail.tutorResponseDeadline)}</strong>) để nộp đối chất bảo vệ học phí.
+                              </div>
+                              <div className="text-[11px] text-amber-700">
+                                ⚠️ Sau thời điểm này, hệ thống sẽ đóng cổng giải trình và chuyển toàn quyền cho Staff/Admin phân xử.
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenTutorModal(selectedDisputeForDetail)}
+                                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-display font-black text-xs shadow-md transition-all"
+                              >
+                                <Upload className="w-4 h-4" />
+                                <span>Nộp Giải Trình & Minh Chứng Đối Chất Ngay</span>
+                              </button>
+                            </>
+                          ) : (
+                            <div className="text-xs text-rose-700 font-semibold">
+                              ⚠️ Đã hết thời hạn 24 giờ nộp giải trình ({formatExactTime(selectedDisputeForDetail.tutorResponseDeadline)}). Cổng giải trình đã đóng và hồ sơ đã chuyển cho Staff/Admin phân xử.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tutor Evidence Files */}
+                    {selectedDisputeForDetail.evidenceItems?.filter((e) => e.submittedByRole === 'TUTOR').length > 0 && (
+                      <div className="space-y-2 pt-2 border-t border-indigo-200/60">
+                        <span className="font-bold text-indigo-900 block">File minh chứng bạn đã nộp:</span>
+                        {selectedDisputeForDetail.evidenceItems.filter((e) => e.submittedByRole === 'TUTOR').map((ev, idx) => (
+                          <div key={ev.id} className="bg-white p-2.5 rounded-xl border border-indigo-100 flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openManagedEvidence(selectedDisputeForDetail.id, ev.id)}
+                              className="inline-flex items-center gap-1.5 text-indigo-700 font-bold hover:underline"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>File đối chất #{idx + 1}</span>
+                            </button>
+                            {ev.sha256 && (
+                              <span className="text-[10px] font-mono text-slate-400">SHA-256: {ev.sha256.slice(0, 10)}...</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="p-2.5 bg-indigo-100/50 rounded-xl text-[11px] text-indigo-900 border border-indigo-200/50">
+                      🔒 <em>Hồ sơ giải trình và minh chứng của bạn được chuyển riêng cho Ban Quản Trị & Staff phụ trách lớp thẩm định, không công khai cho học viên.</em>
+                    </div>
+                  </div>
+                ) : (
+                  /* ========================================================================= */
+                  /* STAFF / ADMIN VIEW: Full Tutor Counter Response & Files (2-Way Full View) */
+                  /* ========================================================================= */
+                  <div className="bg-indigo-50/40 border border-indigo-200 rounded-2xl p-5 space-y-4">
+                    <div className="flex items-center justify-between border-b border-indigo-200/80 pb-3">
+                      <div className="flex items-center gap-2 font-display font-black text-sm text-indigo-900">
+                        <GraduationCap className="w-4 h-4 text-indigo-600" />
+                        <span>GIA SƯ PHẢN HỒI & ĐỐI CHẤT</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800">
+                        Bên giải trình
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs text-slate-700">
+                      <div>Họ và tên: <strong className="text-slate-900">{selectedDisputeForDetail.tutorName || 'Gia sư'}</strong></div>
+                      {selectedDisputeForDetail.tutorEmail && (
+                        <div>Email: <span className="font-mono text-slate-600">{selectedDisputeForDetail.tutorEmail}</span></div>
+                      )}
+                      <div>
+                        Ví gia sư:
+                        <div className="mt-0.5">
+                          <EtherscanLink address={selectedDisputeForDetail.tutorWallet} chainId={activeChainId} />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5 pt-2 border-t border-indigo-200/60">
+                      <span className="font-bold text-indigo-900 block">Nội dung giải trình đối chất:</span>
+                      {selectedDisputeForDetail.tutorResponse ? (
+                        <div className="space-y-2">
+                          <p className="bg-white p-3 rounded-xl border border-indigo-100 text-slate-800 font-medium leading-relaxed whitespace-pre-wrap">
+                            {selectedDisputeForDetail.tutorResponse}
+                          </p>
+                          <div className="text-[11px] text-emerald-700 font-bold flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>Gia sư nộp lúc {formatExactTime(selectedDisputeForDetail.tutorRespondedAt)} • Sẵn sàng phân xử</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-white p-3.5 rounded-xl border border-dashed border-amber-300 text-amber-800 font-medium space-y-1.5">
+                          {selectedDisputeForDetail.tutorResponseDeadline && clockNow < new Date(selectedDisputeForDetail.tutorResponseDeadline).getTime() ? (
+                            <>
+                              <div>
+                                ⏳ Gia sư chưa nộp giải trình. Còn <strong>{formatRemainingTime(selectedDisputeForDetail.tutorResponseDeadline, clockNow)}</strong> (hạn chót đến <strong>{formatExactTime(selectedDisputeForDetail.tutorResponseDeadline)}</strong>).
+                              </div>
+                              <div className="text-[11px] text-amber-700">
+                                ℹ️ Staff/Admin có thể phân xử ngay sau khi gia sư nộp hoặc sau khi thời hạn trên kết thúc.
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-xs text-rose-700 font-semibold">
+                              ⚡ Gia sư đã không nộp giải trình trong thời hạn 24 giờ (đã hết hạn lúc {formatExactTime(selectedDisputeForDetail.tutorResponseDeadline)}). Staff/Admin đã có toàn quyền phân xử ngay.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Tutor Evidence Files */}
+                    {selectedDisputeForDetail.evidenceItems?.filter((e) => e.submittedByRole === 'TUTOR').length > 0 && (
+                      <div className="space-y-2 pt-2 border-t border-indigo-200/60">
+                        <span className="font-bold text-indigo-900 block">File minh chứng đối chất:</span>
+                        {selectedDisputeForDetail.evidenceItems.filter((e) => e.submittedByRole === 'TUTOR').map((ev, idx) => (
+                          <div key={ev.id} className="bg-white p-2.5 rounded-xl border border-indigo-100 flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openManagedEvidence(selectedDisputeForDetail.id, ev.id)}
+                              className="inline-flex items-center gap-1.5 text-indigo-700 font-bold hover:underline"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>File đối chất gia sư #{idx + 1}</span>
+                            </button>
+                            {ev.sha256 && (
+                              <span className="text-[10px] font-mono text-slate-400">SHA-256: {ev.sha256.slice(0, 10)}...</span>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
                 )}
               </div>
-            );
-          })
-        )}
-      </div>
 
-      {/* Bottom Pagination Controls */}
-      {historyPages > 1 && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
-          <span className="text-xs font-semibold text-slate-500">
-            Trang {currentHistoryPage + 1} của {historyPages} ({historyItems.length} khiếu nại)
-          </span>
+              {/* Resolution Verdict / Result Box */}
+              {(selectedDisputeForDetail.resolutionReason || selectedDisputeForDetail.resolvedAt || selectedDisputeForDetail.status === 'APPROVED' || selectedDisputeForDetail.status === 'REJECTED') && (
+                <div className={`rounded-2xl p-5 border ${
+                  selectedDisputeForDetail.status === 'APPROVED'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                    : 'bg-rose-50 border-rose-200 text-rose-950'
+                }`}>
+                  <div className="flex items-start gap-3">
+                    {selectedDisputeForDetail.status === 'APPROVED' ? (
+                      <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <XCircle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
+                    )}
+                    <div className="space-y-1.5 flex-1">
+                      <h4 className="font-display font-black text-sm">
+                        KẾT QUẢ PHÂN XỬ CHÍNH THỨC: {selectedDisputeForDetail.status === 'APPROVED' ? 'CHẤP THUẬN KHIẾU NẠI (HOÀN TIỀN HỌC VIÊN)' : 'BÁC BỎ KHIẾU NẠI (GIẢI NGÂN GIA SƯ)'}
+                      </h4>
+                      <p className="text-xs font-medium leading-relaxed whitespace-pre-wrap">
+                        {selectedDisputeForDetail.resolutionReason || 'Không có ghi chú thêm.'}
+                      </p>
+                      <div className="flex items-center gap-4 pt-2 border-t border-black/10 text-[11px] opacity-80 flex-wrap">
+                        <span>Phân xử bởi: <strong>{selectedDisputeForDetail.resolvedByEmail || selectedDisputeForDetail.resolvedByRole || 'Staff/Admin'}</strong></span>
+                        {selectedDisputeForDetail.resolvedAt && (
+                          <span>Thời gian: {new Date(selectedDisputeForDetail.resolvedAt).toLocaleString('vi-VN')}</span>
+                        )}
+                        {selectedDisputeForDetail.resolveTxHash && (
+                          <div className="flex items-center gap-1">
+                            <span>Tx Phán Quyết:</span>
+                            <EtherscanLink txHash={selectedDisputeForDetail.resolveTxHash} chainId={activeChainId} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <button
-              type="button"
-              disabled={currentHistoryPage === 0}
-              onClick={() => {
-                setHistoryPage(currentHistoryPage - 1);
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              <span>Trước</span>
-            </button>
+              {/* Resolution Form for Staff / Admin if open */}
+              {(activeRole === 'admin' || activeRole === 'staff') && selectedDisputeForDetail.status === 'OPEN' && canStaffResolve(selectedDisputeForDetail) && (
+                <div className="p-5 bg-slate-100 rounded-2xl border border-slate-200 space-y-4">
+                  <div className="flex items-center gap-2 font-display font-black text-slate-900 text-sm">
+                    <Scale className="w-5 h-5 text-indigo-600" />
+                    <span>HỘI ĐỒNG PHÂN XỬ ON-CHAIN (STAFF / ADMIN)</span>
+                  </div>
 
-            {Array.from({ length: historyPages }, (_, i) => i).map((pageIdx) => {
-              if (
-                historyPages > 7 &&
-                Math.abs(currentHistoryPage - pageIdx) > 2 &&
-                pageIdx !== 0 &&
-                pageIdx !== historyPages - 1
-              ) {
-                if (Math.abs(currentHistoryPage - pageIdx) === 3) {
-                  return <span key={pageIdx} className="px-1 text-xs text-slate-400">...</span>;
-                }
-                return null;
-              }
-              return (
-                <button
-                  key={pageIdx}
-                  type="button"
-                  onClick={() => {
-                    setHistoryPage(pageIdx);
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                  className={`w-8 h-8 rounded-xl text-xs font-extrabold transition-colors ${
-                    currentHistoryPage === pageIdx
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                  }`}
-                >
-                  {pageIdx + 1}
-                </button>
-              );
-            })}
+                  <div className="space-y-3">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">
+                        Nhập lý do & căn cứ phán quyết <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={resolveReasonInput}
+                        onChange={(e) => setResolveReasonInput(e.target.value)}
+                        placeholder="Ghi rõ căn cứ phân xử (ví dụ: Học viên cung cấp đủ video không có gia sư vào lớp, hoặc Gia sư đã chứng minh hoàn thành đủ buổi học...)"
+                        className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-xs focus:outline-none focus:border-indigo-600 bg-white"
+                        required
+                      />
+                    </div>
 
-            <button
-              type="button"
-              disabled={currentHistoryPage + 1 >= historyPages}
-              onClick={() => {
-                setHistoryPage(currentHistoryPage + 1);
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
-            >
-              <span>Sau</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
+                    <div className="flex items-center justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        disabled={resolvingId === selectedDisputeForDetail.id || !resolveReasonInput.trim()}
+                        onClick={() => handleResolve(selectedDisputeForDetail, false, resolveReasonInput.trim())}
+                        className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl shadow-sm transition-all disabled:opacity-50"
+                      >
+                        {resolvingId === selectedDisputeForDetail.id ? 'Đang gửi tx...' : 'Bác bỏ (Giải ngân 85% cho Gia sư)'}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={resolvingId === selectedDisputeForDetail.id || !resolveReasonInput.trim()}
+                        onClick={() => handleResolve(selectedDisputeForDetail, true, resolveReasonInput.trim())}
+                        className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md transition-all disabled:opacity-50"
+                      >
+                        {resolvingId === selectedDisputeForDetail.id ? 'Đang gửi tx...' : 'Chấp thuận (Hoàn tiền 100% cho Học viên)'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setSelectedDisputeForDetail(null)}
+                className="px-5 py-2 rounded-xl bg-slate-900 text-white font-bold text-xs hover:bg-slate-800 transition-colors"
+              >
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1248,8 +1775,7 @@ export function DisputeManagementPanel({
                   ))}
                 </select>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Chỉ có thể gửi trong hạn 24 giờ và trước khi giải ngân. Smart Contract V1 hiện hỗ trợ khóa/phân xử on-chain cho buổi `BOTH_PRESENT`.
-                  {activeRole === 'tutor' && ' Khiếu nại của gia sư chỉ Staff/Admin được xem; học viên không thấy nội dung và minh chứng.'}
+                  Chỉ có thể gửi trong hạn 24 giờ và trước khi giải ngân. Smart Contract V1 hỗ trợ đóng băng/phân xử on-chain cho buổi `BOTH_PRESENT`.
                 </p>
               </div>
 
@@ -1331,7 +1857,7 @@ export function DisputeManagementPanel({
                     Giải Trình & Minh Chứng Đối Chất
                   </h3>
                   <p className="text-xs text-indigo-100 font-semibold">
-                    Hợp đồng #{selectedDisputeForTutor.agreementId?.slice(0, 8)} • Buổi học #{selectedDisputeForTutor.sessionId}
+                    {selectedDisputeForTutor.className || `Lớp học #${selectedDisputeForTutor.classroomId}`} • Buổi học #{selectedDisputeForTutor.sessionId}
                   </p>
                 </div>
               </div>
@@ -1352,28 +1878,6 @@ export function DisputeManagementPanel({
                 <p className="text-slate-700 pl-5 whitespace-pre-wrap">
                   {selectedDisputeForTutor.reason || 'Học viên phản ánh sai lệch điểm danh của buổi học.'}
                 </p>
-                {(selectedStudentEvidence || selectedDisputeForTutor.studentEvidenceObjectKey) && (
-                  selectedStudentEvidence?.objectKey.startsWith('disputes/') ? (
-                    <button
-                      type="button"
-                      onClick={() => openManagedEvidence(selectedDisputeForTutor.id, selectedStudentEvidence.id)}
-                      className="inline-flex items-center gap-1 text-rose-700 font-bold underline pl-5"
-                    >
-                      <ExternalLink className="w-3 h-3" /> Xem file học viên gửi
-                    </button>
-                  ) : (
-                    <a
-                      href={(selectedStudentEvidence?.objectKey || selectedDisputeForTutor.studentEvidenceObjectKey || '').startsWith('http')
-                        ? (selectedStudentEvidence?.objectKey || selectedDisputeForTutor.studentEvidenceObjectKey || '')
-                        : `https://${selectedStudentEvidence?.objectKey || selectedDisputeForTutor.studentEvidenceObjectKey}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-rose-700 font-bold underline pl-5"
-                    >
-                      <ExternalLink className="w-3 h-3" /> Xem link học viên gửi
-                    </a>
-                  )
-                )}
               </div>
 
               <div>
@@ -1415,9 +1919,6 @@ export function DisputeManagementPanel({
                   placeholder="Link Google Drive, ảnh chụp màn hình điểm danh, video record..."
                   className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-indigo-500 disabled:bg-slate-100"
                 />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Nhập link Google Drive hoặc file lưu trữ ảnh màn hình điểm danh, video ghi hình buổi học để Staff/Admin đối chiếu.
-                </p>
               </div>
 
               <div className="bg-indigo-50 border border-indigo-200/80 rounded-xl p-3 text-[11px] text-indigo-900 flex items-start gap-2">

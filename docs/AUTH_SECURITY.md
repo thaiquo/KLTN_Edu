@@ -1,5 +1,7 @@
 # EduConnect Authentication & Security Baseline
 
+> Đối chiếu source gần nhất: **2026-09-14**.
+
 ## 1. Authentication Model
 
 EduConnect uses JWT authentication with role-based authorization.
@@ -40,10 +42,10 @@ Because browser authentication uses cookies, CSRF must be considered.
 Current source evidence:
 
 - Account Service exposes a CSRF endpoint through Auth Controller.
-- Account and Learning security configs use `CookieCsrfTokenRepository.withHttpOnlyFalse()`.
-- Notification Service uses `CookieCsrfTokenRepository.withHttpOnlyFalse()` for its authenticated REST API.
+- Account, Learning, Contract và Notification security configs đều dùng `CookieCsrfTokenRepository.withHttpOnlyFalse()`.
 - Web API client obtains `XSRF-TOKEN` and sends `X-XSRF-TOKEN` on mutating requests.
 - Notification WebSocket connections use the browser `access_token` cookie during the handshake and are user-targeted server-side; clients must not provide or spoof `recipientUserId`.
+- Chat WebSocket dùng principal từ cùng cookie JWT; kết nối không có principal hợp lệ bị đóng và REST chat luôn kiểm tra participant.
 
 Do not disable CSRF just to make a request pass. If an API call fails due to CSRF, audit the frontend credentials/header flow and the relevant Spring Security configuration.
 
@@ -102,7 +104,17 @@ Current JWT extraction policy:
 - Account Service JWT filter reads JWT from cookie `access_token`.
 - Learning Service JWT filter reads JWT from cookie `access_token`.
 - Notification Service JWT filter reads JWT from cookie `access_token` and derives notification ownership from the authenticated `userId` claim.
+- Contract Service JWT filter reads JWT from cookie `access_token`; agreement, document, payment, settlement, transaction, dispute và evidence đều dùng principal server-side.
 - Browser requests must not depend on `Authorization: Bearer` or legacy cookie `token`.
+
+Contract internal auto-propose không tin header user do browser gửi. Learning Service tạo JWT service token ngắn hạn có `serviceScope=contract-settlement`; Contract map token này thành authority nội bộ riêng.
+
+Dispute/evidence áp dụng object-level authorization, không chỉ route-level role:
+
+- Student/Tutor chỉ thao tác agreement của chính mình theo active role.
+- Staff bị giới hạn theo `classroomReviewerEmail`; truy cập ngoài scope trả về không tìm thấy để hạn chế lộ tồn tại dữ liệu.
+- Student không được đọc Tutor-origin dispute hoặc Tutor-private evidence/response.
+- File evidence được stream qua controller sau authorization, gắn `X-Content-Type-Options: nosniff`; object key không được dùng như public URL.
 
 Mobile currently uses credentialed API requests, but the CSRF flow is not as complete as Web and should be audited before expanding mobile mutating APIs.
 

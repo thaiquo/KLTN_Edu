@@ -16,6 +16,7 @@ import {
   LogOut,
   Network,
   RefreshCw,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Wallet,
@@ -119,14 +120,17 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
               const isSettled = settlement.status === "SETTLED";
               const isRefunded = settlement.status === "REFUNDED";
               const isProposed = settlement.status === "PROPOSED";
-              if (!isSettled && !isRefunded && !isProposed) continue;
+              const isFinalizing = settlement.status === "FINALIZE_PENDING" || settlement.status === "FAILED_RETRYABLE";
+              const isDisputed = settlement.status === "DISPUTED" || settlement.status === "DISPUTE_OPENING";
+              if (!isSettled && !isRefunded && !isProposed && !isFinalizing && !isDisputed) continue;
 
               let tutorAmt = Number(settlement.tutorAmountUsdc || 0);
               let platAmt = Number(settlement.platformAmountUsdc || 0);
               let studentRef = Number(settlement.studentRefundUsdc || 0);
               const sessionTotal = Number(settlement.amountUsdc || (tutorAmt + platAmt + studentRef));
 
-              if (isProposed && Number(settlement.amountUsdc || 0) > 0) {
+              const isPendingOutcome = isProposed || isFinalizing || isDisputed;
+              if (isPendingOutcome && Number(settlement.amountUsdc || 0) > 0) {
                 const totalAmt = Number(settlement.amountUsdc);
                 if (settlement.outcome === "BOTH_PRESENT") {
                   tutorAmt = Math.round(totalAmt * 0.85 * 100) / 100;
@@ -155,6 +159,10 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                 displayAmount = tutorAmt;
                 if (isProposed) {
                   actionName = `Thu nhập Buổi #${settlement.sessionId} (${settlement.outcome}) · Đang chờ 24h`;
+                } else if (isFinalizing) {
+                  actionName = `Thu nhập Buổi #${settlement.sessionId} (${settlement.outcome}) · Đang giải ngân về ví`;
+                } else if (isDisputed) {
+                  actionName = `Thu nhập Buổi #${settlement.sessionId} (${settlement.outcome}) · Tạm giữ chờ phân xử khiếu nại`;
                 } else if (settlement.status === "REFUNDED") {
                   actionName = `Buổi #${settlement.sessionId} (${settlement.outcome}) · Đã hoàn tiền cho học viên`;
                 } else {
@@ -163,15 +171,27 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
               } else {
                 if (studentRef > 0) {
                   displayAmount = studentRef;
-                  actionName = isProposed
-                    ? `Đề xuất hoàn tiền Buổi #${settlement.sessionId} (${settlement.outcome}) · Chờ 24h`
-                    : `Hoàn tiền Buổi #${settlement.sessionId} · Đã về ví học viên`;
+                  if (isProposed) {
+                    actionName = `Đề xuất hoàn tiền Buổi #${settlement.sessionId} (${settlement.outcome}) · Chờ 24h`;
+                  } else if (isFinalizing) {
+                    actionName = `Hoàn tiền Buổi #${settlement.sessionId} (${settlement.outcome}) · Đang chuyển về ví`;
+                  } else if (isDisputed) {
+                    actionName = `Buổi #${settlement.sessionId} (${settlement.outcome}) · Đang trong quá trình khiếu nại`;
+                  } else {
+                    actionName = `Hoàn tiền Buổi #${settlement.sessionId} · Đã về ví học viên`;
+                  }
                 } else {
                   displayAmount = sessionTotal || (tutorAmt + platAmt);
                   isDeduction = true;
-                  actionName = isProposed
-                    ? `Đang chờ quyết toán Buổi #${settlement.sessionId} (Trừ tiền cọc)`
-                    : `Đã trừ cọc thanh toán Buổi #${settlement.sessionId} (Gia sư & Phí)`;
+                  if (isProposed) {
+                    actionName = `Đang chờ quyết toán Buổi #${settlement.sessionId} (Trừ tiền cọc)`;
+                  } else if (isFinalizing) {
+                    actionName = `Đang thực hiện quyết toán Buổi #${settlement.sessionId} (Trừ tiền cọc)`;
+                  } else if (isDisputed) {
+                    actionName = `Buổi #${settlement.sessionId} · Tạm giữ do có khiếu nại`;
+                  } else {
+                    actionName = `Đã trừ cọc thanh toán Buổi #${settlement.sessionId} (Gia sư & Phí)`;
+                  }
                 }
               }
 
@@ -187,7 +207,11 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                 distribution: `Gia sư ${tutorAmt} / Nền tảng ${platAmt} / Hoàn HV ${studentRef} USDC`,
                 status: settlement.status,
                 disputeDeadline: settlement.disputeDeadline,
-                createdAt: settlement.createdAt,
+                // A terminal settlement must show the confirmation time, not the
+                // earlier proposal creation time that starts the 24h window.
+                createdAt: (isSettled || isRefunded)
+                  ? (settlement.updatedAt || settlement.createdAt)
+                  : settlement.createdAt,
               });
             }
 
@@ -293,7 +317,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
     .reduce((total, settlement) => total + Number(settlement.tutorAmountUsdc || 0), 0);
 
   const totalPendingProposedAmount = settlements
-    .filter((settlement) => settlement.status === "PROPOSED")
+    .filter((s) => s.status === "PROPOSED" || s.status === "FINALIZE_PENDING" || s.status === "FAILED_RETRYABLE")
     .reduce((total, s) => {
       let tutorAmt = Number(s.tutorAmountUsdc || 0);
       if (tutorAmt === 0 && Number(s.amountUsdc || 0) > 0) {
@@ -307,7 +331,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
     }, 0);
 
   const totalPendingRefundAmount = settlements
-    .filter((settlement) => settlement.status === "PROPOSED")
+    .filter((s) => s.status === "PROPOSED" || s.status === "FINALIZE_PENDING" || s.status === "FAILED_RETRYABLE")
     .reduce((total, s) => {
       let refundAmt = Number(s.studentRefundUsdc || 0);
       if (refundAmt === 0 && Number(s.amountUsdc || 0) > 0) {
@@ -320,7 +344,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
       return total + refundAmt;
     }, 0);
 
-  const pendingProposedCount = settlements.filter((s) => s.status === "PROPOSED").length;
+  const pendingProposedCount = settlements.filter((s) => s.status === "PROPOSED" || s.status === "FINALIZE_PENDING" || s.status === "FAILED_RETRYABLE").length;
 
   return (
     <section className="mx-auto max-w-6xl pb-16 font-sans text-slate-800 space-y-8 select-none">
@@ -821,6 +845,14 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                         item.status === "PROPOSED" ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-indigo-700 border border-indigo-200" title="Smart Contract đang đếm ngược 24h chờ khiếu nại trước khi chuyển ví">
                             <Clock className="h-3 w-3 text-indigo-600 animate-pulse" /> {item.actionName}
+                          </span>
+                        ) : item.status === "FINALIZE_PENDING" || item.status === "FAILED_RETRYABLE" ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-blue-700 border border-blue-200" title="Đang thực hiện giao dịch giải ngân trên Blockchain">
+                            <RefreshCw className="h-3 w-3 text-blue-600 animate-spin" /> {item.actionName}
+                          </span>
+                        ) : item.status === "DISPUTED" || item.status === "DISPUTE_OPENING" ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-rose-700 border border-rose-200" title="Buổi học đang trong quá trình khiếu nại">
+                            <ShieldAlert className="h-3 w-3 text-rose-600" /> {item.actionName}
                           </span>
                         ) : item.status === "REFUNDED" || (!isTutor && !item.isDeduction && item.amountUsdc > 0) ? (
                           <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-purple-700 border border-purple-200">

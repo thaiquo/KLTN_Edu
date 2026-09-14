@@ -1,7 +1,10 @@
 # Account Service Blueprint
 Version: 1.0
-Status: Final
+Status: Approved domain baseline; current implementation status is maintained in `IMPLEMENTATION_STATUS.md`
 Purpose: Architecture Review Baseline
+
+> Đối chiếu source lần gần nhất: 2026-09-14. Nếu blueprint này khác cookie/role/Tutor lifecycle đang chạy,
+> ưu tiên `AUTH_SECURITY.md`, `BUSINESS_RULES.md` và source Account Service.
 
 ---
 

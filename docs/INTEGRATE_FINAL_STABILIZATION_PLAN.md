@@ -1,5 +1,8 @@
 # Kế hoạch ổn định integrate-final trước khi hợp nhất main
 
+> **Tài liệu lịch sử của đợt merge 2026-09-10.** Checklist và trạng thái trong file này chỉ đúng tại thời điểm đó.
+> Trạng thái hiện tại: [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+
 Ngày kiểm tra: 2026-09-10. Điểm xuất phát: `7636d5d`.
 
 ## 1. Phạm vi và nguồn đối chiếu

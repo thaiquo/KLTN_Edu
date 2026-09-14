@@ -24,9 +24,11 @@ import {
   History,
   Sparkles,
   BarChart3,
-  Award
+  Award,
+  MapPin
 } from "lucide-react";
 import { apiRequest } from "../../api/client";
+import { contractsApi, type SettlementDto } from "../../api/contractsApi";
 
 export interface ClassSessionItem {
   id: number;
@@ -178,15 +180,52 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   // Attendance modal (Tutor)
   const [showAttendanceModal, setShowAttendanceModal] = useState<boolean>(false);
   const [attendanceList, setAttendanceList] = useState<AttendanceRecord[]>([]);
-  const [selectedPresentIds, setSelectedPresentIds] = useState<number[]>([]);
   const [expandedSubmissionStudentId, setExpandedSubmissionStudentId] = useState<number | null>(null);
 
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+  const [mySettlementBySession, setMySettlementBySession] = useState<Record<number, SettlementDto>>({});
 
   useEffect(() => {
     fetchSessions();
   }, [classRoomId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (currentUserRole !== "STUDENT") {
+      setMySettlementBySession({});
+      return () => { cancelled = true; };
+    }
+
+    contractsApi.listAgreements({ page: 0, size: 100 })
+      .then(async (page) => {
+        const agreements = page.content.filter((agreement) => agreement.classroomId === classRoomId);
+        const groups = await Promise.all(agreements.map(async (agreement) => ({
+          settlements: await contractsApi.getSettlements(agreement.id),
+        })));
+        if (cancelled) return;
+
+        const latestBySession: Record<number, SettlementDto> = {};
+        for (const group of groups) {
+          for (const settlement of group.settlements) {
+            const previous = latestBySession[settlement.sessionId];
+            const currentTime = new Date(settlement.updatedAt || settlement.createdAt).getTime();
+            const previousTime = previous
+              ? new Date(previous.updatedAt || previous.createdAt).getTime()
+              : Number.NEGATIVE_INFINITY;
+            if (!previous || currentTime >= previousTime) {
+              latestBySession[settlement.sessionId] = settlement;
+            }
+          }
+        }
+        setMySettlementBySession(latestBySession);
+      })
+      .catch(() => {
+        if (!cancelled) setMySettlementBySession({});
+      });
+
+    return () => { cancelled = true; };
+  }, [classRoomId, currentUserRole]);
 
   const showToast = (text: string, type: "success" | "error" = "success") => {
     setToastMessage({ text, type });
@@ -302,7 +341,6 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
   const openAttendancePanel = async (session: ClassSessionItem) => {
     setAttendanceList([]);
-    setSelectedPresentIds([]);
     setExpandedSubmissionStudentId(null);
     setActiveSession(session);
     setShowAttendanceModal(true);
@@ -310,9 +348,6 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       const data: AttendanceRecord[] = await apiRequest(`/api/learning/sessions/${session.id}/attendances`);
       if (Array.isArray(data)) {
         setAttendanceList(data);
-        setSelectedPresentIds(
-          data.filter((a) => a.studentChecked || a.finalOutcome === "BOTH_PRESENT").map((a) => a.studentId)
-        );
       }
     } catch (err: any) {
       setShowAttendanceModal(false);
@@ -342,9 +377,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
     try {
       await apiRequest(`/api/learning/sessions/${activeSession.id}/tutor-attendance`, {
         method: "POST",
-        body: JSON.stringify({ presentStudentIds: selectedPresentIds })
+        body: JSON.stringify({})
       });
-      showToast("Đã cập nhật danh sách điểm danh lớp!", "success");
+      showToast("Đã ghi nhận gia sư vào dạy. Học viên tự điểm danh trên tài khoản của mình.", "success");
       setShowAttendanceModal(false);
       fetchSessions();
     } catch (err: any) {
@@ -1089,6 +1124,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               const isStudentUnlocked = session.myCheckedIn === true;
               const canAccessAssignment = isTutorOrAdmin || isStudentUnlocked;
               const hasSubmittedHomework = !!(session.mySubmissionText || session.mySubmissionFileUrl);
+              const mySettlement = mySettlementBySession[session.sequenceNumber];
               const tutorWasPresent = session.tutorCheckedIn === true;
               const finalizedOutcomeCount = (session.bothPresentCount || 0)
                 + (session.studentAbsentCount || 0)
@@ -1222,14 +1258,43 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                               </span>
                             </div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              {session.settlementDispatched && (
+                              {mySettlement ? (
+                                <div className={`text-[11px] font-bold flex items-center gap-1 px-2 py-0.5 rounded-md border ${
+                                  mySettlement.status === "REFUNDED"
+                                    ? "text-emerald-800 bg-emerald-50 border-emerald-200"
+                                    : mySettlement.status === "SETTLED"
+                                      ? "text-blue-800 bg-blue-50 border-blue-200"
+                                      : mySettlement.status === "DISPUTED" || mySettlement.status === "DISPUTE_OPENING"
+                                        ? "text-rose-800 bg-rose-50 border-rose-200"
+                                        : "text-indigo-700 bg-white/80 border-indigo-200"
+                                }`}>
+                                  {mySettlement.status === "REFUNDED" || mySettlement.status === "SETTLED"
+                                    ? <CheckCircle2 className="w-3 h-3" />
+                                    : <Clock className="w-3 h-3" />}
+                                  <span>
+                                    {mySettlement.status === "REFUNDED"
+                                      ? `Đã hoàn ${mySettlement.studentRefundUsdc.toLocaleString("vi-VN")} USDC về ví học viên`
+                                      : mySettlement.status === "SETTLED" && mySettlement.studentRefundUsdc > 0
+                                        ? `Đã quyết toán và hoàn ${mySettlement.studentRefundUsdc.toLocaleString("vi-VN")} USDC`
+                                        : mySettlement.status === "SETTLED"
+                                          ? "Đã quyết toán on-chain"
+                                          : mySettlement.status === "DISPUTED" || mySettlement.status === "DISPUTE_OPENING"
+                                            ? "Đang giữ tiền chờ xử lý khiếu nại"
+                                            : mySettlement.status === "FINALIZE_PENDING" || mySettlement.status === "FAILED_RETRYABLE"
+                                              ? "Đang chuyển tiền on-chain"
+                                              : `Đề xuất quyết toán · chờ đến ${mySettlement.disputeDeadline ? new Date(mySettlement.disputeDeadline).toLocaleString("vi-VN") : "hết 24 giờ"}`}
+                                  </span>
+                                </div>
+                              ) : session.settlementDispatched && (
                                 <div className="text-[11px] font-bold text-indigo-700 flex items-center gap-1 bg-white/80 px-2 py-0.5 rounded-md border border-indigo-200">
                                   <Clock className="w-3 h-3 text-indigo-500" />
                                   <span>Đã gửi quyết toán</span>
                                 </div>
                               )}
                               <a
-                                href={currentUserRole === "STUDENT" ? "/student/complaints" : "/dashboard?tab=complaints"}
+                                href={currentUserRole === "STUDENT"
+                                  ? `/student/complaints?classroomId=${session.classRoomId}&sessionId=${session.sequenceNumber}`
+                                  : "/dashboard?tab=complaints"}
                                 className="text-[11px] font-bold text-rose-700 hover:text-rose-900 flex items-center gap-1 bg-rose-50 hover:bg-rose-100 px-2.5 py-0.5 rounded-md border border-rose-200 transition-colors"
                               >
                                 <ShieldAlert className="w-3 h-3 text-rose-600" />
@@ -1718,7 +1783,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
       {/* Modal 4: Tutor Attendance Roster & Submissions */}
       {showAttendanceModal && activeSession && (() => {
-        const checkedInCount = attendanceList.filter((a) => a.studentChecked || selectedPresentIds.includes(a.studentId)).length;
+        const checkedInCount = attendanceList.filter((a) => a.studentChecked).length;
         const absentCount = attendanceList.length - checkedInCount;
         const submittedCount = attendanceList.filter((a) => a.submissionText || a.submissionFileUrl).length;
 
@@ -1764,27 +1829,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                 </div>
               </div>
 
-              {/* Quick Select All Button */}
-              {activeSession.status !== "COMPLETED" && attendanceList.length > 0 && (
-                <div className="flex items-center justify-between pb-2 mb-1 text-xs">
-                  <span className="text-slate-500">Tích chọn để xác nhận có mặt:</span>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setSelectedPresentIds(attendanceList.map((a) => a.studentId))}
-                      className="text-indigo-600 hover:text-indigo-800 font-semibold text-xs hover:underline"
-                    >
-                      Chọn Tất Cả Có Mặt
-                    </button>
-                    <span className="text-slate-300">•</span>
-                    <button
-                      onClick={() => setSelectedPresentIds([])}
-                      className="text-slate-500 hover:text-slate-700 font-semibold text-xs hover:underline"
-                    >
-                      Bỏ Chọn Hết
-                    </button>
-                  </div>
-                </div>
-              )}
+              <p className="text-xs text-slate-500 pb-2 mb-1">Học viên tự điểm danh; gia sư chỉ xem trạng thái và không thể điểm danh hộ.</p>
 
               {/* Student Roster List */}
               {attendanceList.length === 0 ? (
@@ -1794,7 +1839,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               ) : (
                 <div className="space-y-3 overflow-y-auto flex-1 pr-1 max-h-[350px]">
                   {attendanceList.map((att) => {
-                    const isPresent = selectedPresentIds.includes(att.studentId);
+                    const isPresent = !!att.studentChecked;
                     const hasSubmitted = !!(att.submissionText || att.submissionFileUrl);
                     const isExpanded = expandedSubmissionStudentId === att.studentId;
 
@@ -1809,20 +1854,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              checked={isPresent}
-                              disabled={activeSession.status === "COMPLETED"}
-                              onChange={() => {
-                                if (activeSession.status === "COMPLETED") return;
-                                if (isPresent) {
-                                  setSelectedPresentIds(selectedPresentIds.filter((id) => id !== att.studentId));
-                                } else {
-                                  setSelectedPresentIds([...selectedPresentIds, att.studentId]);
-                                }
-                              }}
-                              className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 cursor-pointer"
-                            />
+                            <span className={`w-4 h-4 rounded border flex items-center justify-center ${isPresent ? "bg-emerald-500 border-emerald-500" : "border-slate-300"}`} aria-label={isPresent ? "Đã điểm danh" : "Chưa điểm danh"}>
+                              {isPresent && <CheckCircle2 className="w-3 h-3 text-white" />}
+                            </span>
                             <div>
                               <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
                                 <span>{att.studentName || `Học viên #${att.studentId}`}</span>
@@ -1905,7 +1939,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               {/* Footer Actions */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-5 pt-4 border-t border-slate-100">
                 <div className="text-xs text-slate-500">
-                  <span>Có mặt: <b className="text-emerald-700">{selectedPresentIds.length}</b>/{attendanceList.length} học viên</span>
+                  <span>Có mặt: <b className="text-emerald-700">{checkedInCount}</b>/{attendanceList.length} học viên</span>
                   {activeSession.status !== "COMPLETED" && (
                     <span className="block text-[11px] text-amber-700 mt-0.5">
                       ⏳ Hệ thống sẽ tự động chốt kết quả và giải ngân sau buổi học
@@ -1927,7 +1961,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                       className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md flex items-center gap-1.5 transition-all"
                     >
                       {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                      <span>Lưu Điểm Danh Trong Giờ</span>
+                      <span>Ghi Nhận Gia Sư Vào Dạy</span>
                     </button>
                   )}
                 </div>

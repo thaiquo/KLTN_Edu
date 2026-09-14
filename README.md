@@ -180,7 +180,7 @@ cp .env.example .env
 ---
 
 ### 🔹 Bước 3: Khởi động Toàn bộ Backend Services
-Hệ thống cung cấp sẵn script tự động hóa khởi chạy đồng thời cả 6 micro-services trong các tiến trình riêng biệt:
+Hệ thống cung cấp sẵn script tự động hóa khởi chạy đồng thời cả 6 backend services trong các tiến trình riêng biệt:
 
 * **Trên Windows (PowerShell):**
   ```powershell

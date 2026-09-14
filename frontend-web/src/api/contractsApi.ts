@@ -143,6 +143,7 @@ export interface SettlementDto {
   finalizeTxHash: string | null;
   disputeDeadline: string | null;
   createdAt: string;
+  updatedAt: string | null;
 }
 
 export interface BlockchainTxDto {
@@ -181,6 +182,9 @@ export interface DisputeDto {
   resolveTxHash: string | null;
   tutorResponse: string | null;
   tutorRespondedAt: string | null;
+  tutorResponseDeadline: string | null;
+  tutorResponseWindowOpen: boolean;
+  readyForResolution: boolean;
   studentEvidenceObjectKey: string | null;
   studentEvidenceContentType: string | null;
   studentEvidenceSha256: string | null;
@@ -189,6 +193,14 @@ export interface DisputeDto {
   tutorEvidenceSha256: string | null;
   studentWallet: string;
   tutorWallet: string;
+  // Returned by newer dispute list projections; optional while older records are migrated.
+  studentName?: string | null;
+  studentEmail?: string | null;
+  tutorName?: string | null;
+  tutorEmail?: string | null;
+  classroomId?: number | null;
+  className?: string | null;
+  sessionPriceUsdc?: number | null;
   classroomReviewerEmail: string | null;
   disputeDeadline: string | null;
   createdAt: string;

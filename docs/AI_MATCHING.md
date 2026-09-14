@@ -1,126 +1,86 @@
-# EduConnect AI Matching Baseline
+# EduConnect — AI Matching
 
-## 1. Purpose
+> Cập nhật theo source ngày **2026-09-14**.
 
-AI Matching is a supporting capability for:
+## 1. Vai trò
 
-- search;
-- recommendation;
-- ranking;
-- Student/Tutor/Class matching when the product flow requires it.
+AI Matching là năng lực hỗ trợ tìm kiếm, gợi ý và xếp hạng Tutor/Class phù hợp với nhu cầu Student. AI không thay thế quyền quyết định của người dùng, không vượt qua authorization và không được bỏ qua hard business filters.
 
-AI does not replace core search, connection, contract, or learning business flows. It also does not need to appear as a standalone Use Case to be part of the system direction.
+## 2. Trạng thái hiện tại
 
-## 2. Current Status
+Trạng thái: **SKELETON**, chưa phải AI implementation.
 
-Current implementation status: NOT_IMPLEMENTED for the AI service layer.
+Đã có:
 
-Current source audit did not find:
+- Maven module `backend/ai-service` dùng Java 21 và Spring Boot 3.4.1;
+- port mặc định 8085;
+- Gateway route `/api/ai/**`;
+- `GET /api/ai/health` trả trạng thái service skeleton;
+- Web route `/matching` và các khối UI giới thiệu matching.
 
-- `ai-service`;
-- Qdrant container/config;
-- Spring AI dependency/config;
-- embedding generation;
-- vector search implementation;
-- LLM/RAG/chatbot implementation.
+Chưa có:
 
-Current source does include non-AI search/filter behavior in Account/Learning features, such as tutor/class search and class filtering. These are useful inputs for future matching but are not AI Matching implementation by themselves.
+- model provider/client thực tế;
+- Spring AI dependency;
+- Qdrant container/client/collection;
+- embedding/chunking/indexing;
+- semantic search;
+- recommendation/scoring/ranking service;
+- RAG/chatbot persistence;
+- API matching ngoài health;
+- evaluation, feedback loop, metrics hoặc safety monitoring.
 
-## 3. Baseline Matching Strategy
+Search/filter đang có trong Account/Learning là deterministic search, không được ghi là AI.
 
-### Stage 1 - Hard Filtering
+## 3. Kiến trúc đề xuất khi triển khai
 
-Hard filters should enforce core business constraints before ranking.
+```text
+Student intent
+  → hard filters từ dữ liệu authoritative
+  → candidate set
+  → deterministic weighted scoring
+  → optional semantic similarity
+  → calibrated ranking + lý do giải thích
+  → user tự chọn Tutor/Class
+```
 
-Candidate criteria may include:
+### Stage 1 — Hard filtering
 
-- subject;
-- education level;
-- learning mode;
-- area/location;
-- availability;
-- price/fee.
+Các điều kiện bắt buộc phải áp dụng trước AI score:
 
-Hard filtering should not be bypassed by AI scoring.
+- Tutor còn hoạt động và đã `APPROVED`;
+- subject/education level phù hợp;
+- learning mode, khu vực và lịch rảnh;
+- học phí/ngân sách;
+- lớp còn nhận học viên và visibility hợp lệ.
 
-### Stage 2 - Weighted Ranking
+### Stage 2 — Weighted ranking
 
-After filtering, the system can rank candidates using weighted factors such as:
+Có thể dùng subject fit, schedule fit, price fit, kinh nghiệm, rating, hồ sơ, khoảng cách và textual relevance. Trọng số phải cấu hình/phiên bản hóa; chưa có bộ trọng số được xác nhận trong source hiện tại.
 
-- subject/level fit;
-- schedule fit;
-- price fit;
-- tutor experience;
-- rating;
-- profile completeness;
-- textual relevance.
+### Stage 3 — Semantic enhancement
 
-Do not hard-code final weights unless the user confirms the scoring design. Weights should remain configurable or easy to revise when implementation begins.
+`Text → Embedding → Vector Store → Similarity → kết hợp score`. Semantic search chỉ nâng chất lượng; nếu AI/Qdrant lỗi thì search/filter cơ bản vẫn phải hoạt động.
 
-### Stage 3 - Semantic Similarity
+## 4. Data ownership
 
-Semantic matching is a planned enhancement:
+AI Service không được đọc trực tiếp bảng domain của service khác. Dữ liệu đầu vào cần được cung cấp bằng API/event/read model được thiết kế rõ:
 
-Text -> Embedding -> Vector -> Qdrant -> Similarity Search -> Ranking.
+- Account: trạng thái Tutor, profile công khai;
+- Learning: subject, class, availability, capacity;
+- Rating/feedback: chỉ khi domain này được triển khai và có owner;
+- Student intent/profile: tối thiểu hóa dữ liệu và cần quyền sử dụng phù hợp.
 
-Semantic search should enhance recommendation quality, not become a blocker for basic search/filter flows.
+Không gửi CCCD, tài liệu KYC, dispute evidence, private message hoặc dữ liệu hợp đồng nhạy cảm vào model/vector store.
 
-## 4. AI Data Sources
+## 5. Guardrails
 
-AI capability should not assume direct database access to another service.
+- Không quảng bá “AI Matching đã hoạt động” chỉ vì có route/UI/health endpoint.
+- Không để model quyết định duyệt Tutor, giải ngân hay phân xử khiếu nại.
+- Không để LLM sinh điều kiện tài chính hoặc bypass filter.
+- Kết quả cần lý do dễ hiểu và có fallback deterministic.
+- Cần xác nhận model provider, chi phí, privacy, retention và Qdrant design trước khi triển khai.
 
-Expected input domains may include:
+## 6. Điều kiện chuyển sang IMPLEMENTED
 
-- student profile/search intent;
-- tutor profile and expertise;
-- class/tutor availability;
-- subject/catalog data;
-- rating/feedback data when implemented.
-
-Before implementing an AI interface, audit the owning service and decide whether data should come through API, events, or another confirmed integration pattern.
-
-## 5. Qdrant / Spring AI
-
-Current status:
-
-- Qdrant: PLANNED.
-- Spring AI: PLANNED.
-
-Intended roles:
-
-- Qdrant stores/searches vectors for semantic similarity.
-- Spring AI may support embedding/model/vector-store integration.
-
-Do not introduce a model provider, vector database, or embedding pipeline without explicit confirmation.
-
-## 6. Fallback Behavior
-
-If AI Matching is unavailable, basic search/filter should still work.
-
-AI is an enhancement layer. Core business flows must remain deterministic and understandable.
-
-## 7. Explainability
-
-When matching is implemented, recommendation results should be explainable through business-readable factors such as subject fit, schedule fit, price fit, experience, rating, and location.
-
-Do not require an LLM solely for explanation unless the product design confirms it.
-
-## 8. AI Guardrails
-
-- AI must not decide on behalf of the user.
-- AI must not bypass business rules or hard filters.
-- AI must not override authorization or data ownership rules.
-- Do not add a new AI service/module without explicit confirmation.
-- Do not call AI Matching IMPLEMENTED without source evidence for the main matching flow.
-- Do not treat UI copy mentioning "AI" as implementation evidence.
-
-## 9. Where to Audit
-
-For AI Matching tasks, start with:
-
-- `docs/AI_MATCHING.md`;
-- current search/filter implementation in Account and Learning services;
-- tutor/student/profile/class/catalog data ownership;
-- `frontend-web` search/recommendation UI;
-- `mobile-app` search/auth flow if mobile is in scope;
-- `ai-service`, Qdrant, or Spring AI config only if those are added later.
+Chỉ nâng trạng thái khi có tối thiểu: API thật, data contract với owner, hard filtering, ranking có test, client sử dụng kết quả thật, fallback, authorization/privacy và bằng chứng end-to-end. Health endpoint không đủ.

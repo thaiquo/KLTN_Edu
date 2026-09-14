@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.web3j.crypto.Hash;
 import tools.jackson.databind.ObjectMapper;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -39,6 +40,7 @@ import java.util.UUID;
 @Service
 public class DisputeWorkflowService {
     private static final Logger log = LoggerFactory.getLogger(DisputeWorkflowService.class);
+    public static final Duration TUTOR_RESPONSE_WINDOW = Duration.ofHours(24);
 
     private final DisputeRepository disputeRepository;
     private final DisputeEvidenceRepository disputeEvidenceRepository;
@@ -268,6 +270,9 @@ public class DisputeWorkflowService {
         if (!"STUDENT".equalsIgnoreCase(dispute.getComplainantRole())) {
             throw new IllegalStateException("Tutor responses are only accepted for Student-originated disputes");
         }
+        if (!isTutorResponseWindowOpen(dispute, Instant.now())) {
+            throw new IllegalStateException("The 24-hour tutor response window has expired");
+        }
 
         ContractAgreement agreement = dispute.getSettlement().getAgreement();
         if (tutorId == null || !tutorId.equals(agreement.getTutorId())) {
@@ -341,6 +346,13 @@ public class DisputeWorkflowService {
             throw new SecurityException("Invalid role for dispute resolution: " + resolverRole);
         }
 
+        Instant now = Instant.now();
+        if (!isReadyForResolution(dispute, now)) {
+            throw new IllegalStateException(
+                    "The tutor may respond until " + getTutorResponseDeadline(dispute)
+                            + "; Admin/Staff may resolve earlier only after the tutor responds");
+        }
+
         SessionSettlement settlement = dispute.getSettlement();
         // V1 exposes a tutor-fraud boolean only. For a Tutor-originated complaint,
         // approving the complainant means choosing the normal Tutor payout branch,
@@ -382,6 +394,37 @@ public class DisputeWorkflowService {
         log.info("Initiated dispute resolution for dispute {} by {} ({}) with approved={}",
                 disputeId, resolverEmail, resolverRole, complaintApproved);
         return intentResult;
+    }
+
+    public Instant getTutorResponseDeadline(Dispute dispute) {
+        if (dispute == null || !"STUDENT".equalsIgnoreCase(dispute.getComplainantRole())) {
+            return null;
+        }
+        Instant submittedAt = dispute.getSubmittedAt() != null ? dispute.getSubmittedAt() : dispute.getCreatedAt();
+        return submittedAt != null ? submittedAt.plus(TUTOR_RESPONSE_WINDOW) : null;
+    }
+
+    public boolean isTutorResponseWindowOpen(Dispute dispute, Instant now) {
+        Instant deadline = getTutorResponseDeadline(dispute);
+        return dispute != null
+                && dispute.getStatus() == DisputeStatus.OPEN
+                && deadline != null
+                && now != null
+                && now.isBefore(deadline);
+    }
+
+    public boolean isReadyForResolution(Dispute dispute, Instant now) {
+        if (dispute == null || dispute.getStatus() != DisputeStatus.OPEN) {
+            return false;
+        }
+        if (!"STUDENT".equalsIgnoreCase(dispute.getComplainantRole())) {
+            return true;
+        }
+        if (dispute.getTutorResponse() != null && !dispute.getTutorResponse().isBlank()) {
+            return true;
+        }
+        Instant deadline = getTutorResponseDeadline(dispute);
+        return deadline != null && now != null && !now.isBefore(deadline);
     }
 
     @Transactional

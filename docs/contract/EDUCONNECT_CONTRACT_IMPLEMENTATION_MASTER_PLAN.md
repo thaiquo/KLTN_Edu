@@ -1,5 +1,10 @@
 # EDUCONNECT - MASTER PLAN TRIỂN KHAI HỢP ĐỒNG WORD/PDF
 
+> **Tài liệu kế hoạch/lịch sử triển khai.** Trạng thái hiện tại được đối chiếu tại
+> [../IMPLEMENTATION_STATUS.md](../IMPLEMENTATION_STATUS.md), kiến trúc document/storage tại
+> [../ARCHITECTURE.md](../ARCHITECTURE.md), và quy tắc escrow tại [../BLOCKCHAIN.md](../BLOCKCHAIN.md).
+> Không dùng snippet/phase cũ trong file này để ghi đè source hiện tại.
+
 ## TIẾN ĐỘ TRIỂN KHAI — 02/09/2026
 
 - [x] Phase A: đối chiếu modal, entity, migration, repository và luồng ký hiện tại.

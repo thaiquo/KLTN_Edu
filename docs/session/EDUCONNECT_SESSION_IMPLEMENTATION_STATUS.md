@@ -1,122 +1,153 @@
-# 📊 BẢNG THEO DÕI TIẾN ĐỘ TRIỂN KHAI PHÂN HỆ BUỔI HỌC, ĐIỂM DANH & ESCROW
+# EduConnect — Trạng thái Session, Attendance, Escrow và Dispute
 
-> **Tài liệu Báo cáo Tiến độ Triển khai (Implementation Status & Tracker)**  
-> **Cập nhật lần cuối**: 2026-09-03  
-> **Tài liệu tham chiếu**: [EDUCONNECT_SESSION_ATTENDANCE_ESCROW_MASTER_PLAN.md](file:///d:/KL/khoaluan\KLTN_Edu\docs\session\EDUCONNECT_SESSION_ATTENDANCE_ESCROW_MASTER_PLAN.md)  
-> **Căn cứ nghiệp vụ gốc**: `Plan/EDUCONNECT_BLOCKCHAIN_MASTER_ESCROW_IMPLEMENTATION_GUIDE.md` (Mục 10, 11, 12).
+> Cập nhật theo source/test/runtime đến **2026-09-14**.  
+> Kế hoạch và quy tắc thiết kế: [EDUCONNECT_SESSION_ATTENDANCE_ESCROW_MASTER_PLAN.md](EDUCONNECT_SESSION_ATTENDANCE_ESCROW_MASTER_PLAN.md).
 
----
+## 1. Kết luận
 
-## 📈 TỔNG QUAN TIẾN ĐỘ (PROGRESS SUMMARY)
+Flow Web chính từ buổi học → điểm danh → đề xuất settlement → chờ 24 giờ → payout/refund hoặc dispute đã được triển khai và có bằng chứng Sepolia cho payout `BOTH_PRESENT` và refund `TUTOR_ABSENT`.
+
+Không gọi toàn bộ hệ thống “100% production-ready”: Solidity V1 chỉ hỗ trợ dispute on-chain cho `BOTH_PRESENT`; runtime phụ thuộc RPC/gas/S3 và chỉ hỗ trợ một operator instance.
+
+## 2. Thành phần đã triển khai
+
+| Lớp | Thành phần | Trạng thái | Bằng chứng chính |
+| --- | --- | --- | --- |
+| DB | `class_sessions`, `session_attendances` | IMPLEMENTED | Learning migrations V27–V30. |
+| DB | `session_settlement`, `dispute`, `dispute_evidence`, transaction/event audit | IMPLEMENTED | Contract migrations V1–V11. |
+| Backend | Rolling session generation | IMPLEMENTED | `RollingSessionService`. |
+| Backend | Startup/periodic auto-finalize | IMPLEMENTED | `ClassroomLifecycleScheduler`, 60 giây. |
+| Backend | Independent check-in và outcome | IMPLEMENTED | `SessionAttendanceService`. |
+| Backend | Retry delivery sang Contract | IMPLEMENTED | `SessionSettlementDeliveryService`, 30 giây. |
+| Backend | Proposal/finalize/event projection | IMPLEMENTED | `SessionSettlementWorkflowService`, blockchain workers. |
+| Backend | Dispute/history/evidence/arbitration | IMPLEMENTED + LIMITED | `DisputeWorkflowService`, controllers, S3 storage; V1 `BOTH_PRESENT` only. |
+| Web | Student class workspace/timeline/link/homework | IMPLEMENTED | `StudentClassManagement`, `ClassSessionsTimeline`. |
+| Web | Tutor session management | IMPLEMENTED | `TutorSessionManagement`, shared timeline. |
+| Web | Student/Tutor/Admin/Staff dispute UI | IMPLEMENTED | `DisputeManagementPanel`, Student complaints routes. |
+| Web | Wallet/settlement history | IMPLEMENTED | `MyWalletView`, contract APIs. |
+| Mobile | Session/dispute flow | NOT_IMPLEMENTED | Mobile mới có auth/home cơ bản. |
+
+## 3. Session lifecycle
 
 ```text
-[Giai đoạn 1: Database & Entity Core]      [ 100% ] ── ✅ HOÀN THÀNH
-[Giai đoạn 2: Backend Logic & API]         [ 100% ] ── ✅ HOÀN THÀNH
-[Giai đoạn 3: Tích hợp Service & Escrow]   [ 100% ] ── ✅ HOÀN THÀNH
-[Giai đoạn 4: Frontend Web Portal]         [ 100% ] ── ✅ HOÀN THÀNH
-[Giai đoạn 5: Kiểm thử Toàn trình E2E]     [ 100% ] ── ✅ SẴN SÀNG VẬN HÀNH
-───────────────────────────────────────────────────────────
-TỔNG THỂ PHÂN HỆ BUỔI HỌC & ĐIỂM DANH:    [ 100% ] ── ✅ HOÀN TẤT
+SCHEDULED → IN_PROGRESS (khi có hoạt động phù hợp) → COMPLETED
+     └────────────────────────────────────────────→ CANCELLED
 ```
 
----
+- Session được sinh cuốn chiếu từ lịch cố định của classroom, không tạo toàn bộ khóa vô hạn từ đầu.
+- Scheduler chạy khi Learning Service ready và mỗi 60 giây, chọn session `SCHEDULED/IN_PROGRESS` đã qua ngày/giờ kết thúc.
+- Sau khi chốt, session giữ `settlementDispatched=false` cho tới khi Contract Service xác nhận đã nhận đầy đủ danh sách proposal.
+- Delivery worker đọc tối đa 50 bản ghi mỗi vòng, chạy sau 5 giây và mỗi 30 giây; lỗi REST không được đánh dấu là đã gửi.
 
-## 📋 CHI TIẾT CÁC HẠNG MỤC TASK THEO GIAI ĐOẠN
+## 4. Điểm danh và quyền truy cập
 
-### 🧱 Giai đoạn 1: Database & Entity Core (`learning-service`)
-| Mã Task | Nội dung công việc | File liên quan | Trạng thái | Ghi chú kiểm thử |
-| :--- | :--- | :--- | :---: | :--- |
-| **TASK-1.1** | Viết Flyway migration tạo bảng `class_sessions` và `session_attendances` | `V26__create_class_sessions_and_attendance_schema.sql` | 🟢 `DONE` | Khóa ngoại & Unique constraints |
-| **TASK-1.2** | Tạo JPA Entities `ClassSession`, `SessionAttendance` & Enums | `entity/ClassSession.java`, `entity/SessionAttendance.java` | 🟢 `DONE` | Mapping Hibernate JPA |
-| **TASK-1.3** | Tạo JPA Repositories truy vấn buổi học & điểm danh | `repository/ClassSessionRepository.java`, `repository/SessionAttendanceRepository.java` | 🟢 `DONE` | Query theo classroom & date |
+- Cửa sổ check-in: đúng `sessionDate` và `startTime <= now < endTime`.
+- Student chỉ check-in cho chính Student hiện tại.
+- Tutor check-in đánh dấu Tutor có dạy trên các attendance liên quan, không thay đổi `studentChecked`.
+- Tutor được xem ai đã/chưa check-in.
+- Hết giờ:
+  - Tutor + Student có mặt → `BOTH_PRESENT`.
+  - Tutor có mặt, Student vắng → `STUDENT_ABSENT_TUTOR_PRESENT`.
+  - Tutor không có mặt, kể cả cả hai vắng → `TUTOR_ABSENT`.
 
----
+### Link phòng học
 
-### ⚙️ Giai đoạn 2: Backend Business Logic & API (`learning-service`)
-| Mã Task | Nội dung công việc | File liên quan | Trạng thái | Ghi chú kiểm thử |
-| :--- | :--- | :--- | :---: | :--- |
-| **TASK-2.1** | `ClassroomLifecycleScheduler`: Tự động khóa lớp khi `startDate <= today` & gọi sinh tuần 1 | `scheduler/ClassroomLifecycleScheduler.java` | 🟢 `DONE` | Quét định kỳ hàng ngày & OnStartup |
-| **TASK-2.2** | `RollingSessionService`: Sinh 1 tuần đầu và tự động sinh cuốn chiếu tuần tiếp theo | `service/RollingSessionService.java` | 🟢 `DONE` | Không vượt quá `total_sessions` |
-| **TASK-2.3** | `SessionAttendanceService`: Kiểm tra khung giờ học nghiêm ngặt `[start_time, end_time]` & Điểm danh 2 chiều | `service/SessionAttendanceService.java` | 🟢 `DONE` | Chặn điểm danh ngoài khung giờ |
-| **TASK-2.4** | API Lấy danh sách buổi học, sửa link Google Meet & giao bài tập | `controller/ClassSessionController.java`, `ClassSessionDtos.java` | 🟢 `DONE` | `GET /sessions`, `PUT /details`, `PUT /meeting-link` |
+- Lưu tại `class_rooms.meeting_link`.
+- Tutor có thể cập nhật khi link hỏng; API/session sau đó đọc link mới.
+- Student phải điểm danh ở từng buổi rồi mới gọi được endpoint lấy link.
+- Gate link giảm gian lận/quên điểm danh, nhưng không phải bằng chứng tuyệt đối về thời lượng tham gia cuộc gọi bên thứ ba.
 
----
+### Bài tập
 
-### 🔗 Giai đoạn 3: Tích hợp Liên Service & Blockchain Escrow (`contract-service`)
-| Mã Task | Nội dung công việc | File liên quan | Trạng thái | Ghi chú kiểm thử |
-| :--- | :--- | :--- | :---: | :--- |
-| **TASK-3.1** | Tích hợp REST API đề xuất quyết toán buổi học on-chain (`proposeSessionSettlement`) | `ContractManagementController.java`, `SessionSettlementWorkflowService.java` | 🟢 `DONE` | Đề xuất theo agreement & theo classroom |
-| **TASK-3.2** | API Học viên khiếu nại $\rightarrow$ Gọi tx `openTutorFraudDispute` on-chain (khóa tiền, học viên 0 gas) | `ContractManagementController.java`, `DisputeWorkflowService.java` | 🟢 `DONE` | Khóa đúng agreement của học viên |
-| **TASK-3.3** | API Gia sư nộp giải trình & minh chứng đối chất | `ContractManagementController.java`, `DisputeWorkflowService.java` | 🟢 `DONE` | Lưu `tutor_response` & file minh chứng |
-| **TASK-3.4** | Phân quyền Trọng tài Staff (lớp mình duyệt) vs Admin (toàn quyền) & Gọi `resolveTutorFraudDispute` | `ContractManagementController.java`, `DisputeWorkflowService.java` | 🟢 `DONE` | Kiểm tra `reviewedByEmail` |
+- Mỗi session có topic, title, description và attachment URL.
+- Student chưa check-in không nhận description/file URL từ response.
+- Student đã check-in có thể nộp nội dung/file trên attendance record; Tutor xem và review theo flow hiện có.
 
----
+## 5. Settlement per Student
 
-### 💻 Giai đoạn 4: Giao diện Web Portal (`frontend-web`)
-| Mã Task | Nội dung công việc | File liên quan | Trạng thái | Ghi chú kiểm thử |
-| :--- | :--- | :--- | :---: | :--- |
-| **TASK-4.1** | Tab "Lịch học & Buổi học" hiển thị timeline theo tuần và nút "Vào phòng học" chung của lớp | `src/components/classroom/ClassSessionsTimeline.tsx` | 🟢 `DONE` | Nút mở Google Meet / Zoom |
-| **TASK-4.2** | Modal Sửa Link phòng học lớp & Modal Giao bài tập / đính kèm file cho từng buổi | `src/components/classroom/ClassSessionsTimeline.tsx` | 🟢 `DONE` | Cập nhật realtime |
-| **TASK-4.3** | Bảng Danh sách Điểm danh cho Gia sư theo dõi & Nút Check-in điểm danh trong giờ học | `src/components/classroom/ClassSessionsTimeline.tsx` | 🟢 `DONE` | Realtime check-in |
-| **TASK-4.4** | Đồng hồ đếm ngược 24h Khiếu nại cho Học viên & Modal Đối chất cho Gia sư | `src/components/contract/DisputeManagementPanel.tsx` | 🟢 `DONE` | Đếm ngược UTC thời gian thật |
-| **TASK-4.5** | Nâng cấp `DisputeManagementPanel` cho Staff/Admin xem chứng cứ 2 bên và bấm phán quyết | `src/components/contract/DisputeManagementPanel.tsx` | 🟢 `DONE` | Preview ảnh minh chứng |
-| **TASK-4.6** | Màn hình Quản lý Buổi học trên Sidebar Gia sư (`TutorSessionManagement.tsx`) | `src/portal/components/TutorSessionManagement.tsx` | 🟢 `DONE` | Bộ chọn lớp & timeline buổi học |
-| **TASK-4.7** | Màn hình "Lớp học của tôi" Học viên (`StudentClassManagement.tsx`) dữ liệu thật 100% | `src/portal/components/StudentClassManagement.tsx` | 🟢 `DONE` | Phân quyền nghiêm ngặt theo tài khoản |
-| **TASK-4.8** | Cơ chế Khóa/Mở khóa bài tập theo điểm danh (Gated Assignment Access) | `src/components/classroom/ClassSessionsTimeline.tsx` | 🟢 `DONE` | Điểm danh mở khóa đề bài & file |
+Một classroom có nhiều Student nhưng mỗi Student có agreement và escrow riêng. Learning gửi outcome theo `studentId`; Contract tạo settlement riêng cho từng agreement.
 
----
+| Outcome | Tutor | Platform | Student |
+| --- | ---: | ---: | ---: |
+| `BOTH_PRESENT` | 85% | 15% | 0% |
+| `STUDENT_ABSENT_TUTOR_PRESENT` | 45% | 10% | hoàn 45% |
+| `TUTOR_ABSENT` | 0% | 0% | hoàn 100% |
 
-### 🧪 Giai đoạn 5: Kiểm thử Toàn trình & Tối ưu Bảo mật (End-to-End Verification & Security)
-| Mã Task | Nội dung công việc | Kịch bản kiểm thử | Trạng thái | Kết quả |
-| :--- | :--- | :--- | :---: | :--- |
-| **TASK-5.1** | Compile & Typecheck toàn bộ backend & frontend | `mvnw test-compile`, `npx tsc`, `vite build` | 🟢 `DONE` | 100% BUILD SUCCESS |
-| **TASK-5.2** | Kiểm tra ràng buộc khóa lớp theo `startDate` & sinh tuần 1 | `ClassroomLifecycleScheduler`, `RollingSessionService` | 🟢 `DONE` | Tự động sinh cuốn chiếu |
-| **TASK-5.3** | Kiểm tra ràng buộc điểm danh nghiêm ngặt trong khung giờ học | `validateStrictSessionTimeWindow` | 🟢 `DONE` | Đúng `[start_time, end_time]` |
-| **TASK-5.4** | Kiểm tra luồng giải ngân Smart Contract Escrow & Khiếu nại 24h | `EduConnectEscrow.sol` Sepolia | 🟢 `DONE` | Hoàn 100% hoặc 85/15 |
-| **TASK-5.5** | Khóa chặn tự động Logout khi gặp 401 cục bộ (`client.js`) | `client.js`, `SecurityConfig.java` | 🟢 `DONE` | Phiên đăng nhập được bảo toàn |
-| **TASK-5.6** | Bảo mật phân quyền hợp đồng theo danh tính Học viên/Gia sư | `ContractManagementController.java` | 🟢 `DONE` | Chống rò rỉ dữ liệu chéo |
-| **TASK-5.7** | Chuẩn hóa kết nối Sepolia RPC không phụ thuộc khóa API ngoài | `.env`, `frontend-web/.env` | 🟢 `DONE` | Sepolia RPC hoạt động 100% |
+Nếu attendance thiếu/corrupt cho một agreement hợp lệ, Contract chọn fail-safe `TUTOR_ABSENT`, không mặc định payout Tutor.
 
----
+## 6. Mốc 24 giờ và tự động giải ngân
 
-## 📝 NHẬT KÝ CẬP NHẬT TIẾN ĐỘ (CHANGELOG)
-* **2026-09-03 (Ca tối & Đêm)**: 
-  - Hoàn thành **Giai đoạn 1**: Flyway migration V26, JPA Entities `ClassSession`, `SessionAttendance`, Enums & Repositories.
-  - Hoàn thành **Giai đoạn 2**: `ClassroomLifecycleScheduler`, `RollingSessionService`, `SessionAttendanceService`, `ClassSessionController`.
-  - Hoàn thành **Giai đoạn 3**: REST endpoints đề xuất giải ngân `proposeSessionSettlement`, nộp giải trình gia sư, trọng tài phân xử Sepolia Escrow.
-  - Hoàn thành **Giai đoạn 4**: 
-    - Giao diện `ClassSessionsTimeline.tsx` hỗ trợ link Google Meet chung của lớp, giao bài tập/tài liệu từng buổi, danh sách điểm danh cho gia sư và nút check-in trong giờ học cho học viên.
-    - Tạo `TutorSessionManagement.tsx` và thêm menu "Quản lý Buổi học" trên Sidebar Gia sư.
-    - Tạo `StudentClassManagement.tsx` làm lại toàn bộ trang "Lớp học của tôi" của Học viên bằng dữ liệu thật, kết nối hợp đồng Escrow on-chain.
-    - Tích hợp Gamified Gated Assignment: Học viên chưa điểm danh $\rightarrow$ Khóa đề bài; điểm danh thành công $\rightarrow$ Mở khóa xem đề và tải file tài liệu đính kèm.
-    - Cải tiến UX không gian học tập học viên (`ClassSessionsTimeline.tsx`):
-      + **Khóa điểm danh ngoài khung giờ**: Nút check-in chỉ mở khi đúng ngày và trong khung giờ `[startTime, endTime]`. Ngoài giờ hiển thị trạng thái khóa kèm ngày giờ mở cụ thể.
-      + **Lộ trình số liệu rõ ràng không dùng `%`**: Hiển thị tổng số buổi, số buổi đã xong, buổi đang học, số buổi còn lại; kèm danh sách lịch trình cụ thể từng ngày trong tuần, ngày tháng và khung giờ chi tiết.
-      + **Mặc định 2 buổi trọng tâm (`FOCUSED`)**: Khi vào lớp mặc định chỉ hiển thị 2 buổi (buổi gần nhất đã qua để xem lại/làm bài và buổi tiếp theo để chuẩn bị), có các tab lọc nhanh sang "Sắp tới", "Lịch sử", "Tất cả".
-    - Tối ưu hóa & Bảo vệ luồng Ký quỹ Escrow Web3 (`EscrowPaymentModal.tsx`, `EscrowContractsView.tsx`):
-      + **Khắc phục cảnh báo sai số dư sau khi nạp cọc**: Ẩn triệt để cảnh báo thiếu tiền khi trạng thái đã sang `isPaymentDone` (`PAYMENT_CONFIRMING` / `ACTIVE`).
-      + **Đóng băng nút thanh toán khi thiếu tiền**: Tự động kiểm tra số dư USDC trước khi nạp. Nếu thiếu, nút chuyển sang màu xám đóng băng (`🔒 Đóng băng: Thiếu X.XX USDC`), con trỏ chuột `cursor-not-allowed`, chặn gọi MetaMask hoặc Smart Contract ở cả 2 bước Approve và Deposit.
-      + **Hiển thị cảnh báo số dư trên thẻ danh sách**: Thẻ hợp đồng tự hiển thị trạng thái thiếu số dư và số tiền cần nạp thêm trước khi bấm mở modal.
-  - Hoàn thành **Giai đoạn 5**: 
-    - Vá triệt để lỗi đá văng Logout trong `client.js` khi gặp lỗi 401 cục bộ.
-    - Cấu hình mở rộng `permitAll()` cho `GET /api/classes/**` và `/api/sessions/**` trong `SecurityConfig.java`.
-    - Bảo mật phân quyền nghiêm ngặt danh sách hợp đồng theo email/userId của học viên trong `ContractManagementController.java`.
-    - Chuyển đổi RPC Sepolia sang `ethereum-sepolia-rpc.publicnode.com` ổn định 100%.
-    - Tất cả service (`learning-service`, `contract-service`, `frontend-web`) đều `BUILD SUCCESS`.
+1. Backend queue `PROPOSE`.
+2. Event `SessionSettlementProposed` được xác nhận; DB thành `PROPOSED` và nhận deadline on-chain.
+3. 24 giờ tính từ confirmed proposal.
+4. Nếu vẫn `PROPOSED` khi hết hạn, Contract scheduler queue `FINALIZE`.
+5. Chỉ `SessionSettled` confirmed mới đổi `SETTLED/REFUNDED`, ghi exact amounts/hash/time và phát notification.
 
----
+Nếu service tắt qua deadline, không có blockchain execution tự thân. Khi mở lại:
 
-## ⚖️ SẴN SÀNG CHO KIỂM THỬ KHIẾU NẠI (DISPUTE TESTING READINESS)
+- Learning startup scan bắt kịp session quá giờ;
+- delivery worker gửi lại bản ghi chưa acknowledged;
+- Contract scan sau 30 giây và mỗi 60 giây bắt proposal quá hạn;
+- dispatcher/receipt watcher tiếp tục intent dở dang mỗi 5 giây.
 
-### 1. Ràng Buộc Nghiệp Vụ Trọng Tâm
-* **Thời hạn Khiếu nại 24h**: Học viên và Gia sư có 24 giờ sau khi buổi học kết thúc và kết quả điểm danh được gửi sang `contract-service` (trạng thái `PROPOSED` on-chain).
-* **Đóng băng giải ngân cá nhân hóa (Per-Student Escrow)**:
-  * Mỗi học viên có một Hợp đồng Escrow độc lập.
-  * Nếu học viên A khiếu nại $\rightarrow$ Chỉ phong tỏa tiền buổi học của học viên A. Học viên B trong cùng lớp nếu không khiếu nại vẫn được hệ thống tự động giải ngân sau 24h.
-* **Luồng Minh Chứng & Phân Quyền Hiển Thị**:
-  * **Học viên khiếu nại**: Gia sư nhận thông báo chuông (Notification) tức thời, được xem nội dung khiếu nại và bằng chứng học viên đính kèm. Gia sư có quyền nộp giải trình đối chất (`tutor_response` & file ảnh).
-  * **Gia sư khiếu nại**: Nội dung này là báo cáo riêng gửi cho Staff/Admin, học viên **không được xem**.
-* **Phân xử Trọng tài (Arbitration)**:
-  * **Staff phụ trách lớp** hoặc **Admin** vào `DisputeManagementPanel.tsx` xem đối chất 2 bên.
-  * **Chấp thuận khiếu nại (Approve)** $\rightarrow$ Hoàn 100% tiền buổi học về ví học viên (Học viên thắng).
-  * **Bác bỏ khiếu nại (Reject)** $\rightarrow$ Giải ngân 85% cho gia sư và 15% phí sàn (Gia sư thắng).
+Dispute `OPENING/OPEN/UNDER_REVIEW/RESOLUTION_PENDING` không được scheduler chọn để finalize.
+
+## 7. Dispute flow
+
+### Mở đơn
+
+- Chỉ Student/Tutor thuộc agreement và proposal còn trong 24 giờ.
+- V1 chỉ cho outcome `BOTH_PRESENT`.
+- Reason text bắt buộc; file optional.
+- Đơn tạo transaction `OPEN_DISPUTE`; khi confirmed, settlement thành `DISPUTED` và giữ tiền.
+
+### Evidence
+
+- Ảnh: JPEG, PNG, WebP, GIF.
+- Video: MP4, WebM, QuickTime.
+- Audio: MP3/M4A/WAV.
+- Tài liệu: PDF, TXT, DOC/DOCX, XLS/XLSX.
+- Tối đa 50 MB/file.
+- Runtime hiện dùng S3; key tách `agreement/session/role`; DB lưu SHA-256 và metadata.
+
+### Hiển thị và phản hồi
+
+- Student chỉ xem Student-visible dispute của agreement mình.
+- Tutor xem complaint do Student gửi và có thể nộp/cập nhật phản hồi trong 24 giờ từ `submittedAt`.
+- Tutor-origin complaint và Tutor-private response/evidence không hiển thị cho Student.
+- Assigned Staff xem lớp mình phụ trách; Admin xem toàn cục.
+
+### Phân xử
+
+- Nếu Tutor đã phản hồi: Staff/Admin có thể xử lý ngay.
+- Nếu chưa phản hồi: phải chờ hết response window 24 giờ.
+- Sau đó không có arbitration deadline; tiền giữ đến khi resolution confirmed.
+- Approve → hoàn 100% Student.
+- Reject → trả 85% Tutor, 15% Platform.
+
+## 8. Runtime evidence
+
+- Payout `BOTH_PRESENT` 0.6 USDC: 0.51 Tutor + 0.09 Platform, Sepolia tx `0xd835b8ae250b20141feb32d26eb081ca1a0d532c9c6780b9622812c91990dc2`.
+- Refund `TUTOR_ABSENT` cho Tin học lớp 4 buổi 1: 0.6 Student, Sepolia tx `0xf608981a95f001b0cc5bd338995bd2cb54cc4addcf35b15957e06536005a3ec1`.
+- Ngày 2026-09-14: mọi Learning session `COMPLETED` trong DB đều `settlement_dispatched=true`; không có actionable failed transaction.
+- Test gần nhất: 12 Learning attendance/delivery tests và 14 Contract scheduler/restart transaction tests pass.
+
+## 9. Trạng thái UI cần hiểu đúng
+
+- `PROPOSE_PENDING`: đang queue/gửi proposal, chưa mở 24 giờ on-chain.
+- `PROPOSED`: proposal confirmed, đang đếm 24 giờ.
+- `DISPUTE_OPENING`: đang gửi giao dịch mở khiếu nại.
+- `DISPUTED`: tiền đang giữ vì khiếu nại.
+- `FINALIZE_PENDING`: đang gửi finalize, chưa được ghi là tiền đã về.
+- `SETTLED`: payout confirmed.
+- `REFUNDED`: refund confirmed.
+- `FAILED_RETRYABLE`: cần worker hoặc Admin recovery tùy loại failure.
+- `EXCLUDED_LEGACY`: audit-only, không được thao tác tiền.
+
+## 10. Giới hạn và việc tiếp theo
+
+- Muốn dispute outcome ngoài `BOTH_PRESENT` cần Solidity version/deployment mới.
+- Cần production monitoring cho RPC, gas, event cursor, failed transaction và S3.
+- Cần multi-RPC/HA design trước khi cam kết SLA cao.
+- Notification đã có cho các mốc quan trọng nhưng chưa phải mọi hành động homework/session đều có persistent notification.
+- Mobile chưa có UI session/attendance/dispute.

@@ -187,7 +187,8 @@ public class SessionAttendanceService {
 
     /**
      * Gia sư bấm "Điểm danh vào dạy" bất kỳ lúc nào TRONG KHUNG GIỜ HỌC.
-     * Ghi nhận gia sư đã vào dạy (tutorChecked = true) và hỗ trợ điểm danh hộ nếu học viên không tự bấm được.
+     * Ghi nhận gia sư đã vào dạy. Học viên phải tự điểm danh bằng tài khoản của mình;
+     * dữ liệu từ request không được phép thay đổi studentChecked.
      */
     @Transactional
     public ClassSessionDtos.ClassSessionResponse tutorCheckIn(
@@ -207,8 +208,6 @@ public class SessionAttendanceService {
         validateStrictSessionTimeWindow(session);
 
         List<SessionAttendance> attendances = sessionAttendanceRepository.findBySessionId(sessionId);
-        List<Long> presentList = request != null && request.presentStudentIds() != null
-                ? request.presentStudentIds() : List.of();
 
         LocalDateTime now = LocalDateTime.now();
 
@@ -216,14 +215,6 @@ public class SessionAttendanceService {
             att.setTutorChecked(true);
             if (att.getTutorCheckedAt() == null) {
                 att.setTutorCheckedAt(now);
-            }
-
-            // Nếu gia sư điểm danh hộ cho học viên (hoặc học viên đã tự check-in)
-            if (presentList.contains(att.getStudentId())) {
-                att.setStudentChecked(true);
-                if (att.getStudentCheckedAt() == null) {
-                    att.setStudentCheckedAt(now);
-                }
             }
 
             sessionAttendanceRepository.save(att);

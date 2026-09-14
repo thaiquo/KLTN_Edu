@@ -23,6 +23,7 @@ import org.web3j.crypto.Hash;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigInteger;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -36,21 +37,27 @@ public class SessionSettlementWorkflowService {
 
     private final ContractAgreementRepository agreementRepository;
     private final SessionSettlementRepository sessionSettlementRepository;
+    private final iuh.fit.contract_service.repository.DisputeRepository disputeRepository;
     private final BlockchainTransactionCommandService commandService;
     private final OutboxEventRepository outboxEventRepository;
+    private final NotificationDispatcher notificationDispatcher;
     private final ObjectMapper objectMapper;
     private final java.time.Clock clock;
 
     public SessionSettlementWorkflowService(
             ContractAgreementRepository agreementRepository,
             SessionSettlementRepository sessionSettlementRepository,
+            iuh.fit.contract_service.repository.DisputeRepository disputeRepository,
             BlockchainTransactionCommandService commandService,
             OutboxEventRepository outboxEventRepository,
+            NotificationDispatcher notificationDispatcher,
             ObjectMapper objectMapper, java.time.Clock clock) {
         this.agreementRepository = agreementRepository;
         this.sessionSettlementRepository = sessionSettlementRepository;
+        this.disputeRepository = disputeRepository;
         this.commandService = commandService;
         this.outboxEventRepository = outboxEventRepository;
+        this.notificationDispatcher = notificationDispatcher;
         this.objectMapper = objectMapper;
         this.clock = clock;
     }
@@ -193,6 +200,52 @@ public class SessionSettlementWorkflowService {
         return true;
     }
 
+    private void notifySettlementConfirmed(
+            ContractAgreement agreement,
+            SessionSettlement settlement,
+            BigInteger tutorAmount,
+            BigInteger platformAmount,
+            BigInteger studentRefund,
+            String transactionHash) {
+        short decimals = agreement.getTokenDecimals();
+        String className = agreement.getClassName() != null && !agreement.getClassName().isBlank()
+                ? agreement.getClassName()
+                : "Lớp học #" + agreement.getClassroomId();
+        String referenceId = agreement.getId().toString();
+
+        if (studentRefund.signum() > 0) {
+            String refund = formatTokenAmount(studentRefund, decimals);
+            notificationDispatcher.sendAsync(
+                    agreement.getStudentEmail(),
+                    agreement.getStudentId(),
+                    "Hoàn tiền Buổi #" + settlement.getSessionId() + " thành công",
+                    className + ": " + refund + " " + agreement.getTokenSymbol()
+                            + " đã được hoàn về ví học viên. Mã giao dịch: " + transactionHash,
+                    "SESSION_REFUNDED",
+                    "CONTRACT_AGREEMENT",
+                    referenceId);
+        }
+
+        if (tutorAmount.signum() > 0) {
+            String payout = formatTokenAmount(tutorAmount, decimals);
+            String platformFee = formatTokenAmount(platformAmount, decimals);
+            notificationDispatcher.sendAsync(
+                    agreement.getTutorEmail(),
+                    agreement.getTutorId(),
+                    "Giải ngân Buổi #" + settlement.getSessionId() + " thành công",
+                    className + ": " + payout + " " + agreement.getTokenSymbol()
+                            + " đã được chuyển về ví gia sư; phí nền tảng " + platformFee + " "
+                            + agreement.getTokenSymbol() + ". Mã giao dịch: " + transactionHash,
+                    "SESSION_SETTLED",
+                    "CONTRACT_AGREEMENT",
+                    referenceId);
+        }
+    }
+
+    private static String formatTokenAmount(BigInteger units, short decimals) {
+        return new BigDecimal(units, decimals).stripTrailingZeros().toPlainString();
+    }
+
     @Transactional
     public BlockchainTransactionIntentResult initiateSessionFinalization(UUID settlementId) {
         SessionSettlement settlement = sessionSettlementRepository.findById(settlementId)
@@ -200,6 +253,10 @@ public class SessionSettlementWorkflowService {
 
         if (settlement.getStatus() != SettlementStatus.PROPOSED) {
             throw new IllegalStateException("Settlement must be in PROPOSED status to finalize, actual: " + settlement.getStatus());
+        }
+
+        if (disputeRepository.findBySettlementId(settlementId).isPresent()) {
+            throw new IllegalStateException("Cannot finalize session with an active or existing dispute: " + settlementId);
         }
 
         if (settlement.getDisputeDeadline() == null ||
@@ -312,6 +369,9 @@ public class SessionSettlementWorkflowService {
                 payloadJson,
                 now);
         outboxEventRepository.saveAndFlush(outboxEvent);
+
+        notifySettlementConfirmed(agreement, settlement, tutorAmount, platformAmount, studentRefund,
+                event.getTransactionHash());
 
         log.info("Successfully processed SessionSettled event for settlement {} with status {}",
                 settlement.getId(), settlement.getStatus());

@@ -126,7 +126,7 @@ class ContractManagementControllerPaymentTest {
     void listsEmptyDisputesForAuthenticatedTutorWithoutMutatingAccessControlResult() {
         var user = new ContractUserPrincipal(2L, "tutor@example.com", "TUTOR", List.of("TUTOR"));
         when(currentUserContext.requireCurrentUser()).thenReturn(user);
-        when(disputeRepository.findAll()).thenReturn(List.of());
+        when(disputeRepository.findAllWithSettlementAndAgreement()).thenReturn(List.of());
         when(accessControl.filterDisputes(List.of(), user))
                 .thenReturn(new ContractAccessControl().filterDisputes(List.of(), user));
         var response = controller.listDisputes(null, org.springframework.data.domain.PageRequest.of(0, 50));

@@ -14,8 +14,8 @@ Networks: Anvil 31337, Ethereum Sepolia 11155111
 The project deploys one `EduConnectEscrow` contract that manages many isolated
 agreement IDs. Phase P2 implements agreement registration, exact USDC funding,
 per-session settlement, disputes, expiration, cancellation/refund, roles and
-emergency pause behavior. P3 has been deployed and exercised on an ephemeral
-local Anvil chain only; no Sepolia contract has been deployed.
+emergency pause behavior. The contract is deployed and verified on Ethereum Sepolia
+(`0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3`). See `docs/BLOCKCHAIN.md` for full details.
 
 ## Prerequisites on Windows
 

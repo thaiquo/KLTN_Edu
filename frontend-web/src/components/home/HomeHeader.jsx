@@ -46,13 +46,14 @@ export function HomeHeader() {
   const avatarUrl = getAvatarUrl(user);
   const roleText = displayRole(user);
   const isStudentActive = user?.activeRole === 'STUDENT';
+  const isTutorRole = user?.roles?.includes('TUTOR') || user?.tutorStatus === 'APPROVED';
   const {
     data: tutorApplication,
     isLoading: tutorApplicationLoading,
     isFetching: tutorApplicationFetching,
     error: tutorApplicationError
   } = useTutorApplication({
-    enabled: isAuthenticated && isStudentActive
+    enabled: isAuthenticated && isStudentActive && isTutorRole
   });
   const createTutorApplication = useCreateTutorApplication();
   const studentRoleAction = getStudentRoleAction({
@@ -62,14 +63,14 @@ export function HomeHeader() {
   });
 
   useEffect(() => {
-    if (!isAuthenticated || !isStudentActive || !tutorApplicationError) {
+    if (!isAuthenticated || !isStudentActive || !isTutorRole || !tutorApplicationError) {
       setRoleActionError('');
       return;
     }
 
     console.error('Không thể tải trạng thái hồ sơ gia sư:', tutorApplicationError);
     setRoleActionError('Không thể kiểm tra hồ sơ gia sư lúc này.');
-  }, [isAuthenticated, isStudentActive, tutorApplicationError]);
+  }, [isAuthenticated, isStudentActive, isTutorRole, tutorApplicationError]);
 
   useEffect(() => {
     function closeOnEscape(event) {
@@ -668,17 +669,16 @@ function MenuLink({ to, icon, children, onClick }) {
 function getStudentRoleAction({ user, tutorApplication, loading }) {
   if (user?.activeRole !== 'STUDENT') return null;
 
-  if (loading) {
-    return {
-      kind: 'loading',
-      label: 'Đang kiểm tra hồ sơ gia sư...',
-      disabled: true,
-      icon: 'create'
-    };
-  }
-
-  const status = tutorApplication?.status || user?.tutorStatus || null;
-  if (status === 'APPROVED') {
+  const isTutor = user?.roles?.includes('TUTOR') || user?.tutorStatus === 'APPROVED' || tutorApplication?.status === 'APPROVED';
+  if (isTutor) {
+    if (loading) {
+      return {
+        kind: 'loading',
+        label: 'Đang kiểm tra...',
+        disabled: true,
+        icon: 'switch'
+      };
+    }
     return {
       kind: 'switch',
       label: 'Chuyển sang Gia sư',
@@ -686,40 +686,9 @@ function getStudentRoleAction({ user, tutorApplication, loading }) {
       icon: 'switch'
     };
   }
-  if (status === 'DRAFT') {
-    return {
-      kind: 'profile',
-      label: 'Hoàn thiện hồ sơ gia sư',
-      href: '/profile',
-      disabled: false,
-      icon: 'create'
-    };
-  }
-  if (status === 'PENDING') {
-    return {
-      kind: 'status',
-      label: 'Hồ sơ gia sư đang chờ duyệt',
-      href: '/tutor-next-step',
-      disabled: false,
-      icon: 'create'
-    };
-  }
-  if (status === 'REJECTED') {
-    return {
-      kind: 'profile',
-      label: 'Cập nhật hồ sơ gia sư',
-      href: '/profile',
-      disabled: false,
-      icon: 'create'
-    };
-  }
 
-  return {
-    kind: 'create',
-    label: 'Trở thành gia sư',
-    disabled: false,
-    icon: 'create'
-  };
+  // Bỏ mục "Trở thành gia sư" trong menu học viên
+  return null;
 }
 
 function navLinksFor(user) {

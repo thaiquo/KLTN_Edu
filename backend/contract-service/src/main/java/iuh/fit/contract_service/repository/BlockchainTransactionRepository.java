@@ -41,4 +41,5 @@ public interface BlockchainTransactionRepository extends JpaRepository<Blockchai
     List<BlockchainTransaction> findByStatusInOrderByUpdatedAtAsc(
             List<iuh.fit.contract_service.enums.BlockchainTransactionStatus> statuses,
             Pageable pageable);
+
 }

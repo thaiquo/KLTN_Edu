@@ -24,10 +24,12 @@ public class BlockchainRecoveryService {
     private final OutboxEventRepository outbox;
     private final OperationalFundingPolicy funding;
     private final ObjectMapper mapper;
+    private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     public BlockchainRecoveryService(JdbcTemplate jdbc, BlockchainTransactionRepository transactions,
             SessionSettlementRepository settlements, DisputeRepository disputes,
-            OutboxEventRepository outbox, OperationalFundingPolicy funding, ObjectMapper mapper) {
+            OutboxEventRepository outbox, OperationalFundingPolicy funding, ObjectMapper mapper,
+            org.springframework.transaction.PlatformTransactionManager transactionManager) {
         this.jdbc = jdbc;
         this.transactions = transactions;
         this.settlements = settlements;
@@ -35,6 +37,7 @@ public class BlockchainRecoveryService {
         this.outbox = outbox;
         this.funding = funding;
         this.mapper = mapper;
+        this.transactionTemplate = new org.springframework.transaction.support.TransactionTemplate(transactionManager);
     }
 
     @Scheduled(initialDelay = 10000, fixedDelay = 15000)
@@ -65,6 +68,66 @@ public class BlockchainRecoveryService {
                     AND ((t.action = 'OPEN_DISPUTE' AND dispute.status = 'OPENING')
                       OR (t.action = 'RESOLVE' AND dispute.status = 'RESOLUTION_PENDING')))
                 """);
+    }
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(BlockchainRecoveryService.class);
+    private static final int MAX_AUTO_RETRIES = 5;
+
+    @Scheduled(initialDelay = 20000, fixedDelay = 30000)
+    public void autoRetryEligibleFailures() {
+        var threshold = OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(5);
+        var eligibleTxIds = jdbc.queryForList("""
+                SELECT tx.id
+                FROM blockchain_transaction tx
+                JOIN contract_agreement agreement ON agreement.id = tx.agreement_id
+                WHERE tx.status = 'FAILED'
+                  AND tx.transaction_hash IS NULL
+                  AND tx.receipt_status IS NULL
+                  AND tx.updated_at <= ?
+                  AND agreement.legacy_excluded = FALSE
+                  AND (
+                    (tx.action = 'REGISTER' AND agreement.status = 'PREPARING_BLOCKCHAIN')
+                    OR (tx.action = 'EXPIRE' AND agreement.status = 'WAITING_PAYMENT')
+                    OR (tx.action IN ('PROPOSE', 'FINALIZE', 'OPEN_DISPUTE', 'RESOLVE')
+                        AND agreement.status = 'ACTIVE'
+                        AND EXISTS (
+                          SELECT 1
+                          FROM escrow_payment payment
+                          JOIN processed_event event
+                            ON event.event_type = 'AGREEMENT_FUNDED'
+                           AND event.chain_id = payment.chain_id
+                           AND LOWER(event.transaction_hash) = LOWER(payment.fund_tx_hash)
+                           AND LOWER(event.contract_address) = LOWER(agreement.escrow_contract_address)
+                          WHERE payment.agreement_id = agreement.id
+                            AND payment.fund_tx_hash IS NOT NULL
+                            AND payment.chain_id = agreement.chain_id
+                        ))
+                  )
+                  AND (SELECT COUNT(*) FROM outbox_event audit
+                       WHERE audit.aggregate_id = CAST(tx.id AS VARCHAR)
+                         AND audit.event_type = 'blockchain.transaction.retry.v1') < ?
+                ORDER BY tx.updated_at ASC
+                LIMIT 10
+                """, UUID.class, threshold, MAX_AUTO_RETRIES);
+
+        for (UUID txId : eligibleTxIds) {
+            try {
+                Integer retryCount = jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM outbox_event WHERE aggregate_id = ? AND event_type = 'blockchain.transaction.retry.v1'",
+                        Integer.class, txId.toString());
+                if (retryCount != null && retryCount >= MAX_AUTO_RETRIES) {
+                    log.warn("Transaction {} has reached max auto-retry limit ({}); skipping automated retry", txId, MAX_AUTO_RETRIES);
+                    continue;
+                }
+                // A missing transaction hash proves that nothing was broadcast, so
+                // retrying cannot duplicate a payout. Confirmed reverts and unknown
+                // receipts remain manual/audited recovery cases.
+                transactionTemplate.execute(status -> retry(txId, null));
+                log.info("Successfully initiated automated retry for failed transaction {}", txId);
+            } catch (Exception ex) {
+                log.warn("Automated retry skipped for transaction {}: {}", txId, ex.getMessage());
+            }
+        }
     }
 
     @Transactional
@@ -127,7 +190,7 @@ public class BlockchainRecoveryService {
         }
         var audit = new LinkedHashMap<String, Object>();
         audit.put("transactionId", tx.getId());
-        audit.put("actorId", actorId);
+        audit.put("actorId", actorId != null ? actorId : 0L);
         audit.put("action", tx.getAction());
         audit.put("previousHash", tx.getTransactionHash());
         audit.put("previousNonce", tx.getNonce());

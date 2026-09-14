@@ -116,12 +116,23 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
 ### Quy tắc khiếu nại và quyết toán theo buổi
 
 - Mỗi học viên có một hợp đồng escrow riêng với gia sư. Vì vậy điểm danh, đề xuất quyết toán, khiếu nại và giải ngân của cùng một buổi được xử lý độc lập theo từng học viên, không khóa toàn bộ lớp.
+- Tutor và từng Student tự điểm danh bằng tài khoản của mình trong đúng ngày và khung giờ `[startTime, endTime)`. Tutor không được điểm danh hộ Student; Tutor chỉ được xem danh sách ai đã/chưa điểm danh.
+- Nếu Tutor có mặt và Student có mặt: `BOTH_PRESENT`, trả 85% Tutor, 15% Platform.
+- Nếu Tutor có mặt và Student vắng: `STUDENT_ABSENT_TUTOR_PRESENT`, trả 45% Tutor, 10% Platform và hoàn 45% Student.
+- Nếu Tutor vắng, không phụ thuộc Student có mặt hay vắng: `TUTOR_ABSENT`, hoàn 100% Student.
+- Tỷ lệ được tính theo USDC base units: phần Tutor và Platform làm tròn xuống riêng; phần còn lại hoàn Student để tổng payout/refund luôn bằng đúng giá một buổi.
+- Cửa sổ khiếu nại 24 giờ bắt đầu khi đề xuất settlement được xác nhận on-chain. Nếu hệ thống tắt trước khi đề xuất được xác nhận thì 24 giờ chưa bắt đầu.
 - Học viên và gia sư chỉ được gửi khiếu nại cho hợp đồng của chính mình khi đề xuất quyết toán còn trong cửa sổ 24 giờ và chưa giải ngân.
 - Ngay khi yêu cầu khiếu nại hợp lệ được ghi nhận, settlement của học viên liên quan chuyển sang trạng thái giữ tiền; tác vụ giải ngân hết hạn 24 giờ không được chọn settlement này.
 - Khi học viên khiếu nại, gia sư của lớp được thông báo ngay và được xem nội dung, bằng chứng của học viên; gia sư có thể gửi giải trình/bằng chứng riêng cho Staff/Admin.
+- Với khiếu nại do học viên gửi, gia sư có 24 giờ tính từ `submittedAt` của đơn để nộp hoặc cập nhật giải trình. Admin/Staff phụ trách được phân xử ngay khi gia sư đã phản hồi; nếu chưa có phản hồi thì chỉ được phân xử từ lúc hết 24 giờ.
+- Sau khi hết hạn giải trình, gia sư không được nộp/cập nhật thêm. Admin/Staff không có hạn chót bắt buộc phải phân xử; settlement tiếp tục ở trạng thái giữ tiền cho đến khi phán quyết on-chain hoàn tất.
 - Khi gia sư chủ động khiếu nại, nội dung, bằng chứng và kết quả xử lý là báo cáo riêng cho Staff/Admin; học viên liên quan không được xem hồ sơ khiếu nại này.
 - Admin hoặc Staff phụ trách lớp là bên phân xử. Với Smart Contract V1 hiện tại, luồng phân xử on-chain chỉ áp dụng an toàn cho đề xuất `BOTH_PRESENT`; các loại kết quả điểm danh khác cần phiên bản hợp đồng mới trước khi mở rộng khiếu nại on-chain.
-- Khóa link phòng học trực tuyến trước khi điểm danh: Học viên chỉ được mở khóa link phòng học (Google Meet/Zoom) sau khi đã bấm "Điểm danh có mặt" trong khung giờ của buổi học. Quy tắc này ngăn chặn triệt để trường hợp học viên vào phòng học thẳng nhưng quên điểm danh, dẫn đến hệ thống chốt vắng mặt (`STUDENT_ABSENT_TUTOR_PRESENT`) và gây thiệt hại tài chính vô lý cho gia sư.
+- Lý do khiếu nại dạng text là bắt buộc. File evidence là tùy chọn và hỗ trợ ảnh, video, audio, PDF, TXT, Word và Excel tối đa 50 MB; object lưu trên storage/S3, metadata và SHA-256 lưu trong PostgreSQL.
+- Khóa link phòng học trực tuyến trước khi điểm danh: Student chỉ được đọc link Google Meet/Zoom/Teams sau khi đã tự điểm danh trong khung giờ. Đây là ràng buộc giảm trường hợp vào học nhưng không ghi nhận attendance; không coi nó là bằng chứng tuyệt đối rằng người dùng thực sự học trọn buổi.
+- Link phòng học thuộc classroom. Tutor có thể cập nhật khi link hỏng; lần đọc tiếp theo và các buổi kế tiếp dùng link mới, nhưng Student vẫn phải điểm danh từng buổi để mở khóa.
+- Nếu service tắt qua deadline, scheduler không thể chuyển tiền trong lúc tắt. Khi Learning/Contract được mở lại, các session/settlement lưu bền được quét bù theo chu kỳ; dispute đang mở không bao giờ tự finalize.
 - Staff moderation: Staff kiểm duyệt nội dung, giám sát lớp, quản lý vi phạm, hỗ trợ người dùng.
 - Admin management: Admin quản lý người dùng, danh mục, Blockchain, thanh toán và thống kê.
 

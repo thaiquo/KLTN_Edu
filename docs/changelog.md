@@ -2,6 +2,19 @@
 
 ---
 
+## 15/09/2026 — Đồng bộ tài liệu toàn dự án
+
+- Audit lại service/module, controller, entity, migration, security, frontend route/API, Solidity và runtime settlement evidence.
+- Xác nhận kiến trúc là **Service-Based Architecture** với 6 backend service: Gateway 8080, Account 8081, Learning 8082, Contract 8083, Notification/Chat 8084 và AI skeleton 8085.
+- Loại bỏ tài liệu cũ về raw-USDC-transfer fallback; funding hợp lệ bắt buộc gọi `fundAgreement` và được xác nhận bởi `AgreementFunded`.
+- Cập nhật frontend ABI/local addresses đã khớp Solidity/deployment artifact.
+- Ghi nhận Sepolia payout 85/15 và refund `TUTOR_ABSENT` 100% đã xác nhận.
+- Ghi đầy đủ session attendance độc lập, link/homework gate, restart catch-up, per-Student settlement và dispute privacy/response window.
+- Ghi nhận Contract dispute evidence lưu S3 theo key agreement/session/role, tối đa 50 MB, metadata SHA-256 trong PostgreSQL.
+- Điều chỉnh Messaging: backend chat persistence/API/WebSocket đã có, nhưng Web Portal vẫn dùng mock state nên UC008 còn PARTIAL.
+- Điều chỉnh AI: `ai-service` đã có skeleton/health, nhưng matching/RAG/vector/model vẫn NOT_IMPLEMENTED.
+- Thay các tuyên bố “100% hoàn thành” tổng quát bằng trạng thái có phạm vi, evidence và giới hạn.
+
 ## 📌 Mốc Hoàn Thành Toàn Diện (Tháng 09/2026)
 
 ### 1. Phân hệ Blockchain & Smart Contract Escrow
@@ -11,12 +24,12 @@
 - Cơ chế giải ngân tự động: **85%** cho Gia sư, **15%** cho Sàn sau mỗi buổi học được điểm danh và hết khung giờ khiếu nại 24h.
 - Cơ chế phân xử tranh chấp (Dispute Management Panel) với quyền Trọng tài (Arbitrator).
 
-### 2. Phân hệ Contract Service (`backend/contract-service` - Port 8084)
+### 2. Phân hệ Contract Service (`backend/contract-service` - Port 8083)
 - Xây dựng quy trình quản lý vòng đời hợp đồng: `DRAFT` -> `PENDING_TUTOR_ACCEPTANCE` -> `PENDING_STUDENT_ACCEPTANCE` -> `WAITING_PAYMENT` -> `ACTIVE` -> `COMPLETED`.
 - Snapshot bất biến toàn bộ điều khoản hợp đồng (`terms_json`, `terms_hash`).
 - Scheduler tự động quét và hủy hợp đồng quá hạn 24 giờ chưa nạp cọc (`ContractExpirationScheduler`).
 - Xuất bản văn bản hợp đồng pháp lý chuẩn định dạng **Microsoft Word (.docx)** và **PDF** tự động gắn con dấu chữ ký số EIP-712.
-- Dual-channel sync: Đồng bộ kích hoạt hợp đồng sang `learning-service` qua REST API trực tiếp và Message Queue RabbitMQ (`contract.activated.v1`).
+- Đồng bộ kích hoạt hợp đồng sang `learning-service` bằng internal REST sau khi blockchain event được xác nhận. Contract outbox giữ audit/delivery state; không coi RabbitMQ là kênh xác nhận tiền.
 
 ### 3. Phân hệ Learning Service (`backend/learning-service` - Port 8082)
 - Quản lý danh mục môn học, tạo lớp học với cấu hình lịch học, thời lượng, học phí.

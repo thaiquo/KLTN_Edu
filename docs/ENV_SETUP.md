@@ -17,7 +17,23 @@ operator from root configuration. `scripts/start-learning.ps1` starts the sessio
 worker. Both services must stay running for continuous settlement; restarting
 them catches up eligible work. Do not start duplicate services on the same ports.
 
-The previous `frontend-web/.env` was merged into root `.env` with root values
-winning conflicts; originals are preserved in `.local-backups/env-*` locally.
-`node scripts/consolidate-env.cjs` is an idempotent migration helper for another
-checkout still containing two files. Restart Vite after changing environment.
+`scripts/start-all.ps1` launches Gateway 8080, Account 8081, Learning 8082,
+Contract 8083, Notification 8084 and AI skeleton 8085. Run `docker compose up -d`
+for PostgreSQL, RabbitMQ and Gotenberg. Contract PDF generation needs Gotenberg.
+Account uploads and the current Contract artifact/dispute-evidence runtime need
+valid S3 configuration because `STORAGE_PROVIDER=s3` is inherited when
+`CONTRACT_STORAGE_PROVIDER` is not explicitly set.
+
+The blockchain operator additionally requires both blockchain flags enabled, the
+expected chain/deployment/operator address, a readable encrypted keystore, a
+password environment/file source, RPC access and nonzero Sepolia ETH for gas.
+Startup validates these prerequisites. Never commit the password file.
+
+Stopping application processes does not delete database state. Learning and
+Contract catch up durable overdue work on the next start. Avoid
+`docker compose down -v` unless deleting PostgreSQL/RabbitMQ volumes is intended.
+
+The root `.env` and `frontend-web/.env` are fully synchronized with the master configuration,
+and their respective `.env.example` files are sanitized templates without secrets for safe Git tracking.
+Developers only need one master `.env` file to deploy across both locations.
+Restart Vite after changing environment.

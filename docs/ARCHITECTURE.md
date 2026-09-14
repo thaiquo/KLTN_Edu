@@ -1,106 +1,141 @@
-# EduConnect Architecture
+# EduConnect — Kiến trúc hiện tại
 
-## 1. Architecture Style
+> Source audit: **2026-09-14**. Kiến trúc chính thức là **Service-Based Architecture** có tích hợp event-driven; không gọi là Microservices Architecture.
 
-EduConnect uses a Service-Based Architecture.
+## 1. Sơ đồ tổng thể
 
-The backend is split by business-oriented services with separate responsibility boundaries. Web and Mobile clients call backend APIs through the gateway or service API surface. Some flows use synchronous REST/API communication, and some existing Account/Learning flows use asynchronous RabbitMQ events.
+```text
+React/Vite Web ─┐
+Expo Mobile ────┼─HTTP/cookie──> API Gateway :8080
+MetaMask ───────┘                    │
+                                    ├─ Account :8081 ── S3 / Email
+                                    ├─ Learning :8082
+                                    ├─ Contract :8083 ── Sepolia RPC / S3 / Gotenberg
+                                    ├─ Notification + Chat :8084
+                                    └─ AI skeleton :8085
 
-Do not rename the system to Microservices Architecture unless the user confirms a new architecture decision.
+Account/Learning/Notification <──RabbitMQ──> kltn.edu.events
+Learning <──signed internal REST──> Contract
+Contract <──poll/submit──> EduConnectEscrow trên Sepolia
+Web <──raw WebSocket──> Account/Learning/Notification/Chat
+Các business service ──JPA/Flyway──> PostgreSQL kltn_db
+```
 
-## 2. Current Service Map
+## 2. Service map và ownership
 
-| Service | Main Responsibility | Current Status |
-| --- | --- | --- |
-| `api-gateway` | Spring Cloud Gateway routing, CORS entry point, WebSocket route forwarding. | IMPLEMENTED |
-| `account-service` | Authentication, users, roles, active role, student/tutor profiles, tutor applications, staff/admin account operations, S3 file storage, Account/Learning events. | IMPLEMENTED |
-| `learning-service` | Teaching catalog, tutor subject registration, tutor availability, classes, chapters/schedules, enrollment requests, Learning/Account events. | PARTIAL |
-| `contract-service` | Contract agreement data, escrow/payment metadata, dispute/session settlement workflows, blockchain transaction dispatch, event polling/ingestion. | PARTIAL |
-| `notification-service` | Persistent account-owned notifications, REST Bell APIs, RabbitMQ consumers, idempotency, and limited realtime notification delivery. | PARTIAL |
-| `eureka-server` | Service discovery module is present in the Maven/backend structure. Runtime role needs verification before relying on it. | NEEDS_VERIFICATION |
+| Service | Domain owner | Thành phần chính | Mức hoàn thiện |
+| --- | --- | --- | --- |
+| `api-gateway` | Edge routing | Spring Cloud Gateway WebFlux, credentialed CORS, REST và WebSocket routes. | IMPLEMENTED |
+| `account-service` | Identity/account | User, role, active role, refresh session, OTP, Student/Tutor profile, TutorApplication/TutorDocument, địa chỉ ví, email, S3. | IMPLEMENTED |
+| `learning-service` | Learning marketplace | Catalog, TutorSubject/registration, availability, classroom/schedule/chapter, enrollment, rolling session, attendance, homework. | IMPLEMENTED cho flow chính Web |
+| `contract-service` | Contract/payment/escrow | Agreement, acceptance, document artifact, payment, settlement, dispute/evidence, blockchain transaction/outbox/event cursor. | IMPLEMENTED cho flow chính; có giới hạn V1/ops |
+| `notification-service` | Notification và chat | Notification persistence, Rabbit consumers, Bell REST/WebSocket, conversation/message persistence, chat REST/WebSocket. | Notification IMPLEMENTED theo event đã nối; Chat backend IMPLEMENTED, Web còn mock |
+| `ai-service` | AI future boundary | Spring Boot health endpoint. | SKELETON; AI nghiệp vụ NOT_IMPLEMENTED |
 
-No `ai-service` source module is currently present.
+Không tạo thêm service hoặc chuyển domain owner nếu chưa có quyết định kiến trúc mới.
 
-## 3. Domain Ownership
+## 3. Client
 
-- Account Service owns authentication, user identity, roles, active role, student profile, tutor profile, tutor applications, tutor documents, and account-side staff/admin operations.
-- Learning Service owns teaching catalog, tutor subject/expertise registration, tutor availability, class/classroom data, class schedules/chapters, and enrollment/join request data.
-- Contract Service owns contract agreement data, escrow payment metadata, settlement/dispute state, lifecycle cancellation/expiration state, blockchain transaction records, outbox records, and blockchain event cursor/processed event data.
-- Notification is implemented as a partial domain capability: persistent notifications, REST Bell APIs, limited RabbitMQ consumers, and raw WebSocket delivery exist, but not every notification-worthy business event is covered.
-- AI Matching is target/planned. Current search/filter logic lives in existing Account/Learning APIs rather than a dedicated AI service.
+### Web
 
-Contract funding is event-confirmed: frontend/backend payment submission may record a funding txHash as `PAYMENT_CONFIRMING`, but Contract Service only moves an agreement to `ACTIVE`, locks escrow metadata, sends activation notifications, and dispatches Learning enrollment activation after ingesting a confirmed `AgreementFunded` event.
+`frontend-web` dùng React/Vite, React Router, TanStack Query, Tailwind, ethers.js và Reown AppKit. Web là client chính và có màn hình theo năm actor.
 
-Contract lifecycle after funding is also event-confirmed. Contract Service enqueues backend-owned operator/arbitrator transactions for session proposals, finalization, tutor-fraud dispute opening/resolution, expiration, and cancellation/refund through the durable blockchain transaction pipeline. It only marks session payout/refund, dispute open/resolved, agreement completed/expired/cancelled, and unused-refund records after the corresponding escrow events are ingested.
+`/payments` hiện redirect về `/student/wallet`; `MyWalletView` được dùng cho lịch sử escrow/wallet. Portal vẫn còn một số state/demo data, rõ nhất là Messages UI chưa nối API chat đã có.
 
-Frontend IA separates `Ví của tôi` from `Thanh toán & Ký quỹ`: `Ví của tôi` is wallet-focused Web3 access, while `Thanh toán & Ký quỹ` remains the payment/escrow workflow entry. Current Web UI reuses `MyWalletView` for both access paths until dedicated payment/escrow APIs are complete.
+### Mobile
 
-## 4. Data Ownership
+`mobile-app` dùng Expo Router/React Native. Source hiện chỉ có login, register, auth context và home cơ bản; không suy diễn rằng Mobile có contract/session/dispute parity với Web.
 
-PostgreSQL is used for current business data. Each service should own data for its domain and avoid direct database coupling with another service's domain.
+## 4. Giao tiếp liên service
 
-Cross-domain integration should go through an API or event flow when possible. Before adding an Entity/table, audit whether another service already owns that business concept.
+### REST
 
-## 5. Service Communication
+- Client thường đi qua Gateway.
+- Account dùng OpenFeign để đọc một số dữ liệu subject/Tutor từ Learning.
+- Learning gửi kết quả buổi học sang internal endpoint của Contract bằng JWT service token có scope `contract-settlement`.
+- Contract gọi internal Learning activation/expiration endpoint khi event blockchain xác nhận trạng thái agreement.
+- Contract gửi notification trực tiếp qua internal Notification API cho các sự kiện contract/settlement/dispute.
 
-### Synchronous
+REST failure không được biến thành trạng thái tài chính giả. Các worker giữ cờ chưa giao thành công và thử lại với các flow có durable state tương ứng.
 
-- Web/Mobile clients call REST-style APIs exposed by backend services, usually through `api-gateway`.
-- `api-gateway` currently routes Account and Learning API groups.
-- Account Service uses Feign integration with Learning Service for selected tutor/learning validation flows.
+### RabbitMQ
 
-### Asynchronous
+Exchange hiện tại: `kltn.edu.events`.
 
-RabbitMQ is currently present for Account/Learning events through exchange `kltn.edu.events`.
+- Account phát event lifecycle Tutor application/approval.
+- Learning tiêu thụ projection Tutor authority và phát event enrollment, class review, subject/teaching registration.
+- Notification tiêu thụ các event có đủ recipient id, lưu notification idempotent rồi đẩy WebSocket.
 
-Known implemented event direction:
+Contract transaction pipeline dùng PostgreSQL/outbox và blockchain event polling; không phụ thuộc RabbitMQ để xác nhận tiền.
 
-| Producer | Event Purpose | Consumer |
-| --- | --- | --- |
-| Account Service | Tutor application submitted/approved/rejected. | Learning Service consumes tutor approval/rejection events. |
-| Learning Service | Subject request approved/rejected. | Account Service consumes subject request decision events. |
+### WebSocket
 
-No proven end-to-end Learning session/attendance flow currently triggers Contract settlement automatically. Manual Contract Service APIs/UI actions can enqueue settlement lifecycle transactions, but learning-session eligibility remains a separate incomplete domain.
+- `/ws/account`
+- `/ws/learning`
+- `/ws/notifications`
+- `/ws/chat`
 
-## 6. API Gateway
+REST/database vẫn là nguồn dữ liệu authoritative; WebSocket dùng để báo thay đổi và kích hoạt refetch, không thay thế persistence.
 
-`api-gateway` is the main backend entry point for Web/Mobile routing.
+## 5. Data architecture
 
-Current evidence shows:
+Các service hiện dùng chung một PostgreSQL database vật lý `kltn_db`, nhưng mỗi service có entity/migration và bảng Flyway history riêng. Ownership logic vẫn phải theo service; không thêm truy cập chéo bảng của service khác khi có thể dùng API/event.
 
-- Account routes under `/api/account/**`, `/api/auth/**`, `/api/users/**`, `/api/admin/**`, `/api/tutors/**`, `/api/tutor-applications/**`, `/api/staff/**`, and `/api/reference/**`.
-- Learning routes under `/api/learning/**`.
-- Contract routes under `/api/contracts/**`.
-- WebSocket forwarding for `/ws/account`, `/ws/learning`, and `/ws/notifications`.
-- Credentialed CORS for local frontend origins.
-- Gateway forwards authenticated browser cookies to services and is not the identity authority for Contract Service. Contract Service validates the `access_token` cookie itself and ignores spoofable client identity headers/query parameters for authorization.
+| Service | Số migration hiện thấy | Nhóm bảng tiêu biểu |
+| --- | ---: | --- |
+| Account | 13 | users, roles, refresh_sessions, OTP, students, tutors, tutor applications/documents. |
+| Learning | 30 | catalog, registrations, class_rooms, schedules/chapters, enrollment_requests, class_sessions, session_attendances. |
+| Contract | 11 | contract_agreement/acceptance/artifact, escrow_payment, session_settlement, dispute/evidence, blockchain_transaction, processed_event/outbox/cursor. |
+| Notification | 2 | notifications, conversations, chat_messages. |
 
-Gateway route details belong in source/config and API-specific documentation, not in this architecture baseline.
+## 6. Storage và document
 
-## 7. Infrastructure Baseline
+- Account Service dùng S3 cho avatar và hồ sơ/tài liệu Tutor, trả presigned URL có thời hạn.
+- Contract Service dùng abstraction `ContractArtifactStorage`: local cho dev hoặc S3. Root environment hiện chọn `s3`.
+- Artifact hợp đồng: template DOCX + poi-tl render; Gotenberg/LibreOffice chuyển DOCX sang PDF; metadata/hash lưu database.
+- Dispute evidence dùng cùng storage abstraction, key tách theo agreement/session/role, giới hạn 50 MB và lưu SHA-256.
+- Không lưu file binary evidence trong bảng dispute.
 
-- PostgreSQL: implemented as the relational database infrastructure.
-- RabbitMQ: implemented for part of Account/Learning async messaging.
-- Amazon S3: implemented in Account Service for avatar/tutor document storage.
-- Docker Compose: currently provides infrastructure containers such as PostgreSQL and RabbitMQ. Application services are not fully Dockerized in the current compose file.
-- Blockchain: Solidity/Foundry contract source exists; backend Web3j integration exists in Contract Service; Sepolia is target/configured, while current deployment evidence is local/Anvil.
-- Qdrant/Spring AI: planned for AI Matching; no current implementation evidence.
+## 7. Blockchain architecture
 
-## 8. Architecture Guardrails
+- Solidity `EduConnectEscrow` là nguồn ABI và quy tắc tiền.
+- Browser chỉ ký EIP-712 và Student gọi ERC-20 `approve` + escrow `fundAgreement`.
+- Các write sau funding (`REGISTER`, `PROPOSE`, `FINALIZE`, `OPEN_DISPUTE`, `RESOLVE`, `EXPIRE`, `CANCEL`) thuộc backend operator/arbitrator pipeline.
+- Transaction intent có idempotency key, pessimistic locking, sender serialization, prepare/simulate, broadcast, receipt watch và event ingestion.
+- Chỉ confirmed contract event chuyển domain state cuối và số tiền confirmed.
+- Scheduler có catch-up sau restart; smart contract không tự chạy nếu backend operator tắt.
 
-- Keep the Service-Based Architecture baseline.
-- Do not create a new service without explicit user confirmation.
-- Do not move domain ownership without explicit user confirmation.
-- Do not duplicate Entity/domain ownership when an owner already exists.
-- Do not access another service's database directly unless a confirmed design decision requires it.
-- For cross-service flows, identify the source domain owner and target consumer before changing APIs/events.
+Chi tiết: [BLOCKCHAIN.md](BLOCKCHAIN.md).
 
-## 9. Where to Audit
+## 8. Scheduling và phục hồi
 
-- Auth/Profile/Role/Tutor application: start in `backend/account-service`.
-- Class/Homework/Session/Catalog/Enrollment: start in `backend/learning-service`.
-- Contract/Escrow/Settlement/Dispute: start in `backend/contract-service`.
-- Blockchain interface/deployment/Web3: start in `blockchain/`, then `backend/contract-service`, then `frontend-web/src/web3`.
-- Web API integration: start in `frontend-web/src/api` and related components.
-- Mobile API integration: start in `mobile-app`.
-- Gateway/routing/CORS: start in `backend/api-gateway/src/main/resources/application.properties`.
+| Worker | Chu kỳ mặc định | Vai trò |
+| --- | ---: | --- |
+| Learning lifecycle | startup + 60 giây | Chốt buổi quá giờ, sinh session cuốn chiếu. |
+| Settlement delivery | initial 5 giây, mỗi 30 giây | Gửi các buổi `COMPLETED` chưa được Contract xác nhận. |
+| Contract finalization | initial 30 giây, mỗi 60 giây | Queue proposal đã hết cửa sổ dispute. |
+| Blockchain dispatcher | initial 5 giây, mỗi 5 giây | Gửi transaction intent hợp lệ. |
+| Receipt watcher | initial 7 giây, mỗi 5 giây | Dò receipt, rebroadcast cùng signed transaction khi cần. |
+| Recovery | 15/30 giây | Hòa giải trạng thái lỗi và retry lỗi trước broadcast có giới hạn. |
+
+Nếu service tắt qua thời hạn, dữ liệu deadline/hàng đợi vẫn ở PostgreSQL và on-chain; khi mở lại sẽ catch up. Không thể tuyên bố giao dịch xảy ra đúng lúc deadline trong thời gian mọi worker đang tắt.
+
+## 9. Hạ tầng local
+
+`docker-compose.yml` chạy:
+
+- PostgreSQL 16;
+- RabbitMQ 3.13 Management;
+- Gotenberg 8.
+
+Application service được chạy bằng Maven/PowerShell script, chưa được container hóa đầy đủ. Root `.env` là cấu hình dùng chung; chỉ biến `VITE_*` được phép lộ cho browser. Không commit JWT secret, AWS secret, private key hoặc operator keystore password.
+
+## 10. Giới hạn kiến trúc hiện tại
+
+- Một blockchain operator instance; chưa có distributed signer coordination.
+- Một RPC endpoint cấu hình chính; chưa có multi-RPC automatic failover.
+- AI service mới là skeleton; chưa có Qdrant/Spring AI/model pipeline.
+- Web chat chưa nối backend chat.
+- Mobile chưa feature-complete.
+- Reviewer notification phụ thuộc producer cung cấp recipient id đáng tin cậy.
+- Không có Eureka runtime module có source; root Maven không dùng Eureka.

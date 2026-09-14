@@ -553,7 +553,7 @@ public class ClassRoomService {
                     if (keyword == null || keyword.isBlank()) return true;
                     return matchesPublicClassKeyword(c, keyword);
                 })
-                .map(this::toResponse)
+                .map(c -> toResponse(c, false))
                 .toList();
     }
 
@@ -619,7 +619,7 @@ public class ClassRoomService {
         if (classRoom.getStatus() != ClassRoomStatus.PUBLISHED && classRoom.getStatus() != ClassRoomStatus.ACTIVE && classRoom.getStatus() != ClassRoomStatus.LOCKED) {
             throw new ResourceNotFoundException("Classroom is not available for public view");
         }
-        return toResponse(classRoom);
+        return toResponse(classRoom, false);
     }
 
     @Transactional(readOnly = true)
@@ -752,6 +752,11 @@ public class ClassRoomService {
     }
 
     private ClassRoomDtos.ClassRoomResponse toResponse(ClassRoom c) {
+        return toResponse(c, true);
+    }
+
+    /** Public class discovery must not expose the reusable classroom meeting URL. */
+    private ClassRoomDtos.ClassRoomResponse toResponse(ClassRoom c, boolean includeMeetingLink) {
         ClassRoomDtos.RegistrationBrief regBrief = null;
         if (c.getTutorSubjectRegistration() != null) {
             TutorSubjectRegistration r = c.getTutorSubjectRegistration();
@@ -797,8 +802,9 @@ public class ClassRoomService {
         long availableSlots = Math.max(0, c.getMaxStudents() - acceptedCount);
         boolean isBufferPoolFull = (pendingCount + acceptedCount) >= maxPending;
 
-        String visibleMeetingLink = c.getMeetingLink();
-        if (c.getLearningMode() == LearningMode.ONLINE && (visibleMeetingLink == null || visibleMeetingLink.isBlank())) {
+        String visibleMeetingLink = includeMeetingLink ? c.getMeetingLink() : null;
+        if (includeMeetingLink && c.getLearningMode() == LearningMode.ONLINE
+                && (visibleMeetingLink == null || visibleMeetingLink.isBlank())) {
             visibleMeetingLink = "https://meet.google.com/edu-class-" + (c.getId() != null ? c.getId() : "online");
         }
 

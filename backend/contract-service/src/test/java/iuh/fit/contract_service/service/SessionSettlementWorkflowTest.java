@@ -32,10 +32,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 
 @SpringBootTest
 class SessionSettlementWorkflowTest {
     @Autowired private BlockchainRecoveryService recoveryService;
+
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private NotificationDispatcher notificationDispatcher;
 
     @Test
     void rejectsUnfundedActiveAgreementAndRollsBackPendingSettlement() {
@@ -83,6 +88,53 @@ class SessionSettlementWorkflowTest {
         recoveryService.reconcileKnownFailures();
         assertEquals("SUBMITTED", jdbcTemplate.queryForObject(
                 "SELECT status FROM blockchain_transaction WHERE id = ?", String.class, intent.transactionId()));
+    }
+
+    @Test
+    void autoRetryEligibleFailuresAutomaticallyRecoversFailedTransactions() {
+        UUID id = UUID.randomUUID();
+        insertAgreement(id, Hash.sha3String("agreement:" + id), Hash.sha3String("terms"), "ACTIVE", 1);
+        var intent = workflowService.initiateSessionProposal(id, 1L, SettlementOutcome.BOTH_PRESENT, Hash.sha3String("evidence"));
+        jdbcTemplate.update("UPDATE blockchain_transaction SET status = 'FAILED', transaction_hash = NULL, receipt_status = NULL, updated_at = ? WHERE id = ?",
+                OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(6), intent.transactionId());
+        recoveryService.reconcileKnownFailures();
+        assertEquals("FAILED_RETRYABLE", jdbcTemplate.queryForObject(
+                "SELECT status FROM session_settlement WHERE agreement_id = ?", String.class, id));
+
+        recoveryService.autoRetryEligibleFailures();
+
+        assertEquals(SettlementStatus.PROPOSE_PENDING,
+                sessionSettlementRepository.findByAgreementId(id).getFirst().getStatus());
+        assertEquals("CREATED", jdbcTemplate.queryForObject(
+                "SELECT status FROM blockchain_transaction WHERE id = ?", String.class, intent.transactionId()));
+        assertEquals(1, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM outbox_event WHERE aggregate_id = ? AND event_type = 'blockchain.transaction.retry.v1'",
+                Integer.class, intent.transactionId().toString()));
+    }
+
+    @Test
+    void autoRetryDoesNotRebroadcastAConfirmedRevert() {
+        UUID id = UUID.randomUUID();
+        insertAgreement(id, Hash.sha3String("agreement:" + id), Hash.sha3String("terms"), "ACTIVE", 1);
+        var intent = workflowService.initiateSessionProposal(
+                id, 1L, SettlementOutcome.BOTH_PRESENT, Hash.sha3String("evidence"));
+        jdbcTemplate.update("""
+                        UPDATE blockchain_transaction
+                        SET status = 'FAILED', transaction_hash = ?, receipt_status = 0, updated_at = ?
+                        WHERE id = ?
+                        """,
+                Hash.sha3String("confirmed-revert"),
+                OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(6),
+                intent.transactionId());
+        recoveryService.reconcileKnownFailures();
+
+        recoveryService.autoRetryEligibleFailures();
+
+        assertEquals("FAILED", jdbcTemplate.queryForObject(
+                "SELECT status FROM blockchain_transaction WHERE id = ?", String.class, intent.transactionId()));
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM outbox_event WHERE aggregate_id = ? AND event_type = 'blockchain.transaction.retry.v1'",
+                Integer.class, intent.transactionId().toString()));
     }
 
     @Test
@@ -297,10 +349,140 @@ class SessionSettlementWorkflowTest {
         assertEquals(BigInteger.ZERO, updatedSettlement.getStudentRefundAmount());
     }
 
+    @Test
+    void processConfirmedSessionSettledEventStudentAbsentTutorPresent() throws Exception {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        String termsHash = Hash.sha3String("terms-v1");
+
+        insertAgreement(agreementId, onchainAgreementId, termsHash, "ACTIVE", 1);
+
+        String evidenceHash = "0x" + "e".repeat(64);
+        workflowService.initiateSessionProposal(agreementId, 1L, SettlementOutcome.STUDENT_ABSENT_TUTOR_PRESENT, evidenceHash);
+
+        SessionSettlement settlement = sessionSettlementRepository
+                .findByAgreementIdAndSessionId(agreementId, 1L).orElseThrow();
+        settlement.markProposed(OffsetDateTime.now(ZoneOffset.UTC).minusHours(1), "0x" + "p".repeat(64));
+        sessionSettlementRepository.saveAndFlush(settlement);
+
+        String onchainSessionId = SessionSettlementWorkflowService.computeOnchainSessionId(1L);
+
+        Map<String, String> attributes = new LinkedHashMap<>();
+        attributes.put("agreementId", onchainAgreementId);
+        attributes.put("sessionId", onchainSessionId);
+        attributes.put("outcome", "1");
+        attributes.put("finalStatus", "3");
+        attributes.put("tutorAmount", "18000000");
+        attributes.put("platformAmount", "4000000");
+        attributes.put("studentRefund", "18000000");
+
+        DecodedEscrowEvent decodedEvent = new DecodedEscrowEvent(
+                EscrowEventType.SESSION_SETTLED,
+                onchainAgreementId,
+                onchainSessionId,
+                attributes);
+
+        String jsonPayload = objectMapper.writeValueAsString(decodedEvent);
+
+        BlockchainLog log = new BlockchainLog(
+                ESCROW,
+                List.of("0x" + "1".repeat(64)),
+                "0x",
+                121L,
+                "0x" + "b".repeat(64),
+                "0x" + "f".repeat(64),
+                0L);
+
+        ProcessedEvent event = ProcessedEvent.blockchainLog(
+                CHAIN_ID,
+                ESCROW,
+                log,
+                "SESSION_SETTLED",
+                jsonPayload,
+                OffsetDateTime.now(ZoneOffset.UTC));
+
+        boolean processed = workflowService.processConfirmedSessionSettledEvent(event);
+        assertTrue(processed);
+
+        SessionSettlement updatedSettlement = sessionSettlementRepository.findById(settlement.getId()).orElseThrow();
+        assertEquals(SettlementStatus.SETTLED, updatedSettlement.getStatus());
+        assertEquals(BigInteger.valueOf(18_000_000L), updatedSettlement.getTutorAmount());
+        assertEquals(BigInteger.valueOf(4_000_000L), updatedSettlement.getPlatformAmount());
+        assertEquals(BigInteger.valueOf(18_000_000L), updatedSettlement.getStudentRefundAmount());
+    }
+
+    @Test
+    void processConfirmedSessionRefundedEventTutorAbsent() throws Exception {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        String termsHash = Hash.sha3String("terms-v1");
+
+        insertAgreement(agreementId, onchainAgreementId, termsHash, "ACTIVE", 1);
+
+        String evidenceHash = "0x" + "e".repeat(64);
+        workflowService.initiateSessionProposal(agreementId, 1L, SettlementOutcome.TUTOR_ABSENT, evidenceHash);
+
+        SessionSettlement settlement = sessionSettlementRepository
+                .findByAgreementIdAndSessionId(agreementId, 1L).orElseThrow();
+        settlement.markProposed(OffsetDateTime.now(ZoneOffset.UTC).minusHours(1), "0x" + "p".repeat(64));
+        sessionSettlementRepository.saveAndFlush(settlement);
+
+        String onchainSessionId = SessionSettlementWorkflowService.computeOnchainSessionId(1L);
+
+        Map<String, String> attributes = new LinkedHashMap<>();
+        attributes.put("agreementId", onchainAgreementId);
+        attributes.put("sessionId", onchainSessionId);
+        attributes.put("outcome", "2");
+        attributes.put("finalStatus", "4");
+        attributes.put("tutorAmount", "0");
+        attributes.put("platformAmount", "0");
+        attributes.put("studentRefund", "40000000");
+
+        DecodedEscrowEvent decodedEvent = new DecodedEscrowEvent(
+                EscrowEventType.SESSION_SETTLED,
+                onchainAgreementId,
+                onchainSessionId,
+                attributes);
+
+        String jsonPayload = objectMapper.writeValueAsString(decodedEvent);
+
+        BlockchainLog log = new BlockchainLog(
+                ESCROW,
+                List.of("0x" + "1".repeat(64)),
+                "0x",
+                122L,
+                "0x" + "b".repeat(64),
+                "0x" + "f".repeat(64),
+                0L);
+
+        ProcessedEvent event = ProcessedEvent.blockchainLog(
+                CHAIN_ID,
+                ESCROW,
+                log,
+                "SESSION_SETTLED",
+                jsonPayload,
+                OffsetDateTime.now(ZoneOffset.UTC));
+
+        boolean processed = workflowService.processConfirmedSessionSettledEvent(event);
+        assertTrue(processed);
+
+        SessionSettlement updatedSettlement = sessionSettlementRepository.findById(settlement.getId()).orElseThrow();
+        assertEquals(SettlementStatus.REFUNDED, updatedSettlement.getStatus());
+        assertEquals(BigInteger.ZERO, updatedSettlement.getTutorAmount());
+        assertEquals(BigInteger.ZERO, updatedSettlement.getPlatformAmount());
+        assertEquals(BigInteger.valueOf(40_000_000L), updatedSettlement.getStudentRefundAmount());
+        verify(notificationDispatcher).sendAsync(
+                eq("student@example.com"), eq(1L),
+                eq("Hoàn tiền Buổi #1 thành công"),
+                org.mockito.ArgumentMatchers.contains("40 USDC đã được hoàn về ví học viên"),
+                eq("SESSION_REFUNDED"), eq("CONTRACT_AGREEMENT"), eq(agreementId.toString()));
+    }
+
     private void insertAgreement(UUID id, String onchainAgreementId, String termsHash, String status, int totalSessions) {
         jdbcTemplate.update("""
                 INSERT INTO contract_agreement (
                     id, onchain_agreement_id, classroom_id, student_id, tutor_id,
+                    student_email, tutor_email, class_name,
                     student_wallet, tutor_wallet, platform_wallet, chain_id,
                     escrow_contract_address, token_address, token_symbol, token_decimals,
                     terms_json, terms_hash, contract_version, total_price_vnd,
@@ -308,6 +490,7 @@ class SessionSettlementWorkflowTest {
                     total_sessions, status, version, created_at, updated_at
                 ) VALUES (
                     ?, ?, 1, 1, 2,
+                    'student@example.com', 'tutor@example.com', 'Test class',
                     ?, ?, ?, ?,
                     ?, ?, 'USDC', 6,
                     '{}', ?, 1, 1000000.00,

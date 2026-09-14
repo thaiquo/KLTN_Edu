@@ -4,6 +4,8 @@
 > **Phân hệ**: Quản lý Buổi học cuốn chiếu (Rolling Sessions), Link phòng học lớp chung, Bài tập/Tài liệu từng buổi, Điểm danh trong thời gian học & Tự động Giải ngân Smart Contract Escrow.  
 > **Tài liệu đối soát gốc**: `Plan/EDUCONNECT_BLOCKCHAIN_MASTER_ESCROW_IMPLEMENTATION_GUIDE.md` (Mục 10, 11, 12).  
 > **Áp dụng cho**: `learning-service`, `contract-service`, `notification-service`, `frontend-web`.
+>
+> **Đối chiếu implementation gần nhất**: 2026-09-14. Tài liệu này mô tả rule đã xác nhận; trạng thái/bằng chứng nằm ở `EDUCONNECT_SESSION_IMPLEMENTATION_STATUS.md`.
 
 ---
 
@@ -38,7 +40,7 @@
 
 ### 2.1. Link Phòng Học Cố Định (Classroom-Level Meeting Link):
 - Link phòng học được lưu tại `class_rooms.meeting_link`.
-- Học viên chỉ cần bấm nút **"Vào Lớp"** ở trang lớp học hoặc ở chi tiết buổi học là mở thẳng link Google Meet / Zoom / Teams của lớp.
+- Học viên chỉ được bấm **"Vào Lớp"** sau khi đã tự điểm danh hợp lệ cho buổi hiện tại; frontend và endpoint đọc link đều áp dụng gate này.
 - Gia sư có nút **"Chỉnh sửa Link phòng học"** trên giao diện lớp học để cập nhật tức thì nếu gặp trục trặc kỹ thuật.
 
 ### 2.2. Giao Bài Tập & Tài Liệu Trước Nhiều Ngày (Session-Level):
@@ -69,12 +71,14 @@
 $$\text{Thời gian Check-in hợp lệ} = [\text{start\_time}, \quad \text{end\_time}] \quad \text{trong đúng ngày } \text{session\_date}$$
 
 * **Học viên:** Bấm nút **"Điểm danh vào học"** (1 chạm) trong khung giờ học.
-* **Gia sư:** Bấm nút **"Điểm danh vào dạy"** (1 chạm) trong khung giờ học + có thể mở **"Xem Danh Sách Lớp"** để theo dõi sĩ số realtime (và điểm danh hộ nếu học viên gặp sự cố).
+* **Gia sư:** Bấm nút **"Điểm danh vào dạy"** (1 chạm) trong khung giờ học + có thể mở **"Xem Danh Sách Lớp"** để theo dõi sĩ số realtime. Gia sư không được điểm danh thay học viên; mỗi học viên phải tự xác nhận bằng tài khoản của mình.
 
 ### 4.2. Khóa / Mở Khóa Đề Bài (Gated Assignment Access):
 - **Học viên chưa điểm danh:** Khối bài tập hiển thị `🔒 KHÓA ĐỀ BÀI` và ẩn link tải file tài liệu.
 - **Học viên đã điểm danh:** Khối bài tập lập tức hiển thị `🔓 ĐÃ MỞ KHÓA BÀI TẬP`, học viên có thể xem hướng dẫn và tải file về làm.
 - **Buổi học không có bài tập:** Học viên chỉ cần điểm danh bình thường.
+
+Link phòng học cũng dùng cùng gate: chưa check-in thì API không trả link. Link thuộc classroom nên khi Tutor cập nhật vì link hỏng, các lần đọc và buổi kế tiếp dùng link mới; attendance vẫn được xác nhận độc lập cho từng buổi.
 
 ---
 
@@ -87,6 +91,8 @@ $$\text{Thời gian Check-in hợp lệ} = [\text{start\_time}, \quad \text{end\
      - Gia sư có mặt + Học viên có mặt $\rightarrow$ `BOTH_PRESENT` (Gia sư 85%, Sàn 15%).
      - Gia sư có mặt + Học viên không điểm danh $\rightarrow$ `STUDENT_ABSENT_TUTOR_PRESENT` (Gia sư 45%, Sàn 10%, Hoàn học viên 45%).
      - Gia sư không điểm danh vào dạy $\rightarrow$ `TUTOR_ABSENT` (Hoàn 100% cho học viên).
+
+`TUTOR_ABSENT` bao gồm cả trường hợp Tutor và Student đều không điểm danh. Khi thiếu/corrupt attendance cho một agreement hợp lệ, Contract Service cũng fail-safe về `TUTOR_ABSENT`, không mặc định trả tiền Tutor.
   3. Tự động sinh cuốn chiếu đợt học của tuần tiếp theo.
 
 ---
@@ -95,10 +101,12 @@ $$\text{Thời gian Check-in hợp lệ} = [\text{start\_time}, \quad \text{end\
 
 1. **Mở Cửa Sổ Khiếu Nại 24h:** Khi buổi học chuyển sang `COMPLETED`, hệ thống đề xuất quyết toán `proposeSessionSettlement` on-chain và kích hoạt đồng hồ đếm ngược 24h.
 2. **Khóa Tiền On-Chain:** Học viên khiếu nại $\rightarrow$ Gọi tx `openTutorFraudDispute` on-chain để đóng băng tiền của đúng agreement đó (học viên 0 gas).
-3. **Đối Chất & Giải Trình:** Gia sư nhận thông báo và nộp lời giải trình + ảnh/video minh chứng.
+3. **Đối Chất & Giải Trình:** Với đơn do học viên gửi, gia sư nhận thông báo và có đúng 24 giờ tính từ lúc gửi đơn (`submittedAt`) để nộp/cập nhật lời giải trình + ảnh/video minh chứng. Hết hạn thì API từ chối nhận thêm giải trình.
 4. **Phân Quyền Trọng Tài:**
    - **`STAFF`:** Chỉ phân xử các lớp do chính Staff đó kiểm duyệt (`ClassRoom.reviewedByEmail`).
    - **`ADMIN`:** Toàn quyền phân xử mọi khiếu nại trên toàn hệ thống.
+   - Nếu gia sư đã phản hồi, Staff/Admin được phân xử ngay; nếu chưa phản hồi, chỉ được phân xử sau khi hết cửa sổ giải trình 24 giờ.
+   - Sau khi đủ điều kiện phân xử không có hạn chót bắt buộc xử lý. Tiền tiếp tục bị giữ cho đến khi giao dịch phân xử on-chain hoàn tất.
    - Gửi tx `resolveTutorFraudDispute` on-chain (APPROVED hoàn 100%, REJECTED chia 85/15).
 
 ---

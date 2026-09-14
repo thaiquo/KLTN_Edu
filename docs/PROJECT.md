@@ -1,61 +1,113 @@
-# EduConnect
+# EduConnect — Tổng quan dự án
 
-## 1. Project Goal
+> Cập nhật theo source và dữ liệu kiểm chứng ngày **2026-09-14**.  
+> Đây là trang bắt đầu để đọc dự án. Trạng thái chi tiết nằm ở [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
-EduConnect là nền tảng kết nối gia sư và học viên, hướng đến hỗ trợ tìm kiếm, gợi ý ghép nối bằng AI, quản lý quá trình học tập, và quản lý hợp đồng điện tử có hỗ trợ Blockchain/Smart Contract.
+## 1. Mục tiêu
 
-Theo target KLTN, AI hỗ trợ gợi ý/xếp hạng mức độ phù hợp giữa học viên và gia sư. Blockchain hỗ trợ kiểm chứng tính toàn vẹn hợp đồng, ký quỹ bằng USDC/ERC-20 trong môi trường thử nghiệm, settlement, release, refund, và dispute nếu implementation hỗ trợ.
+EduConnect là nền tảng kết nối Học viên và Gia sư, hỗ trợ tìm kiếm lớp/gia sư, xét duyệt hồ sơ, quản lý lớp và buổi học, hợp đồng điện tử, ký quỹ USDC, điểm danh độc lập, quyết toán theo buổi, khiếu nại và thông báo.
 
-## 2. Platforms
+Hai năng lực kỹ thuật nổi bật:
 
-- Web: target là nền tảng chính cho Guest, Student, Tutor, Staff, Admin. Current source đã có React/Vite frontend với nhiều màn hình auth, tutor, class, staff/admin, portal, và một số Web3 UI.
-- Mobile: target có Mobile. Current source là Expo/React Native app với auth/home cơ bản; chưa feature-equivalent với Web.
+- Blockchain/Smart Contract bảo toàn tiền ký quỹ và thực hiện payout/refund minh bạch trên Sepolia.
+- AI Matching là hướng phát triển hỗ trợ tìm kiếm/xếp hạng; hiện mới có `ai-service` skeleton và health endpoint, chưa có mô hình, embedding, RAG hoặc vector search.
 
-## 3. Actors
+## 2. Kiến trúc được xác nhận
 
-- Guest: người dùng chưa đăng nhập, có thể đăng ký và tra cứu thông tin công khai.
-- Student: học viên tìm kiếm gia sư/lớp, gửi yêu cầu tham gia, quản lý thông tin cá nhân, hợp đồng, tin nhắn, bài tập, và thanh toán.
-- Tutor: gia sư quản lý hồ sơ, lịch rảnh, lớp học, yêu cầu tham gia, buổi học, bài tập, hợp đồng, tin nhắn, và thu nhập.
-- Staff: nhân viên vận hành, kiểm duyệt nội dung, xử lý vi phạm/khiếu nại, giám sát lớp học, hỗ trợ người dùng.
-- Admin: quản trị hệ thống, quản lý người dùng, danh mục, Blockchain, thanh toán, và báo cáo thống kê.
+EduConnect dùng **Service-Based Architecture**, không gọi là Microservices Architecture khi chưa có quyết định mới.
 
-## 4. Core Business Flow
+| Thành phần | Port | Trách nhiệm hiện tại |
+| --- | ---: | --- |
+| `api-gateway` | 8080 | Spring Cloud Gateway, CORS, REST/WebSocket routing. |
+| `account-service` | 8081 | JWT/OTP/session, user/role, hồ sơ Student/Tutor, hồ sơ xét duyệt Tutor, S3. |
+| `learning-service` | 8082 | Danh mục, chuyên môn/lịch rảnh, lớp, enrollment, lịch học, buổi học, điểm danh, bài tập. |
+| `contract-service` | 8083 | Hợp đồng, EIP-712, DOCX/PDF, escrow, transaction pipeline, settlement, dispute và evidence. |
+| `notification-service` | 8084 | Notification lưu bền, Bell REST/WebSocket; chat persistence/API/WebSocket. |
+| `ai-service` | 8085 | Service skeleton và `GET /api/ai/health`; AI nghiệp vụ chưa triển khai. |
+| `frontend-web` | 5173 | React/Vite cho Guest, Student, Tutor, Staff, Admin. |
+| `mobile-app` | Expo | Đăng ký/đăng nhập/home cơ bản; chưa tương đương Web. |
 
-Target business flow:
+Luồng liên service hiện dùng kết hợp REST đồng bộ, RabbitMQ event, WebSocket và blockchain event polling. Chi tiết: [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Guest -> Register/Login -> Student/Tutor -> Search/Connection -> Request -> Agreement -> Contract -> Learning Process -> Payment/Income -> Completion -> Rating/Complaint.
+## 3. Actor và quyền nghiệp vụ
 
-AI Matching là supporting capability cho tìm kiếm, gợi ý và xếp hạng. Blockchain hỗ trợ contract integrity, escrow, settlement, release, refund, và dispute. Flow trên là target business flow, không có nghĩa toàn bộ đã implemented trong source hiện tại.
+- Guest: đăng ký/đăng nhập và xem dữ liệu công khai.
+- Student: tìm lớp/gia sư, gửi yêu cầu học, ký hợp đồng, ký quỹ, tham gia lớp, tự điểm danh, học/nộp bài, theo dõi ví và khiếu nại của chính mình.
+- Tutor: hoàn thiện hồ sơ xét duyệt, quản lý chuyên môn/lịch/lớp/yêu cầu học, cập nhật link lớp, tự điểm danh, giao/chấm bài, ký hợp đồng, theo dõi payout và phản hồi khiếu nại.
+- Staff: xét duyệt và giám sát theo lớp/phạm vi được giao, xử lý khiếu nại thuộc phạm vi.
+- Admin: quản trị toàn hệ thống, giám sát hợp đồng/giao dịch và phân xử toàn cục.
 
-## 5. Main Domains
+Trình duyệt dùng JWT trong HttpOnly cookie; `activeRole` quyết định ngữ cảnh quyền hiện tại. Xem [AUTH_SECURITY.md](AUTH_SECURITY.md).
 
-- Account: user, role, active role, authentication, OTP, student/tutor profile, tutor application, staff/admin user operations.
-- Learning: subject/catalog, tutor subject/expertise, availability, class, schedule/chapter, join/enrollment request.
-- Contract: contract agreement, acceptance/signing target, contract lifecycle, escrow payment, settlement, dispute.
-- Payment: Student payment/escrow and Admin payment administration are distinct target capabilities.
-- Blockchain: Solidity Smart Contract, ERC-20 escrow, Web3j backend integration, MetaMask/ethers.js web integration target.
-- Notification: target service exists conceptually; current source is a service shell.
-- AI Matching: target hybrid recommendation; current source has no ai-service implementation.
+## 4. Luồng nghiệp vụ chính đang có
 
-## 6. Technology Overview
+```text
+Đăng ký/OTP → đăng nhập → tìm lớp/gia sư → yêu cầu tham gia
+→ Tutor chấp nhận → tạo và hai bên ký EIP-712
+→ backend đăng ký agreement on-chain → Student fundAgreement bằng USDC
+→ AgreementFunded được xác nhận → ACTIVE/ENROLLED
+→ sinh buổi học cuốn chiếu → hai bên tự điểm danh
+→ chốt outcome → đề xuất settlement on-chain → cửa sổ khiếu nại 24 giờ
+→ không khiếu nại: tự finalize; có khiếu nại: giữ tiền đến phán quyết
+→ SessionSettled xác nhận → cập nhật lịch sử ví/buổi học và thông báo.
+```
 
-- Spring Boot: backend services.
-- React/Vite: frontend Web.
-- React Native/Expo: Mobile.
-- PostgreSQL: current relational database.
-- RabbitMQ: current async messaging between Account and Learning in part.
-- Amazon S3: current account-service storage for avatar and tutor documents.
-- Docker/Docker Compose: current local infrastructure for PostgreSQL and RabbitMQ.
-- Ethereum/Sepolia: target test network; current evidence is mainly Anvil/local.
-- Solidity: Smart Contract implementation.
-- Web3j: contract-service blockchain integration.
-- ethers.js and MetaMask: Web wallet integration, currently with known ABI mismatch.
-- Foundry: Smart Contract build/test/deploy tooling.
-- Qdrant/Spring AI: target/planned for AI Matching; not currently implemented.
+Các chuyển trạng thái tài chính chỉ được coi là hoàn tất sau khi Contract Service ingest event xác nhận từ smart contract; receipt hoặc dữ liệu local đơn lẻ không đủ để tuyên bố tiền đã chuyển.
 
-## 7. Target vs Current Implementation
+## 5. Quy tắc quyết toán đã xác nhận
 
-- `TARGET` means the business/design baseline from KLTN Chương 1, Chương 2, and Chương 3.1-3.3.
-- `CURRENT` means the implementation proven by source code, configuration, migrations, and tests in this repository.
+Mỗi Student có một agreement/escrow riêng, nên settlement và dispute theo cặp `(agreementId, sessionId)`, không khóa tiền của cả lớp.
 
-Read `docs/BUSINESS_RULES.md` for target business rules. Read `docs/IMPLEMENTATION_STATUS.md` for current implementation status and known conflicts.
+| Outcome | Tutor | Platform | Hoàn Student |
+| --- | ---: | ---: | ---: |
+| `BOTH_PRESENT` | 85% | 15% | 0% |
+| `STUDENT_ABSENT_TUTOR_PRESENT` | 45% | 10% | 45% |
+| `TUTOR_ABSENT` (kể cả cả hai cùng vắng) | 0% | 0% | 100% |
+
+Tỷ lệ được tính theo base unit của USDC; Tutor và Platform được làm tròn xuống độc lập, phần dư thuộc Student để bảo toàn tổng tiền.
+
+## 6. Quy tắc buổi học và khiếu nại
+
+- Tutor và từng Student điểm danh độc lập trong đúng ngày và khung giờ buổi học; Tutor không được điểm danh hộ Student.
+- Student chỉ thấy link phòng học và nội dung/file bài tập sau khi tự điểm danh.
+- Link nằm ở cấp lớp. Tutor có thể cập nhật khi link hỏng; các buổi sau dùng link mới.
+- Hết giờ, scheduler chốt `BOTH_PRESENT`, `STUDENT_ABSENT_TUTOR_PRESENT` hoặc `TUTOR_ABSENT`.
+- Cửa sổ khiếu nại 24 giờ bắt đầu từ lúc đề xuất settlement được xác nhận on-chain, không bắt đầu trực tiếp từ giờ tan học.
+- Khiếu nại hợp lệ lập tức giữ settlement riêng đó. V1 chỉ hỗ trợ on-chain tutor-fraud dispute cho `BOTH_PRESENT`.
+- Student và Tutor xem lịch sử thuộc quyền của mình; Student không được xem khiếu nại do Tutor gửi hoặc evidence/phản hồi riêng của Tutor.
+- Với đơn do Student gửi, Tutor có 24 giờ từ lúc nộp đơn để phản hồi. Staff/Admin xử lý ngay nếu Tutor đã phản hồi, hoặc sau khi hết hạn phản hồi; không có hạn phân xử tiếp theo và tiền tiếp tục bị giữ.
+- Evidence hỗ trợ text và file ảnh/video/audio/PDF/TXT/Word/Excel, tối đa 50 MB. Cấu hình hiện tại dùng S3 với key `disputes/{agreementId}/sessions/{sessionId}/{role}/...`; metadata và SHA-256 lưu trong PostgreSQL.
+
+## 7. Công nghệ hiện dùng
+
+- Backend: Java 21+, Spring Boot, Spring Security, Spring Data JPA, Flyway, Bean Validation.
+- Gateway: Spring Cloud Gateway WebFlux.
+- Web: React 19, Vite, TypeScript/JavaScript, React Router, TanStack Query, Tailwind CSS, Recharts.
+- Mobile: Expo 53, React Native 0.79.
+- Data/messaging: PostgreSQL 16, RabbitMQ 3.13.
+- Storage/document: AWS SDK S3, poi-tl, Gotenberg/LibreOffice.
+- Blockchain: Solidity 0.8.36, OpenZeppelin, Foundry, Web3j, ethers.js, MetaMask/Reown AppKit.
+- Infra local: Docker Compose cho PostgreSQL, RabbitMQ và Gotenberg.
+
+## 8. Trạng thái ngắn gọn
+
+- Đã có luồng chính Web cho Account, Tutor approval, catalog/class/enrollment, session/attendance/homework, contract/escrow/settlement/dispute và notification.
+- Sepolia đã có bằng chứng funding, payout 85/15 và refund 100% thực tế; chi tiết transaction nằm trong [BLOCKCHAIN.md](BLOCKCHAIN.md).
+- Chat backend có persistence/API/WebSocket nhưng Portal message hiện vẫn dùng mock state, nên luồng người dùng chưa hoàn chỉnh.
+- AI Matching chưa triển khai nghiệp vụ; `ai-service` mới là skeleton.
+- Student post, violation/support ticket, báo cáo quản trị đầy đủ và mobile feature parity chưa có.
+- Bốn agreement legacy nạp sai bằng raw ERC-20 transfer đã được `legacy_excluded`; không tham gia KPI hoặc tự quyết toán.
+
+## 9. Cách đọc tài liệu
+
+- Trạng thái theo feature/UC: [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md)
+- Quy tắc nghiệp vụ: [BUSINESS_RULES.md](BUSINESS_RULES.md)
+- Kiến trúc và ownership: [ARCHITECTURE.md](ARCHITECTURE.md)
+- API và tích hợp frontend: [API.md](API.md)
+- Auth/security: [AUTH_SECURITY.md](AUTH_SECURITY.md)
+- Blockchain/escrow: [BLOCKCHAIN.md](BLOCKCHAIN.md)
+- Session/attendance: [session/EDUCONNECT_SESSION_IMPLEMENTATION_STATUS.md](session/EDUCONNECT_SESSION_IMPLEMENTATION_STATUS.md)
+- AI: [AI_MATCHING.md](AI_MATCHING.md)
+- Notification/realtime: [FEEDBACK_NOTIFICATION_SPEC.md](FEEDBACK_NOTIFICATION_SPEC.md)
+
+Các master plan/lịch sử triển khai dài trong thư mục con là tài liệu tham chiếu theo thời điểm. Khi khác với code hoặc tài liệu canonical ở trên, ưu tiên code hiện tại và `IMPLEMENTATION_STATUS.md`.

@@ -3,7 +3,9 @@ package iuh.fit.contract_service.service;
 import iuh.fit.contract_service.blockchain.BlockchainLog;
 import iuh.fit.contract_service.blockchain.DecodedEscrowEvent;
 import iuh.fit.contract_service.blockchain.EscrowEventType;
+import iuh.fit.contract_service.api.ContractManagementController;
 import iuh.fit.contract_service.command.BlockchainTransactionIntentResult;
+import iuh.fit.contract_service.config.security.ContractUserPrincipal;
 import iuh.fit.contract_service.entity.ContractAgreement;
 import iuh.fit.contract_service.entity.Dispute;
 import iuh.fit.contract_service.entity.ProcessedEvent;
@@ -21,10 +23,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.web3j.crypto.Hash;
 import tools.jackson.databind.ObjectMapper;
 
 import java.math.BigInteger;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
@@ -69,6 +74,9 @@ class DisputeWorkflowTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private ContractManagementController contractManagementController;
+
     private static final long CHAIN_ID = 31337L;
     private static final String ESCROW = "0x0000000000000000000000000000000000000004";
     private static final String PLATFORM = "0x0000000000000000000000000000000000000003";
@@ -78,6 +86,7 @@ class DisputeWorkflowTest {
 
     @BeforeEach
     void cleanUp() {
+        SecurityContextHolder.clearContext();
         jdbcTemplate.execute("DELETE FROM outbox_event");
         jdbcTemplate.execute("DELETE FROM blockchain_transaction");
         jdbcTemplate.execute("DELETE FROM processed_event");
@@ -125,6 +134,17 @@ class DisputeWorkflowTest {
         assertEquals("STUDENT", dispute.getComplainantRole());
         assertEquals("Tutor did not teach the recorded session", dispute.getReason());
         assertEquals(1, disputeEvidenceRepository.findByDisputeId(dispute.getId()).size());
+
+        List<Dispute> disputesForApi = disputeRepository.findAllWithSettlementAndAgreement();
+        assertEquals(1, disputesForApi.size());
+        assertEquals(agreementId, disputesForApi.getFirst().getSettlement().getAgreement().getId());
+        ContractUserPrincipal admin = new ContractUserPrincipal(
+                4L, "admin@educonnect.com", "ADMIN", List.of("ADMIN"));
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(admin, null, List.of()));
+        var apiPage = contractManagementController.listDisputes(
+                null, org.springframework.data.domain.PageRequest.of(0, 100));
+        assertEquals(1, apiPage.getBody().getTotalElements());
 
         SessionSettlement updatedSettlement = sessionSettlementRepository.findById(settlement.getId()).orElseThrow();
         assertEquals(SettlementStatus.DISPUTE_OPENING, updatedSettlement.getStatus());
@@ -302,6 +322,11 @@ class DisputeWorkflowTest {
                         && "https://evidence.test/tutor.png".equals(item.getObjectKey())
                         && item.getSha256() != null
                         && item.getSha256().length() == 64));
+
+        responded.setSubmittedAt(Instant.now().minus(DisputeWorkflowService.TUTOR_RESPONSE_WINDOW).minusSeconds(1));
+        disputeRepository.saveAndFlush(responded);
+        assertThrows(IllegalStateException.class, () -> workflowService.submitTutorResponse(
+                dispute.getId(), 102L, "Late updated response", null));
     }
 
     @Test
@@ -332,7 +357,15 @@ class DisputeWorkflowTest {
         assertThrows(SecurityException.class, () -> workflowService.initiateDisputeResolution(
                 dispute.getId(), 202L, "wrong_staff@educonnect.com", "STAFF", true, "reason", "0x" + "f".repeat(64)));
 
-        // 2. Correct staff attempts resolution -> permitted
+        // 2. Even the assigned Staff must wait while the Tutor still has time to respond.
+        assertThrows(IllegalStateException.class, () -> workflowService.initiateDisputeResolution(
+                dispute.getId(), 201L, "staff_reviewer@educonnect.com", "STAFF", true, "reason", "0x" + "f".repeat(64)));
+
+        // 3. Once the Tutor responds, the assigned Staff may resolve immediately.
+        Dispute currentDispute = disputeRepository.findById(dispute.getId()).orElseThrow();
+        currentDispute.setTutorResponse("Tutor response");
+        currentDispute.setTutorRespondedAt(Instant.now());
+        disputeRepository.save(currentDispute);
         BlockchainTransactionIntentResult staffResult = workflowService.initiateDisputeResolution(
                 dispute.getId(), 201L, "staff_reviewer@educonnect.com", "STAFF", true, "reason", "0x" + "f".repeat(64));
         assertNotNull(staffResult);
@@ -361,9 +394,10 @@ class DisputeWorkflowTest {
 
         Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
         dispute.markOpen("0x" + "d".repeat(64));
+        dispute.setSubmittedAt(Instant.now().minus(DisputeWorkflowService.TUTOR_RESPONSE_WINDOW).minusSeconds(1));
         disputeRepository.save(dispute);
 
-        // ADMIN can resolve regardless of reviewer
+        // ADMIN can resolve regardless of reviewer after the Tutor response window expires.
         BlockchainTransactionIntentResult adminResult = workflowService.initiateDisputeResolution(
                 dispute.getId(), 999L, "admin@educonnect.com", "ADMIN", false, "admin reason", "0x" + "f".repeat(64));
         assertNotNull(adminResult);
@@ -389,6 +423,8 @@ class DisputeWorkflowTest {
                 "0x" + "c".repeat(64), null, null, null);
         Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
         dispute.markOpen("0x" + "d".repeat(64));
+        dispute.setTutorResponse("Tutor response");
+        dispute.setTutorRespondedAt(Instant.now());
         disputeRepository.save(dispute);
 
         assertThrows(IllegalArgumentException.class, () -> workflowService.initiateDisputeResolution(
@@ -419,6 +455,8 @@ class DisputeWorkflowTest {
 
         Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
         dispute.markOpen("0x" + "d".repeat(64));
+        dispute.setTutorResponse("Tutor response");
+        dispute.setTutorRespondedAt(Instant.now());
         disputeRepository.save(dispute);
 
         workflowService.initiateDisputeResolution(
