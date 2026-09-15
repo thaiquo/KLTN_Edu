@@ -14,5 +14,6 @@ if (Test-Path $envFile) {
     }
 }
 
+Set-Location (Join-Path $projectRoot "backend\contract-service")
 $jar = "d:\KL\khoaluan\KLTN_Edu\backend\contract-service\target\contract-service-0.0.1-SNAPSHOT.jar"
 & "C:\Program Files\Java\jdk-23\bin\java.exe" -jar $jar

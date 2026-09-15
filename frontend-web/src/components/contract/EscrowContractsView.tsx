@@ -1037,6 +1037,13 @@ export function EscrowContractsView({
           onSignedSuccess={() => {
             fetchAgreements();
           }}
+          onRequestPayment={() => {
+            const targetAgr = agreements.find(a => a.id === selectedAgreementForDocument);
+            setSelectedAgreementForDocument(null);
+            if (targetAgr) {
+              setSelectedAgreementForPayment(targetAgr as any);
+            }
+          }}
         />
       )}
 

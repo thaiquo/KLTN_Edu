@@ -1,4 +1,4 @@
-import{C as e,H as t,M as n,U as r,V as i,b as a,j as o,l as s,r as c,t as l,v as u,w as d,y as f}from"./ModalController-DLyGHbfk.js";import{_ as p,c as m,l as h,o as g,s as _,x as v,y}from"./wui-text-BTwUa-zK.js";import{t as b}from"./ConstantsUtil-C1qdKpER.js";import{T as x,_ as S,f as C,g as w,m as T}from"./index-CW6NoWJp.js";var E=p`
+import{C as e,H as t,M as n,U as r,V as i,b as a,j as o,l as s,r as c,t as l,v as u,w as d,y as f}from"./ModalController-DLyGHbfk.js";import{_ as p,c as m,l as h,o as g,s as _,x as v,y}from"./wui-text-BTwUa-zK.js";import{t as b}from"./ConstantsUtil-C1qdKpER.js";import{D as x,g as S,m as C,v as w,y as T}from"./index-DZhFxKBH.js";var E=p`
   :host {
     margin-top: ${({spacing:e})=>e[1]};
   }
@@ -15,7 +15,7 @@ import{C as e,H as t,M as n,U as r,V as i,b as a,j as o,l as s,r as c,t as l,v a
             logo=${e}
             ?disabled=${this.isPwaLoading}
           ></wui-list-social>`)}
-    </wui-flex>`)}async onSocialClick(e){if(this.hasExceededUsageLimit){a.push(`UsageExceeded`);return}e&&await T(e)}async handlePwaFrameLoad(){if(i.isPWA()){this.isPwaLoading=!0;try{this.authConnector?.provider instanceof x&&await this.authConnector.provider.init()}catch(e){S.open({displayMessage:`Error loading embedded wallet in PWA`,debugMessage:e.message},`error`)}finally{this.isPwaLoading=!1}}}};O.styles=E,D([m()],O.prototype,`tabIdx`,void 0),D([_()],O.prototype,`connectors`,void 0),D([_()],O.prototype,`authConnector`,void 0),D([_()],O.prototype,`remoteFeatures`,void 0),D([_()],O.prototype,`isPwaLoading`,void 0),D([_()],O.prototype,`hasExceededUsageLimit`,void 0),O=D([h(`w3m-social-login-list`)],O);var k=p`
+    </wui-flex>`)}async onSocialClick(e){if(this.hasExceededUsageLimit){a.push(`UsageExceeded`);return}e&&await S(e)}async handlePwaFrameLoad(){if(i.isPWA()){this.isPwaLoading=!0;try{this.authConnector?.provider instanceof x&&await this.authConnector.provider.init()}catch(e){T.open({displayMessage:`Error loading embedded wallet in PWA`,debugMessage:e.message},`error`)}finally{this.isPwaLoading=!1}}}};O.styles=E,D([m()],O.prototype,`tabIdx`,void 0),D([_()],O.prototype,`connectors`,void 0),D([_()],O.prototype,`authConnector`,void 0),D([_()],O.prototype,`remoteFeatures`,void 0),D([_()],O.prototype,`isPwaLoading`,void 0),D([_()],O.prototype,`hasExceededUsageLimit`,void 0),O=D([h(`w3m-social-login-list`)],O);var k=p`
   wui-flex {
     max-height: clamp(360px, 540px, 80vh);
     overflow: scroll;

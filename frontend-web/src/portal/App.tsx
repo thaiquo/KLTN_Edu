@@ -53,6 +53,7 @@ import { useTutorApplication } from "../hooks/useTutorApplication";
 import { StudentRequestsView } from "./components/StudentRequestsView";
 import { TutorSessionManagement } from "./components/TutorSessionManagement";
 import { StudentClassManagement } from "./components/StudentClassManagement";
+import { AdminFinanceMonitoring } from "./components/AdminFinanceMonitoring";
 
 // High Resolution course and avatar placeholders
 const studentAvatar =
@@ -456,6 +457,9 @@ export default function App({ user, onLogout }: AppProps) {
           return <TutorApprovalPanel />;
         }
         return null;
+
+      case "admin-finance":
+        return <AdminFinanceMonitoring />;
 
       case "courses":
         return activeRole === "student" ? (
