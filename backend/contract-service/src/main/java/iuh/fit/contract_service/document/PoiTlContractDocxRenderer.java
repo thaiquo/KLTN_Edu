@@ -1,6 +1,8 @@
 package iuh.fit.contract_service.document;
 
 import com.deepoove.poi.XWPFTemplate;
+import com.deepoove.poi.config.Configure;
+import com.deepoove.poi.plugin.table.LoopRowTableRenderPolicy;
 import iuh.fit.contract_service.config.ContractDocumentProperties;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
@@ -16,17 +18,21 @@ import java.util.zip.ZipInputStream;
 public class PoiTlContractDocxRenderer implements ContractDocxRenderer {
     private final ResourceLoader resourceLoader;
     private final ContractDocumentProperties properties;
+    private final Configure configure;
 
     public PoiTlContractDocxRenderer(ResourceLoader resourceLoader, ContractDocumentProperties properties) {
         this.resourceLoader = resourceLoader;
         this.properties = properties;
+        this.configure = Configure.builder()
+                .bind("ss", new LoopRowTableRenderPolicy(true))
+                .build();
     }
 
     @Override
     public byte[] render(Map<String, Object> model) {
         try (InputStream input = resourceLoader.getResource(properties.templateResource()).getInputStream();
              ByteArrayOutputStream output = new ByteArrayOutputStream();
-             XWPFTemplate template = XWPFTemplate.compile(input).render(model)) {
+             XWPFTemplate template = XWPFTemplate.compile(input, configure).render(model)) {
             template.write(output);
             byte[] result = output.toByteArray();
             if (result.length == 0 || result.length > properties.maxDocxBytes()) {
@@ -35,7 +41,7 @@ public class PoiTlContractDocxRenderer implements ContractDocxRenderer {
             assertNoPlaceholders(result);
             return result;
         } catch (Exception ex) {
-            throw new IllegalStateException("Không thể render hợp đồng DOCX", ex);
+            throw new IllegalStateException("Không thể render hợp đồng DOCX: " + ex.getMessage(), ex);
         }
     }
 

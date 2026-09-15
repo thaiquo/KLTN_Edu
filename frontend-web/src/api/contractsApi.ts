@@ -122,6 +122,8 @@ export interface ContractDocumentArtifact {
   contractVersion: number;
   templateVersion: string;
   status: "GENERATING" | "READY" | "FAILED";
+  docxAvailable: boolean;
+  pdfAvailable: boolean;
   pdfSha256: string | null;
   pdfSize: number | null;
   generatedAt: string | null;

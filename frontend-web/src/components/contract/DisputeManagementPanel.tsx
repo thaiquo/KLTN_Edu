@@ -1626,21 +1626,29 @@ export function DisputeManagementPanel({
               </div>
 
               {/* Resolution Verdict / Result Box */}
-              {(selectedDisputeForDetail.resolutionReason || selectedDisputeForDetail.resolvedAt || selectedDisputeForDetail.status === 'APPROVED' || selectedDisputeForDetail.status === 'REJECTED') && (
+              {(selectedDisputeForDetail.resolutionReason || selectedDisputeForDetail.resolvedAt || selectedDisputeForDetail.status === 'APPROVED' || selectedDisputeForDetail.status === 'REJECTED' || selectedDisputeForDetail.status === 'RESOLUTION_PENDING') && (
                 <div className={`rounded-2xl p-5 border ${
                   selectedDisputeForDetail.status === 'APPROVED'
                     ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                    : selectedDisputeForDetail.status === 'RESOLUTION_PENDING'
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-950'
                     : 'bg-rose-50 border-rose-200 text-rose-950'
                 }`}>
                   <div className="flex items-start gap-3">
                     {selectedDisputeForDetail.status === 'APPROVED' ? (
                       <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : selectedDisputeForDetail.status === 'RESOLUTION_PENDING' ? (
+                      <Clock className="w-6 h-6 text-indigo-600 shrink-0 mt-0.5 animate-spin" />
                     ) : (
                       <XCircle className="w-6 h-6 text-rose-600 shrink-0 mt-0.5" />
                     )}
                     <div className="space-y-1.5 flex-1">
                       <h4 className="font-display font-black text-sm">
-                        KẾT QUẢ PHÂN XỬ CHÍNH THỨC: {selectedDisputeForDetail.status === 'APPROVED' ? 'CHẤP THUẬN KHIẾU NẠI (HOÀN TIỀN HỌC VIÊN)' : 'BÁC BỎ KHIẾU NẠI (GIẢI NGÂN GIA SƯ)'}
+                        {selectedDisputeForDetail.status === 'APPROVED'
+                          ? 'KẾT QUẢ PHÂN XỬ CHÍNH THỨC: CHẤP THUẬN KHIẾU NẠI (HOÀN TIỀN HỌC VIÊN 100%)'
+                          : selectedDisputeForDetail.status === 'RESOLUTION_PENDING'
+                          ? 'KẾT QUẢ PHÂN XỬ: ĐANG XÁC NHẬN PHÁN QUYẾT TRÊN BLOCKCHAIN (CHỜ ON-CHAIN TX)'
+                          : 'KẾT QUẢ PHÂN XỬ CHÍNH THỨC: BÁC BỎ KHIẾU NẠI (GIẢI NGÂN GIA SƯ)'}
                       </h4>
                       <p className="text-xs font-medium leading-relaxed whitespace-pre-wrap">
                         {selectedDisputeForDetail.resolutionReason || 'Không có ghi chú thêm.'}
@@ -1650,10 +1658,14 @@ export function DisputeManagementPanel({
                         {selectedDisputeForDetail.resolvedAt && (
                           <span>Thời gian: {new Date(selectedDisputeForDetail.resolvedAt).toLocaleString('vi-VN')}</span>
                         )}
-                        {selectedDisputeForDetail.resolveTxHash && (
+                        {(selectedDisputeForDetail.resolveTxHash || selectedDisputeForDetail.status === 'RESOLUTION_PENDING') && (
                           <div className="flex items-center gap-1">
                             <span>Tx Phán Quyết:</span>
-                            <EtherscanLink txHash={selectedDisputeForDetail.resolveTxHash} chainId={activeChainId} />
+                            {selectedDisputeForDetail.resolveTxHash ? (
+                              <EtherscanLink txHash={selectedDisputeForDetail.resolveTxHash} chainId={activeChainId} />
+                            ) : (
+                              <span className="font-mono text-amber-600">Đang chờ hash giao dịch...</span>
+                            )}
                           </div>
                         )}
                       </div>

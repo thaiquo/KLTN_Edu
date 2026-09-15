@@ -84,26 +84,26 @@ public class ContractDocumentArtifactService {
         boolean docxStored = false;
         try {
             byte[] docx = renderer.render(toTemplateModel(view));
-            byte[] pdf = converter.docxToPdf(docx, "contract-" + agreementId + ".docx");
             storage.put(docxKey, docx,
                     "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
             docxStored = true;
+            artifact.setDocxObjectKey(docxKey);
+            artifact.setDocxSha256(sha256(docx));
+            artifact.setDocxSize((long) docx.length);
+
+            byte[] pdf = converter.docxToPdf(docx, "contract-" + agreementId + ".docx");
             storage.put(pdfKey, pdf, MediaTypes.PDF);
 
-            artifact.setDocxObjectKey(docxKey);
             artifact.setPdfObjectKey(pdfKey);
-            artifact.setDocxSha256(sha256(docx));
             artifact.setPdfSha256(sha256(pdf));
-            artifact.setDocxSize((long) docx.length);
             artifact.setPdfSize((long) pdf.length);
             artifact.setGeneratedAt(OffsetDateTime.now());
             artifact.setStatus(ContractDocumentArtifactStatus.READY);
         } catch (RuntimeException ex) {
-            if (docxStored) {
-                try { storage.delete(docxKey); } catch (RuntimeException ignored) {}
-            }
             artifact.setStatus(ContractDocumentArtifactStatus.FAILED);
-            artifact.setFailureCode("CONTRACT_DOCUMENT_GENERATION_FAILED");
+            artifact.setFailureCode(docxStored
+                    ? "CONTRACT_DOCUMENT_PDF_GENERATION_FAILED"
+                    : "CONTRACT_DOCUMENT_GENERATION_FAILED");
             artifact.setFailureMessage(truncate(rootMessage(ex), 1000));
         }
         artifact.setUpdatedAt(OffsetDateTime.now());
@@ -114,11 +114,14 @@ public class ContractDocumentArtifactService {
     public byte[] read(UUID agreementId, String format) {
         ContractDocumentArtifact artifact = find(agreementId)
                 .orElseThrow(() -> new IllegalStateException("Hợp đồng chưa có artifact"));
-        if (artifact.getStatus() != ContractDocumentArtifactStatus.READY) {
-            throw new IllegalStateException("Artifact hợp đồng chưa sẵn sàng");
+        boolean docx = "docx".equalsIgnoreCase(format);
+        String objectKey = docx ? artifact.getDocxObjectKey() : artifact.getPdfObjectKey();
+        Long size = docx ? artifact.getDocxSize() : artifact.getPdfSize();
+        if (objectKey == null || size == null || size <= 0
+                || (!docx && artifact.getStatus() != ContractDocumentArtifactStatus.READY)) {
+            throw new IllegalStateException("Artifact is not ready");
         }
-        return storage.get("docx".equalsIgnoreCase(format)
-                ? artifact.getDocxObjectKey() : artifact.getPdfObjectKey());
+        return storage.get(objectKey);
     }
 
     private ContractDocumentArtifact newArtifact(ContractDocumentViewDto view) {

@@ -107,7 +107,7 @@ function parseErrorPayload(data, status) {
     if (Array.isArray(data.message)) {
       rawMessage = data.message[0] || '';
     } else {
-      rawMessage = data.message || data.error || data.detail || data.title || '';
+      rawMessage = data.message || data.failureMessage || data.error || data.detail || data.title || '';
     }
   }
 

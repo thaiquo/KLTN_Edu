@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   AlertTriangle,
+  ArrowDownLeft,
   ArrowUpRight,
+  Calculator,
   Check,
   CheckCircle2,
   CircleDollarSign,
   Clock,
+  Coins,
   Copy,
   ExternalLink,
   Flame,
@@ -15,6 +18,7 @@ import {
   Layers,
   LogOut,
   Network,
+  Receipt,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
@@ -311,6 +315,28 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
   const escrowHoldingAmount = agreements
     .filter((a) => a.onchainFunded && !a.legacyUnreconciled)
     .reduce((acc, curr) => acc + (Number(curr.remainingDeposit) || 0), 0);
+
+  // Tổng tiền học phí đã quyết toán cho Gia sư & Nền tảng (đã trừ cọc các buổi học đã hoàn tất)
+  const totalSettledPaidAmount = useMemo(() => {
+    const fromAgreements = agreements
+      .filter((a) => a.onchainFunded && !a.legacyUnreconciled)
+      .reduce((acc, curr) => acc + (Number(curr.releasedAmountUsdc) || 0), 0);
+    const fromSettlements = settlements
+      .filter((s) => s.status === "SETTLED")
+      .reduce((total, s) => total + (Number(s.tutorAmountUsdc || 0) + Number(s.platformAmountUsdc || 0)), 0);
+    return Math.max(fromAgreements, fromSettlements);
+  }, [agreements, settlements]);
+
+  // Tổng tiền học phí đã hoàn trả về ví học viên (do khiếu nại thành công hoặc gia sư vắng mặt/hủy cọc)
+  const totalRefundedAmount = useMemo(() => {
+    const fromAgreements = agreements
+      .filter((a) => a.onchainFunded && !a.legacyUnreconciled)
+      .reduce((acc, curr) => acc + (Number(curr.refundedAmountUsdc) || 0), 0);
+    const fromSettlements = settlements
+      .filter((s) => s.status === "REFUNDED" || s.status === "SETTLED")
+      .reduce((total, s) => total + Number(s.studentRefundUsdc || 0), 0);
+    return Math.max(fromAgreements, fromSettlements);
+  }, [agreements, settlements]);
 
   const totalDisbursedAmount = settlements
     .filter((settlement) => settlement.status === "SETTLED")
@@ -650,6 +676,9 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                 : "Tổng hợp tiền học phí đã nạp cọc vào Hợp đồng thông minh Escrow."}
             </p>
           </div>
+          <span className="self-start sm:self-auto px-3.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200/80 shadow-2xs">
+            {agreements.length} Hợp đồng Escrow
+          </span>
         </div>
 
         {pendingProposedCount > 0 && (
@@ -715,9 +744,10 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
             </>
           ) : (
             <>
+              {/* Card 1: Tổng tiền cọc nạp vào */}
               <div className="rounded-2xl border border-blue-200/80 bg-blue-50/50 p-4 space-y-1">
                 <span className="text-[10px] font-black uppercase tracking-wider text-blue-700">
-                  Tổng tiền cọc học phí nạp vào
+                  Tổng tiền cọc nạp vào
                 </span>
                 <p className="font-mono text-2xl font-black text-blue-900">
                   {totalEscrowDeposited.toLocaleString("vi-VN")} USDC
@@ -725,16 +755,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                 <p className="text-[11px] font-bold text-blue-600">Được bảo vệ bởi Smart Contract</p>
               </div>
 
-              <div className="rounded-2xl border border-indigo-200/80 bg-indigo-50/60 p-4 space-y-1">
-                <span className="text-[10px] font-black uppercase tracking-wider text-indigo-700">
-                  Đang mở đề xuất hoàn tiền
-                </span>
-                <p className="font-mono text-2xl font-black text-indigo-900">
-                  {totalPendingRefundAmount.toLocaleString("vi-VN")} USDC
-                </p>
-                <p className="text-[11px] font-bold text-indigo-600">Chờ hết 24h chuyển về ví</p>
-              </div>
-
+              {/* Card 2: Tiền cọc đang giữ trong Escrow */}
               <div className="rounded-2xl border border-amber-200/80 bg-amber-50/50 p-4 space-y-1">
                 <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">
                   Tiền cọc đang giữ trong Escrow
@@ -742,17 +763,62 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                 <p className="font-mono text-2xl font-black text-amber-900">
                   {escrowHoldingAmount.toLocaleString("vi-VN")} USDC
                 </p>
-                <p className="text-[11px] font-bold text-amber-600">Cho các buổi học sắp tới</p>
+                <p className="text-[11px] font-bold text-amber-600">Tạm giữ cho các buổi học sắp tới</p>
               </div>
 
+              {/* Card 3: Đã trừ thanh toán buổi học */}
               <div className="rounded-2xl border border-purple-200/80 bg-purple-50/50 p-4 space-y-1">
                 <span className="text-[10px] font-black uppercase tracking-wider text-purple-700">
-                  Số lượng Hợp đồng Escrow
+                  Đã thanh toán buổi học
                 </span>
                 <p className="font-mono text-2xl font-black text-purple-900">
-                  {agreements.length} Lớp học
+                  {totalSettledPaidAmount.toLocaleString("vi-VN")} USDC
                 </p>
-                <p className="text-[11px] font-bold text-purple-600">Đã đăng ký giao dịch Blockchain</p>
+                <p className="text-[11px] font-bold text-purple-600">Đã trừ cọc chuyển Gia sư & Phí</p>
+              </div>
+
+              {/* Card 4: Đã hoàn trả về ví học viên */}
+              <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-4 space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700">
+                  Đã hoàn trả về ví học viên
+                </span>
+                <p className="font-mono text-2xl font-black text-emerald-900">
+                  {totalRefundedAmount.toLocaleString("vi-VN")} USDC
+                </p>
+                <p className="text-[11px] font-bold text-emerald-600">Do khiếu nại thành công / hủy buổi</p>
+              </div>
+
+              {/* Transparent Reconciliation Formula */}
+              <div className="col-span-full rounded-2xl border border-slate-200/90 bg-slate-50/80 p-4 px-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-slate-700 font-bold shrink-0">
+                  <Calculator className="w-4 h-4 text-brand-primary shrink-0" />
+                  <span>Đối soát dòng tiền minh bạch:</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 font-mono text-xs">
+                  <span className="px-2.5 py-1 rounded-xl bg-blue-100/90 text-blue-900 font-black border border-blue-200/70 shadow-2xs">
+                    Tổng nạp {totalEscrowDeposited.toLocaleString("vi-VN")} USDC
+                  </span>
+                  <span className="text-slate-400 font-black text-sm">=</span>
+                  <span className="px-2.5 py-1 rounded-xl bg-amber-100/90 text-amber-900 font-bold border border-amber-200/70 shadow-2xs">
+                    Đang giữ {escrowHoldingAmount.toLocaleString("vi-VN")} USDC
+                  </span>
+                  <span className="text-slate-400 font-black text-sm">+</span>
+                  <span className="px-2.5 py-1 rounded-xl bg-purple-100/90 text-purple-900 font-bold border border-purple-200/70 shadow-2xs">
+                    Đã thanh toán {totalSettledPaidAmount.toLocaleString("vi-VN")} USDC
+                  </span>
+                  <span className="text-slate-400 font-black text-sm">+</span>
+                  <span className="px-2.5 py-1 rounded-xl bg-emerald-100/90 text-emerald-900 font-bold border border-emerald-200/70 shadow-2xs">
+                    Đã hoàn ví {totalRefundedAmount.toLocaleString("vi-VN")} USDC
+                  </span>
+                  {totalPendingRefundAmount > 0 && (
+                    <>
+                      <span className="text-slate-400 font-black text-sm">+</span>
+                      <span className="px-2.5 py-1 rounded-xl bg-indigo-100/90 text-indigo-900 font-bold border border-indigo-200/70 shadow-2xs">
+                        Chờ hoàn {totalPendingRefundAmount.toLocaleString("vi-VN")} USDC
+                      </span>
+                    </>
+                  )}
+                </div>
               </div>
             </>
           )}

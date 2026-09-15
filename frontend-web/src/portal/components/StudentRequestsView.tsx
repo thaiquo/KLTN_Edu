@@ -749,7 +749,7 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
                     </p>
                     <div className="pt-3">
                       <h2 className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-tight font-display">
-                        HỢP ĐỒNG DỊCH VỤ KẾT NỐI GIA SƯ VÀ HỌC TẬP TRỰC TUYẾN
+                        HỢP ĐỒNG DỊCH VỤ KẾT NỐI GIA SƯ VÀ HỌC VIÊN
                       </h2>
                       <p className="text-[11px] text-indigo-700 font-bold">
                         (Bảo chứng tự động qua Smart Contract Escrow Blockchain)
@@ -890,7 +890,7 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
                     <p className="font-bold text-xs sm:text-sm text-slate-800">Độc lập – Tự do – Hạnh phúc</p>
                     <div className="w-32 h-[1.5px] bg-slate-800 mx-auto my-2" />
                     <h2 className="font-display text-base sm:text-xl font-black pt-2 tracking-tight uppercase">
-                      HỢP ĐỒNG DỊCH VỤ KẾT NỐI GIA SƯ VÀ HỌC TẬP TRỰC TUYẾN
+                      HỢP ĐỒNG DỊCH VỤ KẾT NỐI GIA SƯ VÀ HỌC VIÊN
                     </h2>
                     <p className="text-xs font-sans font-bold text-indigo-800 pt-1">Lớp học: {contractModalReq.className}</p>
                     <p className="text-[11px] font-mono text-slate-500">Mã dự thảo: EDUCONNECT-DRAFT-{contractModalReq.id}</p>
@@ -912,7 +912,7 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
                         <p key={`${schedule.dayOfWeek}-${schedule.startTime}-${index}`}>Lịch cố định: <strong>{Number(schedule.dayOfWeek) === 8 || Number(schedule.dayOfWeek) === 1 ? "Chủ Nhật" : `Thứ ${schedule.dayOfWeek}`}, {schedule.startTime} - {schedule.endTime}</strong>.</p>
                       ))}
                       {classSnapshot?.learningMode === "ONLINE" ? (
-                        <p>Phòng học trực tuyến: <strong className="break-all">{classSnapshot?.meetingLink}</strong>.</p>
+                        <p>Liên kết phòng học online: <strong className="break-all">{classSnapshot?.meetingLink}</strong>.</p>
                       ) : (
                         <p>Địa điểm học: <strong>{classSnapshot?.address}</strong>.</p>
                       )}
@@ -934,14 +934,14 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
 
                     <div className="space-y-2">
                       <h4 className="font-bold text-slate-950 uppercase">ĐIỀU 4: QUYỀN VÀ NGHĨA VỤ CỦA BÊN B (HỌC VIÊN)</h4>
-                      <p>4.1. Tham gia học tập nghiêm túc, đúng giờ, chuẩn bị thiết bị và đường truyền internet ổn định.</p>
+                      <p>4.1. Tham gia học tập nghiêm túc, đúng giờ, chuẩn bị thiết bị, tài liệu và điều kiện học tập phù hợp với hình thức online/offline đã thỏa thuận.</p>
                       <p>4.2. Hoàn tất nạp tiền cọc ký quỹ vào Smart Contract Escrow đúng thời hạn 24 giờ kể từ khi hai bên ký hợp đồng.</p>
                       <p>4.3. Được hoàn lại 100% số tiền cọc còn lại trong Smart Contract đối với các buổi học chưa diễn ra nếu Bên A vi phạm cam kết hoặc hai bên đồng thuận chấm dứt hợp đồng hợp lệ.</p>
                     </div>
 
                     <div className="space-y-2">
                       <h4 className="font-bold text-slate-950 uppercase">ĐIỀU 5: TRÁCH NHIỆM BẢO CHỨNG CỦA BÊN C (NỀN TẢNG EDUCONNECT)</h4>
-                      <p>5.1. Cung cấp hạ tầng lớp học trực tuyến và Smart Contract Escrow vận hành công khai, minh bạch trên mạng Blockchain.</p>
+                      <p>5.1. Cung cấp hạ tầng hỗ trợ lớp học online/offline và Smart Contract Escrow vận hành công khai, minh bạch trên mạng Blockchain.</p>
                       <p>5.2. Đóng vai trò Trọng tài độc lập hỗ trợ giải quyết khiếu nại, tranh chấp phát sinh giữa Bên A và Bên B dựa trên chứng cứ nhật ký lớp học.</p>
                     </div>
 
