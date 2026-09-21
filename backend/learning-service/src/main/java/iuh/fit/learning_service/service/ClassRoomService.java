@@ -126,7 +126,7 @@ public class ClassRoomService {
 
     @Transactional
     public ClassRoomDtos.ClassRoomResponse updateClassDetails(String tutorEmail, Long id, ClassRoomDtos.UpdateClassDetailsRequest request) {
-        ClassRoom classRoom = classRoomRepository.findByIdWithDetails(id)
+        ClassRoom classRoom = classRoomRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + id));
         if (!classRoom.getTutorEmail().equalsIgnoreCase(tutorEmail)) {
             throw new ForbiddenException("You do not have access to this classroom");
@@ -161,8 +161,9 @@ public class ClassRoomService {
 
     @Transactional
     public ClassRoomDtos.ClassRoomResponse updateVisibility(String tutorEmail, Long id, ClassRoomDtos.UpdateVisibilityRequest request) {
-        ClassRoom classRoom = classRoomRepository.findByIdWithDetails(id)
+        ClassRoom classRoom = classRoomRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + id));
+        if (classRoom.getTerminationCutoffSession() != null) throw new BadRequestException("Classroom is terminating");
         if (!classRoom.getTutorEmail().equalsIgnoreCase(tutorEmail)) {
             throw new ForbiddenException("You do not have access to this classroom");
         }

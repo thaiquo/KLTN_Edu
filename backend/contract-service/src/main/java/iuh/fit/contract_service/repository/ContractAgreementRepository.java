@@ -10,6 +10,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface ContractAgreementRepository extends JpaRepository<ContractAgreement, UUID> {
+    List<ContractAgreement> findByClassroomIdOrderByCreatedAtAsc(Long classroomId);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @org.springframework.data.jpa.repository.Query("select a from ContractAgreement a where a.id = :id")
+    Optional<ContractAgreement> lockById(@org.springframework.data.repository.query.Param("id") UUID id);
     Optional<ContractAgreement> findByClassroomIdAndStudentIdAndContractVersion(
             Long classroomId,
             Long studentId,

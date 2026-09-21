@@ -34,7 +34,7 @@
 | UC003 | Tra cứu | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Search/filter gia sư và lớp; chưa phải AI search. |
 | UC004 | Student quản lý yêu cầu tham gia | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Gửi, xem, hủy. |
 | UC005 | Student quản lý thông tin cá nhân | IMPLEMENTED | IMPLEMENTED | PARTIAL | Profile/avatar/password/wallet trên Web. |
-| UC006 | Student/Tutor quản lý hợp đồng | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Snapshot, ký EIP-712, artifact, lifecycle và scope theo actor. |
+| UC006 | Student/Tutor quản lý hợp đồng | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Snapshot, ký EIP-712, artifact, lifecycle, chấm dứt hợp đồng đơn phương (Student) & đề xuất hủy lớp (Tutor) kèm chữ ký số ví Web3. |
 | UC007 | Bài đăng tìm gia sư | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | Chưa có domain/controller. |
 | UC008 | Tin nhắn Student–Tutor | IMPLEMENTED | PARTIAL | NOT_IMPLEMENTED | Backend persistence/API/WebSocket có; Portal vẫn dùng mock/in-memory. |
 | UC009 | Xem thông tin lớp | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Marketplace/list/detail và lớp đã tham gia. |
@@ -84,6 +84,7 @@
 - IMPLEMENTED: poi-tl sinh DOCX, Gotenberg chuyển PDF, local/S3 storage abstraction và artifact hash/status.
 - IMPLEMENTED: durable backend blockchain pipeline, idempotency, locking, preflight, dispatch, receipt watch, event cursor/processed-event.
 - IMPLEMENTED: funding confirmation, per-session proposal/finalization, cancellation/refund unused và expiration.
+- IMPLEMENTED: luồng Chấm dứt hợp đồng & Đề xuất Hủy lớp học (Termination & Whole-Class Cancellation Flow): Flyway v12, v13; API `/api/contracts/terminations`; EIP-712 signature verification trên backend; phân tách giao diện theo vai trò (Học viên đơn phương hủy 1 hợp đồng trong `ContractDocumentModal`, Gia sư đề xuất hủy cả lớp trong `TutorClassManagement`); phân xử Admin/Staff (`APPROVE`, `RECOMMEND`, `RESPOND`, `REJECT`) tự động đóng băng buổi học và thanh lý Escrow on-chain hoàn cọc.
 - IMPLEMENTED: settlement distribution amounts lưu từ event, wallet/audit timeline dùng thời điểm/hash confirmed.
 - IMPLEMENTED: catch-up sau restart và bounded auto-retry cho lỗi chắc chắn trước broadcast.
 - LIMITED: chỉ một operator instance và một RPC primary; unknown receipt/confirmed revert không tự retry mù.
@@ -125,6 +126,7 @@
 
 ## 6. Kiểm chứng gần nhất
 
+- Contract Termination & EIP-712 Signature: 15 unit & integration tests (`TerminationServiceTest`, `TerminationFlowIntegrationTest`, `Eip712VerificationServiceTest`) pass 100% ngày 2026-09-21; Frontend TypeScript & Vite build pass trong 1.53s.
 - Contract: 14 test scheduler/transaction restart-recovery đã pass ngày 2026-09-14.
 - Learning: 12 test attendance + settlement delivery đã pass ngày 2026-09-14.
 - Trước đó: 35 Solidity unit/fuzz/invariant test pass; isolated Anvil end-to-end pass; frontend TypeScript và Vite build pass theo escrow hardening report.

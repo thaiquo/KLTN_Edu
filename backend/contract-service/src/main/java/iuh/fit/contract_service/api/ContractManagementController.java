@@ -72,6 +72,7 @@ public class ContractManagementController {
     private final CurrentUserContext currentUserContext;
     private final ContractAccessControl accessControl;
     private final OperationalFundingPolicy operationalFundingPolicy;
+    private final iuh.fit.contract_service.service.TerminationService terminationService;
     private final org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway;
 
     public ContractManagementController(
@@ -94,7 +95,8 @@ public class ContractManagementController {
             CurrentUserContext currentUserContext,
             ContractAccessControl accessControl,
             org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway,
-            OperationalFundingPolicy operationalFundingPolicy) {
+            OperationalFundingPolicy operationalFundingPolicy,
+            iuh.fit.contract_service.service.TerminationService terminationService) {
         this.agreementRepository = agreementRepository;
         this.settlementRepository = settlementRepository;
         this.transactionRepository = transactionRepository;
@@ -115,6 +117,7 @@ public class ContractManagementController {
         this.accessControl = accessControl;
         this.blockchainGateway = blockchainGateway;
         this.operationalFundingPolicy = operationalFundingPolicy;
+        this.terminationService = terminationService;
     }
 
     public record InitiateAgreementRequest(
@@ -180,6 +183,7 @@ public class ContractManagementController {
     ) {}
 
     @PostMapping("/agreements/initiate")
+    @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<AgreementDetailDto> initiateAgreement(
             @RequestBody InitiateAgreementRequest request) {
 
@@ -199,6 +203,7 @@ public class ContractManagementController {
                 new ContractAccessControl.ContractAgreementSeed(request.tutorId(), request.tutorEmail()),
                 currentUser);
 
+        terminationService.requireClassCanCreate(request.classroomId());
         // Return existing active/pending agreement if already initiated for this class and student
         Optional<ContractAgreement> existing = agreementRepository.findByClassroomIdAndStudentIdAndContractVersion(
                 request.classroomId(), request.studentId(), 1);
@@ -1120,6 +1125,8 @@ public class ContractManagementController {
             @RequestBody(required = false) InternalAutoProposeRequest body) {
         List<ContractAgreement> agreements = agreementRepository.findAll().stream()
                 .filter(a -> a.getClassroomId().equals(classroomId) && isSettlementEligible(a))
+                .filter(a -> a.getTerminationCutoffSession() == null || a.getTerminationCutoffSession() < 0
+                        || sessionId <= a.getTerminationCutoffSession())
                 .toList();
 
         if (agreements.isEmpty()) {

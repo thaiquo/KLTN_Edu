@@ -78,7 +78,7 @@ class AdminFinancialMonitoringControllerTest {
                 currentUserContext,
                 accessControl,
                 blockchainGateway,
-                operationalFundingPolicy
+                operationalFundingPolicy, org.mockito.Mockito.mock(iuh.fit.contract_service.service.TerminationService.class)
         );
     }
 

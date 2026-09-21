@@ -33,6 +33,7 @@ public class SessionAttendanceService {
     private final RollingSessionService rollingSessionService;
     private final SessionAccessControl sessionAccessControl;
     private final ContractServiceDispatcher contractServiceDispatcher;
+    private final LearningTerminationService terminationService;
 
     /**
      * Lấy danh sách các buổi học của một lớp học. Tự động sinh tuần đầu tiên nếu lớp chưa có buổi học nào.
@@ -164,6 +165,7 @@ public class SessionAttendanceService {
 
         sessionAccessControl.requireStudent(session.getClassRoom(), studentId);
         validateStrictSessionTimeWindow(session);
+        terminationService.requireCanAttend(session, studentId);
 
         SessionAttendance attendance = sessionAttendanceRepository.findBySessionIdAndStudentId(sessionId, studentId)
                 .orElseThrow(() -> new BadRequestException("Bạn không có tên trong danh sách lớp học của buổi này"));
@@ -208,6 +210,7 @@ public class SessionAttendanceService {
         validateStrictSessionTimeWindow(session);
 
         List<SessionAttendance> attendances = sessionAttendanceRepository.findBySessionId(sessionId);
+        terminationService.requireCanAttend(session, null);
 
         LocalDateTime now = LocalDateTime.now();
 

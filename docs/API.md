@@ -222,6 +222,16 @@ Managed file policy: maximum 50 MB; JPEG/PNG/WebP/GIF, MP4/WebM/QuickTime, MP3/M
 
 Backend chat is implemented, but current Portal `MessagesView` still uses `INITIAL_CONVERSATIONS` and simulated replies. Therefore UC008 remains partial from the user's perspective.
 
+## 3.8 Contract Termination & Cancellation API status
+
+Controller: `TerminationController` in `contract-service` (prefix `/api/contracts/terminations`).
+
+| Method | Endpoint | Purpose | Scope / Authorization |
+| --- | --- | --- | --- |
+| `GET` | `/api/contracts/terminations` | List termination requests & cancellation cases. | Role-scoped: Student sees own cases, Tutor sees own classroom cases, Staff/Admin sees all manageable cases. |
+| `POST` | `/api/contracts/terminations` | Submit termination request with cryptographic EIP-712 signature verification. | Student: unilateral cancellation for 1 agreement (`wholeClass=false`). Tutor: proposal to cancel whole class (`wholeClass=true`). Enforces immutable signer wallet verification. |
+| `POST` | `/api/contracts/terminations/{id}/actions` | Staff/Admin arbitration actions (`APPROVE`, `RECOMMEND`, `RESPOND`, `REJECT`). | Staff/Admin: `APPROVE` automatically freezes future learning sessions and executes on-chain Escrow liquidation and refund. |
+
 ## 4. API Status Principle
 
 Treat API status carefully:

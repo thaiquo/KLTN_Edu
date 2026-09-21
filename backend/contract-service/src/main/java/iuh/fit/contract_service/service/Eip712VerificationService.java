@@ -33,6 +33,60 @@ public class Eip712VerificationService {
                     .getBytes(StandardCharsets.UTF_8)
     );
 
+    // TerminationRequest(string contractId,bytes32 reasonHash,bool wholeClass,uint256 requestedAt)
+    private static final byte[] TERMINATION_REQUEST_TYPEHASH = Hash.sha3(
+            "TerminationRequest(string contractId,bytes32 reasonHash,bool wholeClass,uint256 requestedAt)"
+                    .getBytes(StandardCharsets.UTF_8)
+    );
+
+    public boolean verifyTerminationSignature(
+            String expectedSignerWallet,
+            String signature,
+            String contractId,
+            String reasonHash,
+            boolean wholeClass,
+            long requestedAtTimestamp,
+            long chainId,
+            String verifyingContractAddress) {
+
+        if (signature == null || signature.isBlank() || expectedSignerWallet == null || expectedSignerWallet.isBlank()) {
+            return false;
+        }
+
+        try {
+            byte[] domainSeparator = computeDomainSeparator(chainId, verifyingContractAddress);
+            byte[] contractIdHash = Hash.sha3(contractId.getBytes(StandardCharsets.UTF_8));
+            byte[] reasonHashBytes = toBytes32(reasonHash);
+            byte[] wholeClassBytes = toUint256(wholeClass ? BigInteger.ONE : BigInteger.ZERO);
+            byte[] requestedAtBytes = toUint256(BigInteger.valueOf(requestedAtTimestamp));
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            out.write(TERMINATION_REQUEST_TYPEHASH);
+            out.write(contractIdHash);
+            out.write(reasonHashBytes);
+            out.write(wholeClassBytes);
+            out.write(requestedAtBytes);
+            byte[] structHash = Hash.sha3(out.toByteArray());
+
+            ByteArrayOutputStream digestStream = new ByteArrayOutputStream();
+            digestStream.write(EIP191_PREFIX);
+            digestStream.write(domainSeparator);
+            digestStream.write(structHash);
+            byte[] digest = Hash.sha3(digestStream.toByteArray());
+
+            String recovered = recoverAddressFromDigest(digest, signature);
+            boolean matches = recovered != null && recovered.equalsIgnoreCase(expectedSignerWallet.trim());
+
+            if (!matches) {
+                log.warn("EIP-712 termination signature mismatch: expected {}, recovered {}", expectedSignerWallet, recovered);
+            }
+            return matches;
+        } catch (Exception e) {
+            log.error("Error during EIP-712 termination signature verification: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
     public boolean verifySignature(
             String expectedSignerWallet,
             String signature,

@@ -136,6 +136,23 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
 - Staff moderation: Staff kiểm duyệt nội dung, giám sát lớp, quản lý vi phạm, hỗ trợ người dùng.
 - Admin management: Admin quản lý người dùng, danh mục, Blockchain, thanh toán và thống kê.
 
+### Quy tắc chấm dứt hợp đồng và hủy lớp học trước thời hạn
+
+- **Phân định trách nhiệm và phạm vi theo Actor:**
+  - **Phía Học viên (Student):** Mỗi học viên chỉ có **1 hợp đồng duy nhất** ở 1 lớp học. Vì vậy, khi gia sư vi phạm cam kết hoặc học viên gặp sự cố bất khả kháng, học viên có quyền gửi **yêu cầu đơn phương chấm dứt hợp đồng** của chính mình (`wholeClass = false`). Thao tác được thực hiện trực tiếp trong văn bản hợp đồng cá nhân.
+  - **Phía Gia sư (Tutor):** Gia sư quản lý **toàn bộ lớp học** gồm nhiều học viên (nhiều hợp đồng). Gia sư **không được phép tự ý chấm dứt riêng lẻ từng hợp đồng** của từng học viên vì lý do cá nhân không thể tiếp tục giảng dạy. Nếu gia sư gặp sự cố bất khả kháng (sức khỏe, tai nạn, bận đột xuất...), gia sư phải vào mục **"Lớp học của tôi"** để gửi **"Đề xuất dừng giảng dạy & Hủy lớp học"** cho toàn bộ lớp (`wholeClass = true`).
+- **Xác thực chữ ký số Web3 EIP-712:**
+  - Mọi yêu cầu chấm dứt hoặc đề xuất hủy lớp bắt buộc phải ký số xác nhận Typed Data EIP-712 bằng chính địa chỉ ví đã ghi nhận trên hợp đồng (`studentWallet` cho học viên, `tutorWallet` cho gia sư).
+  - Hệ thống kiểm tra đối chiếu ví kết nối MetaMask: nếu địa chỉ ví không khớp với ví đã ký hợp đồng và nạp cọc ban đầu, yêu cầu sẽ bị từ chối ngay lập tức để chống giả mạo danh tính và gian lận tài chính.
+  - Quá trình ký EIP-712 hoàn toàn gasless (0 Sepolia ETH).
+- **Quy trình thẩm định và phân xử của Ban Quản trị (Staff/Admin):**
+  - Khi có yêu cầu chấm dứt hoặc đề xuất hủy lớp, hồ sơ được ghi nhận ở trạng thái `REQUESTED`.
+  - Nếu là đề xuất hủy lớp của Gia sư, lớp học lập tức hiển thị trạng thái cảnh báo `⚠️ Chờ duyệt hủy lớp` và đóng băng tiếp nhận đăng ký mới.
+  - Staff/Admin tiến hành xác minh lý do và minh chứng, có thể yêu cầu thêm giải trình (`RESPOND`), đề xuất phê duyệt (`RECOMMEND`) hoặc từ chối (`REJECT`).
+- **Thanh lý và hoàn tiền Smart Contract Escrow khi Phê duyệt (`APPROVE`):**
+  - **Trường hợp Học viên đơn phương chấm dứt (`wholeClass = false`):** Hệ thống đóng băng các buổi học tương lai của riêng học viên đó. Các buổi học đã diễn ra hợp lệ được quyết toán cho gia sư, và Smart Contract Escrow tự động hoàn trả 100% tiền cọc các buổi chưa học về ví MetaMask của học viên.
+  - **Trường hợp Gia sư hủy toàn bộ lớp học (`wholeClass = true`):** Hệ thống lập tức hủy lịch các buổi học tương lai của cả lớp. Smart Contract Escrow tự động quyết toán các buổi đã dạy cho gia sư và hoàn trả 100% tiền cọc các buổi chưa học về ví MetaMask của **toàn bộ học viên** đang theo học trong lớp. Lớp học chuyển sang trạng thái kết thúc/hủy.
+
 ## 6. Contract & Payment Business Relationship
 
 - Student và Tutor cùng tham gia Contract.

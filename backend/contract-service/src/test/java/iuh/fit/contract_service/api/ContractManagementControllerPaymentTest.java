@@ -108,7 +108,8 @@ class ContractManagementControllerPaymentTest {
                 accessControl,
                 blockchainGateway, new iuh.fit.contract_service.service.OperationalFundingPolicy(
                         agreementRepository, escrowPaymentRepository, processedEventRepository,
-                        new tools.jackson.databind.ObjectMapper()));
+                        new tools.jackson.databind.ObjectMapper()),
+                org.mockito.Mockito.mock(iuh.fit.contract_service.service.TerminationService.class));
     }
 
     @Test

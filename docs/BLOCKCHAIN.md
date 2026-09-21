@@ -129,6 +129,26 @@ Nếu browser submit txHash sau event ingest, API xử lý idempotent. Nếu g�
 
 Giới hạn V1: on-chain dispute chỉ cho `BOTH_PRESENT`. Muốn dispute các outcome khác phải thiết kế/deploy contract version mới và migrate có chủ đích.
 
+## 9.1 Chấm dứt hợp đồng & Đề xuất hủy lớp học (Termination & Refund)
+
+Mọi thao tác chấm dứt hợp đồng đơn phương (Student) hoặc đề xuất dừng giảng dạy & hủy lớp (Tutor) đều được bảo chứng bằng chữ ký số EIP-712 Typed Data:
+
+- **Domain Name**: `EduConnect Platform` (version `1`)
+- **Primary Type**: `TerminationRequest`
+- **Type Structure**:
+  ```solidity
+  TerminationRequest(string contractId,bytes32 reasonHash,bool wholeClass,uint256 requestedAt)
+  ```
+- **Xác thực Backend (`Eip712VerificationService`)**:
+  - `reasonHash`: Keccak-256 của chuỗi lý do text UTF-8 do người dùng nhập.
+  - `wholeClass`: `false` đối với Học viên đơn phương hủy hợp đồng; `true` đối với Gia sư đề xuất hủy toàn bộ lớp.
+  - `expectedWallet`: Đối chiếu `signerWallet` phục hồi từ chữ ký với `studentWallet` (nếu là Học viên) hoặc `tutorWallet` (nếu là Gia sư) đã chốt trên hợp đồng.
+  - Nếu chữ ký giả mạo, hoặc ví MetaMask không khớp ví hợp đồng, yêu cầu lập tức bị từ chối ở tầng backend.
+- **Thực thi On-chain khi Phê duyệt (`TerminationProcessor`)**:
+  - Khi Staff/Admin phê duyệt (`APPROVE`), hệ thống đóng băng buổi học và thực thi lệnh on-chain bằng hàm `cancelAgreementAndRefundUnused(bytes32 agreementId, bytes32 resolutionHash)` qua Arbitrator.
+  - Toàn bộ số dư ký quỹ chưa quyết toán (`remainingDeposit`) được Smart Contract hoàn trả trực tiếp về ví của học viên, và phát event `AgreementCancelled`.
+  - Nếu là đề xuất hủy cả lớp (`wholeClass=true`), toàn bộ hợp đồng active của lớp học được thanh lý đồng loạt, hoàn cọc tự động cho tất cả học viên.
+
 ## 10. Backend transaction pipeline
 
 Mỗi write là durable `blockchain_transaction` intent:
@@ -182,3 +202,23 @@ V1 không có rescue/sweep cho excess raw-transfer balance; tài liệu không �
 - Sepolia/test USDC là môi trường thử nghiệm, không phải production mainnet accounting.
 - Phải giám sát ETH gas, RPC, event cursor, failed intent, overdue proposal và S3.
 - Không dùng `docker compose down -v` nếu muốn giữ PostgreSQL volume.
+
+## 15. Smart contract V2 (Đã sẵn sàng mã nguồn & test, chưa deploy)
+
+Phiên bản V2 đã được lập trình sẵn và lưu trữ song song với V1, hoàn toàn không ảnh hưởng hay thay đổi V1 đang chạy trên Sepolia:
+
+- Mã nguồn: `blockchain/src/EduConnectEscrowV2.sol`, `blockchain/src/interfaces/IEduConnectEscrowV2.sol`
+- Script triển khai: `blockchain/script/DeployEduConnectEscrowV2.s.sol`
+- Kiểm thử: `blockchain/test/EduConnectEscrowV2.t.sol` (9/9 pass, 44/44 tổng số bài test pass 100%)
+
+### Các tính năng nâng cấp trong V2:
+1. **Token Rescue an toàn (`rescueERC20`)**:
+   - Cho phép Admin rút lại token gửi nhầm hoặc lượng USDC thặng dư (surplus do chuyển nhầm không qua agreement).
+   - Có cơ chế bảo vệ nghiêm ngặt: Biến trạng thái `totalEscrowLiability` tự động theo dõi tổng tiền USDC đang bị khóa cho các hợp đồng đang hoạt động. Admin không bao giờ có thể rút vào phần tiền ký quỹ này.
+2. **Hủy hàng loạt (`batchCancelAgreementsAndRefundUnused`)**:
+   - Cho phép hủy và hoàn tiền đồng loạt nhiều hợp đồng trong một giao dịch duy nhất khi một lớp học bị hủy toàn bộ, tiết kiệm đáng kể chi phí gas và thời gian xử lý của backend.
+3. **Khiếu nại & Phân xử đa kịch bản (`openDispute` / `resolveDispute`)**:
+   - Mở rộng phân xử linh hoạt không chỉ giới hạn ở `BOTH_PRESENT` như V1, mà cho phép khiếu nại cả trường hợp `STUDENT_ABSENT_TUTOR_PRESENT`, và Arbitrator có thể chỉ định outcome cuối cùng phù hợp với bằng chứng thực tế.
+4. **Tương thích ngược 100%**:
+   - Giữ nguyên toàn bộ các hàm V1 (`openTutorFraudDispute`, `resolveTutorFraudDispute`, `cancelAgreementAndRefundUnused`, `fundAgreement`, v.v.).
+

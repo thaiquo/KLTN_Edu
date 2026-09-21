@@ -20,6 +20,7 @@ import java.util.List;
 @Entity
 @Table(name = "class_rooms")
 public class ClassRoom {
+    private Integer terminationCutoffSession;
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

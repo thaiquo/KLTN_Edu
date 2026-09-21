@@ -54,6 +54,7 @@ Không tạo thêm service hoặc chuyển domain owner nếu chưa có quyết 
 - Account dùng OpenFeign để đọc một số dữ liệu subject/Tutor từ Learning.
 - Learning gửi kết quả buổi học sang internal endpoint của Contract bằng JWT service token có scope `contract-settlement`.
 - Contract gọi internal Learning activation/expiration endpoint khi event blockchain xác nhận trạng thái agreement.
+- Contract gọi internal Learning termination cutoff endpoint khi phê duyệt chấm dứt hợp đồng hoặc hủy lớp để đóng băng lịch học.
 - Contract gửi notification trực tiếp qua internal Notification API cho các sự kiện contract/settlement/dispute.
 
 REST failure không được biến thành trạng thái tài chính giả. Các worker giữ cờ chưa giao thành công và thử lại với các flow có durable state tương ứng.
@@ -84,8 +85,8 @@ Các service hiện dùng chung một PostgreSQL database vật lý `kltn_db`, n
 | Service | Số migration hiện thấy | Nhóm bảng tiêu biểu |
 | --- | ---: | --- |
 | Account | 13 | users, roles, refresh_sessions, OTP, students, tutors, tutor applications/documents. |
-| Learning | 30 | catalog, registrations, class_rooms, schedules/chapters, enrollment_requests, class_sessions, session_attendances. |
-| Contract | 11 | contract_agreement/acceptance/artifact, escrow_payment, session_settlement, dispute/evidence, blockchain_transaction, processed_event/outbox/cursor. |
+| Learning | 31 | catalog, registrations, class_rooms, schedules/chapters, enrollment_requests, class_sessions, session_attendances, learning_termination_stops. |
+| Contract | 13 | contract_agreement/acceptance/artifact, escrow_payment, session_settlement, dispute/evidence, blockchain_transaction, processed_event/outbox/cursor, termination_cases/items. |
 | Notification | 2 | notifications, conversations, chat_messages. |
 
 ## 6. Storage và document

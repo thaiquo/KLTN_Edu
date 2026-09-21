@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { 
   GraduationCap, Plus, Calendar, Clock, DollarSign, Users, 
-  Video, MapPin, AlertCircle, CheckCircle2, XCircle, Search, 
+  Video, MapPin, AlertCircle, AlertTriangle, CheckCircle2, XCircle, Search, 
   ChevronRight, Trash2, Eye, FileText, Sparkles, Key, Lock, Settings2, Globe, EyeOff, Copy, Check, Info, Layers, RefreshCw
 } from "lucide-react";
 import { classApi } from "../../api/classes";
 import { contractsApi } from "../../api/contractsApi";
+import { terminationsApi, TerminationView } from "../../api/terminationsApi";
+import { TerminationRequestModal, TerminationAgreementTarget } from "../../components/contract/TerminationRequestModal";
 import { CreateClassWizard } from "./CreateClassWizard";
 import { useFeedback } from "../../components/feedback/useFeedback";
 import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
@@ -103,12 +105,27 @@ export function TutorClassManagement() {
   const [classAgreements, setClassAgreements] = useState<any[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(false);
 
+  // Whole-class termination proposal state
+  const [terminationCases, setTerminationCases] = useState<TerminationView[]>([]);
+  const [selectedClassForTermination, setSelectedClassForTermination] = useState<ClassRoomItem | null>(null);
+  const [isTerminationModalOpen, setIsTerminationModalOpen] = useState(false);
+
+  const loadTerminations = async () => {
+    try {
+      const list = await terminationsApi.list();
+      setTerminationCases(list || []);
+    } catch (err) {
+      console.error("Failed to load terminations", err);
+    }
+  };
+
   const loadRequestsForClass = async (classId: number) => {
     setRequestsLoading(true);
     try {
       const [reqData, agrData] = await Promise.all([
         classApi.getRequestsForClass(classId).catch(() => []),
-        contractsApi.listAgreements({ size: 50 }).catch(() => null)
+        contractsApi.listAgreements({ size: 100 }).catch(() => null),
+        loadTerminations().catch(() => null)
       ]);
       setEnrollmentRequests(reqData || []);
       const agrs = Array.isArray(agrData) ? agrData : agrData?.content || [];
@@ -171,7 +188,10 @@ export function TutorClassManagement() {
   const loadClasses = async () => {
     setLoading(true);
     try {
-      const data = await classApi.getMyClasses();
+      const [data] = await Promise.all([
+        classApi.getMyClasses(),
+        loadTerminations().catch(() => null)
+      ]);
       const nextClasses = data || [];
       setClasses(nextClasses);
       setDetailModalClass(prev => {
@@ -205,8 +225,20 @@ export function TutorClassManagement() {
     }
   );
 
+  useRealtimeRefresh(
+    ["TERMINATION_REQUESTED", "TERMINATION_PROCESSED", "TERMINATION_APPROVED", "TERMINATION_REJECTED"],
+    () => {
+      loadClasses();
+      loadTerminations();
+      if (detailModalClass) {
+        loadRequestsForClass(detailModalClass.id);
+      }
+    }
+  );
+
   useEffect(() => {
     loadClasses();
+    loadTerminations();
   }, []);
 
   const handleCreateClick = () => {
@@ -628,7 +660,22 @@ export function TutorClassManagement() {
                   <span className="px-2.5 py-1 rounded-lg bg-brand-primary/10 text-brand-primary text-[11px] font-black uppercase tracking-wider">
                     {cls.registration?.subjectName || "Môn học"} &bull; {cls.level?.name || "Cấp độ"}
                   </span>
-                  {renderStatusBadge(cls.status, cls.joinMode, cls.joinKey)}
+                  <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                    {(() => {
+                      const pendingCase = terminationCases.find(
+                        t => t.request.classroomId === cls.id && !["REJECTED", "COMPLETED"].includes(t.request.status)
+                      );
+                      if (pendingCase) {
+                        return (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-300 flex items-center gap-1 shadow-2xs animate-pulse">
+                            <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" /> Chờ duyệt hủy lớp
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
+                    {renderStatusBadge(cls.status, cls.joinMode, cls.joinKey)}
+                  </div>
                 </div>
 
                 {/* Class Title */}
@@ -846,6 +893,43 @@ export function TutorClassManagement() {
             {/* ========================================================= */}
             {modalTab === "OVERVIEW" && (
               <div className="space-y-4 text-xs">
+                {/* Pending Termination Banner if any */}
+                {(() => {
+                  const currentPendingTerm = terminationCases.find(
+                    t => t.request.classroomId === detailModalClass.id && !["REJECTED", "COMPLETED"].includes(t.request.status)
+                  );
+                  if (currentPendingTerm) {
+                    return (
+                      <div className="p-4 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl text-amber-950 space-y-2.5 shadow-xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-black text-xs flex items-center gap-1.5 text-amber-900 uppercase tracking-wide">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                            ĐANG CÓ ĐỀ XUẤT DỪNG GIẢNG DẠY & HỦY LỚP (CHỜ BAN QUẢN TRỊ DUYỆT)
+                          </span>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-200 text-amber-900 border border-amber-400">
+                            {currentPendingTerm.request.status}
+                          </span>
+                        </div>
+                        <div className="text-xs text-amber-900 space-y-1">
+                          <p>
+                            <strong>Lý do gia sư đưa ra:</strong> {currentPendingTerm.request.reason}
+                          </p>
+                          <div className="text-[11px] text-amber-800 flex flex-wrap items-center gap-3 pt-1 border-t border-amber-200/80 font-medium">
+                            <span>Ngày gửi: {new Date(currentPendingTerm.request.createdAt).toLocaleString("vi-VN")}</span>
+                            {currentPendingTerm.request.signerWallet && (
+                              <span>&bull; Ví ký xác thực MetaMask: <strong className="font-mono text-amber-950">{currentPendingTerm.request.signerWallet.slice(0, 6)}...{currentPendingTerm.request.signerWallet.slice(-4)}</strong></span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="p-2.5 bg-white/85 rounded-xl border border-amber-200 text-[11px] text-amber-900 leading-relaxed font-medium">
+                          💡 <strong>Quy trình xử lý:</strong> Sau khi Ban Quản trị phê duyệt đề xuất dừng dạy này, Smart Contract Escrow sẽ tự động kích hoạt lệnh thanh lý: quyết toán các buổi đã học cho gia sư và hoàn trả 100% tiền cọc các buổi chưa học về ví MetaMask của toàn bộ học viên trong lớp.
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
+
                 {/* Status Notice */}
                 {detailModalClass.status === "PRIVATE" && (
                   <div className="p-3 bg-sky-50 border border-sky-200 rounded-2xl text-sky-900 space-y-1">
@@ -994,6 +1078,45 @@ export function TutorClassManagement() {
                     <p className="text-slate-400 italic text-[11px]">Chưa nhập chương trình dạy.</p>
                   )}
                 </div>
+
+                {/* Proposal to terminate / cancel whole class if agreements exist */}
+                {(() => {
+                  const currentPendingTerm = terminationCases.find(
+                    t => t.request.classroomId === detailModalClass.id && !["REJECTED", "COMPLETED"].includes(t.request.status)
+                  );
+                  const activeAgreements = classAgreements.filter(
+                    (a: any) => !['COMPLETED', 'CANCELLED', 'REJECTED'].includes(a.status)
+                  );
+                  if (!currentPendingTerm && activeAgreements.length > 0 && detailModalClass.status !== "CANCELLED" && detailModalClass.status !== "CLOSED") {
+                    return (
+                      <div className="p-4 bg-gradient-to-br from-rose-50/80 via-white to-amber-50/50 border border-rose-200 rounded-2xl space-y-3 pt-3">
+                        <div className="flex items-start justify-between gap-4 flex-wrap">
+                          <div className="space-y-1 max-w-lg">
+                            <span className="text-xs font-black uppercase tracking-wider text-rose-900 flex items-center gap-1.5">
+                              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                              Đề xuất dừng giảng dạy & Hủy lớp học
+                            </span>
+                            <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
+                              Nếu bạn gặp sự cố cá nhân bất khả kháng (sức khỏe, tai nạn, bận đột xuất...) khiến bạn không thể tiếp tục giảng dạy lớp học này, hãy gửi đề xuất dừng dạy tại đây. Ban Quản trị sẽ phê duyệt và Smart Contract Escrow sẽ tự động thanh lý, hoàn trả tiền cọc các buổi chưa học cho toàn bộ <strong>{activeAgreements.length} học viên</strong> trong lớp.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedClassForTermination(detailModalClass);
+                              setIsTerminationModalOpen(true);
+                            }}
+                            className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shrink-0 shadow-md shadow-rose-600/20 cursor-pointer"
+                          >
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            <span>Đề xuất dừng dạy / Hủy lớp</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
 
                 {/* Modal Footer Quick Navigation */}
                 <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
@@ -1529,6 +1652,63 @@ export function TutorClassManagement() {
           </div>
         </div>
       )}
+
+      {/* Whole-Class Termination Request Modal (Tutor) */}
+      {isTerminationModalOpen && selectedClassForTermination && (() => {
+        const activeAgreements = classAgreements.filter(
+          (a: any) => !['COMPLETED', 'CANCELLED', 'REJECTED'].includes(a.status)
+        );
+        const anchorAgreement = activeAgreements[0] || classAgreements[0];
+        if (!anchorAgreement) return null;
+
+        const totalUsdcAllAgreements = activeAgreements.reduce(
+          (sum: number, a: any) => sum + (Number(a.totalAmountUsdc) || 0),
+          0
+        );
+        const remainingUsdcAllAgreements = activeAgreements.reduce(
+          (sum: number, a: any) => sum + (Number(a.remainingAmountUsdc) || (Math.max(0, (a.totalSessions || 0) - (a.settledSessions || 0)) * (a.pricePerSessionUsdc || 0))),
+          0
+        );
+
+        const terminationTarget: TerminationAgreementTarget = {
+          id: anchorAgreement.id,
+          className: selectedClassForTermination.name,
+          classroomId: selectedClassForTermination.id,
+          tutorWallet: anchorAgreement.tutorWallet,
+          studentWallet: anchorAgreement.studentWallet,
+          pricePerSessionUsdc: anchorAgreement.pricePerSessionUsdc,
+          totalSessions: selectedClassForTermination.totalSessions,
+          settledSessions: anchorAgreement.settledSessions || 0,
+          totalAmountUsdc: totalUsdcAllAgreements,
+          remainingAmountUsdc: remainingUsdcAllAgreements,
+          chainId: anchorAgreement.chainId,
+          escrowContractAddress: anchorAgreement.escrowContractAddress,
+        };
+
+        return (
+          <TerminationRequestModal
+            isOpen={isTerminationModalOpen}
+            onClose={() => {
+              setIsTerminationModalOpen(false);
+              setSelectedClassForTermination(null);
+            }}
+            agreement={terminationTarget}
+            activeRole="tutor"
+            defaultWholeClass={true}
+            lockWholeClass={true}
+            title={`Đề Xuất Dừng Giảng Dạy & Hủy Lớp: ${selectedClassForTermination.name}`}
+            description={`Áp dụng cho toàn bộ ${activeAgreements.length} học viên trong lớp • Ký xác thực MetaMask bằng ví gia sư • Smart Contract tự động hoàn tiền`}
+            onSuccess={() => {
+              setIsTerminationModalOpen(false);
+              setSelectedClassForTermination(null);
+              void loadTerminations();
+              void loadClasses();
+              if (detailModalClass) loadRequestsForClass(detailModalClass.id);
+              feedback.success("Đã gửi đề xuất dừng giảng dạy & hủy lớp học kèm chữ ký số xác thực thành công!");
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

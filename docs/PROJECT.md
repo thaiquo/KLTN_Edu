@@ -21,7 +21,7 @@ EduConnect dùng **Service-Based Architecture**, không gọi là Microservices 
 | `api-gateway` | 8080 | Spring Cloud Gateway, CORS, REST/WebSocket routing. |
 | `account-service` | 8081 | JWT/OTP/session, user/role, hồ sơ Student/Tutor, hồ sơ xét duyệt Tutor, S3. |
 | `learning-service` | 8082 | Danh mục, chuyên môn/lịch rảnh, lớp, enrollment, lịch học, buổi học, điểm danh, bài tập. |
-| `contract-service` | 8083 | Hợp đồng, EIP-712, DOCX/PDF, escrow, transaction pipeline, settlement, dispute và evidence. |
+| `contract-service` | 8083 | Hợp đồng, EIP-712, DOCX/PDF, escrow, transaction pipeline, settlement, dispute, evidence, chấm dứt hợp đồng đơn phương & đề xuất hủy lớp. |
 | `notification-service` | 8084 | Notification lưu bền, Bell REST/WebSocket; chat persistence/API/WebSocket. |
 | `ai-service` | 8085 | Service skeleton và `GET /api/ai/health`; AI nghiệp vụ chưa triển khai. |
 | `frontend-web` | 5173 | React/Vite cho Guest, Student, Tutor, Staff, Admin. |

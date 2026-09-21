@@ -27,6 +27,8 @@ import { EscrowPaymentModal, AgreementPaymentDetails } from './EscrowPaymentModa
 import { DisputeManagementPanel } from './DisputeManagementPanel';
 import { ContractAuditTimeline } from './ContractAuditTimeline';
 import { ContractDocumentModal } from './ContractDocumentModal';
+import { TerminationPanel } from './TerminationPanel';
+import { TerminationRequestModal } from './TerminationRequestModal';
 import { useWeb3Wallet } from '../../web3/useWeb3Wallet';
 import { DEFAULT_CHAIN_ID } from '../../web3/web3Config';
 import { contractsApi, AgreementSummary } from '../../api/contractsApi';
@@ -70,10 +72,11 @@ export function EscrowContractsView({
   const { user } = useAuth();
   const activeChainId = chainId || DEFAULT_CHAIN_ID;
 
-  const [activeTab, setActiveTab] = useState<'AGREEMENTS' | 'DISPUTES' | 'TIMELINE'>('AGREEMENTS');
+  const [activeTab, setActiveTab] = useState<'AGREEMENTS' | 'DISPUTES' | 'TIMELINE' | 'TERMINATIONS'>('AGREEMENTS');
   const [selectedAgreementForPayment, setSelectedAgreementForPayment] = useState<AgreementPaymentDetails | null>(null);
   const [selectedAgreementForTimeline, setSelectedAgreementForTimeline] = useState<AgreementSummary | null>(null);
   const [selectedAgreementForDocument, setSelectedAgreementForDocument] = useState<string | null>(null);
+  const [selectedAgreementForTermination, setSelectedAgreementForTermination] = useState<AgreementSummary | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [operationalFilter, setOperationalFilter] = useState<'ALL' | 'OPERATIONAL' | 'LEGACY'>('OPERATIONAL');
   const [selectedClassId, setSelectedClassId] = useState<string>('ALL');
@@ -524,6 +527,16 @@ export function EscrowContractsView({
           >
             Khiếu Nại (Disputes)
           </button>
+          <button
+            onClick={() => setActiveTab('TERMINATIONS')}
+            className={`px-4 py-2 rounded-xl text-xs font-display font-black transition-all flex items-center gap-1.5 ${
+              activeTab === 'TERMINATIONS'
+                ? 'bg-white text-amber-700 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <XCircle size={14} /> Chấm Dứt Hợp Đồng
+          </button>
         </div>
       </div>
 
@@ -873,64 +886,65 @@ export function EscrowContractsView({
 
                     {/* Footer Action Buttons */}
                     <div className="border-t border-slate-100 pt-4 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2.5 shrink-0">
                         <button
                           onClick={() => handleOpenTimeline(item)}
-                          className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline"
+                          className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
                         >
-                          <Layers className="w-3.5 h-3.5" />
+                          <Layers className="w-3.5 h-3.5 shrink-0" />
                           <span>Xem Audit</span>
                         </button>
+                        <span className="text-slate-300 font-light">•</span>
                         <button
                           onClick={() => setSelectedAgreementForDocument(item.id)}
-                          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 hover:underline"
+                          className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 hover:underline whitespace-nowrap"
                         >
-                          <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                          <ShieldCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                           <span>Văn bản hợp đồng</span>
                         </button>
                       </div>
 
-                      {item.status === 'PENDING_TUTOR_ACCEPTANCE' && activeRole === 'tutor' && (
-                        <button
-                          onClick={() => handleSignByTutor(item)}
-                          className="flex items-center gap-1.5 px-4 py-2 text-white text-xs font-display font-black rounded-xl shadow-sm transition-all bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 hover:shadow"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Ký hợp đồng (Gia sư)</span>
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {item.status === 'PENDING_TUTOR_ACCEPTANCE' && activeRole === 'tutor' && (
+                          <button
+                            onClick={() => handleSignByTutor(item)}
+                            className="flex items-center gap-1.5 px-3.5 py-2 text-white text-xs font-display font-black rounded-xl shadow-xs transition-all bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 whitespace-nowrap cursor-pointer"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                            <span>Ký hợp đồng</span>
+                          </button>
+                        )}
 
-                      {item.status === 'PENDING_STUDENT_ACCEPTANCE' && activeRole === 'student' && (
-                        <button
-                          onClick={() => handleSignByStudent(item)}
-                          disabled={isStudentWalletMismatch}
-                          className={`flex items-center gap-1.5 px-4 py-2 text-white text-xs font-display font-black rounded-xl shadow-sm transition-all ${
-                            isStudentWalletMismatch
-                              ? 'bg-slate-400 cursor-not-allowed opacity-60'
-                              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90 hover:shadow'
-                          }`}
-                          title={isStudentWalletMismatch ? 'Vui lòng chuyển sang đúng ví học viên trong MetaMask' : undefined}
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Ký xác nhận hợp đồng</span>
-                        </button>
-                      )}
+                        {item.status === 'PENDING_STUDENT_ACCEPTANCE' && activeRole === 'student' && (
+                          <button
+                            onClick={() => handleSignByStudent(item)}
+                            disabled={isStudentWalletMismatch}
+                            className={`flex items-center gap-1.5 px-3.5 py-2 text-white text-xs font-display font-black rounded-xl shadow-xs transition-all whitespace-nowrap ${
+                              isStudentWalletMismatch
+                                ? 'bg-slate-400 cursor-not-allowed opacity-60'
+                                : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90 cursor-pointer'
+                            }`}
+                            title={isStudentWalletMismatch ? 'Vui lòng chuyển sang đúng ví học viên trong MetaMask' : undefined}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                            <span>Ký xác nhận</span>
+                          </button>
+                        )}
 
-                      {isWaitingPayment && activeRole === 'student' && (() => {
-                        const balanceNum = parseFloat(usdcBalance || '0');
-                        const isInsufficientBalance = Boolean(address) && balanceNum < item.totalAmountUsdc;
+                        {isWaitingPayment && activeRole === 'student' && (() => {
+                          const balanceNum = parseFloat(usdcBalance || '0');
+                          const isInsufficientBalance = Boolean(address) && balanceNum < item.totalAmountUsdc;
 
-                        return (
-                          <div className="flex items-center gap-2 flex-wrap">
+                          return (
                             <button
                               onClick={() => handleOpenPayment(item)}
                               disabled={isStudentWalletMismatch}
-                              className={`flex items-center gap-1.5 px-4 py-2 text-white text-xs font-display font-black rounded-xl shadow-sm transition-all ${
+                              className={`flex items-center gap-1.5 px-3.5 py-2 text-white text-xs font-display font-black rounded-xl shadow-xs transition-all whitespace-nowrap ${
                                 isStudentWalletMismatch
                                   ? 'bg-slate-400 cursor-not-allowed opacity-60'
                                   : isInsufficientBalance
-                                  ? 'bg-amber-600 hover:bg-amber-700'
-                                  : 'bg-emerald-600 hover:bg-emerald-700 hover:shadow'
+                                  ? 'bg-amber-600 hover:bg-amber-700 cursor-pointer'
+                                  : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'
                               }`}
                               title={
                                 isStudentWalletMismatch
@@ -940,57 +954,53 @@ export function EscrowContractsView({
                                   : undefined
                               }
                             >
-                              <Lock className="w-3.5 h-3.5" />
+                              <Lock className="w-3.5 h-3.5 shrink-0" />
                               <span>
                                 {isInsufficientBalance
-                                  ? `Ký quỹ (${item.totalAmountUsdc.toFixed(2)} ${item.tokenSymbol} • Thiếu số dư)`
-                                  : `Ký quỹ ngay (${item.totalAmountUsdc.toFixed(2)} ${item.tokenSymbol})`}
+                                  ? `Ký quỹ (Thiếu $${(item.totalAmountUsdc - balanceNum).toFixed(2)})`
+                                  : `Ký quỹ ngay ($${item.totalAmountUsdc.toFixed(2)})`}
                               </span>
                             </button>
-                            {isInsufficientBalance && !isStudentWalletMismatch && (
-                              <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
-                                ⚠️ Ví có ${balanceNum.toFixed(2)} USDC (Thiếu ${(item.totalAmountUsdc - balanceNum).toFixed(2)})
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })()}
+                          );
+                        })()}
 
-                      {isActive && item.settlementEligible && (
-                        <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
-                          Đang bảo vệ bởi Escrow
-                        </span>
-                      )}
+                        {isActive && item.settlementEligible && (
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-200 whitespace-nowrap">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Đang bảo vệ bởi Escrow
+                          </span>
+                        )}
 
-                      {isLegacy && (
-                        <span className="text-[11px] font-bold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-xl border border-amber-300">
-                          Chỉ tra cứu • không quyết toán
-                        </span>
-                      )}
+                        {isLegacy && (
+                          <span className="text-[11px] font-bold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-xl border border-amber-300 whitespace-nowrap">
+                            Chỉ tra cứu
+                          </span>
+                        )}
 
-                      {activeRole === 'admin' && isWaitingPayment && (
-                        <button
-                          onClick={() => handleExpireAgreement(item)}
-                          className="flex items-center gap-1.5 px-3 py-2 text-white text-xs font-display font-black rounded-xl bg-slate-700 hover:bg-slate-800 transition-all"
-                        >
-                          <Clock className="w-3.5 h-3.5" />
-                          <span>Expire</span>
-                        </button>
-                      )}
+                        {activeRole === 'admin' && isWaitingPayment && (
+                          <button
+                            onClick={() => handleExpireAgreement(item)}
+                            className="flex items-center gap-1.5 px-3 py-2 text-white text-xs font-display font-black rounded-xl bg-slate-700 hover:bg-slate-800 transition-all whitespace-nowrap"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>Expire</span>
+                          </button>
+                        )}
 
-                      {item.status === 'COMPLETED' && (
-                        <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-xl border border-blue-200 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
-                          Đã hoàn tất
-                        </span>
-                      )}
+                        {item.status === 'COMPLETED' && (
+                          <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-xl border border-blue-200 flex items-center gap-1 whitespace-nowrap">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Đã hoàn tất
+                          </span>
+                        )}
 
-                      {(item.status === 'EXPIRED' || item.status === 'CANCELLED') && (
-                        <span className="text-[11px] font-bold text-slate-500 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200 flex items-center gap-1">
-                          <XCircle className="w-3 h-3" />
-                          {item.status === 'EXPIRED' ? 'Hết hạn' : 'Đã hủy'}
-                        </span>
-                      )}
+                        {(item.status === 'EXPIRED' || item.status === 'CANCELLED') && (
+                          <span className="text-[11px] font-bold text-slate-500 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200 flex items-center gap-1 whitespace-nowrap">
+                            <XCircle className="w-3 h-3" />
+                            {item.status === 'EXPIRED' ? 'Hết hạn' : 'Đã hủy'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -1006,6 +1016,13 @@ export function EscrowContractsView({
           activeRole={activeRole as any}
           userEmail={userEmail}
         />
+      )}
+
+      {/* TERMINATIONS TAB */}
+      {activeTab === 'TERMINATIONS' && (
+        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+          <TerminationPanel activeRole={activeRole} />
+        </div>
       )}
 
       {/* TIMELINE TAB */}
@@ -1030,6 +1047,7 @@ export function EscrowContractsView({
       {selectedAgreementForDocument && (
         <ContractDocumentModal
           agreementId={selectedAgreementForDocument}
+          agreementSummary={agreements.find(a => a.id === selectedAgreementForDocument)}
           onClose={() => {
             setSelectedAgreementForDocument(null);
             fetchAgreements();
@@ -1058,6 +1076,19 @@ export function EscrowContractsView({
           agreement={selectedAgreementForPayment}
           onPaymentSuccess={(txHash) => {
             console.log('Payment completed:', txHash);
+            fetchAgreements();
+          }}
+        />
+      )}
+
+      {/* Termination Request Modal with EIP-712 MetaMask Signing */}
+      {selectedAgreementForTermination && (
+        <TerminationRequestModal
+          isOpen={!!selectedAgreementForTermination}
+          onClose={() => setSelectedAgreementForTermination(null)}
+          agreement={selectedAgreementForTermination}
+          activeRole={activeRole}
+          onSuccess={() => {
             fetchAgreements();
           }}
         />

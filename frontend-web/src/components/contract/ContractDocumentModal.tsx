@@ -16,22 +16,26 @@ import {
   ShieldCheck,
   CreditCard,
   ChevronRight,
-  Ban
+  Ban,
+  Info
 } from "lucide-react";
 import {
   ContractDocumentParty,
   ContractDocumentView,
   ContractDocumentArtifact,
   ContractSignatureProof,
+  AgreementSummary,
   contractsApi
 } from "../../api/contractsApi";
 import { useAuth } from "../../hooks/useAuth";
 import { useWeb3Wallet } from "../../web3/useWeb3Wallet";
 import { signContractAgreementEip712 } from "../../web3/eip712Signer";
 import { DEFAULT_CHAIN_ID } from "../../web3/web3Config";
+import { TerminationRequestModal, TerminationAgreementTarget } from "./TerminationRequestModal";
 
 interface ContractDocumentModalProps {
   agreementId: string;
+  agreementSummary?: AgreementSummary | null;
   onClose: () => void;
   onSignedSuccess?: () => void;
   onRequestPayment?: () => void;
@@ -65,6 +69,7 @@ function blockchainNetwork(chainId: number | null): string {
 
 export function ContractDocumentModal({
   agreementId,
+  agreementSummary,
   onClose,
   onSignedSuccess,
   onRequestPayment
@@ -78,6 +83,7 @@ export function ContractDocumentModal({
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [signing, setSigning] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [showTerminationModal, setShowTerminationModal] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -277,6 +283,23 @@ export function ContractDocumentModal({
     && status === "PENDING_STUDENT_ACCEPTANCE"
     && tutorSigned
     && !studentSigned;
+
+  const canStudentRequestTermination = isStudentUser && (isActive || isWaitingPayment) && !isExpired && !isCancelled && !isCompleted;
+
+  const terminationTarget: TerminationAgreementTarget | null = document ? {
+    id: document.agreementId,
+    className: document.className || agreementSummary?.className || `Hợp đồng #${document.agreementId.slice(0, 8)}`,
+    classroomId: agreementSummary?.classroomId,
+    studentWallet: document.student.walletAddress || agreementSummary?.studentWallet || '',
+    tutorWallet: document.tutor.walletAddress || agreementSummary?.tutorWallet || '',
+    pricePerSessionUsdc: Number(document.financialTerms?.pricePerSessionUsdc || agreementSummary?.pricePerSessionUsdc || 0),
+    totalAmountUsdc: Number(document.financialTerms?.totalAmountUsdc || agreementSummary?.totalAmountUsdc || 0),
+    totalSessions: document.financialTerms?.totalSessions || agreementSummary?.totalSessions || 0,
+    settledSessions: agreementSummary?.settledSessions ?? 0,
+    remainingAmountUsdc: agreementSummary?.remainingAmountUsdc,
+    chainId: document.platform.chainId || agreementSummary?.chainId || DEFAULT_CHAIN_ID,
+    escrowContractAddress: document.platform.escrowContractAddress || agreementSummary?.escrowContractAddress || undefined,
+  } : null;
 
   // Primary Action Button calculation
   let primaryAction: { label: string; onClick: () => void; icon: any; colorCls: string } | null = null;
@@ -490,6 +513,19 @@ export function ContractDocumentModal({
             </button>
           )}
 
+          {/* Yêu cầu kết thúc hợp đồng - Dành riêng cho học viên trên hợp đồng cá nhân */}
+          {canStudentRequestTermination && (
+            <button
+              type="button"
+              onClick={() => setShowTerminationModal(true)}
+              className="px-3 py-2 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-300 hover:text-rose-100 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
+              title="Học viên gửi yêu cầu kết thúc hợp đồng đơn phương với chữ ký số xác thực MetaMask"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              <span>Kết thúc hợp đồng</span>
+            </button>
+          )}
+
           {/* Download Word */}
           <button
             type="button"
@@ -685,6 +721,12 @@ export function ContractDocumentModal({
                 <p>8.1. Hợp đồng điện tử phiên bản {document.contractVersion} hoàn tất xác nhận giữa hai bên sau khi đủ hai chữ ký EIP-712. Lớp học chỉ được kích hoạt khi khoản ký quỹ được Smart Contract xác nhận thành công.</p>
                 <p>8.2. Hai bên cam kết thực hiện đúng các điều khoản đã thỏa thuận.</p>
               </Clause>
+
+              <Clause title="ĐIỀU 9: CHẤM DỨT HỢP ĐỒNG VÀ HOÀN TRẢ TIỀN KÝ QUỸ TRƯỚC THỜI HẠN">
+                <p>9.1. Trường hợp một trong hai bên gặp hoàn cảnh bất khả kháng (sức khỏe, tai nạn, sự cố cá nhân) hoặc vi phạm thỏa thuận giảng dạy, bên bị ảnh hưởng có quyền gửi yêu cầu chấm dứt hợp đồng qua hệ thống EduConnect.</p>
+                <p>9.2. Yêu cầu chấm dứt bắt buộc phải được xác thực bằng chữ ký số EIP-712 phát hành từ đúng địa chỉ ví Web3 đã ký hợp đồng này. Mọi thay đổi ví hoặc sai lệch chữ ký đều bị từ chối bảo vệ an toàn tài sản.</p>
+                <p>9.3. Khi yêu cầu chấm dứt được phê duyệt hợp lệ, Smart Contract Escrow sẽ thực hiện hủy hợp đồng on-chain và hoàn trả toàn bộ số tiền học phí của các buổi học chưa diễn ra trực tiếp về ví của Học viên.</p>
+              </Clause>
             </div>
 
             {/* KHỐI KÝ TÊN VÀ CON DẤU ĐIỆN TỬ (LEGAL SIGNATURES & EIP-712 SEALS) */}
@@ -733,10 +775,110 @@ export function ContractDocumentModal({
                   </span>
                 </div>
               </div>
+
+              {/* QUY TRÌNH CHẤM DỨT & KẾT THÚC HỢP ĐỒNG TRƯỚC THỜI HẠN */}
+              {canStudentRequestTermination && (
+                <div className="mt-8 p-5 rounded-2xl border-2 border-rose-200/80 bg-gradient-to-br from-rose-50/70 via-white to-amber-50/50 space-y-4 print:hidden shadow-xs">
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-2xl bg-rose-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-rose-500/20 mt-0.5">
+                        <AlertTriangle className="w-5 h-5" />
+                      </div>
+                      <div className="space-y-1">
+                        <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                          <span>Quy trình Đơn phương Chấm dứt hợp đồng (Học viên)</span>
+                          <span className="text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200">
+                            Bảo vệ bởi Escrow
+                          </span>
+                        </h4>
+                        <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">
+                          Bạn đang xem hợp đồng cá nhân của bạn với gia sư tại lớp học này. Do học viên chỉ có 1 hợp đồng ở lớp học, nếu gặp sự cố hoặc gia sư vi phạm cam kết, bạn có thể gửi yêu cầu kết thúc hợp đồng kèm chữ ký số ví MetaMask để Smart Contract Escrow giải phóng hoàn trả tiền cọc các buổi chưa học.
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setShowTerminationModal(true)}
+                      className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-700 hover:to-amber-700 text-white text-xs font-black rounded-xl shadow-md shadow-rose-600/20 transition-all cursor-pointer shrink-0"
+                    >
+                      <AlertTriangle className="w-4 h-4" />
+                      <span>Yêu cầu kết thúc hợp đồng này</span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-rose-200/60 text-xs">
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-rose-100">
+                      <span className="text-slate-400 font-medium block text-[10px] uppercase">Tiến độ khóa học</span>
+                      <span className="font-bold text-slate-800 text-xs">
+                        {terminationTarget?.settledSessions ?? 0} / {terminationTarget?.totalSessions ?? 0} buổi
+                      </span>
+                    </div>
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-rose-100">
+                      <span className="text-slate-400 font-medium block text-[10px] uppercase">Tổng cọc Escrow</span>
+                      <span className="font-bold text-slate-800 text-xs">
+                        ${Number(terminationTarget?.totalAmountUsdc || 0).toFixed(2)} USDC
+                      </span>
+                    </div>
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-rose-100">
+                      <span className="text-slate-400 font-medium block text-[10px] uppercase">Dự kiến hoàn trả học viên</span>
+                      <span className="font-black text-emerald-700 font-mono text-xs">
+                        ${Number(terminationTarget?.remainingAmountUsdc ?? (Math.max(0, (terminationTarget?.totalSessions ?? 0) - (terminationTarget?.settledSessions ?? 0)) * (terminationTarget?.pricePerSessionUsdc ?? 0))).toFixed(2)} USDC
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* HƯỚNG DẪN DÀNH CHO GIA SƯ (KHÔNG KẾT THÚC RIÊNG LẺ TỪNG HỢP ĐỒNG) */}
+              {isTutorUser && (isActive || isWaitingPayment) && (
+                <div className="mt-8 p-5 rounded-2xl border-2 border-sky-200/80 bg-gradient-to-br from-sky-50/70 via-white to-indigo-50/50 space-y-3 print:hidden shadow-xs">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-sky-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-sky-600/20 mt-0.5">
+                      <Info className="w-5 h-5" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                        <span>Quy định Chấm dứt hợp đồng dành cho Gia sư</span>
+                        <span className="text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200">
+                          Nguyên tắc quản lý lớp học
+                        </span>
+                      </h4>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Gia sư <strong>không được đơn phương kết thúc riêng lẻ từng hợp đồng</strong> của từng học viên vì lý do cá nhân không thể tiếp tục giảng dạy lớp học. Để bảo đảm quyền lợi của tất cả học viên trong lớp, nếu bạn gặp sự cố cá nhân bất khả kháng (sức khỏe, công việc đột xuất...) cần dừng dạy, vui lòng vào mục <strong>"Lớp học của tôi"</strong> và gửi <strong>"Đề xuất dừng giảng dạy & Hủy lớp học"</strong>.
+                      </p>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        Hệ thống sẽ đồng bộ thanh lý toàn bộ hợp đồng của lớp và Smart Contract Escrow sẽ tự động hoàn trả cọc các buổi chưa học cho toàn bộ học viên sau khi Ban Quản trị phê duyệt.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
       </main>
+
+      {/* MODAL YÊU CẦU KẾT THÚC HỢP ĐỒNG (KÝ SỐ METAMASK EIP-712 DÀNH CHO HỌC VIÊN) */}
+      {showTerminationModal && terminationTarget && (
+        <TerminationRequestModal
+          isOpen={showTerminationModal}
+          onClose={() => setShowTerminationModal(false)}
+          agreement={terminationTarget}
+          activeRole="student"
+          defaultWholeClass={false}
+          lockWholeClass={true}
+          title="Yêu Cầu Kết Thúc Hợp Đồng Đơn Phương (Học Viên)"
+          description="Học viên ký xác nhận bằng ví MetaMask • Smart Contract Escrow tự động hoàn tiền các buổi chưa học"
+          onSuccess={() => {
+            setShowTerminationModal(false);
+            void loadData();
+            if (onSignedSuccess) {
+              onSignedSuccess();
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

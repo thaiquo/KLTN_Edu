@@ -80,6 +80,7 @@ public class EnrollmentRequestService {
         // Pessimistic Lock on classroom to avoid race conditions
         ClassRoom classRoom = classRoomRepository.findByIdForUpdate(classRoomId)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + classRoomId));
+        if (classRoom.getTerminationCutoffSession() != null) throw new BadRequestException("Classroom is terminating");
 
         // Auto-lock check: if current date >= start date and has accepted students, or already full
         long currentAccepted = enrollmentRequestRepository.countByClassRoomIdAndStatus(classRoomId, EnrollmentRequestStatus.ACCEPTED);
@@ -191,6 +192,7 @@ public class EnrollmentRequestService {
         final Long targetClassId = req.getClassRoom().getId();
         classRoom = classRoomRepository.findByIdForUpdate(targetClassId)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + targetClassId));
+        if (classRoom.getTerminationCutoffSession() != null) throw new BadRequestException("Classroom is terminating");
 
         long occupiedCount = enrollmentRequestRepository.countByClassRoomIdAndStatusIn(
                 classRoom.getId(), List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED));
@@ -410,12 +412,13 @@ public class EnrollmentRequestService {
             return null;
         }
 
+        if (req.getStatus() == EnrollmentRequestStatus.CANCELLED) return toResponse(req);
         req.setStatus(EnrollmentRequestStatus.EXPIRED);
         EnrollmentRequest saved = enrollmentRequestRepository.save(req);
 
         // Unlock classroom if it was previously LOCKED due to full capacity
         ClassRoom classRoom = req.getClassRoom();
-        if (classRoom.getStatus() == ClassRoomStatus.LOCKED) {
+        if (classRoom.getStatus() == ClassRoomStatus.LOCKED && classRoom.getTerminationCutoffSession() == null) {
             long occupiedCount = enrollmentRequestRepository.countByClassRoomIdAndStatusIn(
                     classRoom.getId(), List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED));
             if (occupiedCount < classRoom.getMaxStudents()) {

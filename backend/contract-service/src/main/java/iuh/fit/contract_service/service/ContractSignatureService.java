@@ -56,6 +56,9 @@ public class ContractSignatureService {
         ContractAgreement agreement = agreementRepository.findById(agreementId)
                 .orElseThrow(() -> new IllegalArgumentException("Hợp đồng không tồn tại: " + agreementId));
 
+        if (agreement.getTerminationCutoffSession() != null) {
+            throw new IllegalStateException("Agreement has an approved termination");
+        }
         String normalizedRole = role != null ? role.toUpperCase(Locale.ROOT) : "";
         String normalizedWallet = walletAddress != null ? walletAddress.toLowerCase(Locale.ROOT).trim() : "";
 

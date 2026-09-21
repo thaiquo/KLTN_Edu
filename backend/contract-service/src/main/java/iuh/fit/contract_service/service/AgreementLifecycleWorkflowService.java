@@ -31,6 +31,7 @@ import java.util.UUID;
 public class AgreementLifecycleWorkflowService {
     private static final Logger log = LoggerFactory.getLogger(AgreementLifecycleWorkflowService.class);
     private static final List<SettlementStatus> OPEN_SETTLEMENT_STATUSES = List.of(
+            SettlementStatus.PREPARING,
             SettlementStatus.PROPOSE_PENDING,
             SettlementStatus.PROPOSED,
             SettlementStatus.DISPUTE_OPENING,
@@ -95,10 +96,21 @@ public class AgreementLifecycleWorkflowService {
 
     @Transactional
     public BlockchainTransactionIntentResult initiateCancellation(UUID agreementId, String reason) {
-        ContractAgreement agreement = agreementRepository.findById(agreementId)
+        ContractAgreement agreement = agreementRepository.lockById(agreementId)
                 .orElseThrow(() -> new IllegalArgumentException("Contract agreement not found: " + agreementId));
         if (agreement.getStatus() != ContractAgreementStatus.ACTIVE) {
             throw new IllegalStateException("Only ACTIVE funded agreements can be cancelled with unused refund, actual: " + agreement.getStatus());
+        }
+        if (agreement.getTerminationCutoffSession() == null || agreement.getTerminationCutoffSession() < 0
+                || agreement.getTerminationSessionsJson() == null) {
+            throw new IllegalStateException("An approved termination and Learning cutoff are required before cancellation");
+        }
+        for (long session : objectMapper.readValue(agreement.getTerminationSessionsJson(), long[].class)) {
+            var settlement = settlementRepository.findByAgreementIdAndSessionId(agreementId, session);
+            if (settlement.isEmpty() || (settlement.get().getStatus() != SettlementStatus.SETTLED
+                    && settlement.get().getStatus() != SettlementStatus.REFUNDED)) {
+                throw new IllegalStateException("Waiting for confirmed settlement of session " + session);
+            }
         }
         if (settlementRepository.existsByAgreementIdAndStatusIn(agreement.getId(), OPEN_SETTLEMENT_STATUSES)) {
             throw new IllegalStateException("Cannot cancel while a session settlement or dispute is still open");
@@ -169,8 +181,7 @@ public class AgreementLifecycleWorkflowService {
         }
         agreement.markCancelled();
         agreementRepository.saveAndFlush(agreement);
-        learningServiceDispatcher.expireEnrollmentAsync(
-                agreement.getClassroomId(), agreement.getStudentId(), agreement.getId().toString());
+        // Termination worker closes Learning durably after the refund event is ingested.
         notifyAgreementParties(agreement, "AGREEMENT_CANCELLED", "Contract cancelled",
                 "The funded contract was cancelled and unused escrow is being refunded.");
         saveOutbox("contract.cancelled.v1", agreement,

@@ -51,6 +51,8 @@ class SessionAttendanceServiceTest {
 
     @Mock
     private ContractServiceDispatcher contractServiceDispatcher;
+    @Mock
+    private LearningTerminationService terminationService;
 
     @InjectMocks
     private SessionAttendanceService sessionAttendanceService;
