@@ -1,45 +1,4 @@
-CREATE TABLE administrative_provinces (
-    code VARCHAR(30) PRIMARY KEY,
-    name VARCHAR(120) NOT NULL UNIQUE,
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    active BOOLEAN NOT NULL DEFAULT TRUE
-);
-
-CREATE TABLE administrative_communes (
-    code VARCHAR(40) PRIMARY KEY,
-    province_code VARCHAR(30) NOT NULL,
-    name VARCHAR(160) NOT NULL,
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    active BOOLEAN NOT NULL DEFAULT TRUE,
-    CONSTRAINT fk_administrative_communes_province
-        FOREIGN KEY (province_code)
-        REFERENCES administrative_provinces (code),
-    CONSTRAINT uk_administrative_communes_province_name
-        UNIQUE (province_code, name)
-);
-
-CREATE INDEX idx_administrative_communes_province
-    ON administrative_communes (province_code);
-
-ALTER TABLE users
-    ADD COLUMN province_code VARCHAR(30),
-    ADD COLUMN commune_code VARCHAR(40),
-    ADD COLUMN commune VARCHAR(160);
-
-ALTER TABLE tutor_applications
-    ADD COLUMN applicant_full_name VARCHAR(100),
-    ADD COLUMN applicant_email VARCHAR(255),
-    ADD COLUMN applicant_phone VARCHAR(20),
-    ADD COLUMN applicant_date_of_birth DATE,
-    ADD COLUMN applicant_gender VARCHAR(30),
-    ADD COLUMN applicant_province_code VARCHAR(30),
-    ADD COLUMN applicant_province_name VARCHAR(120),
-    ADD COLUMN applicant_commune_code VARCHAR(40),
-    ADD COLUMN applicant_commune_name VARCHAR(160),
-    ADD COLUMN applicant_address_detail VARCHAR(255),
-    ADD COLUMN applicant_avatar_key VARCHAR(512);
-
-INSERT INTO administrative_provinces (code, name, sort_order) VALUES
+﻿INSERT INTO administrative_provinces (code, name, sort_order) VALUES
     ('HA_NOI', 'Thành phố Hà Nội', 1),
     ('HUE', 'Thành phố Huế', 2),
     ('HAI_PHONG', 'Thành phố Hải Phòng', 3),

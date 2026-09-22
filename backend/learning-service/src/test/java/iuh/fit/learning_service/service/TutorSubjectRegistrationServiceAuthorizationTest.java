@@ -35,6 +35,7 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
     private CatalogLevelRepository levels;
     private CatalogCategoryRepository categories;
     private TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
+    private TutorIdentityLookup tutorIdentityLookup;
     private LearningEventPublisher eventPublisher;
     private TutorSubjectRegistrationService service;
 
@@ -46,7 +47,7 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
         categories = mock(CatalogCategoryRepository.class);
         tutorAuthorizationStateRepository = mock(TutorAuthorizationStateRepository.class);
         eventPublisher = mock(LearningEventPublisher.class);
-        TutorIdentityLookup tutorIdentityLookup = mock(TutorIdentityLookup.class);
+        tutorIdentityLookup = mock(TutorIdentityLookup.class);
         when(tutorIdentityLookup.fullName(any(), any())).thenReturn(Optional.empty());
         service = new TutorSubjectRegistrationService(
                 registrations,
@@ -137,6 +138,38 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
                         && "GRADE_1".equals(registration.getProposedLevels().get(0).getCode())
                         && "GRADE_3".equals(registration.getProposedLevels().get(1).getCode())
         ));
+    }
+
+    @Test
+    void standardRegistrationCreateStoresTutorProfileIdFromApprovedTutorProfile() {
+        CatalogCategory category = academicCategory("UPPER_SECONDARY", "HIGH_SCHOOL_NATURAL");
+        CatalogSubject subject = new CatalogSubject();
+        subject.setId(99L);
+        subject.setCategory(category);
+        subject.setActive(true);
+        CatalogLevel level = new CatalogLevel();
+        level.setId(100L);
+        level.setSubject(subject);
+        level.setActive(true);
+        when(subjects.findByIdAndActiveTrue(99L)).thenReturn(Optional.of(subject));
+        when(levels.findAllById(any())).thenReturn(List.of(level));
+        when(registrations.existsActiveLevelOverlap(any(), any(), any(), any())).thenReturn(false);
+        when(registrations.save(any(TutorSubjectRegistration.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(tutorIdentityLookup.tutorProfileId("tutor@example.com")).thenReturn(Optional.of(55L));
+
+        service.createBatch("tutor@example.com", new TeachingCatalogDtos.CreateRegistrationBatchRequest(
+                99L,
+                List.of(100L),
+                3,
+                BigDecimal.valueOf(100_000),
+                BigDecimal.valueOf(150_000),
+                "Teaching experience",
+                List.of(new TeachingCatalogDtos.EvidenceRequest(
+                        EvidenceType.OTHER, "Portfolio", null, "https://example.com/evidence.pdf")),
+                null, null, null, null, null, null
+        ));
+
+        verify(registrations).save(argThat(registration -> Long.valueOf(55L).equals(registration.getTutorProfileId())));
     }
 
     @Test

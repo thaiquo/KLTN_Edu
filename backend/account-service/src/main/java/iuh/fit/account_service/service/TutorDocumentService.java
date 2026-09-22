@@ -202,7 +202,7 @@ public class TutorDocumentService {
         User user = application.getUser();
         List<TutorDocument> docs = tutorDocumentRepository.findByTutorApplication_IdOrderByUploadedAtDesc(application.getId());
 
-        if (hasMinimalIdentityReviewData(user, docs)) {
+        if (hasMinimalIdentityReviewData(user, application, docs)) {
             application.setStatus(TutorApplicationStatus.PENDING);
             application.setSubmittedAt(LocalDateTime.now());
             application.setReviewedAt(null);
@@ -223,6 +223,10 @@ public class TutorDocumentService {
         boolean hasIdentity = types.contains(TutorDocumentType.PASSPORT) || (types.contains(TutorDocumentType.IDENTITY_FRONT) && types.contains(TutorDocumentType.IDENTITY_BACK));
         if (!hasIdentity) {
             missing.add("Giấy tờ định danh CCCD/CMND hoặc hộ chiếu");
+        }
+
+        if (application.getTeachingModes() == null || application.getTeachingModes().isEmpty()) {
+            missing.add("Hình thức nhận dạy");
         }
 
         if (!missing.isEmpty()) {
@@ -246,6 +250,7 @@ public class TutorDocumentService {
                 saved.getInstitution(),
                 saved.getMajor(),
                 saved.getExperienceSummary(),
+                new java.util.LinkedHashSet<>(saved.getTeachingModes()),
                 saved.getSubmittedAt(),
                 saved.getReviewedAt(),
                 saved.getRejectionReason(),
@@ -255,8 +260,11 @@ public class TutorDocumentService {
         );
     }
 
-    private boolean hasMinimalIdentityReviewData(User user, List<TutorDocument> documents) {
+    private boolean hasMinimalIdentityReviewData(User user, TutorApplication application, List<TutorDocument> documents) {
         if (!StringUtils.hasText(user.getFullName()) || !StringUtils.hasText(user.getEmail()) || !user.isEmailVerified()) {
+            return false;
+        }
+        if (application.getTeachingModes() == null || application.getTeachingModes().isEmpty()) {
             return false;
         }
         Set<TutorDocumentType> types = documents.stream().map(TutorDocument::getDocumentType).collect(Collectors.toSet());
@@ -273,6 +281,7 @@ public class TutorDocumentService {
                 application.getInstitution(),
                 application.getMajor(),
                 application.getExperienceSummary(),
+                new java.util.LinkedHashSet<>(application.getTeachingModes()),
                 application.getSubmittedAt(),
                 application.getReviewedAt(),
                 application.getRejectionReason(),

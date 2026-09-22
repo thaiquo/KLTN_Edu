@@ -1,220 +1,767 @@
-<div align="center">
+# EduConnect
 
-# 🎓 EduConnect Platform
-### Nền tảng Kết Nối Gia Sư và Học Viên Ứng Dụng AI & Blockchain Smart Contract
+EduConnect là nền tảng kết nối gia sư và học viên cho đề tài tốt nghiệp:
 
-[![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://www.oracle.com/java/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.4+-brightgreen.svg)](https://spring.io/projects/spring-boot)
-[![React](https://img.shields.io/badge/React-19.0-blue.svg)](https://react.dev/)
-[![Solidity](https://img.shields.io/badge/Solidity-0.8.20-lightgrey.svg)](https://soliditylang.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue.svg)](https://www.postgresql.org/)
-[![RabbitMQ](https://img.shields.io/badge/RabbitMQ-3.13-orange.svg)](https://www.rabbitmq.com/)
-[![Architecture](https://img.shields.io/badge/Architecture-Service--Based-purple.svg)]()
+> Xây dựng nền tảng kết nối gia sư và học viên ứng dụng AI trong gợi ý ghép nối và Blockchain trong quản lý hợp đồng điện tử.
 
----
-</div>
+README này là hướng dẫn dành cho developer, bao gồm cấu trúc repository, yêu cầu môi trường, cách chạy hệ thống, các command thường dùng, cách sử dụng documentation, và workflow làm việc với AI Agent.
 
-## 📌 1. TỔNG QUAN ĐỀ TÀI
+README không phải đặc tả đầy đủ của hệ thống và không thay thế `AGENTS.md` hoặc các tài liệu domain trong `docs/`.
 
-**EduConnect** là nền tảng số kết nối giữa **Học viên (Student)** và **Gia sư (Tutor)**, giải quyết các thách thức về độ tin cậy, tính minh bạch tài chính và hiệu quả ghép nối:
-* 🤖 **Ứng dụng Trí tuệ Nhân tạo (AI Matching & Recommendation):** Hỗ trợ gợi ý, xếp hạng và ghép nối lớp học/gia sư tối ưu dựa trên nhu cầu học tập, trình độ và khoảng cách địa lý.
-* ⛓️ **Ứng dụng Blockchain & Smart Contract (EIP-712 & Escrow):** Quản lý hợp đồng đào tạo điện tử, ký số phi tập trung qua ví Web3, khóa tiền ký quỹ (Escrow) bằng USDC Testnet và tự động giải ngân theo từng buổi học đã hoàn thành/điểm danh hợp lệ.
-* 🛡️ **Bảo vệ quyền lợi hai chiều:** Cơ chế phân xử khiếu nại (Dispute Resolution) minh bạch, bảo vệ tài chính cho học viên và đảm bảo thu nhập xứng đáng cho gia sư.
+## Tổng quan
 
----
+EduConnect hướng đến một hệ thống đa nền tảng, trong đó:
 
-## 🏛️ 2. KIẾN TRÚC HỆ THỐNG (SERVICE-BASED ARCHITECTURE)
+- Student tìm gia sư/lớp học, gửi yêu cầu, quản lý quá trình học, hợp đồng, tin nhắn, thanh toán, và khiếu nại.
+- Tutor quản lý hồ sơ, chuyên môn, lịch rảnh, lớp học, yêu cầu tham gia, hợp đồng, tin nhắn, quá trình học, và thu nhập.
+- Staff xét duyệt hồ sơ gia sư, kiểm duyệt nội dung, xử lý vi phạm/khiếu nại, và hỗ trợ người dùng.
+- Admin quản lý người dùng, danh mục, giám sát thanh toán, quản trị Blockchain, và báo cáo thống kê.
+- AI Matching là capability hỗ trợ tìm kiếm, gợi ý, xếp hạng, và ghép nối.
+- Blockchain hỗ trợ kiểm chứng hợp đồng, escrow, settlement/release, refund, và dispute.
 
-Hệ thống được thiết kế theo mô hình **Service-Based Architecture**, phân tách rõ ràng ranh giới nghiệp vụ (bounded contexts), giao tiếp qua **REST API**, **WebSocket Realtime** và **RabbitMQ Event-Driven Messaging**.
+Current implementation hiện còn partial. Hãy đọc `docs/IMPLEMENTATION_STATUS.md` để biết trạng thái hiện tại trước khi giả định một flow đã hoàn chỉnh.
 
-```mermaid
-flowchart TB
-    subgraph Clients ["📱 Client Tier"]
-        WEB["Frontend Web (React 19 / Vite / Tailwind)"]
-        MOBILE["Mobile App (React Native / Expo)"]
-    end
+## Các miền chức năng chính
 
-    subgraph Gateway ["🚪 API Gateway (Port: 8080)"]
-        GW["Spring Cloud Gateway\n(Reverse Proxy, Route Management, Global CORS)"]
-    end
+| Domain | Tóm tắt Current/Target |
+| --- | --- |
+| Account | Auth, JWT cookie handling, role/active-role model, profiles, tutor application, staff/admin account operations. |
+| Learning | Subjects/catalog, tutor subject registration, availability, classes, schedules/chapters, enrollment requests. |
+| Contract | Contract workflow và Blockchain integration đã có trong service logic, nhưng public Contract REST API chưa được chứng minh. |
+| Payment | Target tách riêng Student payment/escrow, Tutor income tracking, và Admin payment administration. |
+| Blockchain | Solidity escrow contract, Foundry tooling, Web3j integration, và Web wallet code đã tồn tại; Web3 ABI/address conflict vẫn còn. |
+| Notification | Service shell đã tồn tại; full notification feature là planned. |
+| AI Matching | Target hybrid recommendation đã có trong docs; current source chưa có AI service/Qdrant/Spring AI implementation hoàn chỉnh. |
 
-    subgraph CoreServices ["⚙️ Backend Services Tier"]
-        AUTH["Account Service (8081)\n• Auth, JWT Cookie, Profiles\n• Tutor Application, Verification"]
-        LEARN["Learning Service (8082)\n• Catalog, Classes, Schedules\n• Rolling Sessions & Attendance"]
-        CONTRACT["Contract Service (8083)\n• EIP-712 Signatures, PDF Export\n• Web3j Event Ingestion, Disputes"]
-        NOTIF["Notification Service (8084)\n• RabbitMQ Listeners\n• Realtime WebSocket & Chat"]
-        AI["AI Service (8085)\n• RAG, Recommendation\n• Tutor & Class Ranking"]
-    end
+## Tổng quan kiến trúc
 
-    subgraph Infra ["🗄️ Infrastructure & External Systems"]
-        DB[(PostgreSQL 16\nDatabase)]
-        MQ[[RabbitMQ 3.13\nMessage Broker]]
-        PDF[Gotenberg 8\nPDF Engine]
-        S3[(AWS S3 / MinIO\nStorage)]
-        CHAIN["Ethereum Sepolia Testnet\n• EduConnectEscrow.sol (0x984bEc...)\n• MockUSDC.sol (0x1c7D4B...)"]
-    end
+EduConnect sử dụng **Service-Based Architecture**.
 
-    WEB --> GW
-    MOBILE --> GW
+Không mô tả repository này là Microservices Architecture nếu chưa có quyết định kiến trúc mới được xác nhận.
 
-    GW -->|/api/account/**| AUTH
-    GW -->|/api/learning/**| LEARN
-    GW -->|/api/contracts/**| CONTRACT
-    GW -->|/api/notifications/**| NOTIF
-    GW -->|/api/ai/**| AI
-    GW -->|/ws/**| NOTIF
+Backend hiện được chia thành các Spring Boot service trong `backend/`. Frontend Web và Mobile giao tiếp với Backend thông qua API. Giao tiếp cross-service hiện gồm REST/API usage và một phần RabbitMQ event integration giữa Account và Learning domain.
 
-    AUTH <-->|Events: Tutor Approval / Sync| MQ
-    LEARN <-->|Events: Enrollment / Decisions| MQ
-    MQ -->|Consume Events| NOTIF
+## Cấu trúc Repository
 
-    AUTH --> DB
-    LEARN --> DB
-    CONTRACT --> DB
-    NOTIF --> DB
-    AI --> DB
+| Path | Mục đích |
+| --- | --- |
+| `AGENTS.md` | Workflow và guardrail bắt buộc cho AI Agent. |
+| `docs/` | Core baseline/reference documentation và deep-reference notes. |
+| `backend/api-gateway/` | Spring Cloud Gateway entry point cho Web/Mobile API traffic. |
+| `backend/account-service/` | Account, authentication, roles, profiles, tutor applications, S3 file handling, account events. |
+| `backend/learning-service/` | Learning catalog, tutor subjects, availability, classes, schedules, enrollment requests. |
+| `backend/contract-service/` | Contract workflow persistence và Web3j Blockchain integration. |
+| `backend/notification-service/` | Notification service shell. |
+| `backend/eureka-server/` | Được liệt kê trong root Maven modules, nhưng active service source/pom cần verification. |
+| `frontend-web/` | React/Vite web application. |
+| `mobile-app/` | Expo/React Native mobile application. |
+| `blockchain/` | Solidity Smart Contract, Foundry config, scripts, ABI/deployment evidence. |
+| `database/` | Database-related project assets. |
+| `docker-compose.yml` | Local PostgreSQL và RabbitMQ infrastructure. |
+| `Plan/` | Legacy/deep-reference planning và technical documents. |
+| `scripts/` | Project scripts. |
 
-    CONTRACT -->|Web3j RPC / Poll Events| CHAIN
-    WEB -.->|EIP-712 Sign / Escrow Fund| CHAIN
-    CONTRACT -->|Convert Contract DOCX to PDF| PDF
-    AUTH -->|Upload Documents / Avatar| S3
+## Yêu cầu môi trường
+
+Cài các công cụ cần thiết cho phần bạn muốn chạy:
+
+- Java 21.
+- Maven hoặc service-local Maven wrappers.
+- Docker với Docker Compose.
+- Node.js và npm.
+- Expo tooling cho Mobile development.
+- Foundry cho Blockchain development: `forge`, `anvil`, và `cast`.
+- PostgreSQL/RabbitMQ clients là tùy chọn nhưng hữu ích khi debug.
+- MetaMask cần cho browser wallet testing.
+
+## Cấu hình môi trường
+
+Root `.env.example` mô tả các environment variable chính cho local. Tạo file `.env` local khi chạy service.
+
+Không commit secret thật. Không copy hard-coded fallback secrets từ source vào documentation hoặc environment file mới.
+
+### Infrastructure
+
+```env
+POSTGRES_PORT=<your-value>
+POSTGRES_DB=<your-value>
+POSTGRES_USER=<your-value>
+POSTGRES_PASSWORD=<your-value>
+RABBITMQ_HOST=<your-value>
+RABBITMQ_PORT=<your-value>
+RABBITMQ_MANAGEMENT_PORT=<your-value>
+RABBITMQ_USERNAME=<your-value>
+RABBITMQ_PASSWORD=<your-value>
 ```
 
----
+### Shared Backend
 
-## 🛠️ 3. CÔNG NGHỆ SỬ DỤNG (TECH STACK)
-
-| Phân hệ | Công nghệ & Thư viện chủ đạo |
-| :--- | :--- |
-| **Backend Core** | Java 21, Spring Boot 3.4+, Spring Cloud Gateway, Spring Data JPA, Spring Security |
-| **Frontend Web** | React 19, TypeScript, Vite, TailwindCSS, Lucide Icons, Recharts |
-| **Mobile App** | React Native, Expo, React Navigation |
-| **Web3 & Blockchain** | Solidity 0.8.20, Foundry, Web3j, Ethers.js v6, Reown AppKit (WalletConnect) |
-| **Message Broker** | RabbitMQ (Topic & Direct Exchanges, Dead-letter Queues) |
-| **Database & Cache** | PostgreSQL 16, Flyway Migration (Quản lý version schema tự động) |
-| **Document Engine** | Gotenberg 8 (Chuyển đổi mẫu hợp đồng `.docx` sang `.pdf` chuẩn in ấn) |
-| **DevOps & Container** | Docker, Docker Compose, PowerShell / Bash Automation Scripts |
-
----
-
-## 📂 4. CẤU TRÚC REPOSITORY
-
-```text
-KLTN_Edu/
-├── backend/
-│   ├── api-gateway/            # Cổng định tuyến API Gateway tập trung (Port 8080)
-│   ├── account-service/        # Quản lý người dùng, phân quyền, xác thực OTP, duyệt gia sư (Port 8081)
-│   ├── learning-service/       # Quản lý lớp học, đăng ký môn, buổi học & điểm danh (Port 8082)
-│   ├── contract-service/       # Quản lý hợp đồng, ký EIP-712, tích hợp Blockchain Escrow (Port 8083)
-│   ├── notification-service/   # Trung tâm thông báo RabbitMQ & Chat Realtime WebSocket (Port 8084)
-│   └── ai-service/             # Dịch vụ AI Chatbot, RAG và gợi ý ghép nối gia sư (Port 8085)
-├── frontend-web/               # Ứng dụng Web Portal (React 19, Vite, Tailwind, Web3Modal)
-├── mobile-app/                 # Ứng dụng di động (Expo / React Native)
-├── blockchain/                 # Mã nguồn Smart Contract (Solidity, Foundry tests, Deploy scripts)
-├── database/                   # Schema cơ sở dữ liệu mẫu và tài nguyên liên quan
-├── docker/                     # Cấu hình container hóa môi trường
-├── docs/                       # Tài liệu đặc tả hệ thống, quy tắc nghiệp vụ (Architecture, Security, Business)
-├── scripts/                    # Script khởi chạy tự động đa nền tảng (start-all.ps1, start-all.sh)
-├── docker-compose.yml          # Quản lý dịch vụ phụ trợ: PostgreSQL, RabbitMQ, Gotenberg
-└── pom.xml                     # Root Maven Aggregator quản lý build đa module
+```env
+DB_URL=<your-value>
+DB_USERNAME=<your-value>
+DB_PASSWORD=<your-value>
+JPA_DDL_AUTO=<your-value>
+JWT_SECRET=<your-value>
+JWT_EXPIRATION=<your-value>
+FRONTEND_URL=<your-value>
+APP_ENV=<your-value>
 ```
 
----
+### API Gateway
 
-## 🔄 5. QUY TRÌNH NGHIỆP VỤ CỐT LÕI (CORE WORKFLOW)
-
-```text
-1. Đăng ký & Xét duyệt   : Gia sư nộp hồ sơ, văn bằng chứng chỉ -> Nhân viên (Staff) kiểm duyệt và kích hoạt.
-2. Ghép nối & Tạo lớp    : Học viên tìm kiếm (hỗ trợ bởi AI) -> Gửi yêu cầu tham gia lớp học.
-3. Khởi tạo Hợp đồng     : Gia sư chấp nhận -> Hệ thống sinh hợp đồng điện tử với các điều khoản đã thỏa thuận.
-4. Ký số & Ký quỹ Escrow : Học viên và Gia sư ký số EIP-712 qua ví Web3 -> Học viên nạp tiền ký quỹ (USDC) vào Smart Contract.
-5. Tiến trình Học tập    : Gia sư mở buổi học theo lịch cuốn chiếu -> Thực hiện điểm danh học viên -> Chốt buổi.
-6. Tự động Quyết toán    : Smart Contract tự động giải ngân học phí từng buổi cho gia sư sau khi kết thúc buổi học hợp lệ.
-7. Xử lý Khiếu nại       : Học viên khiếu nại (nếu có gian lận) -> Gia sư nộp giải trình -> Quản trị viên phân xử minh bạch.
+```env
+API_GATEWAY_PORT=<your-value>
+ACCOUNT_SERVICE_URL=<your-value>
+LEARNING_SERVICE_URL=<your-value>
+ACCOUNT_SERVICE_WS_URL=<your-value>
+LEARNING_SERVICE_WS_URL=<your-value>
+CORS_ALLOWED_ORIGIN_PATTERNS=<your-value>
+GATEWAY_MAX_IN_MEMORY_SIZE=<your-value>
 ```
 
----
+### Account Service
 
-## 🚦 6. BẢNG PHÂN BỔ CỔNG DỊCH VỤ (NETWORK PORT MATRIX)
+```env
+ACCOUNT_SERVICE_PORT=<your-value>
+AUTH_COOKIE_SECURE=<your-value>
+AUTH_COOKIE_SAME_SITE=<your-value>
+AUTH_ACCESS_COOKIE_PATH=<your-value>
+AUTH_REFRESH_COOKIE_PATH=<your-value>
+AUTH_REFRESH_TOKEN_MAX_AGE=<your-value>
+MAIL_USERNAME=<your-value>
+MAIL_PASSWORD=<your-value>
+OTP_MAX_ATTEMPTS=<your-value>
+OTP_EXPIRATION=<your-value>
+OTP_RESEND_COOLDOWN=<your-value>
+OTP_LOG_TO_CONSOLE=<your-value>
+STORAGE_PROVIDER=<your-value>
+AWS_REGION=<your-value>
+AWS_S3_BUCKET=<your-value>
+AWS_ACCESS_KEY_ID=<your-value>
+AWS_SECRET_ACCESS_KEY=<your-value>
+S3_KEY_PREFIX=<your-value>
+S3_PRESIGNED_URL_DURATION=<your-value>
+MULTIPART_MAX_FILE_SIZE=<your-value>
+MULTIPART_MAX_REQUEST_SIZE=<your-value>
+```
 
-| Thành phần | Port | Giao thức / Endpoint Gateway | Trách nhiệm chính |
-| :--- | :---: | :--- | :--- |
-| **Frontend Web** | `5173` | `http://localhost:5173` | Giao diện tương tác người dùng |
-| **API Gateway** | `8080` | `http://localhost:8080` | Điểm tiếp nhận API duy nhất của hệ thống |
-| **Account Service** | `8081` | `/api/account/**`, `/api/auth/**`, `/api/users/**` | Xác thực, phân quyền, hồ sơ |
-| **Learning Service** | `8082` | `/api/learning/**` | Quản lý môn học, lớp học, điểm danh |
-| **Contract Service** | `8083` | `/api/contracts/**` | Ký hợp đồng điện tử, Web3 Escrow |
-| **Notification Service** | `8084` | `/api/notifications/**`, `/ws/notifications`, `/ws/chat` | Thông báo sự kiện, Realtime Chat |
-| **AI Service** | `8085` | `/api/ai/**` | Tìm kiếm ngữ nghĩa, gợi ý gia sư |
-| **PostgreSQL** | `5434` | `localhost:5434` | Cơ sở dữ liệu quan hệ |
-| **RabbitMQ Broker** | `5672` / `15672` | Management: `http://localhost:15672` | Hàng đợi tin nhắn bất đồng bộ |
-| **Gotenberg Service** | `3000` | `http://localhost:3000` | Xuất file PDF hợp đồng từ mẫu `.docx` |
+### Learning Service
 
----
+```env
+LEARNING_SERVICE_PORT=<your-value>
+```
 
-## 🚀 7. HƯỚNG DẪN TRIỂN KHAI & KHỞI CHẠY (QUICKSTART)
+### Contract Service
 
-### 📋 Yêu cầu môi trường
-* **Java Development Kit (JDK):** Phiên bản 21 trở lên.
-* **Node.js:** Phiên bản 20.x hoặc 22.x LTS & npm.
-* **Docker & Docker Compose:** Đã cài đặt và đang chạy.
+```env
+CONTRACT_SERVICE_PORT=<your-value>
+BLOCKCHAIN_ENABLED=<your-value>
+BLOCKCHAIN_CHAIN_ID=<your-value>
+BLOCKCHAIN_RPC_URL=<your-value>
+BLOCKCHAIN_ESCROW_ADDRESS=<your-value>
+BLOCKCHAIN_USDC_ADDRESS=<your-value>
+BLOCKCHAIN_TOKEN_DECIMALS=<your-value>
+BLOCKCHAIN_CONFIRMATIONS=<your-value>
+BLOCKCHAIN_START_BLOCK=<your-value>
+BLOCKCHAIN_EVENT_BLOCK_BATCH_SIZE=<your-value>
+BLOCKCHAIN_EVENT_POLL_INITIAL_DELAY_MS=<your-value>
+BLOCKCHAIN_EVENT_POLL_INTERVAL_MS=<your-value>
+BLOCKCHAIN_OPERATOR_ENABLED=<your-value>
+BLOCKCHAIN_OPERATOR_ADDRESS=<your-value>
+BLOCKCHAIN_OPERATOR_KEYSTORE_PATH=<your-value>
+BLOCKCHAIN_OPERATOR_KEYSTORE_PASSWORD=<your-value>
+BLOCKCHAIN_OPERATOR_GAS_LIMIT=<your-value>
+```
 
----
+### Frontend Web
 
-### 🔹 Bước 1: Khởi động Hạ tầng (Docker Containers)
-Khởi chạy cơ sở dữ liệu PostgreSQL, RabbitMQ và Gotenberg:
+```env
+VITE_API_URL=<your-value>
+VITE_REALTIME_URL=<your-value>
+VITE_DEFAULT_CHAIN_ID=<your-value>
+VITE_ANVIL_RPC_URL=<your-value>
+VITE_SEPOLIA_RPC_URL=<your-value>
+VITE_ESCROW_CONTRACT_ADDRESS=<your-value>
+VITE_USDC_CONTRACT_ADDRESS=<your-value>
+VITE_REOWN_PROJECT_ID=<your-value>
+VITE_WALLETCONNECT_PROJECT_ID=<your-value>
+```
+
+### Mobile
+
+```env
+EXPO_PUBLIC_API_URL=<your-value>
+```
+
+### Blockchain
+
+```env
+LOCAL_RPC_URL=<your-value>
+ANVIL_PLATFORM=<your-value>
+SEPOLIA_RPC_URL=<your-value>
+ACCOUNT=<your-value>
+PLATFORM_WALLET=<your-value>
+ADMIN_WALLET=<your-value>
+ETHERSCAN_API_KEY=<your-value>
+```
+
+## Cách chạy hệ thống
+
+### 1. Infrastructure
+
+`docker-compose.yml` hiện chỉ chạy PostgreSQL và RabbitMQ. File này chưa Dockerize các application services.
+
+```bash
+docker compose up -d postgres rabbitmq
+docker compose ps
+```
+
+Xem logs:
+
+```bash
+docker compose logs -f postgres
+docker compose logs -f rabbitmq
+```
+
+### 2. Backend
+
+Các backend service đang active có service-local Maven wrapper. Các script `run-local.sh` load root `.env` và mặc định set profile `dev`.
+
+Chạy mỗi service trong một terminal riêng:
+
+```bash
+cd backend/account-service
+./run-local.sh
+```
+
+```bash
+cd backend/learning-service
+./run-local.sh
+```
+
+```bash
+cd backend/contract-service
+./run-local.sh
+```
+
+```bash
+cd backend/api-gateway
+
+```
+
+Trên Windows PowerShell, dùng Maven wrapper trực tiếp nếu không dùng Git Bash:
+
 ```powershell
-docker compose up -d
+cd backend/account-service
+.\mvnw.cmd spring-boot:run
 ```
-> Kiểm tra trạng thái containers: `docker compose ps` (đảm bảo cả 3 dịch vụ đều ở trạng thái *Healthy/Running*).
 
----
+Lặp lại pattern này cho `learning-service`, `contract-service`, và `api-gateway` sau khi bảo đảm các environment variable cần thiết đã được set.
 
-### 🔹 Bước 2: Thiết lập Biến Môi trường
-Tạo file `.env` tại thư mục gốc của dự án từ mẫu:
+`notification-service` hiện là shell service. Nếu cần:
+
 ```powershell
-cp .env.example .env
+cd backend/notification-service
+.\mvnw.cmd spring-boot:run
 ```
-*(Điền các khóa bảo mật và thông số cần thiết của bạn trong `.env` theo tài liệu hướng dẫn nội bộ).*
 
----
+### 3. Web
 
-### 🔹 Bước 3: Khởi động Toàn bộ Backend Services
-Hệ thống cung cấp sẵn script tự động hóa khởi chạy đồng thời cả 6 backend services trong các tiến trình riêng biệt:
+`frontend-web` dùng npm và Vite.
 
-* **Trên Windows (PowerShell):**
-  ```powershell
-  .\scripts\start-all.ps1
-  ```
-* **Trên Linux / macOS (Bash):**
-  ```bash
-  chmod +x ./scripts/start-all.sh
-  ./scripts/start-all.sh
-  ```
-
----
-
-### 🔹 Bước 4: Khởi động Frontend Web
-Mở một cửa sổ dòng lệnh mới và chạy:
-```powershell
+```bash
 cd frontend-web
 npm install
 npm run dev
 ```
-Truy cập ứng dụng tại: `http://localhost:5173`
 
----
+Build và preview:
 
-## 📖 8. TÀI LIỆU KỸ THUẬT NÂNG CAO
+```bash
+npm run build
+npm run preview
+```
 
-Để tìm hiểu sâu hơn về kiến trúc và các quy chuẩn thiết kế của hệ thống, vui lòng tham khảo các tài liệu trong thư mục [`/docs`](file:///d:/KL/khoaluan/KLTN_Edu/docs):
-* [`docs/ARCHITECTURE.md`](file:///d:/KL/khoaluan/KLTN_Edu/docs/ARCHITECTURE.md): Chi tiết kiến trúc Service-Based, phân định domain và luồng sự kiện.
-* [`docs/BUSINESS_RULES.md`](file:///d:/KL/khoaluan/KLTN_Edu/docs/BUSINESS_RULES.md): Toàn bộ ma trận phân quyền 5 Actors và quy tắc nghiệp vụ.
-* [`docs/AUTH_SECURITY.md`](file:///d:/KL/khoaluan/KLTN_Edu/docs/AUTH_SECURITY.md): Cơ chế xác thực Cookie JWT bảo mật, chống CSRF và quản lý phiên.
-* [`docs/BLOCKCHAIN.md`](file:///d:/KL/khoaluan/KLTN_Edu/docs/BLOCKCHAIN.md): Đặc tả Smart Contract Escrow, cấu trúc EIP-712 và mã hóa Settlement.
-* [`docs/AI_MATCHING.md`](file:///d:/KL/khoaluan/KLTN_Edu/docs/AI_MATCHING.md): Thiết kế giải thuật tìm kiếm ngữ nghĩa và xếp hạng gợi ý AI.
+Web client dùng credentialed requests, CSRF handling, và refresh token rotation. Kiểm tra `VITE_API_URL`, gateway CORS settings, cookie flags, và CSRF token flow khi authentication hoạt động không như mong đợi.
 
----
-<div align="center">
-  <sub>Khóa Luận Tốt Nghiệp — EduConnect System Platform © 2026</sub>
-</div>
+### 4. Mobile
+
+`mobile-app` dùng Expo/React Native với npm.
+
+```bash
+cd mobile-app
+npm install
+npm start
+```
+
+Các script hiện có:
+
+```bash
+npm run android
+npm run ios
+npm run web
+```
+
+Set `EXPO_PUBLIC_API_URL` cho môi trường bạn đang chạy. Android emulator thường dùng `http://10.0.2.2:8080`, và default này đang có trong current mobile API client.
+
+### 5. Blockchain Local Development
+
+`blockchain` dùng Foundry. Sepolia là target test network, nhưng current deployment evidence là local Anvil. Sepolia ETH dùng làm gas; ERC-20/USDC-style test token là escrow asset.
+
+Build và test:
+
+```bash
+cd blockchain
+forge build
+forge test -vvv
+```
+
+Nếu có `make`:
+
+```bash
+make check
+make anvil
+make deploy-anvil
+```
+
+Nếu không dùng `make`, start Anvil và deploy từ hai terminal riêng:
+
+```bash
+cd blockchain
+anvil --silent --port 8545
+```
+
+```bash
+cd blockchain
+forge script script/DeployEduConnectEscrow.s.sol:DeployEduConnectEscrow --rpc-url "http://127.0.0.1:8545" --sender "<your-anvil-platform-address>" --unlocked --broadcast -vvv
+```
+
+Không coi Sepolia deployment là complete nếu chưa có actual deployment evidence.
+
+## Thứ tự khởi động
+
+Dùng thứ tự này cho local application flow thông thường:
+
+1. Start infrastructure: PostgreSQL và RabbitMQ.
+2. Start backend services: Account, Learning, Contract khi cần.
+3. Start API Gateway.
+4. Start Web.
+5. Start Mobile nếu đang phát triển Mobile.
+6. Start Anvil và deploy contracts chỉ khi làm local Blockchain/Web3 flows.
+
+## Danh sách Port
+
+| Component | Port | Bắt buộc? | Ghi chú |
+| --- | --- | --- | --- |
+| PostgreSQL container host port | `5434` by default | Có, cho backend | Compose maps `${POSTGRES_PORT:-5434}` to container `5432`. |
+| PostgreSQL container port | `5432` | Internal | Backend `DB_URL` phải khớp host/port có thể truy cập. |
+| RabbitMQ AMQP | `5672` by default | Có, cho Account/Learning events | Compose maps `${RABBITMQ_PORT:-5672}`. |
+| RabbitMQ Management | `15672` by default | Tùy chọn | Compose maps `${RABBITMQ_MANAGEMENT_PORT:-15672}`. |
+| API Gateway | `8080` by default | Có, cho client thông thường | `API_GATEWAY_PORT`. |
+| Account Service | `8081` by default | Có, cho auth/profile | `ACCOUNT_SERVICE_PORT`. |
+| Learning Service | `8082` by default | Có, cho learning/class | `LEARNING_SERVICE_PORT`. |
+| Contract Service | `8083` by default | Tùy chọn/current partial | `CONTRACT_SERVICE_PORT`; public REST API chưa được chứng minh. |
+| Frontend Web | `5173` theo Vite default | Có, cho Web dev | Vite dev server. |
+| Mobile Expo | Không cố định bởi repo | Tùy chọn | Expo in runtime URL/port ra terminal. |
+| Anvil | `8545` | Chỉ cho Blockchain local | Dùng cho Foundry local development. |
+
+## Các lệnh thường dùng
+
+### Infrastructure
+
+```bash
+docker compose up -d postgres rabbitmq
+docker compose ps
+docker compose logs -f postgres
+docker compose logs -f rabbitmq
+docker compose down
+```
+
+### Backend
+
+```bash
+cd backend/account-service && ./run-local.sh
+cd backend/learning-service && ./run-local.sh
+cd backend/contract-service && ./run-local.sh
+cd backend/api-gateway && ./run-local.sh
+```
+
+```powershell
+cd backend/account-service
+.\mvnw.cmd test
+.\mvnw.cmd spring-boot:run
+```
+
+### Web
+
+```bash
+cd frontend-web
+npm install
+npm run dev
+npm run build
+```
+
+### Mobile
+
+```bash
+cd mobile-app
+npm install
+npm start
+npm run android
+npm run web
+```
+
+### Blockchain
+
+```bash
+cd blockchain
+forge build
+forge test -vvv
+make check
+make anvil
+make deploy-anvil
+```
+
+## Tài liệu dự án
+
+EduConnect dùng mô hình documentation hai tầng:
+
+- `AGENTS.md`: workflow và guardrail bắt buộc cho AI Agent.
+- `docs/`: core baseline/reference documentation của EduConnect.
+- Deep-reference docs: tài liệu kỹ thuật chi tiết, chỉ đọc khi task liên quan đến domain đó.
+- Source code: phản ánh current implementation của task đang xử lý.
+- Latest user-confirmed requirement: có thể thay đổi hoặc thay thế baseline cũ.
+
+Tài liệu là nền móng và ngữ cảnh để phát triển EduConnect. Nó không phải đặc tả đầy đủ, không phải feature whitelist, và không phải ràng buộc rằng source phải khớp từng dòng trong docs một cách máy móc.
+
+Nên bắt đầu từ:
+
+- `docs/PROJECT.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- domain docs như `docs/ARCHITECTURE.md`, `docs/AUTH_SECURITY.md`, `docs/API.md`, `docs/BLOCKCHAIN.md`, và `docs/AI_MATCHING.md` khi liên quan.
+
+## Làm việc với AI Agent
+
+Workflow khuyến nghị:
+
+Yêu cầu người dùng -> `AGENTS.md` -> Core Docs -> xác định scope/domain -> relevant deep-reference docs -> audit relevant source -> đề xuất giải pháp -> implement -> test/validate -> cập nhật docs khi cần.
+
+AI Agent không nên scan toàn bộ repository cho mọi task. Hãy bắt đầu từ scope liên quan và chỉ mở rộng khi dependency yêu cầu.
+
+### Prompt: Audit Feature
+
+```text
+Tuân thủ AGENTS.md và documentation workflow của repository.
+
+Tôi muốn triển khai:
+[FEATURE]
+
+Trước tiên:
+- audit implementation hiện tại;
+- xác định domain/service liên quan;
+- đọc documentation liên quan như baseline/reference;
+- kiểm tra source trong scope;
+- báo phần đã có, còn thiếu, conflict và dependency;
+- đề xuất hướng triển khai.
+
+Chưa sửa code.
+```
+
+### Prompt: Implement Feature
+
+```text
+Tuân thủ AGENTS.md.
+
+Triển khai:
+[FEATURE]
+
+Dựa trên audit/phương án đã chốt.
+
+Yêu cầu:
+- chỉ thay đổi trong scope cần thiết;
+- không tự thay đổi architecture/domain ownership;
+- reuse implementation hiện có;
+- cập nhật BE/FE/Mobile chỉ khi flow yêu cầu;
+- chạy validation/test liên quan;
+- báo file thay đổi và kết quả.
+```
+
+### Prompt: Fix Bug
+
+```text
+Tuân thủ AGENTS.md.
+
+Bug:
+[BUG DESCRIPTION]
+
+Hãy:
+- reproduce/trace nguyên nhân từ source;
+- xác định root cause;
+- kiểm tra impact;
+- sửa tối thiểu đúng nguyên nhân;
+- không workaround bằng cách phá security/business rule;
+- chạy test/validation;
+- báo root cause và file thay đổi.
+```
+
+### Prompt: Build UI
+
+```text
+Tuân thủ AGENTS.md.
+
+Tôi muốn xây UI cho:
+[FEATURE]
+
+Trước tiên audit:
+- backend API hiện có;
+- DTO/request/response;
+- authorization;
+- frontend patterns hiện tại;
+- reusable components.
+
+Sau đó đề xuất UI flow.
+Không mock API nếu backend thực tế đã tồn tại.
+```
+
+### Prompt: Backend API
+
+```text
+Tuân thủ AGENTS.md.
+
+Tôi muốn triển khai backend cho:
+[FEATURE]
+
+Audit trước:
+- domain owner;
+- Entity;
+- Repository;
+- Service;
+- Controller;
+- DTO;
+- security;
+- migration;
+- cross-service dependency/event.
+
+Không duplicate domain đã có ở service khác.
+```
+
+### Prompt: Change Business Flow
+
+```text
+Tuân thủ AGENTS.md.
+
+Tôi muốn thay đổi business flow:
+[OLD FLOW / NEW REQUIREMENT]
+
+Trước khi code:
+- xác định source bị ảnh hưởng;
+- xác định docs bị ảnh hưởng;
+- xác định API/database/event/security impact;
+- báo breaking changes;
+- đề xuất migration/refactor plan.
+
+Chưa implement cho đến khi impact được review.
+```
+
+### Prompt: Blockchain
+
+```text
+Tuân thủ AGENTS.md.
+
+Blockchain task:
+[TASK]
+
+Đọc docs/BLOCKCHAIN.md và relevant deep-reference docs.
+Audit Solidity trước vì Solidity là Smart Contract interface source of truth.
+
+Sau đó audit:
+- Contract Service;
+- frontend Web3;
+- deployment/config liên quan.
+
+Không gửi transaction hoặc deploy nếu chưa được yêu cầu.
+```
+
+### Prompt: AI Matching
+
+```text
+Tuân thủ AGENTS.md.
+
+AI task:
+[TASK]
+
+Đọc docs/AI_MATCHING.md.
+Audit search/profile/class data và implementation hiện tại trước.
+
+Phân biệt:
+- core search;
+- hard filtering;
+- ranking;
+- semantic/embedding;
+- planned vs implemented.
+
+Không biến AI thành dependency bắt buộc của core business flow.
+```
+
+## Trạng thái phát triển hiện tại
+
+- AI Matching service, Qdrant, Spring AI, embeddings, và semantic search là planned/not implemented trong current source.
+- Authentication Web hiện dùng short-lived `access_token` cookie, `refresh_token` HttpOnly Cookie, refresh token rotation, và revoke refresh sessions khi logout/reset/change password.
+- Contract Service có persistence/workflow/Web3j logic, nhưng public Contract REST API evidence hiện chưa được tìm thấy.
+- Frontend Web3 hiện còn ABI/address conflict với current Solidity/deployment evidence.
+- Local Anvil evidence đã tồn tại; Sepolia deployment là planned/configured nhưng chưa được chứng minh bằng deployment evidence.
+- Mobile app chưa feature-equivalent với Web.
+- Notification Service là shell.
+- Learning Service hiện bao phủ catalog/class/enrollment areas; session, attendance, và homework vẫn là planned/not implemented.
+- Root Maven module listing có `backend/eureka-server`, nhưng active service source/pom cần verification.
+
+## Xử lý lỗi thường gặp
+
+| Triệu chứng | Cần kiểm tra |
+| --- | --- |
+| Backend không kết nối được database | Kiểm tra `docker compose ps`, `DB_URL`, và host PostgreSQL port. |
+| RabbitMQ event flow không hoạt động | Kiểm tra RabbitMQ container, `RABBITMQ_*` variables, exchange/queue declarations, và service logs. |
+| Login thành công nhưng browser requests fail | Kiểm tra `VITE_API_URL`, gateway CORS origins, credentialed requests, và CSRF token flow. |
+| Phiên đăng nhập hết hạn nhanh | Kiểm tra refresh flow `POST /api/auth/refresh`, `refresh_token` cookie, CSRF token, và refresh session trong database. |
+| CSRF errors | Kiểm tra frontend requests `XSRF-TOKEN`/`X-XSRF-TOKEN` behavior và không bypass cookie auth rules. |
+| Port đã được sử dụng | Override `*_PORT` tương ứng trong `.env`. |
+| Web3 local transaction fail | Re-check Solidity ABI, exported frontend ABI, Anvil chain ID, escrow address, và ERC-20 token address. |
+| Sepolia flow có config nhưng chưa deploy | Xem config chỉ là configuration; cần actual deployment evidence trước khi gọi là implemented. |
+## TEMP - PHASE 4 FRONTEND CLEANUP / MERGE NOTES
+
+> Ghi chu tam phuc vu merge code.
+> Xoa section nay sau khi merge hoan tat.
+
+### Phase 4 Scope
+
+- Student legacy cleanup.
+- Tutor old onboarding cleanup.
+- Staff dead UI cleanup.
+- No Contract/Web3 cleanup.
+- No backend, route redesign, business logic, or API change.
+
+### Phase 4A - Safe Dead Files
+
+Deleted:
+
+- `frontend-web/src/pages/StudentFeatures.jsx`
+- `frontend-web/src/pages/tutor-application/TutorApplicationWizardPage.jsx`
+- `frontend-web/src/pages/tutor-application/TutorCompleteProfilePage.jsx`
+- `frontend-web/src/components/tutor-application/steps/StepPlaceholder.jsx`
+
+### Phase 4B - Student Legacy Portal Cleanup
+
+Modified:
+
+- `frontend-web/src/portal/App.tsx`
+- `frontend-web/src/portal/components/Sidebar.tsx`
+
+Deleted:
+
+- `frontend-web/src/portal/components/Marketplace.tsx`
+
+Removed:
+
+- Student-specific Portal dashboard branch.
+- Student-specific Portal sidebar branch.
+- Legacy Portal `courses` case.
+- Student-only mock course marketplace data/state/handlers.
+
+### Phase 4C - Tutor Legacy Onboarding Cleanup
+
+Deleted:
+
+- `frontend-web/src/components/tutor-application/TutorApplicationWizard.jsx`
+- `frontend-web/src/components/tutor-application/TutorApplicationStepper.jsx`
+- `frontend-web/src/components/tutor-application/WizardNavigation.jsx`
+- `frontend-web/src/components/tutor-application/steps/BasicInfoStep.jsx`
+- `frontend-web/src/components/tutor-application/steps/EducationExperienceStep.jsx`
+- `frontend-web/src/components/tutor-application/steps/IntroductionStep.jsx`
+- `frontend-web/src/components/tutor-application/steps/TeachingSubjectsStep.jsx`
+- `frontend-web/src/components/tutor-application/steps/VerificationDocumentsStep.jsx`
+- `frontend-web/src/components/tutor-application/steps/ReviewSubmitStep.jsx`
+- `frontend-web/src/components/tutor-application/subjects/ApplicationSubjectCard.jsx`
+- `frontend-web/src/components/tutor-application/subjects/ApplicationSubjectForm.jsx`
+- `frontend-web/src/components/tutor-application/subjects/DeleteSubjectDialog.jsx`
+- `frontend-web/src/components/tutor-application/subjects/SubjectAutocomplete.jsx`
+- `frontend-web/src/portal/components/BecomeTutorForm.tsx`
+- `frontend-web/src/portal/components/EvidenceUploader.tsx`
+- `frontend-web/src/portal/components/TeachingSubjectCard.tsx`
+- `frontend-web/src/portal/components/PriceRangeInput.tsx`
+- `frontend-web/src/portal/components/WeeklyAvailabilityEditor.tsx`
+- `frontend-web/src/portal/tutorApplication.ts`
+
+Kept:
+
+- Compatibility routes `/become-tutor` and `/tutor/complete-profile`.
+- Current restricted Tutor profile/document flow.
+- `frontend-web/src/components/tutor-application/TutorApplicationStatusBanner.jsx`.
+- `frontend-web/src/pages/tutor/TeachingRegistrationPage.jsx` as post-approval Tutor feature.
+
+### Phase 4D - Staff Legacy Cleanup
+
+Deleted:
+
+- `frontend-web/src/portal/components/staff/RejectTutorModal.tsx`
+- `frontend-web/src/portal/components/staff/TutorApprovalQueue.tsx`
+- `frontend-web/src/portal/components/staff/TutorDetailPanel.tsx`
+
+Kept:
+
+- Current Staff approval flow: `StaffDashboardPage` -> `TutorProfileApprovalReview`.
+- Current Staff tutor application API client: `frontend-web/src/api/staffTutors.js`.
+
+### Active Architecture After Cleanup
+
+STUDENT:
+
+- Student Web Application at `/`.
+- No Portal sidebar.
+- `/dashboard` redirects Student to `/`.
+
+TUTOR:
+
+- Tutor uses `/dashboard` Portal.
+- DRAFT/PENDING/REJECTED Tutor stays restricted.
+- APPROVED Tutor gets full Tutor access.
+
+STAFF/ADMIN:
+
+- Staff/Admin Portal remains active.
+- `/staff/tutors` enters current Staff review UI.
+
+### Intentionally Kept
+
+- `frontend-web/src/portal/App.tsx`
+- `frontend-web/src/portal/components/Sidebar.tsx`
+- `frontend-web/src/portal/components/MessagesView.tsx`
+- `frontend-web/src/portal/components/ProfileSettings.tsx`
+- `frontend-web/src/portal/components/MyWalletView.tsx`
+- `frontend-web/src/components/contract/*`
+- `frontend-web/src/web3/*`
+- `frontend-web/src/components/tutor-application/TutorApplicationStatusBanner.jsx`
+- `frontend-web/src/pages/tutor/TeachingRegistrationPage.jsx`
+- `frontend-web/src/portal/components/staff/StaffDashboardPage.tsx`
+- `frontend-web/src/portal/components/staff/TutorProfileApprovalReview.tsx`
+- `frontend-web/src/portal/components/staff/TeachingRegistrationReview.tsx`
+- `frontend-web/src/portal/components/staff/ClassApprovalReview.tsx`
+
+### Merge Warnings
+
+1. Khong restore lai Student legacy branch vao `frontend-web/src/portal/App.tsx`.
+2. Khong restore Student branch trong `frontend-web/src/portal/components/Sidebar.tsx`.
+3. Khong restore deleted Portal `Marketplace.tsx`.
+4. Khong restore old `TutorApplicationWizard` / `BecomeTutorForm` subtree.
+5. Khong restore deleted Staff legacy queue/detail/reject components.
+6. Khi resolve conflict, uu tien current Student Web routes va current Tutor restricted flow.
+7. Contract/Web3 components chua cleanup; khong xoa khi merge.
+8. `frontend-web/dist/**` la generated build output; phan biet voi source change.
+
+### Validation
+
+- `npm run build`: PASS.
+- HTTP SPA shell smoke: PASS for `/`, `/my-classes`, `/matching`, `/messages`, `/contracts`, `/payments`, `/dashboard`, `/tutor/profile`, `/tutor/teaching-registrations`, `/staff/tutors`.
+- Phase 2 Student Web manual test: PASS, confirmed before Phase 4E.
+- Phase 4B Student/Tutor/Staff UI manual test: PASS, confirmed before Phase 4E.
+- Phase 4C Tutor lifecycle authenticated manual test: NOT_RUN / user validation pending.
+- Phase 4D Staff authenticated business test: NOT_RUN.

@@ -8,6 +8,7 @@ import iuh.fit.account_service.entity.Tutor;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.entity.UserRole;
 import iuh.fit.account_service.enums.Role;
+import iuh.fit.account_service.enums.TeachingMode;
 import iuh.fit.account_service.enums.TutorApplicationStatus;
 import iuh.fit.account_service.enums.TutorDocumentType;
 import iuh.fit.account_service.enums.TutorStatus;
@@ -30,6 +31,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -103,7 +105,7 @@ public class TutorApplicationService {
 
         List<TutorDocument> documents = tutorDocumentRepository
                 .findByTutorApplication_IdOrderByUploadedAtDesc(application.getId());
-        List<String> missingItems = validateCompleteness(user, documents);
+        List<String> missingItems = validateCompleteness(user, application, documents);
 
         if (!missingItems.isEmpty()) {
             throw new IncompleteTutorApplicationException(missingItems);
@@ -156,6 +158,9 @@ public class TutorApplicationService {
         if (request.getExperienceSummary() != null) {
             application.setExperienceSummary(normalizeText(request.getExperienceSummary()));
         }
+        if (request.getTeachingModes() != null) {
+            application.setTeachingModes(normalizeTeachingModes(request.getTeachingModes()));
+        }
 
         return toResponse(tutorApplicationRepository.save(application));
     }
@@ -169,6 +174,7 @@ public class TutorApplicationService {
                 application.getInstitution(),
                 application.getMajor(),
                 application.getExperienceSummary(),
+                new LinkedHashSet<>(application.getTeachingModes()),
                 application.getSubmittedAt(),
                 application.getReviewedAt(),
                 application.getRejectionReason(),
@@ -209,7 +215,7 @@ public class TutorApplicationService {
         }
     }
 
-    private List<String> validateCompleteness(User user, List<TutorDocument> documents) {
+    private List<String> validateCompleteness(User user, TutorApplication application, List<TutorDocument> documents) {
         List<String> missingItems = new ArrayList<>();
 
         if (!StringUtils.hasText(user.getFullName())) {
@@ -223,6 +229,9 @@ public class TutorApplicationService {
         }
         if (!hasIdentityDocument(documents)) {
             missingItems.add("identityDocument");
+        }
+        if (application.getTeachingModes() == null || application.getTeachingModes().isEmpty()) {
+            missingItems.add("teachingModes");
         }
 
         return missingItems;
@@ -253,6 +262,15 @@ public class TutorApplicationService {
 
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private Set<TeachingMode> normalizeTeachingModes(Set<TeachingMode> modes) {
+        if (modes == null) {
+            return new LinkedHashSet<>();
+        }
+        return modes.stream()
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
     }
 
     private void snapshotApplicant(User user, TutorApplication application) {

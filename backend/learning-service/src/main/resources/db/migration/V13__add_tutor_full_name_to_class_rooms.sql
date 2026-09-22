@@ -1,1 +1,0 @@
-ALTER TABLE class_rooms ADD COLUMN IF NOT EXISTS tutor_full_name VARCHAR(255);

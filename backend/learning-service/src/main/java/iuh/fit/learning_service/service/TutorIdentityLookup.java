@@ -61,12 +61,50 @@ public class TutorIdentityLookup {
                 : Optional.empty();
     }
 
+    public Optional<Long> tutorProfileId(String email) {
+        if (!tableExists("users")) {
+            return Optional.empty();
+        }
+
+        String normalizedEmail = email == null ? null : email.trim().toLowerCase(Locale.ROOT);
+        if (normalizedEmail == null || normalizedEmail.isBlank()) {
+            return Optional.empty();
+        }
+
+        Optional<Long> byTutors = tableExists("tutors")
+                ? queryLong("""
+                        SELECT tutor.id
+                        FROM tutors tutor
+                        JOIN users account_user ON account_user.id = tutor.user_id
+                        WHERE lower(account_user.email) = ?
+                        LIMIT 1
+                        """, normalizedEmail)
+                : Optional.empty();
+        if (byTutors.isPresent()) {
+            return byTutors;
+        }
+
+        return tableExists("tutor_profiles")
+                ? queryLong("""
+                        SELECT tutor_profile.id
+                        FROM tutor_profiles tutor_profile
+                        JOIN users account_user ON account_user.id = tutor_profile.user_id
+                        WHERE lower(account_user.email) = ?
+                        LIMIT 1
+                        """, normalizedEmail)
+                : Optional.empty();
+    }
+
     private Optional<String> queryFullName(String sql, Object... args) {
         List<String> values = jdbc.query(sql, (rs, rowNum) -> rs.getString(1), args);
         return values.stream()
                 .map(this::normalize)
                 .filter(value -> value != null && !value.isBlank())
                 .findFirst();
+    }
+
+    private Optional<Long> queryLong(String sql, Object... args) {
+        return jdbc.query(sql, (rs, rowNum) -> rs.getLong(1), args).stream().findFirst();
     }
 
     private boolean tableExists(String tableName) {

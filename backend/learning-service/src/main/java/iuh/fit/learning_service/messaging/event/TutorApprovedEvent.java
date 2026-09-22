@@ -1,6 +1,7 @@
 package iuh.fit.learning_service.messaging.event;
 
 import iuh.fit.learning_service.enums.TeachingLevel;
+import iuh.fit.learning_service.enums.TeachingMode;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -11,6 +12,7 @@ public record TutorApprovedEvent(
         Long applicationId,
         Long tutorProfileId,
         Long userId,
+        Set<TeachingMode> teachingModes,
         Set<SubjectItem> subjects,
         LocalDateTime occurredAt
 ) {

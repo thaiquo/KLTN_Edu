@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Sparkles,
   Upload,
+  Video,
   UserRound,
   WalletCards,
   X
@@ -56,6 +57,11 @@ const GENDER_OPTIONS = [
   { value: 'MALE', label: 'Nam' },
   { value: 'OTHER', label: 'Khác' },
   { value: 'PREFER_NOT_TO_SAY', label: 'Không muốn chia sẻ' }
+];
+
+const TEACHING_MODE_OPTIONS = [
+  { value: 'ONLINE', label: 'Trực tuyến', icon: Video },
+  { value: 'OFFLINE', label: 'Trực tiếp', icon: MapPin }
 ];
 
 export function ProfilePage({ embedded = false, onTabChange = null, onQuickNavigate = null }) {
@@ -358,6 +364,41 @@ export function ProfilePage({ embedded = false, onTabChange = null, onQuickNavig
     }
   }
 
+  async function handleTeachingModeToggle(mode) {
+    const currentModes = Array.isArray(tutorAppForUi?.teachingModes)
+      ? tutorAppForUi.teachingModes
+      : [];
+    const nextModes = currentModes.includes(mode)
+      ? currentModes.filter((item) => item !== mode)
+      : [...currentModes, mode];
+
+    if (nextModes.length === 0) {
+      setDocError('Vui lòng chọn ít nhất một hình thức nhận dạy.');
+      feedback.error('Vui lòng chọn ít nhất một hình thức nhận dạy.');
+      return;
+    }
+
+    setDocError('');
+    setMessage('');
+    setError('');
+    try {
+      const { tutorApplicationApi } = await import('../api/tutorApplications');
+      if (!tutorAppForUi) {
+        await tutorApplicationApi.createTutorApplication();
+      }
+      const updatedApp = await tutorApplicationApi.updateMyTutorApplication({
+        teachingModes: nextModes
+      });
+      setTutorApp(updatedApp);
+      await invalidateTutorApplication();
+      setHasUnsubmittedChanges(true);
+      feedback.success('Đã cập nhật hình thức nhận dạy.');
+    } catch (err) {
+      setDocError(err.message || 'Không thể cập nhật hình thức nhận dạy.');
+      feedback.error(err.message || 'Không thể cập nhật hình thức nhận dạy.');
+    }
+  }
+
   function change(event) {
     const { name, value } = event.target;
     setForm((current) => ({
@@ -595,6 +636,8 @@ export function ProfilePage({ embedded = false, onTabChange = null, onQuickNavig
                       onUpload={handleUploadIdentityDoc}
                       error={docError}
                       tutorApp={tutorAppForUi}
+                      teachingModes={Array.isArray(tutorAppForUi?.teachingModes) ? tutorAppForUi.teachingModes : []}
+                      onTeachingModeToggle={handleTeachingModeToggle}
                       submittingReview={submittingReview}
                       onSubmitForReview={handleSubmitForReview}
                       hasUnsubmittedChanges={hasUnsubmittedChanges}
@@ -753,6 +796,8 @@ function TutorIdentityVerificationSection({
   onUpload,
   error,
   tutorApp,
+  teachingModes = [],
+  onTeachingModeToggle,
   submittingReview,
   onSubmitForReview,
   hasUnsubmittedChanges = false
@@ -783,14 +828,19 @@ function TutorIdentityVerificationSection({
     !profile?.dateOfBirth ? 'Ngày sinh' : '',
     !(profile?.province || profile?.provinceCode) ? 'Địa chỉ' : ''
   ].filter(Boolean);
+  const missingTeachingModeItems = teachingModes.length === 0 ? ['Hình thức nhận dạy'] : [];
+  const canEditTeachingModes = !['PENDING', 'APPROVED'].includes(status);
   const canSubmitForReview = status !== 'PENDING'
     && hasSelectedIdentityDocs
-    && missingProfileItems.length === 0;
+    && missingProfileItems.length === 0
+    && missingTeachingModeItems.length === 0;
   const submitHint = status === 'PENDING'
     ? 'Hồ sơ đã gửi duyệt tới Ban quản trị'
     : missingProfileItems.length > 0
       ? `Cần bổ sung: ${missingProfileItems.join(', ')}`
-      : missingIdentityItems.length > 0
+      : missingTeachingModeItems.length > 0
+        ? `Cần bổ sung: ${missingTeachingModeItems.join(', ')}`
+        : missingIdentityItems.length > 0
         ? `Cần tải lên: ${missingIdentityItems.join(', ')}`
         : status === 'APPROVED'
           ? 'Bạn vừa có thay đổi thông tin/CCCD mới cần gửi duyệt lại'
@@ -825,6 +875,44 @@ function TutorIdentityVerificationSection({
       <p className="text-sm font-semibold leading-6 text-slate-500">
         Yêu cầu tải lên CCCD/CMND hai mặt hoặc Hộ chiếu thông tin một lần. Bản ghi này sẽ được tái sử dụng để quản lý quyền dạy và đối soát hợp đồng.
       </p>
+
+      <div className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
+        <p className="text-xs font-black uppercase tracking-wide text-slate-700">Hình thức nhận dạy</p>
+        <p className="mt-1 text-xs font-semibold text-slate-500">
+          Bạn có thể chọn một hoặc cả hai hình thức giảng dạy.
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {TEACHING_MODE_OPTIONS.map((option) => {
+            const checked = teachingModes.includes(option.value);
+            const Icon = option.icon;
+            return (
+              <label
+                key={option.value}
+                className={`flex items-center gap-3 rounded-[8px] border p-3 text-sm font-extrabold transition-all ${
+                  checked
+                    ? 'border-[#147b77] bg-white text-[#0f766e]'
+                    : 'border-slate-200 bg-white text-slate-600'
+                } ${canEditTeachingModes ? 'cursor-pointer hover:border-[#147b77]' : 'cursor-not-allowed opacity-70'}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={!canEditTeachingModes}
+                  onChange={() => onTeachingModeToggle?.(option.value)}
+                  className="h-4 w-4 rounded border-slate-300 text-[#147b77] focus:ring-[#147b77]"
+                />
+                <Icon size={17} />
+                <span>{option.label}</span>
+              </label>
+            );
+          })}
+        </div>
+        {!canEditTeachingModes && (
+          <p className="mt-2 text-[11px] font-semibold text-slate-500">
+            Hình thức nhận dạy đã được đưa vào hồ sơ xét duyệt hiện tại.
+          </p>
+        )}
+      </div>
 
       {/* Review Status Guidance Banners */}
       {status === 'DRAFT' && (

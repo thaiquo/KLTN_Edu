@@ -3,6 +3,8 @@ package iuh.fit.account_service.entity;
 import iuh.fit.account_service.enums.TutorApplicationStatus;
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
+import jakarta.persistence.CollectionTable;
+import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -17,6 +19,7 @@ import jakarta.persistence.OneToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import iuh.fit.account_service.enums.TeachingMode;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -53,6 +56,15 @@ public class TutorApplication {
 
     @Column(length = 1000)
     private String experienceSummary;
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(
+            name = "tutor_application_teaching_modes",
+            joinColumns = @JoinColumn(name = "tutor_application_id")
+    )
+    @Column(name = "teaching_mode", nullable = false, length = 20)
+    @Enumerated(EnumType.STRING)
+    private Set<TeachingMode> teachingModes = new LinkedHashSet<>();
 
     private LocalDateTime submittedAt;
 
@@ -184,6 +196,14 @@ public class TutorApplication {
 
     public void setExperienceSummary(String experienceSummary) {
         this.experienceSummary = experienceSummary;
+    }
+
+    public Set<TeachingMode> getTeachingModes() {
+        return teachingModes;
+    }
+
+    public void setTeachingModes(Set<TeachingMode> teachingModes) {
+        this.teachingModes = teachingModes == null ? new LinkedHashSet<>() : teachingModes;
     }
 
     public LocalDateTime getSubmittedAt() {

@@ -9,6 +9,7 @@ import iuh.fit.account_service.entity.TutorDocument;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.entity.UserRole;
 import iuh.fit.account_service.enums.AccountStatus;
+import iuh.fit.account_service.enums.TeachingMode;
 import iuh.fit.account_service.enums.TutorApplicationStatus;
 import iuh.fit.account_service.enums.TutorDocumentType;
 import iuh.fit.account_service.enums.TutorStatus;
@@ -124,6 +125,49 @@ class TutorApplicationLifecycleServiceTest {
     }
 
     @Test
+    void submitPreservesOnlineTeachingMode() {
+        application.setTeachingModes(new java.util.LinkedHashSet<>(List.of(TeachingMode.ONLINE)));
+        when(tutorDocumentRepository.findByTutorApplication_IdOrderByUploadedAtDesc(100L))
+                .thenReturn(List.of(document(application, TutorDocumentType.PASSPORT)));
+
+        var response = tutorApplicationService.submitMyApplication("tutor@example.com");
+
+        assertThat(response.getTeachingModes()).containsExactly(TeachingMode.ONLINE);
+    }
+
+    @Test
+    void submitPreservesOfflineTeachingMode() {
+        application.setTeachingModes(new java.util.LinkedHashSet<>(List.of(TeachingMode.OFFLINE)));
+        when(tutorDocumentRepository.findByTutorApplication_IdOrderByUploadedAtDesc(100L))
+                .thenReturn(List.of(document(application, TutorDocumentType.PASSPORT)));
+
+        var response = tutorApplicationService.submitMyApplication("tutor@example.com");
+
+        assertThat(response.getTeachingModes()).containsExactly(TeachingMode.OFFLINE);
+    }
+
+    @Test
+    void submitPreservesBothTeachingModes() {
+        application.setTeachingModes(new java.util.LinkedHashSet<>(List.of(TeachingMode.ONLINE, TeachingMode.OFFLINE)));
+        when(tutorDocumentRepository.findByTutorApplication_IdOrderByUploadedAtDesc(100L))
+                .thenReturn(List.of(document(application, TutorDocumentType.PASSPORT)));
+
+        var response = tutorApplicationService.submitMyApplication("tutor@example.com");
+
+        assertThat(response.getTeachingModes()).containsExactly(TeachingMode.ONLINE, TeachingMode.OFFLINE);
+    }
+
+    @Test
+    void submitRejectsEmptyTeachingModes() {
+        application.getTeachingModes().clear();
+        when(tutorDocumentRepository.findByTutorApplication_IdOrderByUploadedAtDesc(100L))
+                .thenReturn(List.of(document(application, TutorDocumentType.PASSPORT)));
+
+        assertThatThrownBy(() -> tutorApplicationService.submitMyApplication("tutor@example.com"))
+                .isInstanceOf(iuh.fit.account_service.exception.IncompleteTutorApplicationException.class);
+    }
+
+    @Test
     void rejectedApplicationCanBeEditedWithoutBeingTreatedAsSubmittedAgain() {
         application.setStatus(TutorApplicationStatus.REJECTED);
         tutor.setStatus(TutorStatus.REJECTED);
@@ -220,6 +264,7 @@ class TutorApplicationLifecycleServiceTest {
         ReflectionTestUtils.setField(application, "id", id);
         application.setUser(user);
         application.setStatus(TutorApplicationStatus.DRAFT);
+        application.setTeachingModes(new java.util.LinkedHashSet<>(List.of(TeachingMode.ONLINE)));
         return application;
     }
 

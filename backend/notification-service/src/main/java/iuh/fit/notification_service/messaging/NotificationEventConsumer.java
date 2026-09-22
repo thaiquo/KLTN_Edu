@@ -2,9 +2,12 @@ package iuh.fit.notification_service.messaging;
 
 import iuh.fit.notification_service.messaging.event.SubjectRequestApprovedEvent;
 import iuh.fit.notification_service.messaging.event.SubjectRequestRejectedEvent;
+import iuh.fit.notification_service.messaging.event.ClassSubmittedNotificationEvent;
 import iuh.fit.notification_service.messaging.event.ClassReviewedNotificationEvent;
 import iuh.fit.notification_service.messaging.event.EnrollmentNotificationEvent;
 import iuh.fit.notification_service.messaging.event.TeachingRegistrationReviewedEvent;
+import iuh.fit.notification_service.messaging.event.TeachingRegistrationSubmittedEvent;
+import iuh.fit.notification_service.messaging.event.SubjectRequestSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApplicationSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApprovedEvent;
 import iuh.fit.notification_service.messaging.event.TutorRejectedEvent;
@@ -28,10 +31,23 @@ public class NotificationEventConsumer {
 
     @RabbitListener(queues = NotificationRabbitConfig.TUTOR_APPLICATION_SUBMITTED_QUEUE)
     public void onTutorApplicationSubmitted(TutorApplicationSubmittedEvent event) {
-        log.info(
-                "Skipping persistent notification for eventId={} type=TUTOR_APPLICATION_SUBMITTED: reviewer recipient ids are not available",
-                event == null ? null : event.eventId()
-        );
+        if (event == null
+                || !StringUtils.hasText(event.eventId())
+                || event.recipientUserId() == null
+                || event.applicationId() == null) {
+            log.warn("Skipping invalid tutor application submitted notification event");
+            return;
+        }
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                "TUTOR_APPLICATION_SUBMITTED",
+                "Có hồ sơ gia sư mới cần xét duyệt",
+                "Có hồ sơ đăng ký gia sư mới cần Staff xét duyệt.",
+                "STAFF",
+                "TUTOR_APPLICATION",
+                String.valueOf(event.applicationId())
+        ));
     }
 
     @RabbitListener(queues = NotificationRabbitConfig.TUTOR_APPROVED_QUEUE)
@@ -231,6 +247,60 @@ public class NotificationEventConsumer {
         ));
     }
 
+    @RabbitListener(queues = NotificationRabbitConfig.TEACHING_REGISTRATION_SUBMITTED_QUEUE)
+    public void onTeachingRegistrationSubmitted(TeachingRegistrationSubmittedEvent event) {
+        if (!isValidTeachingRegistrationSubmittedEvent(event)) {
+            return;
+        }
+
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                "TEACHING_REGISTRATION_SUBMITTED",
+                "Có đăng ký giảng dạy mới cần xét duyệt",
+                submittedSubjectMessage("Có đăng ký giảng dạy", event.subjectName(), " mới cần xét duyệt."),
+                "STAFF",
+                "TEACHING_REGISTRATION",
+                String.valueOf(event.registrationId())
+        ));
+    }
+
+    @RabbitListener(queues = NotificationRabbitConfig.SUBJECT_REQUEST_SUBMITTED_QUEUE)
+    public void onSubjectRequestSubmitted(SubjectRequestSubmittedEvent event) {
+        if (!isValidSubjectRequestSubmittedEvent(event)) {
+            return;
+        }
+
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                "SUBJECT_REQUEST_SUBMITTED",
+                "Có đề xuất môn học mới cần xét duyệt",
+                submittedSubjectMessage("Có đề xuất môn học", event.requestedName(), " mới cần xét duyệt."),
+                "STAFF",
+                "SUBJECT_REQUEST",
+                String.valueOf(event.subjectRequestId())
+        ));
+    }
+
+    @RabbitListener(queues = NotificationRabbitConfig.CLASS_SUBMITTED_QUEUE)
+    public void onClassSubmitted(ClassSubmittedNotificationEvent event) {
+        if (!isValidClassSubmittedEvent(event)) {
+            return;
+        }
+
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                "CLASS_SUBMITTED",
+                "Có lớp học mới cần xét duyệt",
+                submittedSubjectMessage("Có lớp", event.classTitle(), " mới cần xét duyệt."),
+                "STAFF",
+                "CLASS",
+                String.valueOf(event.classId())
+        ));
+    }
+
     private String safeReason(String reason) {
         if (!StringUtils.hasText(reason)) {
             return null;
@@ -295,6 +365,42 @@ public class NotificationEventConsumer {
         return true;
     }
 
+    private boolean isValidTeachingRegistrationSubmittedEvent(TeachingRegistrationSubmittedEvent event) {
+        if (event == null
+                || !StringUtils.hasText(event.eventId())
+                || event.recipientUserId() == null
+                || event.registrationId() == null
+                || !"TEACHING_REGISTRATION_SUBMITTED".equals(event.eventType())) {
+            log.warn("Skipping invalid teaching registration submitted notification event");
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isValidSubjectRequestSubmittedEvent(SubjectRequestSubmittedEvent event) {
+        if (event == null
+                || !StringUtils.hasText(event.eventId())
+                || event.recipientUserId() == null
+                || event.subjectRequestId() == null
+                || !"SUBJECT_REQUEST_SUBMITTED".equals(event.eventType())) {
+            log.warn("Skipping invalid subject request submitted notification event");
+            return false;
+        }
+        return true;
+    }
+
+    private boolean isValidClassSubmittedEvent(ClassSubmittedNotificationEvent event) {
+        if (event == null
+                || !StringUtils.hasText(event.eventId())
+                || event.recipientUserId() == null
+                || event.classId() == null
+                || !"CLASS_SUBMITTED".equals(event.eventType())) {
+            log.warn("Skipping invalid class submitted notification event");
+            return false;
+        }
+        return true;
+    }
+
     private String enrollmentRequestedMessage(EnrollmentNotificationEvent event) {
         String studentName = safeReason(event.studentName());
         if (StringUtils.hasText(studentName)) {
@@ -325,6 +431,14 @@ public class NotificationEventConsumer {
         return reason == null
                 ? prefix + " đã bị từ chối."
                 : prefix + " đã bị từ chối. Lý do: " + reason;
+    }
+
+    private String submittedSubjectMessage(String prefix, String subject, String suffix) {
+        String value = safeReason(subject);
+        if (StringUtils.hasText(value)) {
+            return prefix + " \"" + value + "\"" + suffix;
+        }
+        return prefix + suffix;
     }
 
     private String classReviewedMessage(ClassReviewedNotificationEvent event, boolean approved) {

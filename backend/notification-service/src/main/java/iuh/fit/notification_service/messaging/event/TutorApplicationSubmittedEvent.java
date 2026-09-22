@@ -6,6 +6,10 @@ public record TutorApplicationSubmittedEvent(
         String eventId,
         Long applicationId,
         Long userId,
+        Long recipientUserId,
         LocalDateTime occurredAt
 ) {
+    public TutorApplicationSubmittedEvent(String eventId, Long applicationId, Long userId, LocalDateTime occurredAt) {
+        this(eventId, applicationId, userId, null, occurredAt);
+    }
 }

@@ -1,8 +1,10 @@
 package iuh.fit.account_service.dto.tutorapplication;
 
+import iuh.fit.account_service.enums.TeachingMode;
 import iuh.fit.account_service.enums.TutorApplicationStatus;
 
 import java.time.LocalDateTime;
+import java.util.Set;
 
 public class TutorApplicationResponse {
 
@@ -13,6 +15,7 @@ public class TutorApplicationResponse {
     private String institution;
     private String major;
     private String experienceSummary;
+    private Set<TeachingMode> teachingModes;
     private LocalDateTime submittedAt;
     private LocalDateTime reviewedAt;
     private String rejectionReason;
@@ -28,6 +31,7 @@ public class TutorApplicationResponse {
             String institution,
             String major,
             String experienceSummary,
+            Set<TeachingMode> teachingModes,
             LocalDateTime submittedAt,
             LocalDateTime reviewedAt,
             String rejectionReason,
@@ -42,6 +46,7 @@ public class TutorApplicationResponse {
         this.institution = institution;
         this.major = major;
         this.experienceSummary = experienceSummary;
+        this.teachingModes = teachingModes;
         this.submittedAt = submittedAt;
         this.reviewedAt = reviewedAt;
         this.rejectionReason = rejectionReason;
@@ -76,6 +81,10 @@ public class TutorApplicationResponse {
 
     public String getExperienceSummary() {
         return experienceSummary;
+    }
+
+    public Set<TeachingMode> getTeachingModes() {
+        return teachingModes;
     }
 
     public LocalDateTime getSubmittedAt() {

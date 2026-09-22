@@ -1,6 +1,9 @@
 package iuh.fit.account_service.dto.tutorapplication;
 
+import iuh.fit.account_service.enums.TeachingMode;
 import jakarta.validation.constraints.Size;
+
+import java.util.Set;
 
 public class UpdateTutorApplicationRequest {
 
@@ -18,6 +21,8 @@ public class UpdateTutorApplicationRequest {
 
     @Size(max = 1000, message = "Experience summary must not exceed 1000 characters")
     private String experienceSummary;
+
+    private Set<TeachingMode> teachingModes;
 
     public String getBio() {
         return bio;
@@ -57,5 +62,13 @@ public class UpdateTutorApplicationRequest {
 
     public void setExperienceSummary(String experienceSummary) {
         this.experienceSummary = experienceSummary;
+    }
+
+    public Set<TeachingMode> getTeachingModes() {
+        return teachingModes;
+    }
+
+    public void setTeachingModes(Set<TeachingMode> teachingModes) {
+        this.teachingModes = teachingModes;
     }
 }

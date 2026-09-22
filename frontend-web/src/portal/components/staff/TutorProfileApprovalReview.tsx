@@ -15,10 +15,16 @@ import {
   ExternalLink,
   History,
   Search,
+  Video,
   X
 } from "lucide-react";
 import { staffTutorApi } from "../../../api/staffTutors";
 import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
+
+const TEACHING_MODE_LABELS: Record<string, string> = {
+  ONLINE: "Trực tuyến",
+  OFFLINE: "Trực tiếp"
+};
 
 interface TutorProfileApprovalReviewProps {
   onNotice: (msg: string) => void;
@@ -499,6 +505,29 @@ export function TutorProfileApprovalReview({
                     <div className="sm:col-span-2 pt-2 border-t border-slate-200/60">
                       <p className="text-[10px] font-black uppercase text-slate-400">Giới thiệu ngắn</p>
                       <p className="text-xs font-semibold text-slate-700 mt-1">{detail.applicant.bio}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <h4 className="font-extrabold text-sm text-slate-900 mb-3 flex items-center gap-2">
+                    <Video className="text-[#147b77]" size={18} />
+                    Hình thức nhận dạy
+                  </h4>
+                  {Array.isArray(detail.application?.teachingModes) && detail.application.teachingModes.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {detail.application.teachingModes.map((mode: string) => (
+                        <span
+                          key={mode}
+                          className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-extrabold text-emerald-700"
+                        >
+                          {TEACHING_MODE_LABELS[mode] || mode}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-300 p-4 text-center text-xs font-semibold text-slate-400">
+                      Chưa chọn hình thức nhận dạy.
                     </div>
                   )}
                 </div>

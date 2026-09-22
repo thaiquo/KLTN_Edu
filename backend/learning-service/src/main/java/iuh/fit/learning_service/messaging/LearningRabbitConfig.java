@@ -28,6 +28,9 @@ public class LearningRabbitConfig {
     public static final String ENROLLMENT_CANCELLED_ROUTING_KEY = "learning.enrollment.cancelled";
     public static final String CLASS_REVIEWED_ROUTING_KEY = "learning.class.reviewed";
     public static final String TEACHING_REGISTRATION_REVIEWED_ROUTING_KEY = "learning.teaching-registration.reviewed";
+    public static final String TEACHING_REGISTRATION_SUBMITTED_ROUTING_KEY = "learning.teaching-registration.submitted";
+    public static final String SUBJECT_REQUEST_SUBMITTED_ROUTING_KEY = "learning.subject-request.submitted";
+    public static final String CLASS_SUBMITTED_ROUTING_KEY = "learning.class.submitted";
 
     public static final String CONTRACT_ACTIVATED_QUEUE = "learning.contract-activated";
     public static final String CONTRACT_EXPIRED_QUEUE = "learning.contract-expired";

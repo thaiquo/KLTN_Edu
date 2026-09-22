@@ -167,6 +167,10 @@ public class TutorSubjectRegistrationService {
 
         TutorSubjectRegistration registration = new TutorSubjectRegistration();
         registration.setTutorEmail(tutorEmail.trim().toLowerCase());
+        java.util.Optional<Long> tutorProfileId = tutorIdentityLookup.tutorProfileId(tutorEmail);
+        if (tutorProfileId != null) {
+            tutorProfileId.ifPresent(registration::setTutorProfileId);
+        }
         registration.setProgramType(category.getProgramType());
         registration.setEducationLevel(category.getEducationLevel());
         registration.setCategory(category);
@@ -204,6 +208,13 @@ public class TutorSubjectRegistrationService {
                     "tutorEmail", saved.getTutorEmail(),
                     "status", saved.getStatus().name()
             ));
+            CatalogSubject submittedSubject = saved.getSubject();
+            eventPublisher.publishTeachingRegistrationSubmitted(
+                    saved.getId(),
+                    saved.getTutorEmail(),
+                    submittedSubject == null ? null : submittedSubject.getId(),
+                    submittedSubject == null ? saved.getProposedSubjectName() : submittedSubject.getName()
+            );
             return response(saved);
         } catch (DataIntegrityViolationException ex) {
             throw new ConflictException("Could not create the teaching registration");

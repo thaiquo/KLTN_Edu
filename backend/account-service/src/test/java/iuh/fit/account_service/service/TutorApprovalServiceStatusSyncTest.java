@@ -7,11 +7,13 @@ import iuh.fit.account_service.entity.TutorDocument;
 import iuh.fit.account_service.entity.TutorProfile;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.enums.AccountStatus;
+import iuh.fit.account_service.enums.TeachingMode;
 import iuh.fit.account_service.enums.TutorApplicationStatus;
 import iuh.fit.account_service.enums.TutorDocumentType;
 import iuh.fit.account_service.enums.TutorDocumentVerificationStatus;
 import iuh.fit.account_service.enums.TutorStatus;
 import iuh.fit.account_service.messaging.AccountEventPublisher;
+import iuh.fit.account_service.messaging.event.TutorApprovedEvent;
 import iuh.fit.account_service.realtime.RealtimeEventHub;
 import iuh.fit.account_service.repository.TutorApplicationRepository;
 import iuh.fit.account_service.repository.TutorApplicationSubjectRepository;
@@ -103,6 +105,10 @@ class TutorApprovalServiceStatusSyncTest {
         assertThat(tutorCaptor.getValue().getStatus()).isEqualTo(TutorStatus.APPROVED);
         assertThat(tutorCaptor.getValue().getRejectionReason()).isNull();
         assertThat(application.getStatus()).isEqualTo(TutorApplicationStatus.APPROVED);
+
+        ArgumentCaptor<TutorApprovedEvent> eventCaptor = ArgumentCaptor.forClass(TutorApprovedEvent.class);
+        verify(eventPublisher).publishTutorApproved(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().teachingModes()).containsExactly(TeachingMode.ONLINE);
     }
 
     @Test
@@ -145,6 +151,7 @@ class TutorApprovalServiceStatusSyncTest {
         ReflectionTestUtils.setField(application, "id", id);
         application.setUser(user);
         application.setStatus(TutorApplicationStatus.PENDING);
+        application.setTeachingModes(new java.util.LinkedHashSet<>(List.of(TeachingMode.ONLINE)));
         return application;
     }
 

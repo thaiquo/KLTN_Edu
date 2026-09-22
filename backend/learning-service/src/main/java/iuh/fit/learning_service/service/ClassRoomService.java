@@ -8,6 +8,7 @@ import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.enums.JoinMode;
 import iuh.fit.learning_service.enums.LearningMode;
 import iuh.fit.learning_service.enums.SyllabusMode;
+import iuh.fit.learning_service.enums.TeachingMode;
 import iuh.fit.learning_service.enums.TutorSubjectRegistrationStatus;
 import iuh.fit.learning_service.exception.BadRequestException;
 import iuh.fit.learning_service.exception.ConflictException;
@@ -48,6 +49,7 @@ public class ClassRoomService {
     private final TutorAvailabilityRepository availabilityRepository;
     private final EnrollmentRequestRepository enrollmentRequestRepository;
     private final TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
+    private final TutorIdentityLookup tutorIdentityLookup;
     private final LearningEventPublisher eventPublisher;
     private final RealtimeEventHub realtimeEventHub;
 
@@ -58,6 +60,7 @@ public class ClassRoomService {
             TutorAvailabilityRepository availabilityRepository,
             EnrollmentRequestRepository enrollmentRequestRepository,
             TutorAuthorizationStateRepository tutorAuthorizationStateRepository,
+            TutorIdentityLookup tutorIdentityLookup,
             LearningEventPublisher eventPublisher,
             RealtimeEventHub realtimeEventHub
     ) {
@@ -67,6 +70,7 @@ public class ClassRoomService {
         this.availabilityRepository = availabilityRepository;
         this.enrollmentRequestRepository = enrollmentRequestRepository;
         this.tutorAuthorizationStateRepository = tutorAuthorizationStateRepository;
+        this.tutorIdentityLookup = tutorIdentityLookup;
         this.eventPublisher = eventPublisher;
         this.realtimeEventHub = realtimeEventHub;
     }
@@ -254,6 +258,13 @@ public class ClassRoomService {
             }
             address = request.address().trim();
         }
+        Long tutorProfileId = resolveTutorProfileId(registration, tutorEmail);
+        TutorAuthorizationState tutorAuthorization = validateTutorTeachingMode(tutorProfileId, request.learningMode());
+
+        // Calculate end date, total sessions, and total price
+        LocalDate endDate = calculateEndDate(request.startDate(), request.durationValue(), request.durationUnit());
+        int totalSessions = calculateTotalSessions(request.durationValue(), request.durationUnit(), request.sessionsPerWeek());
+        BigDecimal totalPrice = request.pricePerSession().multiply(BigDecimal.valueOf(totalSessions));
 
         // Validate schedules
         if (request.schedules().size() != request.sessionsPerWeek()) {
@@ -261,21 +272,16 @@ public class ClassRoomService {
                     "You must select exactly %d schedule slot(s) for %d session(s) per week",
                     request.sessionsPerWeek(), request.sessionsPerWeek()));
         }
-        validateScheduleSlots(tutorEmail, request.schedules(), request.durationPerSessionMinutes());
+        validateScheduleSlots(tutorEmail, request.schedules(), request.durationPerSessionMinutes(), request.startDate(), endDate);
 
         // Validate syllabus
         validateSyllabus(request.syllabusMode(), request.syllabusFileUrl(), request.chapters());
-
-        // Calculate end date, total sessions, and total price
-        LocalDate endDate = calculateEndDate(request.startDate(), request.durationValue(), request.durationUnit());
-        int totalSessions = calculateTotalSessions(request.durationValue(), request.durationUnit(), request.sessionsPerWeek());
-        BigDecimal totalPrice = request.pricePerSession().multiply(BigDecimal.valueOf(totalSessions));
 
         ClassRoom classRoom = new ClassRoom();
         classRoom.setTutorSubjectRegistration(registration);
         classRoom.setLevel(level);
         classRoom.setTutorEmail(tutorEmail);
-        classRoom.setTutorProfileId(request.tutorProfileId() != null ? request.tutorProfileId() : registration.getTutorProfileId());
+        classRoom.setTutorProfileId(tutorAuthorization.getTutorProfileId());
         classRoom.setTutorFullName(normalizeOptional(request.tutorFullName()));
         classRoom.setName(request.name().trim());
         classRoom.setDescription(request.description().trim());
@@ -349,6 +355,7 @@ public class ClassRoomService {
                 "className", saved.getName(),
                 "status", saved.getStatus().name()
         ));
+        eventPublisher.publishClassSubmitted(saved.getId(), saved.getTutorEmail(), saved.getName());
         return toResponse(saved);
     }
 
@@ -646,7 +653,9 @@ public class ClassRoomService {
     private void validateScheduleSlots(
             String tutorEmail,
             List<ClassRoomDtos.ScheduleRequest> schedules,
-            Integer durationPerSessionMinutes
+            Integer durationPerSessionMinutes,
+            LocalDate newStartDate,
+            LocalDate newEndDate
     ) {
         List<TutorAvailability> availability = availabilityRepository
                 .findByTutorEmailIgnoreCaseOrderByDayOfWeekAscStartTimeAsc(tutorEmail);
@@ -701,6 +710,9 @@ public class ClassRoomService {
                 existing.getStatus() == ClassRoomStatus.PRIVATE ||
                 existing.getStatus() == ClassRoomStatus.PUBLISHED ||
                 existing.getStatus() == ClassRoomStatus.LOCKED) {
+                if (!dateRangesOverlap(newStartDate, newEndDate, existing.getStartDate(), existing.getEndDate())) {
+                    continue;
+                }
                 for (ClassSchedule existingSchedule : existing.getSchedules()) {
                     for (ClassRoomDtos.ScheduleRequest newSched : schedules) {
                         if (newSched.dayOfWeek().equals(existingSchedule.getDayOfWeek())) {
@@ -719,6 +731,46 @@ public class ClassRoomService {
                 }
             }
         }
+    }
+
+    private Long resolveTutorProfileId(TutorSubjectRegistration registration, String tutorEmail) {
+        Long tutorProfileId = registration.getTutorProfileId();
+        if (tutorProfileId == null) {
+            java.util.Optional<Long> resolvedProfileId = tutorIdentityLookup.tutorProfileId(tutorEmail);
+            if (resolvedProfileId != null && resolvedProfileId.isPresent()) {
+                tutorProfileId = resolvedProfileId.get();
+                registration.setTutorProfileId(tutorProfileId);
+            }
+        }
+        if (tutorProfileId == null) {
+            throw new BadRequestException("Không thể xác định hồ sơ gia sư đã được duyệt.");
+        }
+        return tutorProfileId;
+    }
+
+    private TutorAuthorizationState validateTutorTeachingMode(Long tutorProfileId, LearningMode requestedMode) {
+        TutorAuthorizationState state = tutorAuthorizationStateRepository.findByTutorProfileId(tutorProfileId)
+                .orElseThrow(() -> new BadRequestException("Hồ sơ gia sư chưa sẵn sàng để tạo lớp."));
+        if (!"APPROVED".equalsIgnoreCase(state.getStatus())) {
+            throw new BadRequestException("Hồ sơ gia sư chưa được phê duyệt.");
+        }
+
+        List<TeachingMode> allowedModes = state.getTeachingModes() == null || state.getTeachingModes().isEmpty()
+                ? List.of(TeachingMode.ONLINE, TeachingMode.OFFLINE)
+                : new ArrayList<>(state.getTeachingModes());
+        TeachingMode requestedTeachingMode = TeachingMode.valueOf(requestedMode.name());
+        if (!allowedModes.contains(requestedTeachingMode)) {
+            String label = requestedMode == LearningMode.OFFLINE ? "trực tiếp" : "trực tuyến";
+            throw new BadRequestException("Bạn chưa đăng ký hình thức dạy " + label + ".");
+        }
+        return state;
+    }
+
+    private boolean dateRangesOverlap(LocalDate firstStart, LocalDate firstEnd, LocalDate secondStart, LocalDate secondEnd) {
+        if (firstStart == null || firstEnd == null || secondStart == null || secondEnd == null) {
+            return true;
+        }
+        return !firstStart.isAfter(secondEnd) && !secondStart.isAfter(firstEnd);
     }
 
     private void validateSyllabus(SyllabusMode mode, String fileUrl, List<ClassRoomDtos.ChapterRequest> chapters) {

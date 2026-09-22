@@ -2,6 +2,7 @@ package iuh.fit.account_service.dto.staff;
 
 import iuh.fit.account_service.enums.AccountStatus;
 import iuh.fit.account_service.enums.CredentialValidityType;
+import iuh.fit.account_service.enums.TeachingMode;
 import iuh.fit.account_service.enums.TutorApplicationStatus;
 import iuh.fit.account_service.enums.TutorDocumentType;
 import iuh.fit.account_service.enums.TutorDocumentVerificationStatus;
@@ -95,6 +96,7 @@ public class StaffTutorApplicationDetailResponse {
         private String institution;
         private String major;
         private String experienceSummary;
+        private Set<TeachingMode> teachingModes;
         private String bio;
         private LocalDateTime submittedAt;
         private LocalDateTime reviewedAt;
@@ -109,6 +111,7 @@ public class StaffTutorApplicationDetailResponse {
                 String institution,
                 String major,
                 String experienceSummary,
+                Set<TeachingMode> teachingModes,
                 String bio,
                 LocalDateTime submittedAt,
                 LocalDateTime reviewedAt,
@@ -122,6 +125,7 @@ public class StaffTutorApplicationDetailResponse {
             this.institution = institution;
             this.major = major;
             this.experienceSummary = experienceSummary;
+            this.teachingModes = teachingModes;
             this.bio = bio;
             this.submittedAt = submittedAt;
             this.reviewedAt = reviewedAt;
@@ -136,6 +140,7 @@ public class StaffTutorApplicationDetailResponse {
         public String getInstitution() { return institution; }
         public String getMajor() { return major; }
         public String getExperienceSummary() { return experienceSummary; }
+        public Set<TeachingMode> getTeachingModes() { return teachingModes; }
         public String getBio() { return bio; }
         public LocalDateTime getSubmittedAt() { return submittedAt; }
         public LocalDateTime getReviewedAt() { return reviewedAt; }

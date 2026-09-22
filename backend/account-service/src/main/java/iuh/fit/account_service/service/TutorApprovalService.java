@@ -348,9 +348,10 @@ public class TutorApprovalService {
                         application.getStatus(),
                         application.getEducationLevel(),
                         application.getInstitution(),
-                        application.getMajor(),
-                        application.getExperienceSummary(),
-                        application.getBio(),
+                    application.getMajor(),
+                    application.getExperienceSummary(),
+                    new java.util.LinkedHashSet<>(application.getTeachingModes()),
+                    application.getBio(),
                         application.getSubmittedAt(),
                         application.getReviewedAt(),
                         application.getReviewedBy() == null ? null : application.getReviewedBy().getFullName(),
@@ -432,6 +433,7 @@ public class TutorApprovalService {
                     application.getId(),
                     profile.getId(),
                     application.getUser().getId(),
+                    application.getTeachingModes() != null ? new java.util.LinkedHashSet<>(application.getTeachingModes()) : Set.of(),
                     items,
                     LocalDateTime.now()
             ));
@@ -445,6 +447,7 @@ public class TutorApprovalService {
         if (!StringUtils.hasText(firstText(application.getApplicantFullName(), user.getFullName()))) missingItems.add("accountFullName");
         if (!StringUtils.hasText(firstText(application.getApplicantEmail(), user.getEmail()))) missingItems.add("accountEmail");
         if (!hasIdentityDocument(documents)) missingItems.add("identityDocument");
+        if (application.getTeachingModes() == null || application.getTeachingModes().isEmpty()) missingItems.add("teachingModes");
         return missingItems;
     }
 

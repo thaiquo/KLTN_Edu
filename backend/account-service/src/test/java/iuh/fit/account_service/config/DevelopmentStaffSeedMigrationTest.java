@@ -11,7 +11,7 @@ class DevelopmentStaffSeedMigrationTest {
 
     @Test
     void developmentStaffSeedForcesStaffOnlyRolesForKnownAccounts() throws Exception {
-        String sql = Files.readString(Path.of("src/main/resources/db/migration/V10__seed_development_staff_accounts.sql"));
+        String sql = Files.readString(Path.of("src/main/resources/db/dev-data/development_accounts.sql"));
 
         assertThat(sql).contains(
                 "tanthinh@gmail.com",

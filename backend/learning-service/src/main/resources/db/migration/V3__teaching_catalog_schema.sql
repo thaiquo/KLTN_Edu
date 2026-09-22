@@ -1,4 +1,4 @@
-CREATE TABLE program_types (
+﻿CREATE TABLE program_types (
     id BIGSERIAL PRIMARY KEY,
     code VARCHAR(30) NOT NULL UNIQUE,
     name VARCHAR(120) NOT NULL,
@@ -65,8 +65,9 @@ CREATE TABLE tutor_subject_registrations (
     program_type_id BIGINT NOT NULL REFERENCES program_types(id),
     education_level_id BIGINT REFERENCES education_levels(id),
     category_id BIGINT NOT NULL REFERENCES catalog_categories(id),
-    subject_id BIGINT NOT NULL REFERENCES catalog_subjects(id),
-    level_id BIGINT NOT NULL REFERENCES catalog_levels(id),
+    subject_id BIGINT REFERENCES catalog_subjects(id),
+    proposed_subject_name VARCHAR(160),
+    proposed_note VARCHAR(1000),
     experience_years INTEGER NOT NULL DEFAULT 0,
     tuition_min NUMERIC(12,2) NOT NULL,
     tuition_max NUMERIC(12,2) NOT NULL,
@@ -84,9 +85,24 @@ CREATE TABLE tutor_subject_registrations (
     CONSTRAINT ck_registration_tuition CHECK (tuition_min > 0 AND tuition_max >= tuition_min)
 );
 
-CREATE UNIQUE INDEX uk_active_tutor_subject_registration
-    ON tutor_subject_registrations(lower(tutor_email), subject_id, level_id)
-    WHERE status IN ('DRAFT','PENDING','APPROVED');
+CREATE TABLE tutor_subject_registration_levels (
+    registration_id BIGINT NOT NULL REFERENCES tutor_subject_registrations(id) ON DELETE CASCADE,
+    level_id BIGINT NOT NULL REFERENCES catalog_levels(id),
+    CONSTRAINT pk_tutor_subject_registration_levels PRIMARY KEY (registration_id, level_id)
+);
+
+CREATE TABLE tutor_subject_registration_proposed_levels (
+    registration_id BIGINT NOT NULL REFERENCES tutor_subject_registrations(id) ON DELETE CASCADE,
+    order_index INTEGER NOT NULL,
+    level_code VARCHAR(80),
+    level_name VARCHAR(160) NOT NULL,
+    level_type VARCHAR(40) NOT NULL,
+    PRIMARY KEY (registration_id, order_index),
+    CONSTRAINT ck_registration_proposed_level_type CHECK (level_type IN (
+        'GRADE', 'EXAM_PREPARATION', 'UNIVERSITY_LEVEL',
+        'CERTIFICATE_TARGET', 'SKILL_LEVEL', 'COACHING_LEVEL'
+    ))
+);
 
 CREATE TABLE registration_evidence (
     id BIGSERIAL PRIMARY KEY,
@@ -142,8 +158,10 @@ CREATE INDEX idx_catalog_subjects_category ON catalog_subjects(category_id, acti
 CREATE INDEX idx_catalog_levels_subject ON catalog_levels(subject_id, active, order_index);
 CREATE INDEX idx_tutor_registrations_owner ON tutor_subject_registrations(lower(tutor_email), status, submitted_at);
 CREATE INDEX idx_tutor_registrations_review ON tutor_subject_registrations(status, submitted_at);
+CREATE INDEX idx_tutor_registrations_subject_status ON tutor_subject_registrations(lower(tutor_email), subject_id, status);
+CREATE INDEX idx_registration_levels_level ON tutor_subject_registration_levels(level_id, registration_id);
+CREATE INDEX idx_registration_proposed_levels_registration ON tutor_subject_registration_proposed_levels(registration_id);
 CREATE INDEX idx_catalog_suggestions_review ON catalog_subject_suggestions(status, created_at);
-
 INSERT INTO program_types(code, name, description, order_index) VALUES
 ('ACADEMIC', 'Học thuật / Theo cấp học', 'Chương trình chính quy theo cấp học', 1),
 ('SKILL', 'Kỹ năng / Chứng chỉ / Nghề nghiệp', 'Kỹ năng, chứng chỉ và nghề nghiệp không phụ thuộc cấp học', 2);

@@ -3,6 +3,7 @@ package iuh.fit.notification_service;
 import iuh.fit.notification_service.messaging.NotificationEventConsumer;
 import iuh.fit.notification_service.messaging.event.SubjectRequestApprovedEvent;
 import iuh.fit.notification_service.messaging.event.SubjectRequestRejectedEvent;
+import iuh.fit.notification_service.messaging.event.TeachingRegistrationSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.EnrollmentNotificationEvent;
 import iuh.fit.notification_service.messaging.event.TeachingRegistrationReviewedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApplicationSubmittedEvent;
@@ -77,6 +78,61 @@ class NotificationEventConsumerTests {
         consumer.onEnrollmentRequested(enrollmentEvent("invalid-enrollment", "ENROLLMENT_REQUESTED", null, 100L, null));
 
         assertThat(notificationRepository.count()).isZero();
+    }
+
+    @Test
+    void submittedTutorApplicationCreatesStaffNotificationAndDeduplicates() {
+        var event = new TutorApplicationSubmittedEvent("submitted-2", 1L, 2L, 900L, LocalDateTime.now());
+
+        consumer.onTutorApplicationSubmitted(event);
+        consumer.onTutorApplicationSubmitted(event);
+
+        var notification = notificationRepository.findByEventIdAndRecipientUserId("submitted-2", 900L);
+        assertThat(notification).isPresent();
+        assertThat(notification.get().getType()).isEqualTo("TUTOR_APPLICATION_SUBMITTED");
+        assertThat(notification.get().getTargetRole()).isEqualTo("STAFF");
+        assertThat(notification.get().getReferenceType()).isEqualTo("TUTOR_APPLICATION");
+        assertThat(notification.get().getRecipientUserId()).isEqualTo(900L);
+        assertThat(notificationRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void submittedTeachingRegistrationCreatesIndependentStaffNotifications() {
+        var firstStaff = new TeachingRegistrationSubmittedEvent(
+                "teaching-submitted-1",
+                "TEACHING_REGISTRATION_SUBMITTED",
+                LocalDateTime.now(),
+                "learning-service",
+                88L,
+                900L,
+                "tutor@example.com",
+                400L,
+                "Toan lop 10",
+                "TEACHING_REGISTRATION",
+                "88");
+        var secondStaff = new TeachingRegistrationSubmittedEvent(
+                "teaching-submitted-1",
+                "TEACHING_REGISTRATION_SUBMITTED",
+                firstStaff.occurredAt(),
+                "learning-service",
+                88L,
+                901L,
+                "tutor@example.com",
+                400L,
+                "Toan lop 10",
+                "TEACHING_REGISTRATION",
+                "88");
+
+        consumer.onTeachingRegistrationSubmitted(firstStaff);
+        consumer.onTeachingRegistrationSubmitted(secondStaff);
+        consumer.onTeachingRegistrationSubmitted(firstStaff);
+
+        assertThat(notificationRepository.findByEventIdAndRecipientUserId("teaching-submitted-1", 900L)).isPresent();
+        assertThat(notificationRepository.findByEventIdAndRecipientUserId("teaching-submitted-1", 901L)).isPresent();
+        assertThat(notificationRepository.findAll())
+                .extracting("type")
+                .containsOnly("TEACHING_REGISTRATION_SUBMITTED");
+        assertThat(notificationRepository.count()).isEqualTo(2);
     }
 
     @Test

@@ -18,6 +18,18 @@ export function getNotificationTarget(notification, activeRole) {
   const referenceType = normalizeValue(notification?.referenceType);
   const role = normalizeRole(activeRole);
 
+  if (type === 'TUTOR_APPLICATION_SUBMITTED') {
+    return target('/staff/tutors', 'tutor-approval');
+  }
+
+  if (type === 'TEACHING_REGISTRATION_SUBMITTED' || type === 'SUBJECT_REQUEST_SUBMITTED') {
+    return target('/staff/tutors', 'tutor-approval');
+  }
+
+  if (type === 'CLASS_SUBMITTED') {
+    return target('/staff/tutors', 'class-management');
+  }
+
   if (type === 'TUTOR_APPLICATION_REVIEWED' || referenceType === 'TUTOR_APPLICATION') {
     return role === 'TUTOR'
       ? target('/dashboard', 'dashboard')

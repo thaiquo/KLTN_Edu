@@ -70,6 +70,11 @@ public class SubjectRequestService {
                 "userId", saved.getRequestedByUserId(),
                 "status", saved.getStatus().name()
         ));
+        eventPublisher.publishSubjectRequestSubmitted(
+                saved.getId(),
+                saved.getRequestedByUserId(),
+                saved.getRequestedName()
+        );
         return toResponse(saved);
     }
 

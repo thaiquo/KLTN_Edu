@@ -4,6 +4,7 @@ import iuh.fit.learning_service.entity.ProcessedEvent;
 import iuh.fit.learning_service.entity.Subject;
 import iuh.fit.learning_service.entity.TutorAuthorizationState;
 import iuh.fit.learning_service.entity.TutorSubject;
+import iuh.fit.learning_service.enums.TeachingMode;
 import iuh.fit.learning_service.messaging.event.TutorApprovedEvent;
 import iuh.fit.learning_service.messaging.event.TutorRejectedEvent;
 import iuh.fit.learning_service.repository.ProcessedEventRepository;
@@ -72,7 +73,7 @@ public class TutorApplicationEventListener {
                 tutorSubjectRepository.save(existing);
             }
         }
-        upsertTutorAuthorization(event.userId(), event.tutorProfileId(), "APPROVED", event.eventId());
+        upsertTutorAuthorization(event.userId(), event.tutorProfileId(), "APPROVED", normalizeTeachingModes(event.teachingModes()), event.eventId());
         markProcessed(event.eventId(), TutorApprovedEvent.class.getSimpleName());
     }
 
@@ -82,7 +83,7 @@ public class TutorApplicationEventListener {
         if (event == null || event.eventId() == null || processedEventRepository.existsById(event.eventId())) {
             return;
         }
-        upsertTutorAuthorization(event.userId(), null, "REJECTED", event.eventId());
+        upsertTutorAuthorization(event.userId(), null, "REJECTED", Set.of(), event.eventId());
         for (TutorSubject subject : tutorSubjectRepository.findByUserIdAndActiveTrueOrderByCreatedAtAsc(event.userId())) {
             subject.setActive(false);
             tutorSubjectRepository.save(subject);
@@ -90,7 +91,7 @@ public class TutorApplicationEventListener {
         markProcessed(event.eventId(), TutorRejectedEvent.class.getSimpleName());
     }
 
-    private void upsertTutorAuthorization(Long userId, Long tutorProfileId, String status, String eventId) {
+    private void upsertTutorAuthorization(Long userId, Long tutorProfileId, String status, Set<TeachingMode> teachingModes, String eventId) {
         if (userId == null) {
             return;
         }
@@ -104,8 +105,19 @@ public class TutorApplicationEventListener {
         if (tutorProfileId != null) {
             state.setTutorProfileId(tutorProfileId);
         }
+        state.getTeachingModes().clear();
+        state.getTeachingModes().addAll(teachingModes);
         state.setSourceEventId(eventId);
         tutorAuthorizationStateRepository.save(state);
+    }
+
+    private Set<TeachingMode> normalizeTeachingModes(Set<TeachingMode> teachingModes) {
+        if (teachingModes == null || teachingModes.isEmpty()) {
+            return Set.of(TeachingMode.ONLINE, TeachingMode.OFFLINE);
+        }
+        return teachingModes.stream()
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     private void markProcessed(String eventId, String eventType) {

@@ -226,6 +226,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
   const [availableSlots, setAvailableSlots] = useState<SavedSlot[]>([]);
   const [occupiedSlots, setOccupiedSlots] = useState<OccupiedSlot[]>([]);
   const [tutorProfile, setTutorProfile] = useState<any>(null);
+  const [tutorTeachingModes, setTutorTeachingModes] = useState<Array<"ONLINE" | "OFFLINE">>(["ONLINE", "OFFLINE"]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
@@ -272,13 +273,21 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
     async function loadData() {
       setLoading(true);
       try {
-        const [regs, dbSlots, myClasses, profile] = await Promise.all([
+        const [regs, dbSlots, myClasses, profile, application] = await Promise.all([
           teachingRegistrationApi.mine().catch(() => []),
           classApi.getAvailability().catch(() => []),
           classApi.getMyClasses().catch(() => []),
-          tutorApi.getProfile().catch(() => null)
+          tutorApi.getProfile().catch(() => null),
+          tutorApplicationApi.getMyTutorApplication().catch(() => null)
         ]);
         setTutorProfile(profile);
+        const modes = Array.isArray((application as any)?.teachingModes) && (application as any).teachingModes.length > 0
+          ? (application as any).teachingModes.filter((mode: string) => mode === "ONLINE" || mode === "OFFLINE")
+          : ["ONLINE", "OFFLINE"];
+        setTutorTeachingModes(modes as Array<"ONLINE" | "OFFLINE">);
+        if (!modes.includes(learningMode)) {
+          setLearningMode(modes.includes("ONLINE") ? "ONLINE" : "OFFLINE");
+        }
 
         const approved = (regs || []).filter((r: any) => r.status === "APPROVED");
         setRegistrations(approved);
@@ -691,6 +700,9 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
     syllabusMode, chapters, syllabusFileUrl
   ]);
 
+  const canUseOnline = tutorTeachingModes.includes("ONLINE");
+  const canUseOffline = tutorTeachingModes.includes("OFFLINE");
+
   // Form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -964,12 +976,13 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
             <div className="grid grid-cols-2 gap-3 max-w-md">
               <button
                 type="button"
-                onClick={() => setLearningMode("ONLINE")}
+                onClick={() => canUseOnline && setLearningMode("ONLINE")}
+                disabled={!canUseOnline}
                 className={`py-3 px-4 rounded-xl border flex items-center justify-center gap-2 text-xs font-extrabold transition-all ${
                   learningMode === "ONLINE"
                     ? "border-brand-primary bg-brand-primary/10 text-brand-primary"
                     : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                }`}
+                } ${!canUseOnline ? "opacity-45 cursor-not-allowed" : ""}`}
               >
                 <Video className="w-4 h-4" />
                 <span>Học Online (Trực tuyến)</span>
@@ -977,17 +990,23 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
 
               <button
                 type="button"
-                onClick={() => setLearningMode("OFFLINE")}
+                onClick={() => canUseOffline && setLearningMode("OFFLINE")}
+                disabled={!canUseOffline}
                 className={`py-3 px-4 rounded-xl border flex items-center justify-center gap-2 text-xs font-extrabold transition-all ${
                   learningMode === "OFFLINE"
                     ? "border-brand-primary bg-brand-primary/10 text-brand-primary"
                     : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                }`}
+                } ${!canUseOffline ? "opacity-45 cursor-not-allowed" : ""}`}
               >
                 <MapPin className="w-4 h-4" />
                 <span>Học Offline (Trực tiếp)</span>
               </button>
             </div>
+            {(!canUseOnline || !canUseOffline) && (
+              <p className="text-[11px] font-semibold text-slate-500">
+                Chỉ hiển thị các hình thức nhận dạy đã được phê duyệt trong hồ sơ gia sư.
+              </p>
+            )}
 
             {learningMode === "ONLINE" ? (
               <div>

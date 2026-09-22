@@ -3,8 +3,12 @@ package iuh.fit.learning_service.messaging;
 import iuh.fit.learning_service.messaging.event.SubjectRequestApprovedEvent;
 import iuh.fit.learning_service.messaging.event.SubjectRequestRejectedEvent;
 import iuh.fit.learning_service.messaging.event.ClassReviewedNotificationEvent;
+import iuh.fit.learning_service.messaging.event.ClassSubmittedNotificationEvent;
 import iuh.fit.learning_service.messaging.event.EnrollmentNotificationEvent;
+import iuh.fit.learning_service.messaging.event.SubjectRequestSubmittedEvent;
 import iuh.fit.learning_service.messaging.event.TeachingRegistrationReviewedEvent;
+import iuh.fit.learning_service.messaging.event.TeachingRegistrationSubmittedEvent;
+import iuh.fit.learning_service.service.StaffNotificationRecipientLookup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -13,6 +17,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Component
@@ -20,9 +25,15 @@ public class LearningEventPublisher {
     private static final Logger log = LoggerFactory.getLogger(LearningEventPublisher.class);
 
     private final RabbitTemplate rabbitTemplate;
+    private final StaffNotificationRecipientLookup staffRecipientLookup;
+
+    public LearningEventPublisher(RabbitTemplate rabbitTemplate, StaffNotificationRecipientLookup staffRecipientLookup) {
+        this.rabbitTemplate = rabbitTemplate;
+        this.staffRecipientLookup = staffRecipientLookup;
+    }
 
     public LearningEventPublisher(RabbitTemplate rabbitTemplate) {
-        this.rabbitTemplate = rabbitTemplate;
+        this(rabbitTemplate, null);
     }
 
     public void publishSubjectRequestApproved(Long requestId, Long requestedByUserId, Long approvedSubjectId) {
@@ -39,6 +50,73 @@ public class LearningEventPublisher {
                 LearningRabbitConfig.SUBJECT_REQUEST_REJECTED_ROUTING_KEY,
                 new SubjectRequestRejectedEvent(UUID.randomUUID().toString(), requestId, requestedByUserId, reason, LocalDateTime.now())
         );
+    }
+
+    public void publishTeachingRegistrationSubmitted(Long registrationId, String tutorEmail, Long subjectId, String subjectName) {
+        String eventId = UUID.randomUUID().toString();
+        for (Long staffUserId : activeStaffUserIdsExcludingEmail(tutorEmail)) {
+            publishAfterCommit(
+                    LearningRabbitConfig.EXCHANGE,
+                    LearningRabbitConfig.TEACHING_REGISTRATION_SUBMITTED_ROUTING_KEY,
+                    new TeachingRegistrationSubmittedEvent(
+                            eventId,
+                            "TEACHING_REGISTRATION_SUBMITTED",
+                            LocalDateTime.now(),
+                            "learning-service",
+                            registrationId,
+                            staffUserId,
+                            tutorEmail,
+                            subjectId,
+                            subjectName,
+                            "TEACHING_REGISTRATION",
+                            String.valueOf(registrationId)
+                    )
+            );
+        }
+    }
+
+    public void publishSubjectRequestSubmitted(Long requestId, Long requestedByUserId, String requestedName) {
+        String eventId = UUID.randomUUID().toString();
+        for (Long staffUserId : activeStaffUserIdsExcludingUserId(requestedByUserId)) {
+            publishAfterCommit(
+                    LearningRabbitConfig.EXCHANGE,
+                    LearningRabbitConfig.SUBJECT_REQUEST_SUBMITTED_ROUTING_KEY,
+                    new SubjectRequestSubmittedEvent(
+                            eventId,
+                            "SUBJECT_REQUEST_SUBMITTED",
+                            LocalDateTime.now(),
+                            "learning-service",
+                            requestId,
+                            staffUserId,
+                            requestedByUserId,
+                            requestedName,
+                            "SUBJECT_REQUEST",
+                            String.valueOf(requestId)
+                    )
+            );
+        }
+    }
+
+    public void publishClassSubmitted(Long classId, String tutorEmail, String classTitle) {
+        String eventId = UUID.randomUUID().toString();
+        for (Long staffUserId : activeStaffUserIdsExcludingEmail(tutorEmail)) {
+            publishAfterCommit(
+                    LearningRabbitConfig.EXCHANGE,
+                    LearningRabbitConfig.CLASS_SUBMITTED_ROUTING_KEY,
+                    new ClassSubmittedNotificationEvent(
+                            eventId,
+                            "CLASS_SUBMITTED",
+                            LocalDateTime.now(),
+                            "learning-service",
+                            classId,
+                            staffUserId,
+                            tutorEmail,
+                            classTitle,
+                            "CLASS",
+                            String.valueOf(classId)
+                    )
+            );
+        }
     }
 
     public void publishEnrollmentRequested(Long requestId, Long classId, Long recipientUserId, Long actorUserId, String classTitle, String studentName) {
@@ -263,5 +341,13 @@ public class LearningEventPublisher {
         } else {
             action.run();
         }
+    }
+
+    private List<Long> activeStaffUserIdsExcludingUserId(Long excludedUserId) {
+        return staffRecipientLookup == null ? List.of() : staffRecipientLookup.activeStaffUserIdsExcludingUserId(excludedUserId);
+    }
+
+    private List<Long> activeStaffUserIdsExcludingEmail(String excludedEmail) {
+        return staffRecipientLookup == null ? List.of() : staffRecipientLookup.activeStaffUserIdsExcludingEmail(excludedEmail);
     }
 }

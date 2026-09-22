@@ -1,7 +1,11 @@
 package iuh.fit.notification_service.messaging;
 
 import iuh.fit.notification_service.messaging.event.ClassReviewedNotificationEvent;
+import iuh.fit.notification_service.messaging.event.ClassSubmittedNotificationEvent;
+import iuh.fit.notification_service.messaging.event.SubjectRequestSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.TeachingRegistrationReviewedEvent;
+import iuh.fit.notification_service.messaging.event.TeachingRegistrationSubmittedEvent;
+import iuh.fit.notification_service.messaging.event.TutorApplicationSubmittedEvent;
 import iuh.fit.notification_service.service.NotificationCommand;
 import iuh.fit.notification_service.service.NotificationService;
 import org.junit.jupiter.api.Test;
@@ -15,6 +19,87 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 class NotificationEventConsumerTest {
+
+    @Test
+    void onTutorApplicationSubmittedCreatesStaffNotification() {
+        NotificationService notificationService = mock(NotificationService.class);
+        NotificationEventConsumer consumer = new NotificationEventConsumer(notificationService);
+        ArgumentCaptor<NotificationCommand> captor = ArgumentCaptor.forClass(NotificationCommand.class);
+
+        consumer.onTutorApplicationSubmitted(new TutorApplicationSubmittedEvent(
+                "submitted-1",
+                22L,
+                33L,
+                44L,
+                LocalDateTime.now()));
+
+        verify(notificationService).createIfAbsent(captor.capture());
+
+        NotificationCommand command = captor.getValue();
+        assertThat(command.eventId()).isEqualTo("submitted-1");
+        assertThat(command.recipientUserId()).isEqualTo(44L);
+        assertThat(command.type()).isEqualTo("TUTOR_APPLICATION_SUBMITTED");
+        assertThat(command.targetRole()).isEqualTo("STAFF");
+        assertThat(command.referenceType()).isEqualTo("TUTOR_APPLICATION");
+        assertThat(command.referenceId()).isEqualTo("22");
+    }
+
+    @Test
+    void onSubmittedEventsCreateStaffNotifications() {
+        NotificationService notificationService = mock(NotificationService.class);
+        NotificationEventConsumer consumer = new NotificationEventConsumer(notificationService);
+        ArgumentCaptor<NotificationCommand> captor = ArgumentCaptor.forClass(NotificationCommand.class);
+
+        consumer.onTeachingRegistrationSubmitted(new TeachingRegistrationSubmittedEvent(
+                "teaching-submitted-1",
+                "TEACHING_REGISTRATION_SUBMITTED",
+                LocalDateTime.now(),
+                "learning-service",
+                55L,
+                900L,
+                "tutor@example.com",
+                66L,
+                "Math",
+                "TEACHING_REGISTRATION",
+                "55"));
+        consumer.onSubjectRequestSubmitted(new SubjectRequestSubmittedEvent(
+                "subject-submitted-1",
+                "SUBJECT_REQUEST_SUBMITTED",
+                LocalDateTime.now(),
+                "learning-service",
+                77L,
+                901L,
+                101L,
+                "Physics",
+                "SUBJECT_REQUEST",
+                "77"));
+        consumer.onClassSubmitted(new ClassSubmittedNotificationEvent(
+                "class-submitted-1",
+                "CLASS_SUBMITTED",
+                LocalDateTime.now(),
+                "learning-service",
+                88L,
+                902L,
+                "tutor@example.com",
+                "Physics 10",
+                "CLASS",
+                "88"));
+
+        verify(notificationService, org.mockito.Mockito.times(3)).createIfAbsent(captor.capture());
+
+        assertThat(captor.getAllValues())
+                .extracting(NotificationCommand::type)
+                .containsExactly(
+                        "TEACHING_REGISTRATION_SUBMITTED",
+                        "SUBJECT_REQUEST_SUBMITTED",
+                        "CLASS_SUBMITTED");
+        assertThat(captor.getAllValues())
+                .extracting(NotificationCommand::targetRole)
+                .containsOnly("STAFF");
+        assertThat(captor.getAllValues())
+                .extracting(NotificationCommand::referenceType)
+                .containsExactly("TEACHING_REGISTRATION", "SUBJECT_REQUEST", "CLASS");
+    }
 
     @Test
     void onClassReviewedCreatesTutorNotification() {
