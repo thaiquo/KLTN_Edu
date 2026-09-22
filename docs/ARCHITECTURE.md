@@ -85,8 +85,8 @@ Các service hiện dùng chung một PostgreSQL database vật lý `kltn_db`, n
 | Service | Số migration hiện thấy | Nhóm bảng tiêu biểu |
 | --- | ---: | --- |
 | Account | 13 | users, roles, refresh_sessions, OTP, students, tutors, tutor applications/documents. |
-| Learning | 31 | catalog, registrations, class_rooms, schedules/chapters, enrollment_requests, class_sessions, session_attendances, learning_termination_stops. |
-| Contract | 13 | contract_agreement/acceptance/artifact, escrow_payment, session_settlement, dispute/evidence, blockchain_transaction, processed_event/outbox/cursor, termination_cases/items. |
+| Learning | 32 | catalog, registrations, class_rooms, schedules/chapters, enrollment_requests, class_sessions, session_attendances, learning_termination_stops. |
+| Contract | 14 | contract_agreement/acceptance/artifact, escrow_payment, session_settlement, dispute/evidence, blockchain_transaction, processed_event/outbox/cursor, termination_cases/items. |
 | Notification | 2 | notifications, conversations, chat_messages. |
 
 ## 6. Storage và document

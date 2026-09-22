@@ -146,12 +146,19 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
   - Hệ thống kiểm tra đối chiếu ví kết nối MetaMask: nếu địa chỉ ví không khớp với ví đã ký hợp đồng và nạp cọc ban đầu, yêu cầu sẽ bị từ chối ngay lập tức để chống giả mạo danh tính và gian lận tài chính.
   - Quá trình ký EIP-712 hoàn toàn gasless (0 Sepolia ETH).
 - **Quy trình thẩm định và phân xử của Ban Quản trị (Staff/Admin):**
-  - Khi có yêu cầu chấm dứt hoặc đề xuất hủy lớp, hồ sơ được ghi nhận ở trạng thái `REQUESTED`.
-  - Nếu là đề xuất hủy lớp của Gia sư, lớp học lập tức hiển thị trạng thái cảnh báo `⚠️ Chờ duyệt hủy lớp` và đóng băng tiếp nhận đăng ký mới.
-  - Staff/Admin tiến hành xác minh lý do và minh chứng, có thể yêu cầu thêm giải trình (`RESPOND`), đề xuất phê duyệt (`RECOMMEND`) hoặc từ chối (`REJECT`).
+  - Khi có yêu cầu chấm dứt hoặc đề xuất hủy lớp, hệ thống đồng bộ hold với Learning (`HOLD_PENDING` nếu cần retry, sau đó `REQUESTED`). Cutoff lấy theo thời gian server lúc hold thành công, không lấy theo thời gian Admin xử lý.
+  - Student hold chỉ chặn các buổi tương lai của hợp đồng đó; lớp và các Student khác tiếp tục bình thường. Tutor hold chặn các buổi tương lai của toàn lớp, đóng băng đăng ký mới và hiển thị `Chờ duyệt hủy lớp`.
+  - Hold không gửi giao dịch blockchain và không hoàn tiền. Buổi đã bắt đầu trước cutoff vẫn hoàn tất attendance, settlement và cửa sổ dispute như bình thường.
+- **Tài liệu minh chứng đính kèm (Evidence Management):**
+  - Học viên và Gia sư có thể đính kèm tối đa 5 file minh chứng (ảnh, video, ghi âm, tài liệu PDF, Word, Excel, TXT) với dung lượng tối đa 50 MB mỗi file.
+  - Sau khi chữ ký EIP-712 tạo hồ sơ thành công, các file được tải tuần tự lên Amazon S3 dưới đường dẫn an toàn `terminations/{caseId}/{role}/{uuid}-{filename}` kèm kiểm tra mã băm toàn vẹn SHA-256 và whitelist MIME.
+  - Các bên tham gia có thể bổ sung minh chứng trong thời gian hồ sơ đang được thẩm định (`HOLD_PENDING`, `REQUESTED`, `RECOMMENDED`).
+  - Phân quyền truy cập: Chỉ các bên trong hợp đồng/lớp học, Staff phụ trách duyệt lớp và Admin mới có quyền xem nội dung minh chứng thông qua streaming bảo mật.
 - **Thanh lý và hoàn tiền Smart Contract Escrow khi Phê duyệt (`APPROVE`):**
-  - **Trường hợp Học viên đơn phương chấm dứt (`wholeClass = false`):** Hệ thống đóng băng các buổi học tương lai của riêng học viên đó. Các buổi học đã diễn ra hợp lệ được quyết toán cho gia sư, và Smart Contract Escrow tự động hoàn trả 100% tiền cọc các buổi chưa học về ví MetaMask của học viên.
-  - **Trường hợp Gia sư hủy toàn bộ lớp học (`wholeClass = true`):** Hệ thống lập tức hủy lịch các buổi học tương lai của cả lớp. Smart Contract Escrow tự động quyết toán các buổi đã dạy cho gia sư và hoàn trả 100% tiền cọc các buổi chưa học về ví MetaMask của **toàn bộ học viên** đang theo học trong lớp. Lớp học chuyển sang trạng thái kết thúc/hủy.
+  - **Trường hợp Học viên đơn phương chấm dứt (`wholeClass = false`):** Giữ nguyên cutoff đã chụp khi gửi yêu cầu. Các buổi đã diễn ra hợp lệ được quyết toán cho gia sư, và Smart Contract Escrow hoàn trả tiền cọc chưa sử dụng về ví MetaMask của học viên.
+  - **Trường hợp Gia sư hủy toàn bộ lớp học (`wholeClass = true`):** Chuyển hold thành đóng lớp, hủy lịch tương lai sau cutoff và xử lý từng agreement độc lập bằng Escrow V1. Các buổi đã dạy được quyết toán; tiền chưa sử dụng được hoàn về ví từng học viên.
+  - Khi chỉ một Student kết thúc hợp đồng, chỉ enrollment và attendance của Student đó tại các buổi sau cutoff bị gỡ; attendance đã diễn ra được giữ làm chứng cứ quyết toán. Danh sách thành viên của lớp tự cập nhật theo enrollment còn hiệu lực.
+  - Khi Admin duyệt hủy cả lớp, lớp chuyển `LOCKED` trong thời gian từng agreement đang settlement; Gia sư không thể tự mở lại hoặc nhận học viên mới. Lớp chỉ chuyển `CANCELLED` sau khi tất cả agreement đã đóng và refund/settlement được xác nhận. Các bên nhận notification cho từng agreement hoàn tất, Gia sư nhận thêm notification khi lớp đã hủy hoàn toàn.
 
 ## 6. Contract & Payment Business Relationship
 

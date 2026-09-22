@@ -18,6 +18,7 @@ class LearningTerminationServiceTest {
     @Mock ClassSessionRepository sessions;
     @Mock EnrollmentRequestRepository enrollments;
     @Mock LearningTerminationStopRepository stops;
+    @Mock SessionAttendanceRepository attendances;
     @InjectMocks LearningTerminationService service;
     ClassRoom room;
     EnrollmentRequest enrollment;
@@ -48,15 +49,38 @@ class LearningTerminationServiceTest {
         assertThat(future.getStatus()).isEqualTo(ClassSessionStatus.SCHEDULED);
         assertThat(enrollment.getStatus()).isEqualTo(EnrollmentRequestStatus.ENROLLED);
     }
+    @Test void individualHoldCanBeReleasedWithoutChangingClassSchedule() {
+        var past = session(1, LocalDateTime.now().minusHours(1));
+        var future = session(2, LocalDateTime.now().plusDays(1));
+        prepare(List.of(past, future));
+        var held = service.apply(new LearningTerminationService.Command(1L, 2L, agreement, false, "HOLD"));
+        assertThat(held.cutoffSession()).isEqualTo(1);
+        var stop = new LearningTerminationStop(); stop.setAgreementId(agreement); stop.setCutoffSession(1);
+        when(stops.findById(agreement)).thenReturn(Optional.of(stop));
+        service.apply(new LearningTerminationService.Command(1L, 2L, agreement, false, "RELEASE"));
+        verify(stops).delete(stop);
+        assertThat(future.getStatus()).isEqualTo(ClassSessionStatus.SCHEDULED);
+    }
+
+    @Test void wholeClassHoldBlocksOperationsButDoesNotCancelFutureSessionUntilApproval() {
+        var started = session(1, LocalDateTime.now().minusMinutes(10));
+        var future = session(2, LocalDateTime.now().plusDays(1));
+        prepare(List.of(started, future));
+        service.apply(new LearningTerminationService.Command(1L, 2L, agreement, true, "HOLD"));
+        assertThat(room.getTerminationCutoffSession()).isEqualTo(1);
+        assertThat(room.getStatus()).isEqualTo(ClassRoomStatus.LOCKED);
+        assertThat(future.getStatus()).isEqualTo(ClassSessionStatus.SCHEDULED);
+    }
     @Test void wholeClassFreezeKeepsStartedSessionAndCancelsFutureSession() {
         var started = session(1, LocalDateTime.now().minusMinutes(10));
         var future = session(2, LocalDateTime.now().plusDays(1));
         prepare(List.of(started, future));
         service.apply(new LearningTerminationService.Command(1L, 2L, agreement, true, "FREEZE"));
-        assertThat(room.getStatus()).isEqualTo(ClassRoomStatus.CLOSED);
+        assertThat(room.getStatus()).isEqualTo(ClassRoomStatus.LOCKED);
         assertThat(started.getStatus()).isEqualTo(ClassSessionStatus.SCHEDULED);
         assertThat(future.getStatus()).isEqualTo(ClassSessionStatus.CANCELLED);
         assertThat(room.getTerminationCutoffSession()).isEqualTo(1);
+        verify(attendances).deleteBySession_Id(future.getId());
     }
     @Test void repeatedFreezeDoesNotMoveIndividualCutoff() {
         prepare(List.of(session(1, LocalDateTime.now().minusDays(1)), session(2, LocalDateTime.now().minusHours(1))));
@@ -68,13 +92,15 @@ class LearningTerminationServiceTest {
         verify(stops, never()).saveAndFlush(any());
     }
     @Test void closureDoesNotExpireEnrollmentOrReopenClass() {
-        prepare(List.of());
+        var future = session(1, LocalDateTime.now().plusDays(1));
+        prepare(List.of(future));
         var stop = new LearningTerminationStop(); stop.setCutoffSession(0);
         when(stops.findById(agreement)).thenReturn(Optional.of(stop));
         service.apply(new LearningTerminationService.Command(1L, 2L, agreement, false, "CLOSE"));
         assertThat(enrollment.getStatus()).isEqualTo(EnrollmentRequestStatus.CANCELLED);
         assertThat(room.getStatus()).isEqualTo(ClassRoomStatus.LOCKED);
         assertThat(stop.isClosed()).isTrue();
+        verify(attendances).deleteBySession_IdAndStudentId(future.getId(), 2L);
     }
     @Test void stopDoesNotBlockOtherStudent() {
         var future = session(3, LocalDateTime.now().plusDays(1));

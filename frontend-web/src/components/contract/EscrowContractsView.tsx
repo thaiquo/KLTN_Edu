@@ -28,10 +28,10 @@ import { DisputeManagementPanel } from './DisputeManagementPanel';
 import { ContractAuditTimeline } from './ContractAuditTimeline';
 import { ContractDocumentModal } from './ContractDocumentModal';
 import { TerminationPanel } from './TerminationPanel';
-import { TerminationRequestModal } from './TerminationRequestModal';
+import { terminationsApi, TerminationView } from '../../api/terminationsApi';
 import { useWeb3Wallet } from '../../web3/useWeb3Wallet';
 import { DEFAULT_CHAIN_ID } from '../../web3/web3Config';
-import { contractsApi, AgreementSummary } from '../../api/contractsApi';
+import { contractsApi, AgreementSummary, SettlementDto } from '../../api/contractsApi';
 import { classApi } from '../../api/classes';
 import { signContractAgreementEip712 } from '../../web3/eip712Signer';
 import { useAuth } from '../../hooks/useAuth';
@@ -55,11 +55,40 @@ const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
   CANCELLED: { label: 'Đã hủy', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
 };
 
+const TERMINATION_LABELS: Record<string, string> = {
+  HOLD_PENDING: 'Đang đồng bộ tạm dừng',
+  RELEASE_PENDING: 'Đang khôi phục lịch học',
+  REQUESTED: 'Chờ xem xét',
+  RECOMMENDED: 'Đề xuất chấm dứt',
+  APPROVED: 'Admin đã duyệt - đang chờ quyết toán on-chain',
+  REJECTED: 'Không chấp thuận',
+  COMPLETED: 'Hoàn tất',
+  LEARNING_PENDING: 'Chờ dừng lịch học',
+  WAITING_SETTLEMENT: 'Chờ quyết toán buổi đã học',
+  WAITING_PAYMENT: 'Chờ xác nhận / hết hạn thanh toán',
+  BLOCKCHAIN_PENDING: 'Chờ xác nhận giao dịch',
+  TRANSACTION_FAILED: 'Giao dịch cần kiểm tra',
+  WAITING_REFUND_EVENT: 'Chờ xác nhận hoàn tiền',
+};
+
+const formatDeadline = (value?: string | null) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('vi-VN', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(date);
+};
+
+const isSettlementOpen = (status: string) =>
+  ['PREPARING', 'PROPOSE_PENDING', 'PROPOSED', 'FINALIZE_PENDING', 'FAILED_RETRYABLE', 'DISPUTE_OPENING', 'DISPUTED'].includes(status);
+
 const FILTER_TABS = [
   { value: 'ALL', label: 'Tất cả' },
   { value: 'ACTIVE', label: 'Đang học (Đã nạp cọc)' },
   { value: 'WAITING_PAYMENT', label: 'Chờ nạp cọc' },
   { value: 'PENDING_SIGNATURE', label: 'Chờ ký xác nhận' },
+  { value: 'TERMINATION_PENDING', label: '⚠️ Chờ xử lý chấm dứt' },
   { value: 'COMPLETED', label: 'Hoàn tất' },
   { value: 'HISTORY', label: 'Lịch sử (Quá hạn / Hủy)' },
 ];
@@ -76,7 +105,6 @@ export function EscrowContractsView({
   const [selectedAgreementForPayment, setSelectedAgreementForPayment] = useState<AgreementPaymentDetails | null>(null);
   const [selectedAgreementForTimeline, setSelectedAgreementForTimeline] = useState<AgreementSummary | null>(null);
   const [selectedAgreementForDocument, setSelectedAgreementForDocument] = useState<string | null>(null);
-  const [selectedAgreementForTermination, setSelectedAgreementForTermination] = useState<AgreementSummary | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [operationalFilter, setOperationalFilter] = useState<'ALL' | 'OPERATIONAL' | 'LEGACY'>('OPERATIONAL');
   const [selectedClassId, setSelectedClassId] = useState<string>('ALL');
@@ -84,6 +112,8 @@ export function EscrowContractsView({
 
   // Real data state
   const [agreements, setAgreements] = useState<AgreementSummary[]>([]);
+  const [terminationsList, setTerminationsList] = useState<TerminationView[]>([]);
+  const [terminationSettlements, setTerminationSettlements] = useState<Record<string, SettlementDto[]>>({});
   const [classroomCache, setClassroomCache] = useState<Record<number, any>>({});
   const [requestsCache, setRequestsCache] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(false);
@@ -95,18 +125,35 @@ export function EscrowContractsView({
     setError('');
     try {
       const isTutor = activeRole === 'tutor';
-      const [agreementsData, tutorClasses] = await Promise.all([
+      const [agreementsData, tutorClasses, terminationsData] = await Promise.all([
         contractsApi.listAgreements({
-          status: (statusFilter === 'ALL' || statusFilter === 'PENDING_SIGNATURE' || statusFilter === 'HISTORY') ? undefined : statusFilter,
+          status: (statusFilter === 'ALL' || statusFilter === 'PENDING_SIGNATURE' || statusFilter === 'HISTORY' || statusFilter === 'TERMINATION_PENDING') ? undefined : statusFilter,
           page: 0,
           size: 100,
         }),
         isTutor ? classApi.getMyClasses().catch(() => []) : Promise.resolve([]),
+        terminationsApi.list().catch(() => []),
       ]);
 
       const content: AgreementSummary[] = agreementsData?.content ?? (Array.isArray(agreementsData) ? agreementsData : []);
       setAgreements(content);
+      setTerminationsList(terminationsData || []);
       setTotalElements(agreementsData?.totalElements ?? content.length);
+
+      // A termination cannot refund unused escrow until every session before its
+      // cutoff is settled. Load those records so the contract card can say which
+      // exact on-chain condition is still pending rather than a vague "waiting".
+      const activeAgreementIds = new Set<string>();
+      (terminationsData || []).forEach((termination) => {
+        if (['COMPLETED', 'REJECTED'].includes(termination.request.status)) return;
+        if (termination.request.anchorAgreementId) activeAgreementIds.add(termination.request.anchorAgreementId);
+        termination.items?.forEach((item) => activeAgreementIds.add(item.agreementId));
+      });
+      const settlementEntries = await Promise.all([...activeAgreementIds].map(async (agreementId) => [
+        agreementId,
+        await contractsApi.getSettlements(agreementId).catch(() => [] as SettlementDto[]),
+      ] as const));
+      setTerminationSettlements(Object.fromEntries(settlementEntries));
 
       // Build classroom cache from myClasses
       const classMap: Record<number, any> = {};
@@ -173,6 +220,11 @@ export function EscrowContractsView({
 
   useEffect(() => {
     fetchAgreements();
+  }, [fetchAgreements]);
+
+  useEffect(() => {
+    const timer = window.setInterval(fetchAgreements, 30000);
+    return () => window.clearInterval(timer);
   }, [fetchAgreements]);
 
   useEffect(() => {
@@ -252,6 +304,35 @@ export function EscrowContractsView({
     });
   }, [agreements, classroomCache, requestsCache, user, activeRole]);
 
+  // Count of pending termination requests
+  const pendingTerminationsCount = useMemo(() => {
+    return terminationsList.filter((t) => !['COMPLETED', 'REJECTED'].includes(t.request.status)).length;
+  }, [terminationsList]);
+
+  // Active termination map by agreement ID
+  const activeTerminationMap = useMemo(() => {
+    const map = new Map<string, { status: string; wholeClass: boolean; reason: string; itemStatus?: string; transactionHash?: string | null }>();
+    terminationsList.forEach((t) => {
+      const isPending = !['COMPLETED', 'REJECTED'].includes(t.request.status);
+      if (!isPending) return;
+      const info = { status: t.request.status, wholeClass: t.request.wholeClass, reason: t.request.reason };
+      if (t.request.anchorAgreementId) {
+        map.set(t.request.anchorAgreementId, info);
+      }
+      if (t.items && t.items.length > 0) {
+        t.items.forEach((i) => map.set(i.agreementId, { ...info, itemStatus: i.status, transactionHash: i.transactionHash }));
+      }
+      if (t.request.wholeClass && t.request.classroomId) {
+        agreements.forEach((a) => {
+          if (a.classroomId === t.request.classroomId) {
+            map.set(a.id, map.get(a.id) || info);
+          }
+        });
+      }
+    });
+    return map;
+  }, [terminationsList, agreements]);
+
   // Distinct classrooms list for dropdown filter
   const distinctClasses = useMemo(() => {
     const map = new Map<number, string>();
@@ -276,7 +357,9 @@ export function EscrowContractsView({
       }
 
       // Filter by status tab
-      if (statusFilter === 'PENDING_SIGNATURE') {
+      if (statusFilter === 'TERMINATION_PENDING') {
+        if (!activeTerminationMap.has(a.id)) return false;
+      } else if (statusFilter === 'PENDING_SIGNATURE') {
         if (a.status !== 'PENDING_TUTOR_ACCEPTANCE' && a.status !== 'PENDING_STUDENT_ACCEPTANCE') {
           return false;
         }
@@ -536,6 +619,11 @@ export function EscrowContractsView({
             }`}
           >
             <XCircle size={14} /> Chấm Dứt Hợp Đồng
+            {pendingTerminationsCount > 0 && (
+              <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white shadow-xs animate-pulse">
+                {pendingTerminationsCount} chờ xử lý
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -633,19 +721,34 @@ export function EscrowContractsView({
               <span className="text-xs font-bold text-slate-400 flex items-center gap-1">
                 <Filter className="w-3.5 h-3.5" /> Trạng thái:
               </span>
-              {FILTER_TABS.map((tab) => (
-                <button
-                  key={tab.value}
-                  onClick={() => setStatusFilter(tab.value)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                    statusFilter === tab.value
-                      ? 'bg-slate-900 text-white shadow-sm'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
+              {FILTER_TABS.map((tab) => {
+                const isTerminationTab = tab.value === 'TERMINATION_PENDING';
+                const count = isTerminationTab ? pendingTerminationsCount : undefined;
+                return (
+                  <button
+                    key={tab.value}
+                    onClick={() => setStatusFilter(tab.value)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      statusFilter === tab.value
+                        ? isTerminationTab
+                          ? 'bg-amber-600 text-white shadow-sm font-black'
+                          : 'bg-slate-900 text-white shadow-sm'
+                        : isTerminationTab
+                        ? 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300 font-extrabold'
+                        : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    {count !== undefined && count > 0 && (
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                        statusFilter === tab.value ? 'bg-white text-amber-800' : 'bg-amber-500 text-white animate-pulse'
+                      }`}>
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
               <span className="ml-auto text-xs text-slate-400 font-semibold">
                 Hiển thị <strong>{filteredAgreements.length}</strong> / {enrichedAgreements.length} hợp đồng
               </span>
@@ -723,11 +826,24 @@ export function EscrowContractsView({
                 const displayStudentEmail = item.studentEmail || "Chưa cập nhật email";
                 const displayTutorEmail = item.tutorEmail || "Chưa cập nhật email";
 
+                const activeTermination = activeTerminationMap.get(item.id);
+                const terminationSessions = terminationSettlements[item.id] || [];
+                const openTerminationSessions = terminationSessions.filter((session) => isSettlementOpen(session.status));
+                const proposedTerminationSessions = openTerminationSessions
+                  .filter((session) => session.status === 'PROPOSED' && session.disputeDeadline)
+                  .sort((left, right) => new Date(left.disputeDeadline || 0).getTime() - new Date(right.disputeDeadline || 0).getTime());
+                const nextFinalization = proposedTerminationSessions[0]?.disputeDeadline || null;
+                const refundEstimate = Math.max(0, Number(item.remainingDeposit) || 0);
+
                 return (
                   <div
                     key={item.id}
                     className={`rounded-3xl border p-6 shadow-sm hover:shadow-md transition-all space-y-5 flex flex-col justify-between ${
-                      isLegacy ? 'bg-amber-50/40 border-amber-300' : 'bg-white border-slate-200'
+                      activeTermination
+                        ? 'bg-amber-50/20 border-amber-300 ring-1 ring-amber-300/60'
+                        : isLegacy
+                        ? 'bg-amber-50/40 border-amber-300'
+                        : 'bg-white border-slate-200'
                     }`}
                   >
                     {/* Top Row: Class Name & Status */}
@@ -740,10 +856,67 @@ export function EscrowContractsView({
                             ? `On-chain: ${item.onchainAgreementId.slice(0, 10)}...`
                             : 'Hợp đồng điện tử'}
                         </span>
-                        <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider border ${cfg.cls}`}>
-                          {cfg.label}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {activeTermination && (
+                            <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black animate-pulse flex items-center gap-1 shadow-2xs">
+                              <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" /> Chờ xử lý chấm dứt
+                            </span>
+                          )}
+                          <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider border ${cfg.cls}`}>
+                            {cfg.label}
+                          </span>
+                        </div>
                       </div>
+
+                      {/* Prominent Termination Notice Banner */}
+                      {activeTermination && (
+                        <div className="flex items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 p-3.5 text-xs text-amber-950 shadow-2xs">
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5 animate-pulse" />
+                            <div className="min-w-0">
+                              <p className="font-extrabold text-amber-950 text-[13px]">
+                                {activeTermination.wholeClass
+                                  ? activeTermination.status === 'APPROVED'
+                                    ? 'Admin đã duyệt hủy lớp - đang quyết toán từng hợp đồng'
+                                    : 'Đang có đề xuất dừng & hủy toàn bộ lớp'
+                                  : activeTermination.status === 'APPROVED'
+                                    ? 'Admin đã duyệt chấm dứt - đang quyết toán trước khi hoàn escrow'
+                                    : 'Đang có yêu cầu chấm dứt hợp đồng này'}
+                              </p>
+                              <p className="text-[11px] font-medium text-amber-800 mt-0.5">
+                                Trạng thái: <span className="font-bold underline">{TERMINATION_LABELS[activeTermination.status] || activeTermination.status}</span>
+                                {activeTermination.reason ? (
+                                  <span className="italic"> &bull; "{activeTermination.reason.slice(0, 50)}{activeTermination.reason.length > 50 ? '...' : ''}"</span>
+                                ) : null}
+                              </p>
+                              {activeTermination.status === 'APPROVED' && proposedTerminationSessions.length > 0 && nextFinalization && (
+                                <p className="mt-1.5 text-[11px] leading-relaxed text-amber-950">
+                                  Còn {proposedTerminationSessions.length} buổi trong cửa sổ khiếu nại 24 giờ. Sớm nhất hệ thống được phép quyết toán lúc{' '}
+                                  <span className="font-black">{formatDeadline(nextFinalization)}</span>. Sau khi các buổi này được xác nhận on-chain, hệ thống tự gửi giao dịch hủy và hoàn{' '}
+                                  <span className="font-black">{refundEstimate.toLocaleString('vi-VN')} USDC</span> cọc chưa dùng về ví học viên.
+                                </p>
+                              )}
+                              {activeTermination.status === 'APPROVED' && proposedTerminationSessions.length === 0 && activeTermination.itemStatus === 'BLOCKCHAIN_PENDING' && (
+                                <p className="mt-1.5 text-[11px] leading-relaxed text-amber-950">
+                                  Các buổi trước cutoff đã xong. Giao dịch hủy và hoàn escrow đã được gửi; hệ thống đang chờ event blockchain xác nhận trước khi cập nhật lớp và ví.
+                                </p>
+                              )}
+                              {activeTermination.status === 'APPROVED' && proposedTerminationSessions.length === 0 && activeTermination.itemStatus === 'WAITING_REFUND_EVENT' && (
+                                <p className="mt-1.5 text-[11px] leading-relaxed text-amber-950">
+                                  Smart contract đã xử lý hủy hợp đồng. Hệ thống đang chờ event hoàn tiền để xác nhận số USDC đã về đúng ví học viên.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('TERMINATIONS')}
+                            className="shrink-0 px-3 py-1.5 rounded-xl bg-amber-200/90 hover:bg-amber-300 text-amber-950 text-xs font-black transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                          >
+                            Theo dõi tiến độ
+                          </button>
+                        </div>
+                      )}
 
                       {isLegacy && (
                         <div className="flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-100/70 p-3 text-[11px] font-semibold leading-relaxed text-amber-950">
@@ -1021,7 +1194,7 @@ export function EscrowContractsView({
       {/* TERMINATIONS TAB */}
       {activeTab === 'TERMINATIONS' && (
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-          <TerminationPanel activeRole={activeRole} />
+          <TerminationPanel activeRole={activeRole} initialAgreements={enrichedAgreements} />
         </div>
       )}
 
@@ -1081,18 +1254,6 @@ export function EscrowContractsView({
         />
       )}
 
-      {/* Termination Request Modal with EIP-712 MetaMask Signing */}
-      {selectedAgreementForTermination && (
-        <TerminationRequestModal
-          isOpen={!!selectedAgreementForTermination}
-          onClose={() => setSelectedAgreementForTermination(null)}
-          agreement={selectedAgreementForTermination}
-          activeRole={activeRole}
-          onSuccess={() => {
-            fetchAgreements();
-          }}
-        />
-      )}
     </div>
   );
 }

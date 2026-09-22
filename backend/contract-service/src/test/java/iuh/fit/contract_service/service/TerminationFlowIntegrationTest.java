@@ -50,7 +50,13 @@ class TerminationFlowIntegrationTest {
     UUID approve(ContractAgreement a, boolean wholeClass) {
         when(verificationService.verifyTerminationSignature(any(), any(), any(), any(), anyBoolean(), anyLong(), anyLong(), any()))
                 .thenReturn(true);
-        var request = service.request(a.getId(), wholeClass, "Tutor cannot continue", "0xsig", a.getTutorWallet(), System.currentTimeMillis() / 1000L, user(3, "t@test.vn", "TUTOR"));
+        when(learning.send(9999L, a.getStudentId(), a.getId(), wholeClass, "HOLD"))
+                .thenReturn(new TerminationLearningClient.Snapshot(0, List.of()));
+        var requester = wholeClass
+                ? user(3, "t@test.vn", "TUTOR")
+                : user(a.getStudentId(), a.getStudentEmail(), "STUDENT");
+        var wallet = wholeClass ? a.getTutorWallet() : a.getStudentWallet();
+        var request = service.request(a.getId(), wholeClass, "Cannot continue", "0xsig-" + a.getId(), wallet, System.currentTimeMillis() / 1000L, requester);
         service.act(request.request().getId(), "RECOMMEND", "Evidence reviewed", user(4, "staff@test.vn", "STAFF"));
         service.act(request.request().getId(), "APPROVE", "Approved", user(1, "admin@test.vn", "ADMIN"));
         return request.request().getId();
@@ -86,8 +92,8 @@ class TerminationFlowIntegrationTest {
         var a = agreement(2); var b = agreement(5);
         UUID caseId = approve(a, true);
         assertThat(items.findByCaseIdOrderByAgreementId(caseId)).hasSize(2);
-        assertThat(a.getTerminationCutoffSession()).isEqualTo(-1);
-        assertThat(b.getTerminationCutoffSession()).isEqualTo(-1);
+        assertThat(a.getTerminationCutoffSession()).isEqualTo(0);
+        assertThat(b.getTerminationCutoffSession()).isEqualTo(0);
         assertThatThrownBy(() -> service.requireClassCanCreate(9999L)).hasMessageContaining("409");
     }
 }

@@ -21,6 +21,7 @@ public class TerminationProcessor {
     private final ProcessedEventRepository events;
     private final AgreementLifecycleWorkflowService lifecycle;
     private final TerminationLearningClient learning;
+    private final NotificationDispatcher notifications;
     private final ObjectMapper mapper;
 
     @Transactional
@@ -110,6 +111,13 @@ public class TerminationProcessor {
     private void close(ContractAgreement a, TerminationCase c, TerminationItem item) {
         learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), c.isWholeClass(), "CLOSE");
         item.setStatus("COMPLETED");
+        String scope = c.isWholeClass() ? "lop hoc" : "hop dong";
+        notifications.sendAsync(a.getStudentEmail(), a.getStudentId(), "Ket qua cham dut hop dong",
+                "Admin da hoan tat xu ly " + scope + ". Danh sach lop va lich hoc tuong lai da duoc cap nhat.",
+                "TERMINATION_COMPLETED", "AGREEMENT", a.getId().toString());
+        notifications.sendAsync(a.getTutorEmail(), a.getTutorId(), "Cap nhat cham dut hop dong",
+                "Hop dong cua hoc vien da hoan tat thanh ly. Danh sach lop va tien do xu ly da duoc cap nhat.",
+                "TERMINATION_COMPLETED", "AGREEMENT", a.getId().toString());
     }
     @Transactional
     public void failure(UUID id, String error) {
@@ -127,6 +135,9 @@ public class TerminationProcessor {
         if (c.isWholeClass()) {
             var a = agreements.findById(c.getAnchorAgreementId()).orElseThrow();
             learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), true, "CLOSE_CLASS");
+            notifications.sendAsync(a.getTutorEmail(), a.getTutorId(), "Lop hoc da huy theo quyet dinh Admin",
+                    "Tat ca hop dong trong lop da hoan tat xu ly. Lop da chuyen sang CANCELLED va Gia su khong the mo lai.",
+                    "TERMINATION_COMPLETED", "CLASSROOM", a.getClassroomId().toString());
         }
         c.setLastError(null); c.setStatus("COMPLETED");
     }

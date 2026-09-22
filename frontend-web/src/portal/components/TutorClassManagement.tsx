@@ -13,6 +13,17 @@ import { useFeedback } from "../../components/feedback/useFeedback";
 import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
 import { useTutorApplication } from "../../hooks/useTutorApplication";
 
+const terminationStatusLabel: Record<string, string> = {
+  HOLD_PENDING: 'Đang đồng bộ tạm dừng',
+  REQUESTED: 'Chờ xác minh',
+  RECOMMENDED: 'Chờ Admin quyết định',
+  APPROVED: 'Đang thanh lý',
+  RELEASE_PENDING: 'Đang khôi phục lịch',
+};
+
+const isActiveTerminationAgreement = (agreement: any) =>
+  !agreement.legacyUnreconciled && !['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(agreement.status);
+
 interface ChapterItem {
   id?: number | string;
   title: string;
@@ -663,7 +674,7 @@ export function TutorClassManagement() {
                   <div className="flex items-center gap-1.5 flex-wrap justify-end">
                     {(() => {
                       const pendingCase = terminationCases.find(
-                        t => t.request.classroomId === cls.id && !["REJECTED", "COMPLETED"].includes(t.request.status)
+                        t => t.request.classroomId === cls.id && t.request.wholeClass && !["REJECTED", "COMPLETED"].includes(t.request.status)
                       );
                       if (pendingCase) {
                         return (
@@ -896,7 +907,7 @@ export function TutorClassManagement() {
                 {/* Pending Termination Banner if any */}
                 {(() => {
                   const currentPendingTerm = terminationCases.find(
-                    t => t.request.classroomId === detailModalClass.id && !["REJECTED", "COMPLETED"].includes(t.request.status)
+                    t => t.request.classroomId === detailModalClass.id && t.request.wholeClass && !["REJECTED", "COMPLETED"].includes(t.request.status)
                   );
                   if (currentPendingTerm) {
                     return (
@@ -904,10 +915,12 @@ export function TutorClassManagement() {
                         <div className="flex items-center justify-between">
                           <span className="font-black text-xs flex items-center gap-1.5 text-amber-900 uppercase tracking-wide">
                             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                            ĐANG CÓ ĐỀ XUẤT DỪNG GIẢNG DẠY & HỦY LỚP (CHỜ BAN QUẢN TRỊ DUYỆT)
+                            {currentPendingTerm.request.status === 'APPROVED'
+                              ? 'ADMIN ĐÃ DUYỆT HỦY LỚP - ĐANG QUYẾT TOÁN TỪNG HỢP ĐỒNG'
+                              : 'ĐANG CÓ ĐỀ XUẤT DỪNG GIẢNG DẠY & HỦY LỚP (CHỜ BAN QUẢN TRỊ DUYỆT)'}
                           </span>
                           <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-200 text-amber-900 border border-amber-400">
-                            {currentPendingTerm.request.status}
+                            {terminationStatusLabel[currentPendingTerm.request.status] || currentPendingTerm.request.status}
                           </span>
                         </div>
                         <div className="text-xs text-amber-900 space-y-1">
@@ -922,7 +935,12 @@ export function TutorClassManagement() {
                           </div>
                         </div>
                         <div className="p-2.5 bg-white/85 rounded-xl border border-amber-200 text-[11px] text-amber-900 leading-relaxed font-medium">
-                          💡 <strong>Quy trình xử lý:</strong> Sau khi Ban Quản trị phê duyệt đề xuất dừng dạy này, Smart Contract Escrow sẽ tự động kích hoạt lệnh thanh lý: quyết toán các buổi đã học cho gia sư và hoàn trả 100% tiền cọc các buổi chưa học về ví MetaMask của toàn bộ học viên trong lớp.
+                          <strong>Trạng thái vận hành:</strong>{' '}
+                          {currentPendingTerm.request.status === 'HOLD_PENDING'
+                            ? 'Hệ thống đang đồng bộ tạm dừng lịch với Learning và sẽ tự động thử lại nếu dịch vụ tạm gián đoạn.'
+                            : currentPendingTerm.request.status === 'APPROVED'
+                            ? 'Admin đã duyệt. Lớp đang LOCKED, không nhận thêm học viên và các buổi sau cutoff đã dừng. Mỗi hợp đồng được settlement/refund riêng; lớp chỉ chuyển CANCELLED sau item cuối cùng.'
+                            : 'Lịch tương lai của lớp đang được tạm dừng theo cutoff. Chưa có giao dịch hoàn tiền; sau khi Staff xác minh và Admin phê duyệt, Escrow V1 sẽ xử lý từng hợp đồng và hoàn số dư chưa sử dụng về ví tương ứng.'}
                         </div>
                       </div>
                     );
@@ -950,7 +968,21 @@ export function TutorClassManagement() {
                       Lớp đã Khóa (LOCKED - Hệ thống tự động)
                     </span>
                     <p className="text-[11px] font-semibold text-purple-700">
-                      Lớp học đã tự động khóa không nhận thêm đăng ký do đã đủ sĩ số tối đa ({detailModalClass.maxStudents} học viên) hoặc đã đến ngày bắt đầu ({detailModalClass.startDate}).
+                      {terminationCases.some(t => t.request.classroomId === detailModalClass.id && t.request.wholeClass && t.request.status === 'APPROVED')
+                        ? 'Admin đã khóa lớp để thanh lý hợp đồng. Gia sư không thể nhận thêm học viên, mở bán hoặc tự thay đổi trạng thái lớp trong thời gian này.'
+                        : `Lớp học đã tự động khóa không nhận thêm đăng ký do đã đủ sĩ số tối đa (${detailModalClass.maxStudents} học viên) hoặc đã đến ngày bắt đầu (${detailModalClass.startDate}).`}
+                    </p>
+                  </div>
+                )}
+
+                {detailModalClass.status === "CANCELLED" && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-900 space-y-1">
+                    <span className="font-black text-xs flex items-center gap-1.5 text-rose-800">
+                      <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      Lớp đã hủy theo quyết định Admin
+                    </span>
+                    <p className="text-[11px] font-semibold text-rose-700">
+                      Toàn bộ hợp đồng trong lớp đã hoàn tất quy trình thanh lý. Lớp không thể mở lại bởi Gia sư.
                     </p>
                   </div>
                 )}
@@ -1082,11 +1114,9 @@ export function TutorClassManagement() {
                 {/* Proposal to terminate / cancel whole class if agreements exist */}
                 {(() => {
                   const currentPendingTerm = terminationCases.find(
-                    t => t.request.classroomId === detailModalClass.id && !["REJECTED", "COMPLETED"].includes(t.request.status)
+                    t => t.request.classroomId === detailModalClass.id && t.request.wholeClass && !["REJECTED", "COMPLETED"].includes(t.request.status)
                   );
-                  const activeAgreements = classAgreements.filter(
-                    (a: any) => !['COMPLETED', 'CANCELLED', 'REJECTED'].includes(a.status)
-                  );
+                  const activeAgreements = classAgreements.filter(isActiveTerminationAgreement);
                   if (!currentPendingTerm && activeAgreements.length > 0 && detailModalClass.status !== "CANCELLED" && detailModalClass.status !== "CLOSED") {
                     return (
                       <div className="p-4 bg-gradient-to-br from-rose-50/80 via-white to-amber-50/50 border border-rose-200 rounded-2xl space-y-3 pt-3">
@@ -1097,7 +1127,7 @@ export function TutorClassManagement() {
                               Đề xuất dừng giảng dạy & Hủy lớp học
                             </span>
                             <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
-                              Nếu bạn gặp sự cố cá nhân bất khả kháng (sức khỏe, tai nạn, bận đột xuất...) khiến bạn không thể tiếp tục giảng dạy lớp học này, hãy gửi đề xuất dừng dạy tại đây. Ban Quản trị sẽ phê duyệt và Smart Contract Escrow sẽ tự động thanh lý, hoàn trả tiền cọc các buổi chưa học cho toàn bộ <strong>{activeAgreements.length} học viên</strong> trong lớp.
+                              Nếu không thể tiếp tục giảng dạy, bạn gửi một đề xuất áp dụng cho toàn bộ <strong>{activeAgreements.length} hợp đồng đang hoạt động</strong>. Lịch tương lai của lớp sẽ tạm dừng để Ban quản trị xác minh; chỉ sau khi Admin phê duyệt hệ thống mới thanh lý từng hợp đồng và hoàn số dư chưa sử dụng.
                             </p>
                           </div>
                           <button
@@ -1655,9 +1685,7 @@ export function TutorClassManagement() {
 
       {/* Whole-Class Termination Request Modal (Tutor) */}
       {isTerminationModalOpen && selectedClassForTermination && (() => {
-        const activeAgreements = classAgreements.filter(
-          (a: any) => !['COMPLETED', 'CANCELLED', 'REJECTED'].includes(a.status)
-        );
+        const activeAgreements = classAgreements.filter(isActiveTerminationAgreement);
         const anchorAgreement = activeAgreements[0] || classAgreements[0];
         if (!anchorAgreement) return null;
 
@@ -1681,6 +1709,7 @@ export function TutorClassManagement() {
           settledSessions: anchorAgreement.settledSessions || 0,
           totalAmountUsdc: totalUsdcAllAgreements,
           remainingAmountUsdc: remainingUsdcAllAgreements,
+          affectedAgreements: activeAgreements.length,
           chainId: anchorAgreement.chainId,
           escrowContractAddress: anchorAgreement.escrowContractAddress,
         };
@@ -1694,10 +1723,8 @@ export function TutorClassManagement() {
             }}
             agreement={terminationTarget}
             activeRole="tutor"
-            defaultWholeClass={true}
-            lockWholeClass={true}
             title={`Đề Xuất Dừng Giảng Dạy & Hủy Lớp: ${selectedClassForTermination.name}`}
-            description={`Áp dụng cho toàn bộ ${activeAgreements.length} học viên trong lớp • Ký xác thực MetaMask bằng ví gia sư • Smart Contract tự động hoàn tiền`}
+            description={`Áp dụng cho ${activeAgreements.length} hợp đồng đang hoạt động • Ký bằng ví gia sư • Tạm dừng lịch tương lai để Ban quản trị xem xét`}
             onSuccess={() => {
               setIsTerminationModalOpen(false);
               setSelectedClassForTermination(null);

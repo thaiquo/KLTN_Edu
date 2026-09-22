@@ -17,6 +17,7 @@ public class LearningTerminationService {
     private final ClassSessionRepository sessions;
     private final EnrollmentRequestRepository enrollments;
     private final LearningTerminationStopRepository stops;
+    private final SessionAttendanceRepository attendances;
 
     public record Command(Long classroomId, Long studentId, String agreementId, boolean wholeClass, String action) {}
     public record Snapshot(int cutoffSession, List<Long> requiredSessions) {}
@@ -41,10 +42,15 @@ public class LearningTerminationService {
                 || !Objects.equals(command.studentId(), enrollment.getStudentId())) {
             throw new IllegalStateException("Agreement/enrollment identity mismatch");
         }
-        if (!Set.of("FREEZE", "CLOSE").contains(command.action())) throw new IllegalArgumentException("Unknown action");
+        if (!Set.of("HOLD", "RELEASE", "FREEZE", "CLOSE").contains(command.action())) throw new IllegalArgumentException("Unknown action");
         var stop = stops.findById(command.agreementId()).orElse(null);
+        if ("RELEASE".equals(command.action())) {
+            if (stop != null && !stop.isClosed()) stops.delete(stop);
+            if (command.wholeClass()) room.setTerminationCutoffSession(null);
+            return new Snapshot(0, List.of());
+        }
         if (stop == null) {
-            if (!"FREEZE".equals(command.action())) throw new IllegalStateException("Freeze must complete first");
+            if ("CLOSE".equals(command.action())) throw new IllegalStateException("Freeze must complete first");
             int cutoff = room.getTerminationCutoffSession() != null ? room.getTerminationCutoffSession()
                     : cutoff(rows, LocalDateTime.now());
             stop = new LearningTerminationStop();
@@ -55,12 +61,18 @@ public class LearningTerminationService {
             stops.saveAndFlush(stop);
         }
         if (command.wholeClass() && room.getTerminationCutoffSession() == null) {
-            // A class closure uses one cutoff for all students, independent of retry timing.
-            int cutoff = cutoff(rows, LocalDateTime.now());
-            room.setTerminationCutoffSession(cutoff);
-            room.setStatus(ClassRoomStatus.CLOSED);
+            room.setTerminationCutoffSession(stop.getCutoffSession());
+        }
+        if (command.wholeClass() && "FREEZE".equals(command.action())) {
+            int cutoff = room.getTerminationCutoffSession();
+            // Keep the classroom locked while the approved agreements settle.
+            // It becomes CANCELLED only after every affected agreement is closed.
+            room.setStatus(ClassRoomStatus.LOCKED);
             for (var session : rows) {
-                if (session.getSequenceNumber() > cutoff) session.setStatus(ClassSessionStatus.CANCELLED);
+                if (session.getSequenceNumber() > cutoff) {
+                    session.setStatus(ClassSessionStatus.CANCELLED);
+                    attendances.deleteBySession_Id(session.getId());
+                }
             }
             for (var pending : enrollments.findByClassRoomIdAndStatus(room.getId(), EnrollmentRequestStatus.PENDING)) {
                 pending.setStatus(EnrollmentRequestStatus.CANCELLED);
@@ -68,6 +80,11 @@ public class LearningTerminationService {
         }
         if ("CLOSE".equals(command.action())) {
             enrollment.setStatus(EnrollmentRequestStatus.CANCELLED);
+            for (var session : rows) {
+                if (session.getSequenceNumber() > stop.getCutoffSession()) {
+                    attendances.deleteBySession_IdAndStudentId(session.getId(), enrollment.getStudentId());
+                }
+            }
             stop.setClosed(true);
         }
         final int cutoff = stop.getCutoffSession();

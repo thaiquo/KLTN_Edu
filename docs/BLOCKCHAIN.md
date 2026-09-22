@@ -143,11 +143,13 @@ Mọi thao tác chấm dứt hợp đồng đơn phương (Student) hoặc đề
   - `reasonHash`: Keccak-256 của chuỗi lý do text UTF-8 do người dùng nhập.
   - `wholeClass`: `false` đối với Học viên đơn phương hủy hợp đồng; `true` đối với Gia sư đề xuất hủy toàn bộ lớp.
   - `expectedWallet`: Đối chiếu `signerWallet` phục hồi từ chữ ký với `studentWallet` (nếu là Học viên) hoặc `tutorWallet` (nếu là Gia sư) đã chốt trên hợp đồng.
+  - `requestedAt` phải nằm trong khoảng lệch tối đa 5 phút so với server; chữ ký đã dùng không được sử dụng lại.
   - Nếu chữ ký giả mạo, hoặc ví MetaMask không khớp ví hợp đồng, yêu cầu lập tức bị từ chối ở tầng backend.
-- **Thực thi On-chain khi Phê duyệt (`TerminationProcessor`)**:
-  - Khi Staff/Admin phê duyệt (`APPROVE`), hệ thống đóng băng buổi học và thực thi lệnh on-chain bằng hàm `cancelAgreementAndRefundUnused(bytes32 agreementId, bytes32 resolutionHash)` qua Arbitrator.
+- **Hold vận hành và thực thi On-chain**:
+  - Khi tiếp nhận chữ ký, hệ thống giữ cutoff tại Learning và Contract nhưng chưa gửi giao dịch blockchain. Hold/release có trạng thái retry bền khi liên service tạm gián đoạn.
+  - Sau Staff đề xuất và Admin phê duyệt (`APPROVE`), hệ thống giữ nguyên cutoff, chờ mọi settlement trước cutoff kết thúc rồi gọi `cancelAgreementAndRefundUnused(bytes32 agreementId, bytes32 resolutionHash)` qua Arbitrator.
   - Toàn bộ số dư ký quỹ chưa quyết toán (`remainingDeposit`) được Smart Contract hoàn trả trực tiếp về ví của học viên, và phát event `AgreementCancelled`.
-  - Nếu là đề xuất hủy cả lớp (`wholeClass=true`), toàn bộ hợp đồng active của lớp học được thanh lý đồng loạt, hoàn cọc tự động cho tất cả học viên.
+  - Với Escrow V1, đề xuất hủy cả lớp (`wholeClass=true`) được thanh lý bằng nhiều transaction độc lập, có trạng thái/retry theo từng agreement; không mô tả nhầm là một batch transaction.
 
 ## 10. Backend transaction pipeline
 
@@ -159,7 +161,7 @@ Mỗi write là durable `blockchain_transaction` intent:
 4. Kiểm tra chain/role/gas khi startup; `eth_call` preflight trước ký.
 5. Prepare ký, lưu nonce/expected hash/signed bytes.
 6. Broadcast và watch receipt.
-7. Poll escrow logs, deduplicate `processed_event`, rồi chuyển domain state.
+7. Poll escrow logs, deduplicate `processed_event`, rồi chuyển domain state. Định kỳ đối soát receipt của các transaction đã `CONFIRMED` để phục hồi event bị RPC bỏ sót; vẫn chống trùng theo `(chainId, transactionHash, logIndex)` và kiểm tra block hash.
 
 Trạng thái transaction: `CREATED → DISPATCHING → SUBMITTED → CONFIRMED|FAILED`.
 

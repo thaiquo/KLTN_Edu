@@ -6,6 +6,7 @@ import iuh.fit.contract_service.config.security.CurrentUserContext;
 import iuh.fit.contract_service.command.BlockchainTransactionIntentResult;
 import iuh.fit.contract_service.entity.ContractAgreement;
 import iuh.fit.contract_service.entity.SessionSettlement;
+import iuh.fit.contract_service.entity.TerminationItem;
 import iuh.fit.contract_service.enums.BlockchainTransactionStatus;
 import iuh.fit.contract_service.enums.ContractAgreementStatus;
 import iuh.fit.contract_service.enums.SettlementOutcome;
@@ -47,6 +48,7 @@ class AdminFinancialMonitoringControllerTest {
     @Mock private AgreementRegistrationWorkflowService registrationWorkflowService;
     @Mock private EscrowPaymentRepository escrowPaymentRepository;
     @Mock private ProcessedEventRepository processedEventRepository;
+    @Mock private TerminationItemRepository terminationItemRepository;
     @Mock private ContractAcceptanceRepository acceptanceRepository;
     @Mock private LearningServiceDispatcher learningServiceDispatcher;
     @Mock private CurrentUserContext currentUserContext;
@@ -73,6 +75,7 @@ class AdminFinancialMonitoringControllerTest {
                 registrationWorkflowService,
                 escrowPaymentRepository,
                 processedEventRepository,
+                terminationItemRepository,
                 acceptanceRepository,
                 learningServiceDispatcher,
                 currentUserContext,
@@ -80,6 +83,7 @@ class AdminFinancialMonitoringControllerTest {
                 blockchainGateway,
                 operationalFundingPolicy, org.mockito.Mockito.mock(iuh.fit.contract_service.service.TerminationService.class)
         );
+        org.mockito.Mockito.lenient().when(terminationItemRepository.findAll()).thenReturn(List.of());
     }
 
     @Test
@@ -117,8 +121,24 @@ class AdminFinancialMonitoringControllerTest {
         agreement.setEscrowContractAddress("0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3");
         agreement.setChainId(11155111L);
 
-        when(agreementRepository.findAll()).thenReturn(List.of(agreement));
+        UUID terminatedAgreementId = UUID.randomUUID();
+        ContractAgreement terminatedAgreement = new ContractAgreement();
+        terminatedAgreement.setId(terminatedAgreementId);
+        terminatedAgreement.setOnchainAgreementId("0x" + "b".repeat(64));
+        terminatedAgreement.setClassroomId(4L);
+        terminatedAgreement.setStudentId(11L);
+        terminatedAgreement.setTutorId(20L);
+        terminatedAgreement.setStatus(ContractAgreementStatus.CANCELLED);
+        terminatedAgreement.setTotalAmountUsdcUnits(BigInteger.valueOf(1_200_000));
+        terminatedAgreement.setTokenDecimals((short) 6);
+        terminatedAgreement.setLegacyExcluded(false);
+        terminatedAgreement.setPlatformWallet("0x10dd719B6a13e9d275990d706C2640ab6F1CA28e");
+        terminatedAgreement.setEscrowContractAddress("0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3");
+        terminatedAgreement.setChainId(11155111L);
+
+        when(agreementRepository.findAll()).thenReturn(List.of(agreement, terminatedAgreement));
         when(operationalFundingPolicy.isFunded(agreement)).thenReturn(true);
+        when(operationalFundingPolicy.isFunded(terminatedAgreement)).thenReturn(true);
 
         SessionSettlement s1 = SessionSettlement.create(
                 agreement, 1L, "0xsession1", SettlementOutcome.BOTH_PRESENT, BigInteger.valueOf(600_000), "0xevidence"
@@ -127,17 +147,27 @@ class AdminFinancialMonitoringControllerTest {
         s1.markSettled("0xfinalize");
 
         when(settlementRepository.findByAgreementId(agreementId)).thenReturn(List.of(s1));
+        when(settlementRepository.findByAgreementId(terminatedAgreementId)).thenReturn(List.of());
+        TerminationItem terminationItem = new TerminationItem();
+        terminationItem.setAgreementId(terminatedAgreementId);
+        terminationItem.setStatus("COMPLETED");
+        terminationItem.setRefundedUnits(BigInteger.valueOf(1_200_000));
+        when(terminationItemRepository.findAll()).thenReturn(List.of(terminationItem));
 
         ResponseEntity<ContractManagementController.AdminFinancialOverviewDto> response = controller.getAdminFinancialOverview();
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         ContractManagementController.AdminFinancialOverviewDto dto = response.getBody();
         assertThat(dto).isNotNull();
-        assertThat(dto.totalEscrowFundedUsdc()).isEqualTo(4.8);
+        assertThat(dto.totalEscrowFundedUsdc()).isEqualTo(6.0);
         assertThat(dto.totalTutorPaidUsdc()).isEqualTo(0.51);
         assertThat(dto.totalPlatformFeeUsdc()).isEqualTo(0.09);
+        assertThat(dto.totalStudentRefundedUsdc()).isEqualTo(1.2);
+        assertThat(dto.totalSessionRefundedUsdc()).isZero();
+        assertThat(dto.totalTerminationRefundedUsdc()).isEqualTo(1.2);
         assertThat(dto.totalEscrowLockedUsdc()).isEqualTo(4.2);
         assertThat(dto.totalActiveAgreements()).isEqualTo(1);
         assertThat(dto.totalSettledSessions()).isEqualTo(1);
+        assertThat(dto.totalCompletedTerminationItems()).isEqualTo(1);
     }
 
     @Test

@@ -19,7 +19,7 @@
 | `api-gateway` | IMPLEMENTED | Route Account/Learning/Contract/Notification/Chat/AI và bốn WebSocket route; credentialed CORS. Gateway không phải identity authority. |
 | `account-service` | IMPLEMENTED | Auth cookie JWT, OTP, refresh rotation/revocation, role/activeRole, profile, wallet, Tutor application/documents, Staff/Admin management, S3, mail, RabbitMQ. |
 | `learning-service` | IMPLEMENTED | Catalog, Tutor registration/availability, classroom, enrollment, rolling session, attendance, meeting-link gate, homework và settlement delivery. |
-| `contract-service` | IMPLEMENTED + LIMITED | Agreement/signing/document/funding/settlement/refund/dispute/evidence/transaction recovery chạy thật trên Sepolia; V1 dispute chỉ cho `BOTH_PRESENT`, legacy rows bị cách ly và ops còn giới hạn. |
+| `contract-service` | IMPLEMENTED + LIMITED | Agreement/signing/document/funding/settlement/refund/dispute/evidence/transaction recovery chạy thật trên Sepolia; event polling có đối soát receipt để phục hồi event bị lỡ; V1 dispute chỉ cho `BOTH_PRESENT`, legacy rows bị cách ly và ops còn giới hạn. |
 | `notification-service` | IMPLEMENTED/PARTIAL | Notification persistence, REST, Rabbit consumer, WebSocket hoạt động cho event đã nối. Chat backend có persistence/API/WebSocket nhưng Web Messages chưa nối. |
 | `ai-service` | SKELETON | Có Spring Boot module và `GET /api/ai/health`; chưa có matching/RAG/model/vector. |
 | `frontend-web` | IMPLEMENTED/PARTIAL | Flow chính Account/Learning/Contract/Dispute/Wallet/Notification có dữ liệu thật; một số Portal dashboard/message vẫn chứa mock state. |
@@ -84,7 +84,8 @@
 - IMPLEMENTED: poi-tl sinh DOCX, Gotenberg chuyển PDF, local/S3 storage abstraction và artifact hash/status.
 - IMPLEMENTED: durable backend blockchain pipeline, idempotency, locking, preflight, dispatch, receipt watch, event cursor/processed-event.
 - IMPLEMENTED: funding confirmation, per-session proposal/finalization, cancellation/refund unused và expiration.
-- IMPLEMENTED: luồng Chấm dứt hợp đồng & Đề xuất Hủy lớp học (Termination & Whole-Class Cancellation Flow): Flyway v12, v13; API `/api/contracts/terminations`; EIP-712 signature verification trên backend; phân tách giao diện theo vai trò (Học viên đơn phương hủy 1 hợp đồng trong `ContractDocumentModal`, Gia sư đề xuất hủy cả lớp trong `TutorClassManagement`); phân xử Admin/Staff (`APPROVE`, `RECOMMEND`, `RESPOND`, `REJECT`) tự động đóng băng buổi học và thanh lý Escrow on-chain hoàn cọc.
+- IMPLEMENTED: luồng Chấm dứt hợp đồng & Đề xuất Hủy lớp học: Contract Flyway v12-v14, Learning v32; API `/api/contracts/terminations`; EIP-712 backend verification có freshness/replay guard; Student chỉ gửi cho hợp đồng mình, Tutor chỉ đề xuất cả lớp; hold/release Learning có retry, cutoff giữ từ lúc tiếp nhận; Staff xác minh và chỉ Admin duyệt thanh lý Escrow V1 theo từng agreement. Approval whole-class đặt lớp `LOCKED`, dừng session/enrollment tương lai; từng item đóng sẽ cập nhật enrollment/attendance tương lai, và lớp chỉ `CANCELLED` sau item cuối.
+- IMPLEMENTED: frontend termination có đúng hai điểm gửi nghiệp vụ: Student trong văn bản hợp đồng và Tutor trong quản lý lớp; tab hồ sơ chỉ theo dõi/xét duyệt. UI khóa scope theo vai trò, kiểm tra ví/chain, phân biệt `HOLD_PENDING` với hold đã thành công và chặn gửi trùng khi hồ sơ còn hiệu lực.
 - IMPLEMENTED: settlement distribution amounts lưu từ event, wallet/audit timeline dùng thời điểm/hash confirmed.
 - IMPLEMENTED: catch-up sau restart và bounded auto-retry cho lỗi chắc chắn trước broadcast.
 - LIMITED: chỉ một operator instance và một RPC primary; unknown receipt/confirmed revert không tự retry mù.
@@ -127,6 +128,7 @@
 ## 6. Kiểm chứng gần nhất
 
 - Contract Termination & EIP-712 Signature: 15 unit & integration tests (`TerminationServiceTest`, `TerminationFlowIntegrationTest`, `Eip712VerificationServiceTest`) pass 100% ngày 2026-09-21; Frontend TypeScript & Vite build pass trong 1.53s.
+- Regression sau khi bổ sung operational hold/release ngày 2026-09-22: `contract-service` 176 test pass (7 Anvil test skip theo cấu hình), `learning-service` 71/71 test pass; frontend production build pass.
 - Contract: 14 test scheduler/transaction restart-recovery đã pass ngày 2026-09-14.
 - Learning: 12 test attendance + settlement delivery đã pass ngày 2026-09-14.
 - Trước đó: 35 Solidity unit/fuzz/invariant test pass; isolated Anvil end-to-end pass; frontend TypeScript và Vite build pass theo escrow hardening report.

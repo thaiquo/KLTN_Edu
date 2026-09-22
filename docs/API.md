@@ -229,8 +229,10 @@ Controller: `TerminationController` in `contract-service` (prefix `/api/contract
 | Method | Endpoint | Purpose | Scope / Authorization |
 | --- | --- | --- | --- |
 | `GET` | `/api/contracts/terminations` | List termination requests & cancellation cases. | Role-scoped: Student sees own cases, Tutor sees own classroom cases, Staff/Admin sees all manageable cases. |
-| `POST` | `/api/contracts/terminations` | Submit termination request with cryptographic EIP-712 signature verification. | Student: unilateral cancellation for 1 agreement (`wholeClass=false`). Tutor: proposal to cancel whole class (`wholeClass=true`). Enforces immutable signer wallet verification. |
-| `POST` | `/api/contracts/terminations/{id}/actions` | Staff/Admin arbitration actions (`APPROVE`, `RECOMMEND`, `RESPOND`, `REJECT`). | Staff/Admin: `APPROVE` automatically freezes future learning sessions and executes on-chain Escrow liquidation and refund. |
+| `POST` | `/api/contracts/terminations` | Submit termination request with cryptographic EIP-712 verification and create a retryable Learning hold. | Student: own agreement only (`wholeClass=false`). Tutor: whole class only (`wholeClass=true`). Signed timestamp must be within five minutes and a signature cannot be reused. |
+| `POST` | `/api/contracts/terminations/{id}/actions` | Respond, recommend, approve or reject a termination case. | Parties may `RESPOND`; assigned Staff/Admin may `RECOMMEND`/`REJECT`; only Admin may `APPROVE`. Reject releases the hold; approve preserves its cutoff and starts settlement/refund processing. |
+| `POST` | `/api/contracts/terminations/{id}/evidence` | Upload termination evidence file (image, video, audio, PDF, Word, Excel, text). | Parties (`STUDENT`, `TUTOR`) for active cases (`HOLD_PENDING`, `REQUESTED`, `RECOMMENDED`). Max 5 files per party, max 50 MB per file. Whitelist MIME check, SHA-256 integrity, stored on S3. |
+| `GET` | `/api/contracts/terminations/{id}/evidence/{evidenceId}/content` | Stream/download stored termination evidence file. | Parties on the agreement/class, assigned Staff reviewer, and Admin. Streams with original filename and nosniff header. |
 
 ## 4. API Status Principle
 

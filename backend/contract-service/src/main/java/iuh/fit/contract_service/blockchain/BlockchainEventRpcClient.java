@@ -11,4 +11,8 @@ public interface BlockchainEventRpcClient {
     BlockchainBlock getBlock(long blockNumber);
 
     List<BlockchainLog> getLogs(long fromBlock, long toBlock, String contractAddress);
+
+    default List<BlockchainLog> getTransactionLogs(String transactionHash) {
+        return List.of();
+    }
 }

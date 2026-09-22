@@ -12,11 +12,14 @@ public class TerminationScheduler {
     private final TerminationItemRepository items;
     private final TerminationProcessor processor;
     private final TerminationSignals signals;
+    private final TerminationService service;
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TerminationScheduler.class);
     @Scheduled(initialDelayString = "${termination.initial-delay-ms:15000}", fixedDelayString = "${termination.delay-ms:30000}")
     public void tick() {
         try { signals.detect(); }
         catch (Exception e) { log.warn("Termination signal scan failed: {}", e.getMessage()); }
+        synchronize("HOLD_PENDING");
+        synchronize("RELEASE_PENDING");
         for (var c : cases.findTop50ByStatusOrderByUpdatedAtAsc("APPROVED")) {
             for (var item : items.findByCaseIdOrderByAgreementId(c.getId())) {
                 if ("COMPLETED".equals(item.getStatus())) continue;
@@ -25,6 +28,13 @@ public class TerminationScheduler {
             }
             try { processor.finish(c.getId()); }
             catch (Exception e) { processor.caseFailure(c.getId(), e.getMessage()); }
+        }
+    }
+
+    private void synchronize(String status) {
+        for (var c : cases.findTop50ByStatusOrderByUpdatedAtAsc(status)) {
+            try { service.retryLearningSynchronization(c.getId()); }
+            catch (Exception e) { log.warn("Termination {} synchronization failed: {}", c.getId(), e.getMessage()); }
         }
     }
 }

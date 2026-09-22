@@ -11,6 +11,16 @@ export interface TerminationItem {
   tokenDecimals: number;
   chainId: number | null;
 }
+
+export interface TerminationEvidenceView {
+  id: string;
+  originalFilename: string;
+  contentType: string;
+  sizeBytes: number;
+  submittedByRole: string;
+  createdAt: string;
+}
+
 export interface TerminationView {
   request: {
     id: string;
@@ -28,7 +38,9 @@ export interface TerminationView {
     requestedAtTimestamp?: number | null;
   };
   items: TerminationItem[];
+  evidence?: TerminationEvidenceView[];
 }
+
 export const terminationsApi = {
   list: (): Promise<TerminationView[]> => apiRequest('/api/contracts/terminations'),
   request: (
@@ -45,4 +57,14 @@ export const terminationsApi = {
     }),
   act: (id: string, action: string, reason: string): Promise<TerminationView> =>
     apiRequest(`/api/contracts/terminations/${id}/actions`, { method: 'POST', body: JSON.stringify({ action, reason }) }),
+  uploadEvidence: (id: string, file: File): Promise<TerminationView> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiRequest(`/api/contracts/terminations/${id}/evidence`, {
+      method: 'POST',
+      body: formData,
+    });
+  },
+  getEvidenceContentUrl: (caseId: string, evidenceId: string): string =>
+    `/api/contracts/terminations/${caseId}/evidence/${evidenceId}/content`,
 };

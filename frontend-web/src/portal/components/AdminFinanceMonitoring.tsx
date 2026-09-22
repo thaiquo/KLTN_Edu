@@ -30,6 +30,7 @@ import {
 } from "../../api/contractsApi";
 import { EtherscanLink } from "../../components/common/EtherscanLink";
 import { DEFAULT_CHAIN_ID } from "../../web3/web3Config";
+import { TerminationRefundTracker } from "../../components/contract/TerminationRefundTracker";
 
 export function AdminFinanceMonitoring() {
   const [overview, setOverview] = useState<AdminFinancialOverview | null>(null);
@@ -198,6 +199,8 @@ export function AdminFinanceMonitoring() {
       colorClass = "bg-amber-100 text-amber-800 border-amber-300";
     } else if (action.includes("DISPUTE")) {
       colorClass = "bg-rose-100 text-rose-800 border-rose-300";
+    } else if (action.includes("CANCEL") || action.includes("EXPIRE")) {
+      colorClass = "bg-purple-100 text-purple-800 border-purple-300";
     } else if (action.includes("DEPOSIT")) {
       colorClass = "bg-indigo-100 text-indigo-800 border-indigo-300";
     }
@@ -209,6 +212,9 @@ export function AdminFinanceMonitoring() {
   };
 
   const formatOutcome = (outcome: string) => {
+    if (outcome === "STUDENT_ABSENT_TUTOR_PRESENT") {
+      return <span className="text-amber-700 font-medium">HV vắng (GS 45% / Nền tảng 10% / Hoàn HV 45%)</span>;
+    }
     switch (outcome) {
       case "BOTH_PRESENT":
         return <span className="text-emerald-700 font-medium">Học đầy đủ (Gia sư 85%)</span>;
@@ -220,6 +226,15 @@ export function AdminFinanceMonitoring() {
         return <span>{outcome}</span>;
     }
   };
+
+  const sessionRefundedUsdc = overview?.totalSessionRefundedUsdc ?? overview?.totalStudentRefundedUsdc ?? 0;
+  const terminationRefundedUsdc = overview?.totalTerminationRefundedUsdc ?? 0;
+  const totalStudentRefundedUsdc = overview?.totalStudentRefundedUsdc ?? 0;
+  const accountedUsdc = (overview?.totalTutorPaidUsdc ?? 0)
+    + (overview?.totalPlatformFeeUsdc ?? 0)
+    + totalStudentRefundedUsdc
+    + (overview?.totalEscrowLockedUsdc ?? 0);
+  const accountingDriftUsdc = Math.round(((overview?.totalEscrowFundedUsdc ?? 0) - accountedUsdc) * 10000) / 10000;
 
   return (
     <div className="space-y-6 pb-12">
@@ -273,8 +288,8 @@ export function AdminFinanceMonitoring() {
         </div>
       )}
 
-      {/* Overview Cards (5 Metric KPIs) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* Overview Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
         {/* Total Escrow */}
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition">
           <div className="flex items-center justify-between">
@@ -353,11 +368,69 @@ export function AdminFinanceMonitoring() {
           </div>
           <div className="mt-3">
             <span className="text-2xl font-black text-purple-700">
-              {overviewLoading ? "..." : (overview?.totalStudentRefundedUsdc.toFixed(2) ?? "0.00")}
+              {overviewLoading ? "..." : totalStudentRefundedUsdc.toFixed(2)}
             </span>
             <span className="ml-1 text-xs font-bold text-purple-600">USDC</span>
           </div>
           <p className="mt-1 text-xs text-purple-600">Xử lý theo phán quyết khiếu nại</p>
+        </div>
+
+        {/* Termination Refund */}
+        <div className="bg-white p-5 rounded-2xl border border-rose-100 shadow-sm hover:shadow-md transition bg-gradient-to-br from-white to-rose-50/40">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-rose-800 uppercase tracking-wider">Hoàn do chấm dứt</span>
+            <div className="w-9 h-9 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center">
+              <FileCheck className="w-5 h-5" />
+            </div>
+          </div>
+          <div className="mt-3">
+            <span className="text-2xl font-black text-rose-700">
+              {overviewLoading ? "..." : terminationRefundedUsdc.toFixed(2)}
+            </span>
+            <span className="ml-1 text-xs font-bold text-rose-600">USDC</span>
+          </div>
+          <p className="mt-1 text-xs text-rose-600">
+            {overview?.totalCompletedTerminationItems ?? 0} hợp đồng đã hoàn cọc chưa dùng
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+            <Info className="w-4 h-4 text-indigo-600" />
+            <span>Đối soát dòng tiền đã xác nhận on-chain</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
+            <span className="rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 font-black text-blue-800">
+              Nạp {overviewLoading ? "..." : (overview?.totalEscrowFundedUsdc ?? 0).toFixed(2)}
+            </span>
+            <span className="font-black text-slate-400">=</span>
+            <span className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 font-bold text-amber-800">
+              Đang khóa {overviewLoading ? "..." : (overview?.totalEscrowLockedUsdc ?? 0).toFixed(2)}
+            </span>
+            <span className="font-black text-slate-400">+</span>
+            <span className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 font-bold text-emerald-800">
+              Gia sư {overviewLoading ? "..." : (overview?.totalTutorPaidUsdc ?? 0).toFixed(2)}
+            </span>
+            <span className="font-black text-slate-400">+</span>
+            <span className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 font-bold text-indigo-800">
+              Nền tảng {overviewLoading ? "..." : (overview?.totalPlatformFeeUsdc ?? 0).toFixed(2)}
+            </span>
+            <span className="font-black text-slate-400">+</span>
+            <span className="rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1 font-bold text-purple-800">
+              Hoàn buổi {overviewLoading ? "..." : sessionRefundedUsdc.toFixed(2)}
+            </span>
+            <span className="font-black text-slate-400">+</span>
+            <span className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 font-bold text-rose-800">
+              Hoàn chấm dứt {overviewLoading ? "..." : terminationRefundedUsdc.toFixed(2)}
+            </span>
+            {Math.abs(accountingDriftUsdc) >= 0.0001 && (
+              <span className="rounded-lg border border-slate-300 bg-slate-100 px-2.5 py-1 font-bold text-slate-700">
+                Chênh lệch {accountingDriftUsdc.toFixed(4)}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -397,6 +470,8 @@ export function AdminFinanceMonitoring() {
           )}
         </div>
       </div>
+
+      <TerminationRefundTracker />
 
       {/* Main Tabs Navigation */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

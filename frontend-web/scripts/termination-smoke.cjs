@@ -55,7 +55,7 @@ const path = require('node:path');
         createRoot(document.getElementById('root')).render(React.createElement(TerminationPanel, { activeRole: '${role}' }));
       </script></body></html>` }));
       await page.goto(base + '/__termination_smoke__');
-      await page.getByRole('heading', { name: 'Chấm dứt hợp đồng' }).waitFor();
+      await page.getByRole('heading', { name: 'Hồ sơ chấm dứt hợp đồng' }).waitFor();
       if (role === 'admin') {
         await page.getByRole('button', { name: 'Phê duyệt chấm dứt' }).click();
         await page.getByLabel('Nội dung xác minh / giải trình').fill('Da doi chieu minh chung va xac nhan su co.');
@@ -63,12 +63,11 @@ const path = require('node:path');
         await page.getByText('Chưa xác nhận', { exact: true }).waitFor();
         assert.equal(commands[0].action, 'APPROVE');
       } else {
-        assert.equal(await page.getByRole('option', { name: 'Toàn bộ lớp học' }).count(), 0);
-        await page.getByLabel('Hợp đồng', { exact: true }).selectOption(id);
-        await page.getByLabel('Lý do và minh chứng').fill('Hoc vien gap su co can xin cham dut.');
-        await page.getByRole('button', { name: 'Gửi yêu cầu' }).click();
-        await page.getByText('Đã gửi yêu cầu chấm dứt.').waitFor();
-        assert.equal(commands[0].wholeClass, false);
+        assert.equal(await page.getByRole('button', { name: 'Gửi yêu cầu' }).count(), 0);
+        await page.getByRole('button', { name: 'Giải trình' }).click();
+        await page.getByLabel('Nội dung xác minh / giải trình').fill('Bo sung thong tin su co cua hoc vien.');
+        await page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
+        assert.equal(commands[0].action, 'RESPOND');
         assert.equal(await page.getByRole('button', { name: 'Phê duyệt chấm dứt' }).count(), 0);
       }
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);

@@ -10,6 +10,7 @@ import org.web3j.protocol.core.methods.response.EthGetCode;
 import org.web3j.protocol.core.methods.response.EthBlock;
 import org.web3j.protocol.core.methods.response.EthBlockNumber;
 import org.web3j.protocol.core.methods.response.EthLog;
+import org.web3j.protocol.core.methods.response.EthGetTransactionReceipt;
 import org.web3j.protocol.core.methods.response.Log;
 import org.web3j.protocol.core.methods.request.EthFilter;
 import org.web3j.protocol.core.DefaultBlockParameter;
@@ -131,6 +132,31 @@ public class Web3jBlockchainRpcClient implements BlockchainRpcClient, Blockchain
             }
         }
         return allLogs;
+    }
+
+    @Override
+    public List<BlockchainLog> getTransactionLogs(String transactionHash) {
+        try {
+            EthGetTransactionReceipt response = web3j.ethGetTransactionReceipt(transactionHash).send();
+            requireNoError(response.hasError(), response.getError() == null
+                    ? null : response.getError().getMessage(), "eth_getTransactionReceipt");
+            if (response.getTransactionReceipt().isEmpty()) {
+                return List.of();
+            }
+            return response.getTransactionReceipt().get().getLogs().stream()
+                    .map(log -> new BlockchainLog(
+                            log.getAddress(),
+                            log.getTopics(),
+                            log.getData(),
+                            log.getBlockNumber().longValueExact(),
+                            log.getBlockHash(),
+                            log.getTransactionHash(),
+                            log.getLogIndex().longValueExact()))
+                    .toList();
+        } catch (IOException exception) {
+            String detail = exception.getMessage() != null ? exception.getMessage() : exception.getClass().getSimpleName();
+            throw new BlockchainConfigurationException("Cannot read transaction receipt: " + detail, exception);
+        }
     }
 
     private static void requireNoError(boolean hasError, String message, String method) {

@@ -32,6 +32,7 @@ import { useWeb3Wallet } from "../../web3/useWeb3Wallet";
 import { signContractAgreementEip712 } from "../../web3/eip712Signer";
 import { DEFAULT_CHAIN_ID } from "../../web3/web3Config";
 import { TerminationRequestModal, TerminationAgreementTarget } from "./TerminationRequestModal";
+import { terminationsApi, TerminationView } from "../../api/terminationsApi";
 
 interface ContractDocumentModalProps {
   agreementId: string;
@@ -84,13 +85,22 @@ export function ContractDocumentModal({
   const [signing, setSigning] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [showTerminationModal, setShowTerminationModal] = useState(false);
+  const [activeTermination, setActiveTermination] = useState<TerminationView | null>(null);
 
   const loadData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await contractsApi.getContractDocument(agreementId);
+      const [data, terminationCases] = await Promise.all([
+        contractsApi.getContractDocument(agreementId),
+        terminationsApi.list().catch(() => [] as TerminationView[]),
+      ]);
       setDocument(data);
+      setActiveTermination(terminationCases.find(({ request }) =>
+        request.anchorAgreementId === agreementId
+        && !request.wholeClass
+        && !["REJECTED", "COMPLETED"].includes(request.status)
+      ) || null);
     } catch (loadError: any) {
       console.error("Failed to load contract document:", loadError);
       setDocument(null);
@@ -107,6 +117,7 @@ export function ContractDocumentModal({
   useEffect(() => {
     const previousOverflow = window.document.body.style.overflow;
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (showTerminationModal) return;
       if (event.key === "Escape" && !signing && !downloading) onClose();
     };
 
@@ -116,7 +127,7 @@ export function ContractDocumentModal({
       window.document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [downloading, onClose, signing]);
+  }, [downloading, onClose, showTerminationModal, signing]);
 
   const copyToClipboard = (text: string, fieldName: string) => {
     void navigator.clipboard.writeText(text);
@@ -284,7 +295,7 @@ export function ContractDocumentModal({
     && tutorSigned
     && !studentSigned;
 
-  const canStudentRequestTermination = isStudentUser && (isActive || isWaitingPayment) && !isExpired && !isCancelled && !isCompleted;
+  const canStudentRequestTermination = isStudentUser && !activeTermination && (isActive || isWaitingPayment) && !isExpired && !isCancelled && !isCompleted;
 
   const terminationTarget: TerminationAgreementTarget | null = document ? {
     id: document.agreementId,
@@ -300,6 +311,25 @@ export function ContractDocumentModal({
     chainId: document.platform.chainId || agreementSummary?.chainId || DEFAULT_CHAIN_ID,
     escrowContractAddress: document.platform.escrowContractAddress || agreementSummary?.escrowContractAddress || undefined,
   } : null;
+
+  if (showTerminationModal && terminationTarget) {
+    return (
+      <TerminationRequestModal
+        isOpen
+        onClose={() => setShowTerminationModal(false)}
+        agreement={terminationTarget}
+        activeRole="student"
+        title="Yêu Cầu Kết Thúc Hợp Đồng Đơn Phương"
+        description="Xác nhận yêu cầu bằng ví MetaMask đã ký hợp đồng"
+        cancelLabel="Quay lại hợp đồng"
+        onSuccess={() => {
+          setShowTerminationModal(false);
+          void loadData();
+          onSignedSuccess?.();
+        }}
+      />
+    );
+  }
 
   // Primary Action Button calculation
   let primaryAction: { label: string; onClick: () => void; icon: any; colorCls: string } | null = null;
@@ -776,6 +806,21 @@ export function ContractDocumentModal({
                 </div>
               </div>
 
+              {isStudentUser && activeTermination && (
+                <div className="mt-8 border-l-4 border-amber-500 bg-amber-50 p-4 text-sm text-amber-950 print:hidden">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-bold">Hợp đồng đang có hồ sơ chấm dứt</p>
+                    <span className="text-xs font-bold uppercase">{activeTermination.request.status === 'HOLD_PENDING' ? 'Đang đồng bộ tạm dừng' : 'Đang chờ xử lý'}</span>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed">
+                    {activeTermination.request.status === 'HOLD_PENDING'
+                      ? 'Hệ thống đã nhận hồ sơ và đang đồng bộ tạm dừng lịch với Learning. Quá trình này sẽ tự động thử lại nếu dịch vụ tạm gián đoạn.'
+                      : 'Các buổi tương lai sau cutoff đang được tạm dừng. Chưa có giao dịch hoàn tiền cho đến khi Staff xác minh và Admin phê duyệt.'}
+                  </p>
+                  {activeTermination.request.lastError && <p className="mt-2 text-xs font-semibold text-red-700">{activeTermination.request.lastError}</p>}
+                </div>
+              )}
+
               {/* QUY TRÌNH CHẤM DỨT & KẾT THÚC HỢP ĐỒNG TRƯỚC THỜI HẠN */}
               {canStudentRequestTermination && (
                 <div className="mt-8 p-5 rounded-2xl border-2 border-rose-200/80 bg-gradient-to-br from-rose-50/70 via-white to-amber-50/50 space-y-4 print:hidden shadow-xs">
@@ -792,7 +837,7 @@ export function ContractDocumentModal({
                           </span>
                         </h4>
                         <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">
-                          Bạn đang xem hợp đồng cá nhân của bạn với gia sư tại lớp học này. Do học viên chỉ có 1 hợp đồng ở lớp học, nếu gặp sự cố hoặc gia sư vi phạm cam kết, bạn có thể gửi yêu cầu kết thúc hợp đồng kèm chữ ký số ví MetaMask để Smart Contract Escrow giải phóng hoàn trả tiền cọc các buổi chưa học.
+                          Bạn có thể ký yêu cầu chấm dứt bằng đúng ví MetaMask của hợp đồng. Sau khi tiếp nhận, hệ thống tạm dừng các buổi tương lai của riêng bạn để Ban quản trị xác minh; chưa có giao dịch hoàn tiền cho đến khi Admin phê duyệt.
                         </p>
                       </div>
                     </div>
@@ -848,7 +893,7 @@ export function ContractDocumentModal({
                         Gia sư <strong>không được đơn phương kết thúc riêng lẻ từng hợp đồng</strong> của từng học viên vì lý do cá nhân không thể tiếp tục giảng dạy lớp học. Để bảo đảm quyền lợi của tất cả học viên trong lớp, nếu bạn gặp sự cố cá nhân bất khả kháng (sức khỏe, công việc đột xuất...) cần dừng dạy, vui lòng vào mục <strong>"Lớp học của tôi"</strong> và gửi <strong>"Đề xuất dừng giảng dạy & Hủy lớp học"</strong>.
                       </p>
                       <p className="text-[11px] text-slate-500 font-medium">
-                        Hệ thống sẽ đồng bộ thanh lý toàn bộ hợp đồng của lớp và Smart Contract Escrow sẽ tự động hoàn trả cọc các buổi chưa học cho toàn bộ học viên sau khi Ban Quản trị phê duyệt.
+                        Khi Tutor gửi đề xuất trong màn hình quản lý lớp, lịch tương lai sẽ tạm dừng để Ban quản trị xác minh. Sau khi Admin phê duyệt, Escrow V1 thanh lý từng hợp đồng và hoàn số dư chưa sử dụng về ví của từng học viên.
                       </p>
                     </div>
                   </div>
@@ -859,26 +904,6 @@ export function ContractDocumentModal({
         )}
       </main>
 
-      {/* MODAL YÊU CẦU KẾT THÚC HỢP ĐỒNG (KÝ SỐ METAMASK EIP-712 DÀNH CHO HỌC VIÊN) */}
-      {showTerminationModal && terminationTarget && (
-        <TerminationRequestModal
-          isOpen={showTerminationModal}
-          onClose={() => setShowTerminationModal(false)}
-          agreement={terminationTarget}
-          activeRole="student"
-          defaultWholeClass={false}
-          lockWholeClass={true}
-          title="Yêu Cầu Kết Thúc Hợp Đồng Đơn Phương (Học Viên)"
-          description="Học viên ký xác nhận bằng ví MetaMask • Smart Contract Escrow tự động hoàn tiền các buổi chưa học"
-          onSuccess={() => {
-            setShowTerminationModal(false);
-            void loadData();
-            if (onSignedSuccess) {
-              onSignedSuccess();
-            }
-          }}
-        />
-      )}
     </div>
   );
 }

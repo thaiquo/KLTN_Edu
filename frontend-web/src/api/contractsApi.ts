@@ -39,9 +39,11 @@ export interface AgreementSummary {
   settlementEligible?: boolean;
   totalAmount?: number;
   remainingDeposit?: number;
+  remainingAmountUsdc?: number;
   releasedAmountUsdc?: number;
   refundedAmountUsdc?: number;
   fundedTxHash?: string;
+  affectedAgreements?: number;
 }
 
 export interface AgreementDetail {
@@ -221,11 +223,14 @@ export interface AdminFinancialOverview {
   totalTutorPaidUsdc: number;
   totalPlatformFeeUsdc: number;
   totalStudentRefundedUsdc: number;
+  totalSessionRefundedUsdc?: number;
+  totalTerminationRefundedUsdc?: number;
   totalEscrowLockedUsdc: number;
   totalActiveAgreements: number;
   totalSettledSessions: number;
   totalPendingSessions: number;
   totalDisputedSessions: number;
+  totalCompletedTerminationItems?: number;
   platformWallet: string | null;
   escrowContractAddress: string | null;
   chainId: number | null;

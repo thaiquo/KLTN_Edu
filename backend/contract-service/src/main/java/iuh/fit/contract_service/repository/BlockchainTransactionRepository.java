@@ -42,4 +42,12 @@ public interface BlockchainTransactionRepository extends JpaRepository<Blockchai
             List<iuh.fit.contract_service.enums.BlockchainTransactionStatus> statuses,
             Pageable pageable);
 
+    @Query("""
+            select transaction from BlockchainTransaction transaction
+            where transaction.status = iuh.fit.contract_service.enums.BlockchainTransactionStatus.CONFIRMED
+              and transaction.transactionHash is not null
+            order by transaction.updatedAt asc
+            """)
+    List<BlockchainTransaction> findConfirmedWithHash(Pageable pageable);
+
 }

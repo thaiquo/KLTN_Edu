@@ -24,6 +24,7 @@ class TerminationProcessorTest {
     @Mock ProcessedEventRepository events;
     @Mock AgreementLifecycleWorkflowService lifecycle;
     @Mock TerminationLearningClient learning;
+    @Mock NotificationDispatcher notifications;
     TerminationProcessor processor;
     ContractAgreement a;
     TerminationCase c;
@@ -31,7 +32,7 @@ class TerminationProcessorTest {
 
     @BeforeEach void setup() {
         processor = new TerminationProcessor(cases, items, agreements, settlements, transactions, events,
-                lifecycle, learning, new ObjectMapper());
+                lifecycle, learning, notifications, new ObjectMapper());
         a = ContractAgreement.builder().id(UUID.randomUUID()).classroomId(1L).studentId(2L)
                 .chainId(11155111L).status(ContractAgreementStatus.ACTIVE).terminationCutoffSession(-1)
                 .onchainAgreementId("0xagreement").escrowContractAddress("0xescrow").studentWallet("0xstudent").build();
@@ -98,6 +99,7 @@ class TerminationProcessorTest {
         assertThat(item.getStatus()).isEqualTo("COMPLETED");
         assertThat(item.getRefundedUnits()).isEqualTo(new BigInteger("12345678"));
         verify(learning).send(1L, 2L, a.getId(), false, "CLOSE");
+        verify(notifications, times(2)).sendAsync(any(), any(), any(), any(), eq("TERMINATION_COMPLETED"), eq("AGREEMENT"), eq(a.getId().toString()));
     }
     @Test void completedItemIsIdempotent() {
         item.setStatus("COMPLETED");
