@@ -10,6 +10,8 @@ public class PublicTutorResponse {
     private final String fullName;
     private final String bio;
     private final List<PublicTutorSubjectResponse> subjects;
+    private final Double averageRating;
+    private final Long reviewCount;
     private final LocalDateTime createdAt;
 
     public PublicTutorResponse(
@@ -18,6 +20,8 @@ public class PublicTutorResponse {
             String fullName,
             String bio,
             List<PublicTutorSubjectResponse> subjects,
+            Double averageRating,
+            Long reviewCount,
             LocalDateTime createdAt
     ) {
         this.id = id;
@@ -25,6 +29,8 @@ public class PublicTutorResponse {
         this.fullName = fullName;
         this.bio = bio;
         this.subjects = subjects;
+        this.averageRating = averageRating;
+        this.reviewCount = reviewCount;
         this.createdAt = createdAt;
     }
 
@@ -46,6 +52,14 @@ public class PublicTutorResponse {
 
     public List<PublicTutorSubjectResponse> getSubjects() {
         return subjects;
+    }
+
+    public Double getAverageRating() {
+        return averageRating;
+    }
+
+    public Long getReviewCount() {
+        return reviewCount;
     }
 
     public LocalDateTime getCreatedAt() {

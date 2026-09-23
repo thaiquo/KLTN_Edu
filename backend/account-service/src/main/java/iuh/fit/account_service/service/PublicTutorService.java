@@ -1,6 +1,8 @@
 package iuh.fit.account_service.service;
 
 import iuh.fit.account_service.client.LearningTutorSubjectClient;
+import iuh.fit.account_service.client.LearningTutorReviewClient;
+import iuh.fit.account_service.dto.learning.LearningTutorRatingSummaryResponse;
 import iuh.fit.account_service.dto.learning.LearningTutorSubjectResponse;
 import iuh.fit.account_service.dto.tutor.PublicTutorResponse;
 import iuh.fit.account_service.dto.tutor.PublicTutorSubjectResponse;
@@ -33,15 +35,18 @@ public class PublicTutorService {
     private final TutorRepository tutorRepository;
     private final TutorApplicationRepository tutorApplicationRepository;
     private final LearningTutorSubjectClient learningTutorSubjectClient;
+    private final LearningTutorReviewClient learningTutorReviewClient;
 
     public PublicTutorService(
             TutorRepository tutorRepository,
             TutorApplicationRepository tutorApplicationRepository,
-            LearningTutorSubjectClient learningTutorSubjectClient
+            LearningTutorSubjectClient learningTutorSubjectClient,
+            LearningTutorReviewClient learningTutorReviewClient
     ) {
         this.tutorRepository = tutorRepository;
         this.tutorApplicationRepository = tutorApplicationRepository;
         this.learningTutorSubjectClient = learningTutorSubjectClient;
+        this.learningTutorReviewClient = learningTutorReviewClient;
     }
 
     @Transactional(readOnly = true)
@@ -68,11 +73,14 @@ public class PublicTutorService {
         Map<Long, List<LearningTutorSubjectResponse>> subjectsByProfileId = learningTutorSubjectClient.getTutorSubjects(profileIds)
                 .stream()
                 .collect(Collectors.groupingBy(LearningTutorSubjectResponse::getTutorProfileId));
+        List<Long> tutorUserIds = profiles.stream().map(profile -> profile.getUser().getId()).toList();
+        Map<Long, LearningTutorRatingSummaryResponse> ratingsByTutorUserId = learningTutorReviewClient.getRatingSummaries(tutorUserIds);
 
         return profiles.stream()
                 .map(profile -> toResponse(
                         profile,
-                        filterListSubjects(subjectsByProfileId.getOrDefault(profile.getId(), List.of()), subjectId, minRate, maxRate)
+                        filterListSubjects(subjectsByProfileId.getOrDefault(profile.getId(), List.of()), subjectId, minRate, maxRate),
+                        ratingsByTutorUserId.get(profile.getUser().getId())
                 ))
                 .filter(response -> subjectId == null && minRate == null && maxRate == null
                         || !response.getSubjects().isEmpty())
@@ -90,7 +98,8 @@ public class PublicTutorService {
         }
 
         List<LearningTutorSubjectResponse> subjects = learningTutorSubjectClient.getTutorSubjects(profile.getId());
-        return toResponse(profile, subjects);
+        LearningTutorRatingSummaryResponse rating = learningTutorReviewClient.getRatingSummary(profile.getUser().getId());
+        return toResponse(profile, subjects, rating);
     }
 
     private List<LearningTutorSubjectResponse> filterListSubjects(
@@ -106,7 +115,11 @@ public class PublicTutorService {
                 .toList();
     }
 
-    private PublicTutorResponse toResponse(Tutor profile, List<LearningTutorSubjectResponse> subjects) {
+    private PublicTutorResponse toResponse(
+            Tutor profile,
+            List<LearningTutorSubjectResponse> subjects,
+            LearningTutorRatingSummaryResponse rating
+    ) {
         return new PublicTutorResponse(
                 profile.getId(),
                 profile.getUser().getId(),
@@ -115,6 +128,8 @@ public class PublicTutorService {
                         ? profile.getUser().getBio()
                         : profile.getBio(),
                 subjects.stream().map(this::toSubjectResponse).toList(),
+                rating == null || rating.getAverageRating() == null ? 0.0 : rating.getAverageRating(),
+                rating == null || rating.getReviewCount() == null ? 0L : rating.getReviewCount(),
                 profile.getCreatedAt()
         );
     }

@@ -1,10 +1,12 @@
 package iuh.fit.account_service.controller;
 
 import iuh.fit.account_service.dto.tutor.PublicTutorResponse;
+import iuh.fit.account_service.dto.tutor.TutorSearchResponseV2;
 import iuh.fit.account_service.dto.tutor.TutorProfileRequest;
 import iuh.fit.account_service.dto.tutor.TutorRegistrationProfileRequest;
 import iuh.fit.account_service.dto.tutor.TutorResponse;
 import iuh.fit.account_service.service.PublicTutorService;
+import iuh.fit.account_service.service.PublicTutorSearchV2Service;
 import iuh.fit.account_service.service.TutorService;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -27,10 +29,16 @@ public class TutorController {
 
     private final TutorService tutorService;
     private final PublicTutorService publicTutorService;
+    private final PublicTutorSearchV2Service publicTutorSearchV2Service;
 
-    public TutorController(TutorService tutorService, PublicTutorService publicTutorService) {
+    public TutorController(
+            TutorService tutorService,
+            PublicTutorService publicTutorService,
+            PublicTutorSearchV2Service publicTutorSearchV2Service
+    ) {
         this.tutorService = tutorService;
         this.publicTutorService = publicTutorService;
+        this.publicTutorSearchV2Service = publicTutorSearchV2Service;
     }
 
     @GetMapping
@@ -42,6 +50,60 @@ public class TutorController {
             @RequestParam(required = false) Integer limit
     ) {
         return publicTutorService.searchTutors(keyword, subjectId, minRate, maxRate, limit);
+    }
+
+    @GetMapping("/search-v2")
+    public TutorSearchResponseV2.PageResponse searchTutorsV2(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long programTypeId,
+            @RequestParam(required = false) Long educationLevelId,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) Long subjectId,
+            @RequestParam(required = false) Long levelId,
+            @RequestParam(required = false) String teachingMode,
+            @RequestParam(required = false) String provinceCode,
+            @RequestParam(required = false) String province,
+            @RequestParam(required = false) String communeCode,
+            @RequestParam(required = false) String commune,
+            @RequestParam(required = false) BigDecimal minPrice,
+            @RequestParam(required = false) BigDecimal maxPrice,
+            @RequestParam(required = false) Double minRating,
+            @RequestParam(required = false) Integer minExperience,
+            @RequestParam(required = false) Integer dayOfWeek,
+            @RequestParam(required = false) String startTime,
+            @RequestParam(required = false) String endTime,
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String sort
+    ) {
+        return publicTutorSearchV2Service.search(
+                keyword,
+                programTypeId,
+                educationLevelId,
+                categoryId,
+                subjectId,
+                levelId,
+                teachingMode,
+                provinceCode,
+                province,
+                communeCode,
+                commune,
+                minPrice,
+                maxPrice,
+                minRating,
+                minExperience,
+                dayOfWeek,
+                startTime,
+                endTime,
+                page,
+                size,
+                sort
+        );
+    }
+
+    @GetMapping("/{tutorProfileId}/detail-v2")
+    public TutorSearchResponseV2 getTutorV2(@PathVariable Long tutorProfileId) {
+        return publicTutorSearchV2Service.detail(tutorProfileId);
     }
 
     @GetMapping("/{tutorProfileId}")

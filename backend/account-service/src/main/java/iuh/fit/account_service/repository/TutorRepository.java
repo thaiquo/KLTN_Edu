@@ -40,4 +40,15 @@ public interface TutorRepository extends JpaRepository<Tutor, Long> {
             order by user.fullName asc
             """)
     List<Tutor> findPublicTutorsByKeyword(@Param("keyword") String keyword, Pageable pageable);
+
+    @Query("""
+            select tutor
+            from Tutor tutor
+            join fetch tutor.user user
+            join TutorApplication app on app.user.id = user.id
+            where user.emailVerified = true
+              and app.status = iuh.fit.account_service.enums.TutorApplicationStatus.APPROVED
+            order by user.fullName asc
+            """)
+    List<Tutor> findAllPublicTutors();
 }

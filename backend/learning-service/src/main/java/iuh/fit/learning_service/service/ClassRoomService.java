@@ -20,6 +20,7 @@ import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
 import iuh.fit.learning_service.repository.TutorAvailabilityRepository;
 import iuh.fit.learning_service.repository.TutorAuthorizationStateRepository;
+import iuh.fit.learning_service.repository.TutorReviewRepository;
 import iuh.fit.learning_service.repository.TutorSubjectRegistrationRepository;
 import iuh.fit.learning_service.realtime.RealtimeEventHub;
 import org.slf4j.Logger;
@@ -49,6 +50,7 @@ public class ClassRoomService {
     private final TutorAvailabilityRepository availabilityRepository;
     private final EnrollmentRequestRepository enrollmentRequestRepository;
     private final TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
+    private final TutorReviewRepository tutorReviewRepository;
     private final TutorIdentityLookup tutorIdentityLookup;
     private final LearningEventPublisher eventPublisher;
     private final RealtimeEventHub realtimeEventHub;
@@ -60,6 +62,7 @@ public class ClassRoomService {
             TutorAvailabilityRepository availabilityRepository,
             EnrollmentRequestRepository enrollmentRequestRepository,
             TutorAuthorizationStateRepository tutorAuthorizationStateRepository,
+            TutorReviewRepository tutorReviewRepository,
             TutorIdentityLookup tutorIdentityLookup,
             LearningEventPublisher eventPublisher,
             RealtimeEventHub realtimeEventHub
@@ -70,6 +73,7 @@ public class ClassRoomService {
         this.availabilityRepository = availabilityRepository;
         this.enrollmentRequestRepository = enrollmentRequestRepository;
         this.tutorAuthorizationStateRepository = tutorAuthorizationStateRepository;
+        this.tutorReviewRepository = tutorReviewRepository;
         this.tutorIdentityLookup = tutorIdentityLookup;
         this.eventPublisher = eventPublisher;
         this.realtimeEventHub = realtimeEventHub;
@@ -859,6 +863,9 @@ public class ClassRoomService {
                 && (visibleMeetingLink == null || visibleMeetingLink.isBlank())) {
             visibleMeetingLink = "https://meet.google.com/edu-class-" + (c.getId() != null ? c.getId() : "online");
         }
+        Long tutorUserId = resolveTutorUserIdForRating(c);
+        double averageRating = tutorUserId == null ? 0.0 : safeAverage(tutorReviewRepository.averageRatingByTutorId(tutorUserId));
+        long reviewCount = tutorUserId == null ? 0 : tutorReviewRepository.countByTutorId(tutorUserId);
 
         return new ClassRoomDtos.ClassRoomResponse(
                 c.getId(),
@@ -897,10 +904,25 @@ public class ClassRoomService {
                 c.getRejectReason(),
                 c.getReviewedByEmail(),
                 c.getReviewedAt(),
+                averageRating,
+                reviewCount,
                 schedules,
                 chapters,
                 c.getCreatedAt(),
                 c.getUpdatedAt()
         );
+    }
+
+    private Long resolveTutorUserIdForRating(ClassRoom classRoom) {
+        if (classRoom.getTutorProfileId() == null) {
+            return null;
+        }
+        return tutorAuthorizationStateRepository.findByTutorProfileId(classRoom.getTutorProfileId())
+                .map(TutorAuthorizationState::getUserId)
+                .orElse(null);
+    }
+
+    private double safeAverage(Double value) {
+        return value == null ? 0.0 : value;
     }
 }

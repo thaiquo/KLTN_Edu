@@ -231,6 +231,7 @@ export default function App() {
                 </ProtectedStudentPage>
               }
             />
+            <Route path="/student/tutor-matching" element={<Navigate to="/matching" replace />} />
             <Route
               path="/messages"
               element={

@@ -12,7 +12,17 @@ export const tutorApi = {
 
     return apiRequest(`/api/tutors${query ? `?${query}` : ''}`);
   },
+  searchPublicV2: (filterParams = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filterParams).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      params.set(key, String(value));
+    });
+    const query = params.toString();
+    return apiRequest(`/api/tutors/search-v2${query ? `?${query}` : ''}`);
+  },
   getPublicProfile: (tutorProfileId) => apiRequest(`/api/tutors/${tutorProfileId}`),
+  getPublicProfileV2: (tutorProfileId) => apiRequest(`/api/tutors/${tutorProfileId}/detail-v2`),
   getProfile: () => apiRequest('/api/tutors/profile'),
   createProfile: (payload) => apiRequest('/api/tutors/profile', {
     method: 'POST',

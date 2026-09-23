@@ -32,10 +32,6 @@ public class LearningEventPublisher {
         this.staffRecipientLookup = staffRecipientLookup;
     }
 
-    public LearningEventPublisher(RabbitTemplate rabbitTemplate) {
-        this(rabbitTemplate, null);
-    }
-
     public void publishSubjectRequestApproved(Long requestId, Long requestedByUserId, Long approvedSubjectId) {
         publishAfterCommit(
                 LearningRabbitConfig.EXCHANGE,
@@ -344,10 +340,10 @@ public class LearningEventPublisher {
     }
 
     private List<Long> activeStaffUserIdsExcludingUserId(Long excludedUserId) {
-        return staffRecipientLookup == null ? List.of() : staffRecipientLookup.activeStaffUserIdsExcludingUserId(excludedUserId);
+        return staffRecipientLookup.activeStaffUserIdsExcludingUserId(excludedUserId);
     }
 
     private List<Long> activeStaffUserIdsExcludingEmail(String excludedEmail) {
-        return staffRecipientLookup == null ? List.of() : staffRecipientLookup.activeStaffUserIdsExcludingEmail(excludedEmail);
+        return staffRecipientLookup.activeStaffUserIdsExcludingEmail(excludedEmail);
     }
 }

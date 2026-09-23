@@ -25,7 +25,7 @@ class LearningEventPublisherTest {
     @Test
     void publishEnrollmentRequestedUsesRoutingKeyAndStablePayloadShape() {
         RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
-        LearningEventPublisher publisher = new LearningEventPublisher(rabbitTemplate);
+        LearningEventPublisher publisher = newPublisher(rabbitTemplate);
         ArgumentCaptor<EnrollmentNotificationEvent> captor = ArgumentCaptor.forClass(EnrollmentNotificationEvent.class);
 
         publisher.publishEnrollmentRequested(11L, 22L, 33L, 44L, "Math 10", "An");
@@ -48,7 +48,7 @@ class LearningEventPublisherTest {
     @Test
     void publishEnrollmentSkipsSelfNotification() {
         RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
-        LearningEventPublisher publisher = new LearningEventPublisher(rabbitTemplate);
+        LearningEventPublisher publisher = newPublisher(rabbitTemplate);
 
         publisher.publishEnrollmentAccepted(11L, 22L, 33L, 33L, "Math 10", "An");
 
@@ -58,7 +58,7 @@ class LearningEventPublisherTest {
     @Test
     void publishClassReviewedUsesRoutingKeyAndTutorRecipient() {
         RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
-        LearningEventPublisher publisher = new LearningEventPublisher(rabbitTemplate);
+        LearningEventPublisher publisher = newPublisher(rabbitTemplate);
         ArgumentCaptor<ClassReviewedNotificationEvent> captor = ArgumentCaptor.forClass(ClassReviewedNotificationEvent.class);
 
         publisher.publishClassReviewed(
@@ -89,7 +89,7 @@ class LearningEventPublisherTest {
     @Test
     void publishTeachingRegistrationReviewedUsesRoutingKeyAndTutorRecipient() {
         RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
-        LearningEventPublisher publisher = new LearningEventPublisher(rabbitTemplate);
+        LearningEventPublisher publisher = newPublisher(rabbitTemplate);
         ArgumentCaptor<TeachingRegistrationReviewedEvent> captor = ArgumentCaptor.forClass(TeachingRegistrationReviewedEvent.class);
 
         publisher.publishTeachingRegistrationReviewed(
@@ -201,5 +201,9 @@ class LearningEventPublisherTest {
         assertThat(event.classTitle()).isEqualTo("Math 10");
         assertThat(event.referenceType()).isEqualTo("CLASS");
         assertThat(event.referenceId()).isEqualTo("66");
+    }
+
+    private LearningEventPublisher newPublisher(RabbitTemplate rabbitTemplate) {
+        return new LearningEventPublisher(rabbitTemplate, mock(StaffNotificationRecipientLookup.class));
     }
 }

@@ -25,10 +25,12 @@ import {
   ArrowLeft,
   ArrowRight,
   ChevronRight,
-  Radio
+  Radio,
+  Star
 } from 'lucide-react';
 import { classApi } from '../../api/classes';
 import { contractsApi } from '../../api/contractsApi';
+import { reviewApi } from '../../api/reviews';
 import { useFeedback } from '../../components/feedback/useFeedback';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import { StudentEmptyState, StudentPageScaffold } from './StudentPageScaffold';
@@ -873,6 +875,14 @@ function ClassSummaryCard({
 function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) {
   const [classroomDetails, setClassroomDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
+  const feedback = useFeedback();
+
+  const [reviewStatus, setReviewStatus] = useState(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewError, setReviewError] = useState('');
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -892,6 +902,57 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) 
       cancelled = true;
     };
   }, [classRoomId]);
+
+  async function loadReviewStatus() {
+    setReviewLoading(true);
+    setReviewError('');
+    try {
+      const status = await reviewApi.getMyClassReviewStatus(classRoomId);
+      setReviewStatus(status);
+      setRating(status?.review?.rating || 0);
+      setComment(status?.review?.comment || '');
+    } catch (err) {
+      setReviewError(err?.message || 'Không thể tải trạng thái đánh giá gia sư.');
+    } finally {
+      setReviewLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadReviewStatus();
+  }, [classRoomId]);
+
+  async function handleSubmitReview(event) {
+    event.preventDefault();
+    const normalizedComment = comment.trim();
+    if (rating < 1 || rating > 5) {
+      setReviewError('Vui lòng chọn số sao đánh giá.');
+      return;
+    }
+    if (normalizedComment.length < 10 || normalizedComment.length > 1000) {
+      setReviewError('Nhận xét phải có từ 10 đến 1000 ký tự.');
+      return;
+    }
+
+    setReviewSaving(true);
+    setReviewError('');
+    try {
+      if (reviewStatus?.reviewExists) {
+        await reviewApi.updateMyClassReview(classRoomId, { rating, comment: normalizedComment });
+        feedback.success('Đã cập nhật đánh giá gia sư.');
+      } else {
+        await reviewApi.createMyClassReview(classRoomId, { rating, comment: normalizedComment });
+        feedback.success('Đã gửi đánh giá gia sư.');
+      }
+      await loadReviewStatus();
+    } catch (err) {
+      const message = err?.message || 'Không thể lưu đánh giá gia sư.';
+      setReviewError(message);
+      feedback.error(message);
+    } finally {
+      setReviewSaving(false);
+    }
+  }
 
   const weeklyDaysSummary = useMemo(() => {
     if (!classroomDetails?.schedules || classroomDetails.schedules.length === 0) return null;
@@ -1030,6 +1091,19 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) 
         </div>
       </div>
 
+      <TutorReviewPanel
+        status={reviewStatus}
+        loading={reviewLoading}
+        saving={reviewSaving}
+        error={reviewError}
+        rating={rating}
+        comment={comment}
+        tutorName={tutorName}
+        onRatingChange={setRating}
+        onCommentChange={setComment}
+        onSubmit={handleSubmitReview}
+      />
+
       {/* Main Class Sessions Timeline with Hero Spotlight, Roadmap & History */}
       <ClassSessionsTimeline
         key={classRoomId}
@@ -1041,6 +1115,105 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) 
         currentUserRole="STUDENT"
       />
     </div>
+  );
+}
+
+function TutorReviewPanel({
+  status,
+  loading,
+  saving,
+  error,
+  rating,
+  comment,
+  tutorName,
+  onRatingChange,
+  onCommentChange,
+  onSubmit
+}) {
+  const trimmedLength = comment.trim().length;
+  const canReview = Boolean(status?.canReview);
+  const reviewExists = Boolean(status?.reviewExists);
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-[11px] font-black uppercase tracking-wider text-indigo-600">Đánh giá gia sư</p>
+          <h3 className="mt-1 font-display text-xl font-black text-slate-950">
+            {reviewExists ? 'Đánh giá của bạn' : `Bạn đánh giá ${tutorName} thế nào?`}
+          </h3>
+          <p className="mt-1 text-xs font-semibold leading-6 text-slate-500">
+            Bạn có thể đánh giá sau khi đã tham gia ít nhất một buổi học hoàn tất với kết quả có mặt đầy đủ.
+          </p>
+        </div>
+        {reviewExists && (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
+            <ShieldCheck size={14} /> Đã gửi
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="mt-4 flex items-center gap-2 rounded-xl bg-slate-50 px-4 py-3 text-xs font-bold text-slate-500">
+          <Loader2 size={15} className="animate-spin" /> Đang tải trạng thái đánh giá...
+        </div>
+      ) : !canReview && !reviewExists ? (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold leading-6 text-amber-800">
+          {status?.reason || 'Bạn có thể đánh giá gia sư sau khi hoàn thành ít nhất một buổi học.'}
+        </div>
+      ) : (
+        <form onSubmit={onSubmit} className="mt-4 space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1">
+              {[1, 2, 3, 4, 5].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => onRatingChange(value)}
+                  className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-amber-400 transition-colors hover:bg-amber-50"
+                  aria-label={`${value} sao`}
+                >
+                  <Star size={21} fill={value <= rating ? 'currentColor' : 'none'} />
+                </button>
+              ))}
+            </div>
+            <span className="text-sm font-black text-slate-800">{rating ? `${rating}/5` : 'Chưa chọn sao'}</span>
+          </div>
+
+          <label className="grid gap-2 text-xs font-black uppercase tracking-wider text-slate-700">
+            Nhận xét của bạn
+            <textarea
+              value={comment}
+              onChange={(event) => onCommentChange(event.target.value)}
+              rows={4}
+              className="min-h-[120px] rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold normal-case leading-6 text-slate-900 outline-none transition-colors focus:border-indigo-400 focus:bg-white"
+              placeholder="Chia sẻ trải nghiệm học tập của bạn..."
+              maxLength={1000}
+            />
+          </label>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <span className={`text-xs font-bold ${trimmedLength < 10 || trimmedLength > 1000 ? 'text-amber-700' : 'text-slate-500'}`}>
+              {trimmedLength}/1000 ký tự, tối thiểu 10 ký tự.
+            </span>
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 text-xs font-black text-white transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {saving && <Loader2 size={15} className="animate-spin" />}
+              {reviewExists ? 'Cập nhật đánh giá' : 'Gửi đánh giá'}
+            </button>
+          </div>
+
+          {error && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700">
+              {error}
+            </div>
+          )}
+        </form>
+      )}
+    </section>
   );
 }
 

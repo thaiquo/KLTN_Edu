@@ -19,14 +19,8 @@ public class AccountEventPublisher {
         this.staffRecipientResolver = staffRecipientResolver;
     }
 
-    public AccountEventPublisher(RabbitTemplate rabbitTemplate) {
-        this(rabbitTemplate, null);
-    }
-
     public void publishTutorApplicationSubmitted(TutorApplicationSubmittedEvent event) {
-        List<Long> staffUserIds = staffRecipientResolver == null
-                ? List.of()
-                : staffRecipientResolver.activeStaffUserIds();
+        List<Long> staffUserIds = staffRecipientResolver.activeStaffUserIds();
         for (Long staffUserId : staffUserIds) {
             if (staffUserId == null || staffUserId.equals(event.userId())) {
                 continue;

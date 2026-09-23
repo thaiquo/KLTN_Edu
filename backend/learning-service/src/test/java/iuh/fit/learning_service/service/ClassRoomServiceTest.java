@@ -23,6 +23,7 @@ import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
 import iuh.fit.learning_service.repository.TutorAuthorizationStateRepository;
 import iuh.fit.learning_service.repository.TutorAvailabilityRepository;
+import iuh.fit.learning_service.repository.TutorReviewRepository;
 import iuh.fit.learning_service.repository.TutorSubjectRegistrationRepository;
 import iuh.fit.learning_service.realtime.RealtimeEventHub;
 import org.junit.jupiter.api.Test;
@@ -66,6 +67,9 @@ class ClassRoomServiceTest {
 
     @Mock
     private TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
+
+    @Mock
+    private TutorReviewRepository tutorReviewRepository;
 
     @Mock
     private TutorIdentityLookup tutorIdentityLookup;

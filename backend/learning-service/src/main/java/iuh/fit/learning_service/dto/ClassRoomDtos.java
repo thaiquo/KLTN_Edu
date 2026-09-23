@@ -172,6 +172,8 @@ public final class ClassRoomDtos {
             String rejectReason,
             String reviewedByEmail,
             LocalDateTime reviewedAt,
+            Double averageRating,
+            Long reviewCount,
             List<ScheduleResponse> schedules,
             List<ChapterResponse> chapters,
             LocalDateTime createdAt,
