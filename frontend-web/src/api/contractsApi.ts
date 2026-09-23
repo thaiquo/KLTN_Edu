@@ -58,6 +58,8 @@ export interface ContractDocumentParty {
   email: string | null;
   phone: string | null;
   walletAddress: string | null;
+  dateOfBirth: string | null;
+  address: string | null;
 }
 
 export interface ContractSignatureProof {
@@ -433,10 +435,13 @@ export const contractsApi = {
     studentName: string;
     studentEmail: string;
     studentPhone: string;
+    studentDateOfBirth: string;
+    studentAddress: string;
     tutorId: number;
     tutorName: string;
     tutorEmail: string;
     tutorPhone?: string;
+    tutorAddress: string;
     studentWallet: string;
     tutorWallet: string;
     pricePerSessionVnd?: number;

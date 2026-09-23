@@ -72,6 +72,10 @@ public class EnrollmentRequestService {
         if (request.studentPhone() == null || request.studentPhone().isBlank()) {
             throw new BadRequestException("Học viên cần cập nhật số điện thoại trước khi gửi yêu cầu.");
         }
+        if (request.studentDateOfBirth() == null
+                || request.studentAddress() == null || request.studentAddress().isBlank()) {
+            throw new BadRequestException("Học viên cần cập nhật ngày sinh và địa chỉ trước khi gửi yêu cầu.");
+        }
         if (request.studentWallet() == null || !request.studentWallet().matches("^0x[a-fA-F0-9]{40}$")
                 || "0x0000000000000000000000000000000000000000".equalsIgnoreCase(request.studentWallet())) {
             throw new BadRequestException("A connected MetaMask wallet is required before submitting an enrollment request.");
@@ -134,6 +138,8 @@ public class EnrollmentRequestService {
         req.setStudentName(request.studentName().trim());
         req.setStudentPhone(request.studentPhone().trim());
         req.setStudentWallet(request.studentWallet().trim().toLowerCase());
+        req.setStudentDateOfBirth(request.studentDateOfBirth());
+        req.setStudentAddress(request.studentAddress().trim());
         req.setJoinKey(request.joinKey());
         req.setNote(request.note() != null ? request.note().trim() : null);
         req.setStatus(EnrollmentRequestStatus.PENDING);
@@ -436,7 +442,8 @@ public class EnrollmentRequestService {
         List<ClassRoom> activeClasses = activeRequests.stream()
                 .filter(r -> r.getStatus() == EnrollmentRequestStatus.ACCEPTED || r.getStatus() == EnrollmentRequestStatus.ENROLLED)
                 .map(EnrollmentRequest::getClassRoom)
-                .filter(c -> c != null && c.getStatus() != ClassRoomStatus.CLOSED && c.getStatus() != ClassRoomStatus.CANCELLED)
+                .filter(c -> c != null && c.getStatus() != ClassRoomStatus.CLOSED && c.getStatus() != ClassRoomStatus.CANCELLED
+                        && c.getTerminationCutoffSession() == null)
                 .distinct()
                 .toList();
 
@@ -503,7 +510,8 @@ public class EnrollmentRequestService {
         List<ClassRoom> activeClasses = activeRequests.stream()
                 .filter(r -> r.getStatus() == EnrollmentRequestStatus.ACCEPTED || r.getStatus() == EnrollmentRequestStatus.ENROLLED)
                 .map(EnrollmentRequest::getClassRoom)
-                .filter(c -> c != null && c.getStatus() != ClassRoomStatus.CLOSED && c.getStatus() != ClassRoomStatus.CANCELLED)
+                .filter(c -> c != null && c.getStatus() != ClassRoomStatus.CLOSED && c.getStatus() != ClassRoomStatus.CANCELLED
+                        && c.getTerminationCutoffSession() == null)
                 .distinct()
                 .toList();
 
@@ -587,8 +595,12 @@ public class EnrollmentRequestService {
                 r.getStudentName(),
                 r.getStudentPhone(),
                 r.getStudentWallet(),
+                r.getStudentDateOfBirth(),
+                r.getStudentAddress(),
                 r.getAgreementId(),
                 r.getStatus(),
+                c.getStatus().name(),
+                c.getTerminationCutoffSession(),
                 r.getJoinKey(),
                 r.getNote(),
                 r.getRejectReason(),

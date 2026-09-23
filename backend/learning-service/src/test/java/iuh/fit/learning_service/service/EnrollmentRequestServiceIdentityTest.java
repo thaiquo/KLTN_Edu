@@ -45,7 +45,9 @@ class EnrollmentRequestServiceIdentityTest {
                 null,
                 "Nguyen Van An",
                 "0900000000",
-                WALLET);
+                WALLET,
+                java.time.LocalDate.of(2005, 1, 1),
+                "TP. Hồ Chí Minh");
 
         assertThatThrownBy(() -> service.enrollClass(
                 1L,
@@ -65,7 +67,9 @@ class EnrollmentRequestServiceIdentityTest {
                 null,
                 "student@example.com",
                 "0900000000",
-                WALLET);
+                WALLET,
+                java.time.LocalDate.of(2005, 1, 1),
+                "TP. Hồ Chí Minh");
 
         assertThatThrownBy(() -> service.enrollClass(
                 1L,
@@ -85,7 +89,9 @@ class EnrollmentRequestServiceIdentityTest {
                 null,
                 "Nguyen Van An",
                 " ",
-                WALLET);
+                WALLET,
+                java.time.LocalDate.of(2005, 1, 1),
+                "TP. Hồ Chí Minh");
 
         assertThatThrownBy(() -> service.enrollClass(
                 1L,

@@ -110,7 +110,9 @@ public class ClassRoomService {
     public List<ClassRoomDtos.ClassRoomResponse> getMyEnrolledClasses(String studentEmail) {
         List<EnrollmentRequest> requests = enrollmentRequestRepository.findByStudentEmailWithDetails(studentEmail);
         List<Long> classIds = requests.stream()
-                .filter(r -> r.getStatus() == EnrollmentRequestStatus.ENROLLED || r.getStatus() == EnrollmentRequestStatus.ACCEPTED)
+                .filter(r -> r.getStatus() == EnrollmentRequestStatus.ENROLLED
+                        || r.getStatus() == EnrollmentRequestStatus.ACCEPTED
+                        || r.getStatus() == EnrollmentRequestStatus.CANCELLED)
                 .map(r -> r.getClassRoom().getId())
                 .distinct()
                 .toList();
@@ -697,6 +699,7 @@ public class ClassRoomService {
         // Check overlap with existing active/pending/private/published classes of tutor
         List<ClassRoom> existingClasses = classRoomRepository.findByTutorEmailWithDetails(tutorEmail);
         for (ClassRoom existing : existingClasses) {
+            if (existing.getTerminationCutoffSession() != null) continue;
             if (existing.getStatus() == ClassRoomStatus.ACTIVE ||
                 existing.getStatus() == ClassRoomStatus.PENDING_APPROVAL ||
                 existing.getStatus() == ClassRoomStatus.PRIVATE ||
@@ -849,7 +852,8 @@ public class ClassRoomService {
                 schedules,
                 chapters,
                 c.getCreatedAt(),
-                c.getUpdatedAt()
+                c.getUpdatedAt(),
+                c.getTerminationCutoffSession()
         );
     }
 }

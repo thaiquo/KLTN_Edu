@@ -23,6 +23,9 @@ Không mô tả ETH là tiền học phí. Không xem local status hoặc receip
 | `EduConnectEscrow` | `0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3` |
 | Test USDC | `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238` |
 | Operator/Arbitrator đã kiểm chứng | `0x10dd719B6a13e9d275990d706C2640ab6F1CA28e` |
+| Payout `BOTH_PRESENT` (0.6 USDC) | [`0xd835b8ae...90dc2`](https://sepolia.etherscan.io/tx/0xd835b8ae250b20141feb32d26eb081ca1a0d532c9c6780b9622812c91990dc2) |
+| Refund `TUTOR_ABSENT` (0.6 USDC) | [`0xf608981a...5a3ec1`](https://sepolia.etherscan.io/tx/0xf608981a95f001b0cc5bd338995bd2cb54cc4addcf35b15957e06536005a3ec1) |
+| Refund `AgreementCancelled` (4.80 USDC) | [`0x11c562e5...06d6b`](https://sepolia.etherscan.io/tx/0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b) (23:44:27 22/09/2026) |
 
 Frontend defaults hiện khớp deployment Sepolia và artifact Anvil: local token `0x5fb...aa3`, local escrow `0xe7f...512`. `ESCROW_ABI` dùng `bytes32 agreementId/sessionId` và các signature hiện khớp `IEduConnectEscrow.sol`.
 
@@ -147,7 +150,14 @@ Mọi thao tác chấm dứt hợp đồng đơn phương (Student) hoặc đề
   - Nếu chữ ký giả mạo, hoặc ví MetaMask không khớp ví hợp đồng, yêu cầu lập tức bị từ chối ở tầng backend.
 - **Hold vận hành và thực thi On-chain**:
   - Khi tiếp nhận chữ ký, hệ thống giữ cutoff tại Learning và Contract nhưng chưa gửi giao dịch blockchain. Hold/release có trạng thái retry bền khi liên service tạm gián đoạn.
-  - Sau Staff đề xuất và Admin phê duyệt (`APPROVE`), hệ thống giữ nguyên cutoff, chờ mọi settlement trước cutoff kết thúc rồi gọi `cancelAgreementAndRefundUnused(bytes32 agreementId, bytes32 resolutionHash)` qua Arbitrator.
+  - Sau Staff đề xuất (`RECOMMEND`) hoặc Admin phê duyệt trực tiếp (`APPROVE`), hệ thống giữ nguyên cutoff đã chụp.
+  - **Quy tắc thời hạn quyết toán & Hoàn cọc:** Cửa sổ 24 giờ là thời hạn khiếu nại của từng buổi học đã dạy trước cutoff, không phải thời hạn chờ bắt buộc sau khi Admin duyệt. Worker kiểm tra các buổi học liên quan: ngay sau khi tất cả các buổi học trước cutoff hoàn tất quyết toán (sau 24h khiếu nại hoặc phán quyết xong), worker lập tức gọi `cancelAgreementAndRefundUnused(bytes32 agreementId, bytes32 resolutionHash)` qua Arbitrator để hoàn cọc còn dư (`remainingDeposit`) về ví học viên.
+  - **Bằng chứng giao dịch thực tế trên Sepolia:**
+    - Transaction hash: [`0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b`](https://sepolia.etherscan.io/tx/0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b).
+    - Event: `AgreementCancelled(bytes32 agreementId, uint256 refundAmount, bytes32 resolutionHash)`.
+    - Số tiền hoàn trả: **4,80 USDC** về ví học viên `0x58abad20adecebfba5862422091eacc3f65f60e7`.
+    - Thời điểm hoàn tất: **23:44:27 ngày 22/09/2026**.
+    - Cả hợp đồng (`contract_agreements`) và lượt đăng ký (`enrollments`) đều chuyển thành `CANCELLED`; mốc dừng học đã đóng thành công.
   - Toàn bộ số dư ký quỹ chưa quyết toán (`remainingDeposit`) được Smart Contract hoàn trả trực tiếp về ví của học viên, và phát event `AgreementCancelled`.
   - Với Escrow V1, đề xuất hủy cả lớp (`wholeClass=true`) được thanh lý bằng nhiều transaction độc lập, có trạng thái/retry theo từng agreement; không mô tả nhầm là một batch transaction.
 
@@ -178,6 +188,10 @@ Yêu cầu runtime: `BLOCKCHAIN_ENABLED=true`, `BLOCKCHAIN_OPERATOR_ENABLED=true
 - Learning gửi lại completed session chưa acknowledged sau initial 5 giây và mỗi 30 giây.
 - Contract quét `PROPOSED` quá deadline sau initial 30 giây và mỗi 60 giây.
 - Dispatcher/receipt watcher chạy mỗi 5 giây.
+- Event poller đọc log theo `BLOCKCHAIN_EVENT_BLOCK_BATCH_SIZE`; cấu hình local
+  chuẩn là `10` block/lần quét để tránh nghẽn/throttle RPC Sepolia. Nếu copy env
+  sang `frontend-web/.env`, giá trị này vẫn chỉ phục vụ cấu hình dùng chung; mã
+  trình duyệt chỉ đọc các biến `VITE_*`.
 
 Nếu tất cả service tắt, không có giao dịch được gửi trong thời gian tắt. Sau restart worker đọc state bền vững và catch up. Dispute đang mở không bao giờ bị auto-finalize.
 

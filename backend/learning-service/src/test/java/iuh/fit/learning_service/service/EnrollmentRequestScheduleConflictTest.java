@@ -78,12 +78,48 @@ class EnrollmentRequestScheduleConflictTest {
         when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any())).thenReturn(false);
         when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(acceptedReq));
 
-        EnrollClassRequest request = new EnrollClassRequest(null, "note", "Nguyen Van An", "0900000000", WALLET);
+        EnrollClassRequest request = validRequest();
 
         assertThatThrownBy(() -> service.enrollClass(10L, 100L, "student@example.com", request))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("Trùng lịch học")
                 .hasMessageContaining("Vật Lý 10 Cơ Bản");
+    }
+
+    @Test
+    void allowsEnrollmentWhenExistingClassHasTerminationCutoff() {
+        EnrollmentRequestService service = service();
+
+        // Target classroom: Mon (day 2) 18:00 - 19:30
+        ClassRoom targetClass = createClassRoom(10L, "Toán Lớp 10 Nâng Cao", LocalDate.now(), LocalDate.now().plusMonths(2));
+        ClassSchedule targetSlot = createSchedule(targetClass, 2, "18:00", "19:30");
+        targetClass.setSchedules(List.of(targetSlot));
+
+        // Existing enrolled class has terminationCutoffSession set (class was terminated)
+        ClassRoom existingClass = createClassRoom(20L, "Vật Lý 10 Cơ Bản", LocalDate.now(), LocalDate.now().plusMonths(2));
+        existingClass.setTerminationCutoffSession(5);
+        ClassSchedule existingSlot = createSchedule(existingClass, 2, "18:00", "19:30");
+        existingClass.setSchedules(List.of(existingSlot));
+
+        EnrollmentRequest acceptedReq = new EnrollmentRequest();
+        acceptedReq.setClassRoom(existingClass);
+        acceptedReq.setStudentEmail("student@example.com");
+        acceptedReq.setStatus(EnrollmentRequestStatus.ENROLLED);
+
+        when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
+        when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.ACCEPTED)).thenReturn(0L);
+        when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.PENDING)).thenReturn(0L);
+        when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any())).thenReturn(false);
+        when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(acceptedReq));
+        when(enrollmentRequestRepository.save(any())).thenAnswer(i -> {
+            EnrollmentRequest r = i.getArgument(0);
+            ReflectionTestUtils.setField(r, "id", 1L);
+            return r;
+        });
+
+        EnrollClassRequest request = validRequest();
+        var response = service.enrollClass(10L, 100L, "student@example.com", request);
+        assertThat(response).isNotNull();
     }
 
     @Test
@@ -116,11 +152,13 @@ class EnrollmentRequestScheduleConflictTest {
             return r;
         });
 
-        EnrollClassRequest request = new EnrollClassRequest(null, "note", "Nguyen Van An", "0900000000", WALLET);
+        EnrollClassRequest request = validRequest();
 
         var result = service.enrollClass(10L, 100L, "student@example.com", request);
         assertThat(result).isNotNull();
         assertThat(result.classRoomId()).isEqualTo(10L);
+        assertThat(result.studentDateOfBirth()).isEqualTo(LocalDate.of(2005, 1, 1));
+        assertThat(result.studentAddress()).isEqualTo("TP. Hồ Chí Minh");
     }
 
     @Test
@@ -153,7 +191,7 @@ class EnrollmentRequestScheduleConflictTest {
             return r;
         });
 
-        EnrollClassRequest request = new EnrollClassRequest(null, "note", "Nguyen Van An", "0900000000", WALLET);
+        EnrollClassRequest request = validRequest();
 
         var result = service.enrollClass(10L, 100L, "student@example.com", request);
         assertThat(result).isNotNull();
@@ -205,6 +243,12 @@ class EnrollmentRequestScheduleConflictTest {
                 tutorAuthorizationStateRepository,
                 eventPublisher,
                 rollingSessionService);
+    }
+
+    private EnrollClassRequest validRequest() {
+        return new EnrollClassRequest(
+                null, "note", "Nguyen Van An", "0900000000", WALLET,
+                LocalDate.of(2005, 1, 1), "TP. Hồ Chí Minh");
     }
 
     private ClassRoom createClassRoom(Long id, String name, LocalDate startDate, LocalDate endDate) {

@@ -147,7 +147,7 @@ public class TerminationService {
             synchronizeHold(c, anchor);
         }
         cases.saveAndFlush(c);
-        notifyParties(anchor, c, "Yeu cau cham dut hop dong dang cho xem xet");
+        notifyParties(anchor, c, "Yêu cầu dừng lớp học đã được gửi và đang chờ thẩm định.");
         notifications.sendAsync(anchor.getClassroomReviewerEmail(), null, "Yeu cau cham dut hop dong",
                 "Lop #" + anchor.getClassroomId() + " co ho so cham dut can xem xet.",
                 "TERMINATION_UPDATED", "AGREEMENT", anchor.getId().toString());
@@ -205,13 +205,19 @@ public class TerminationService {
         }
         audit(c, user, action, reason);
         cases.saveAndFlush(c);
-        notifyParties(anchor, c, "Ho so cham dut hop dong: " + c.getStatus());
+        String statusMessage = switch (c.getStatus()) {
+            case "APPROVED" -> "Admin đã phê duyệt dừng lớp học. Các buổi học tương lai đã dừng và tiền cọc còn lại đang được hoàn trả.";
+            case "RECOMMENDED" -> "Hồ sơ dừng lớp học đã được Staff thẩm định và đề xuất xử lý.";
+            case "REJECTED" -> "Yêu cầu dừng lớp học đã bị từ chối.";
+            default -> "Cập nhật hồ sơ dừng hợp đồng: " + c.getStatus();
+        };
+        notifyParties(anchor, c, statusMessage);
         if ("APPROVE".equals(action) && c.isWholeClass()) {
             for (var item : items.findByCaseIdOrderByAgreementId(c.getId())) {
                 if (item.getAgreementId().equals(anchor.getId())) continue;
                 var affected = agreements.findById(item.getAgreementId()).orElseThrow();
                 notifications.sendAsync(affected.getStudentEmail(), affected.getStudentId(), "Cham dut lop hoc",
-                        "Admin da phe duyet cham dut lop. Tien con lai se duoc hoan sau khi xu ly cac buoi da bat dau.",
+                        "Admin đã phê duyệt dừng lớp học. Tiền cọc còn lại sẽ được hoàn về ví sau khi xử lý các buổi đã bắt đầu.",
                         "TERMINATION_UPDATED", "AGREEMENT", affected.getId().toString());
             }
         }
@@ -299,7 +305,7 @@ public class TerminationService {
             c.setUpdatedAt(OffsetDateTime.now());
             if (c.isWholeClass()) {
                 for (var target : targets) {
-                    if (target.getId().equals(anchor.getId())) continue;
+                    if (target.getId().equals(anchor.getId()) || terminal(target)) continue;
                     notifications.sendAsync(target.getStudentEmail(), target.getStudentId(),
                             "Lop hoc tam dung cho xu ly",
                             "Gia su da gui de xuat dung giang day. Cac buoi tuong lai dang tam dung trong khi Admin xem xet.",
@@ -325,6 +331,15 @@ public class TerminationService {
             c.setStatus("REJECTED");
             c.setLastError(null);
             c.setUpdatedAt(OffsetDateTime.now());
+            if (c.isWholeClass()) {
+                for (var target : targets) {
+                    if (target.getId().equals(anchor.getId()) || terminal(target)) continue;
+                    notifications.sendAsync(target.getStudentEmail(), target.getStudentId(),
+                            "Lop hoc tiep tuc",
+                            "De xuat dung giang day khong duoc chap thuan. Lich hoc tuong lai da duoc khoi phuc.",
+                            "TERMINATION_UPDATED", "AGREEMENT", target.getId().toString());
+                }
+            }
         } catch (Exception error) {
             c.setStatus("RELEASE_PENDING");
             c.setLastError(shortError(error, "Learning hold release pending"));
@@ -358,9 +373,9 @@ public class TerminationService {
         c.setAuditJson(mapper.writeValueAsString(array)); c.setUpdatedAt(OffsetDateTime.now());
     }
     private void notifyParties(ContractAgreement a, TerminationCase c, String message) {
-        notifications.sendAsync(a.getStudentEmail(), a.getStudentId(), "Cham dut hop dong", message,
+        notifications.sendAsync(a.getStudentEmail(), a.getStudentId(), "Chấm dứt hợp đồng lớp học", message,
                 "TERMINATION_UPDATED", "AGREEMENT", a.getId().toString());
-        notifications.sendAsync(a.getTutorEmail(), a.getTutorId(), "Cham dut hop dong", message,
+        notifications.sendAsync(a.getTutorEmail(), a.getTutorId(), "Chấm dứt hợp đồng lớp học", message,
                 "TERMINATION_UPDATED", "AGREEMENT", a.getId().toString());
     }
     public static boolean terminal(ContractAgreement a) {

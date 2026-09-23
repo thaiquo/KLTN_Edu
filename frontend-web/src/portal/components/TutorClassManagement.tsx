@@ -1393,9 +1393,9 @@ export function TutorClassManagement() {
                 {(() => {
                   const memberMap = new Map<string, any>();
 
-                  // 1. Từ Enrollment Requests (status ACCEPTED hoặc ENROLLED)
+                  // Giữ cả thành viên đã chấm dứt để gia sư tra cứu lịch sử lớp.
                   enrollmentRequests
-                    .filter((r) => r.status === "ACCEPTED" || r.status === "ENROLLED")
+                    .filter((r) => r.status === "ACCEPTED" || r.status === "ENROLLED" || r.status === "CANCELLED")
                     .forEach((r) => {
                       const key = (r.studentEmail || "").trim().toLowerCase();
                       if (key) {
@@ -1412,7 +1412,7 @@ export function TutorClassManagement() {
 
                   // 2. Từ Hợp đồng Escrow on-chain của lớp này (Đã nạp cọc)
                   classAgreements
-                    .filter((a) => a.status === "ACTIVE" || a.status === "COMPLETED" || (a as any).onchainFunded || a.status === "PENDING_STUDENT_FUNDING")
+                    .filter((a) => a.status === "ACTIVE" || a.status === "COMPLETED" || a.status === "CANCELLED" || (a as any).onchainFunded || a.status === "PENDING_STUDENT_FUNDING")
                     .forEach((a) => {
                       const key = (a.studentEmail || "").trim().toLowerCase();
                       if (key) {
@@ -1423,7 +1423,11 @@ export function TutorClassManagement() {
                           studentName: existing.studentName || a.studentName || "Học viên",
                           studentEmail: a.studentEmail,
                           studentPhone: existing.studentPhone || a.studentPhone,
-                          status: "ENROLLED",
+                          status: existing.status === "CANCELLED"
+                            ? "CANCELLED"
+                            : a.status === "CANCELLED"
+                              ? "CANCELLING"
+                              : "ENROLLED",
                           agreementId: a.id,
                           depositAmount: a.totalAmountUsdc,
                           joinedDate: existing.joinedDate || a.createdAt
@@ -1432,11 +1436,14 @@ export function TutorClassManagement() {
                     });
 
                   const acceptedMembers = Array.from(memberMap.values());
+                  const activeMemberCount = acceptedMembers.filter(
+                    (member) => member.status === "ACCEPTED" || member.status === "ENROLLED"
+                  ).length;
                   return (
                     <>
                       <div className="flex items-center justify-between">
                         <span className="font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                          <Users className="w-4 h-4 text-emerald-600" /> Danh sách thành viên lớp học ({acceptedMembers.length} / {detailModalClass.maxStudents} HV):
+                          <Users className="w-4 h-4 text-emerald-600" /> Thành viên đang học ({activeMemberCount} / {detailModalClass.maxStudents}) · Lịch sử ({acceptedMembers.length - activeMemberCount})
                         </span>
                         <button
                           type="button"
@@ -1461,16 +1468,20 @@ export function TutorClassManagement() {
                               ? member.studentName
                               : 'Học viên';
 
-                            const joinedDate = member.updatedAt
-                              ? new Date(member.updatedAt).toLocaleDateString("vi-VN")
-                              : member.createdAt
-                              ? new Date(member.createdAt).toLocaleDateString("vi-VN")
+                            const joinedDate = member.joinedDate
+                              ? new Date(member.joinedDate).toLocaleDateString("vi-VN")
                               : "Đã duyệt";
+                            const isCancelled = member.status === "CANCELLED";
+                            const isCancelling = member.status === "CANCELLING";
 
                             return (
                               <div
                                 key={member.id}
-                                className="p-3.5 bg-slate-50 border border-slate-200/90 rounded-2xl flex items-center justify-between gap-3 shadow-2xs"
+                                className={`p-3.5 border rounded-2xl flex items-center justify-between gap-3 shadow-2xs ${
+                                  isCancelled || isCancelling
+                                    ? "bg-slate-100 border-slate-300"
+                                    : "bg-slate-50 border-slate-200/90"
+                                }`}
                               >
                                 <div className="flex items-center gap-3">
                                   <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-900 font-black text-xs flex items-center justify-center border border-indigo-200">
@@ -1479,14 +1490,21 @@ export function TutorClassManagement() {
                                   <div className="space-y-0.5">
                                     <div className="flex items-center gap-2">
                                       <span className="font-black text-slate-900 text-xs font-display">{displayName}</span>
-                                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" /> ĐÃ DUYỆT THAM GIA
+                                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase border flex items-center gap-1 ${
+                                        isCancelled || isCancelling
+                                          ? "bg-slate-200 text-slate-700 border-slate-300"
+                                          : "bg-emerald-100 text-emerald-800 border-emerald-200"
+                                      }`}>
+                                        {isCancelled || isCancelling
+                                          ? <Lock className="w-3 h-3 text-slate-600" />
+                                          : <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                                        {isCancelled ? "ĐÃ CHẤM DỨT" : isCancelling ? "ĐANG ĐỒNG BỘ HỦY" : "ĐANG HỌC"}
                                       </span>
                                     </div>
                                     <div className="text-[11px] text-slate-500 font-medium flex items-center gap-2">
                                       <span>Email: <strong className="text-slate-700 font-bold">{member.studentEmail}</strong></span>
                                       <span>&bull;</span>
-                                      <span>Ngày duyệt: <strong className="text-slate-700">{joinedDate}</strong></span>
+                                      <span>{isCancelled ? "Cập nhật" : "Ngày duyệt"}: <strong className="text-slate-700">{joinedDate}</strong></span>
                                     </div>
                                   </div>
                                 </div>

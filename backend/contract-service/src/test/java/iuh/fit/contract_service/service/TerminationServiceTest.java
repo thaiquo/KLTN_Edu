@@ -153,6 +153,39 @@ class TerminationServiceTest {
         assertThat(a.getTerminationCutoffSession()).isNull();
         verify(learning).send(1L, 2L, a.getId(), false, "RELEASE");
     }
+    @Test void wholeClassHoldNotifiesOnlyStudentsWithActiveAgreements() {
+        var active = agreement(4L, "active@test.vn", ContractAgreementStatus.ACTIVE);
+        var cancelled = agreement(5L, "cancelled@test.vn", ContractAgreementStatus.CANCELLED);
+        when(agreements.findByClassroomIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(a, active, cancelled));
+
+        service.request(a.getId(), true, "Tutor cannot continue", "0xsig",
+                "0x2222222222222222222222222222222222222222", now(), user(3, "t@test.vn", "TUTOR"));
+
+        assertThat(active.getTerminationCutoffSession()).isEqualTo(1);
+        assertThat(cancelled.getTerminationCutoffSession()).isNull();
+        verify(notifications).sendAsync(eq("active@test.vn"), eq(4L), eq("Lop hoc tam dung cho xu ly"),
+                anyString(), eq("TERMINATION_UPDATED"), eq("AGREEMENT"), eq(active.getId().toString()));
+        verify(notifications, never()).sendAsync(eq("cancelled@test.vn"), anyLong(), anyString(),
+                anyString(), anyString(), anyString(), anyString());
+    }
+    @Test void wholeClassRejectionNotifiesActiveStudentsAndIgnoresPreviousCancellations() {
+        var active = agreement(4L, "active@test.vn", ContractAgreementStatus.ACTIVE);
+        var cancelled = agreement(5L, "cancelled@test.vn", ContractAgreementStatus.CANCELLED);
+        a.setTerminationCutoffSession(1);
+        active.setTerminationCutoffSession(1);
+        when(agreements.findByClassroomIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(a, active, cancelled));
+        var c = request("REQUESTED", true);
+
+        service.act(c.getId(), "REJECT", "Class can continue", user(1, "admin@test.vn", "ADMIN"));
+
+        assertThat(c.getStatus()).isEqualTo("REJECTED");
+        assertThat(a.getTerminationCutoffSession()).isNull();
+        assertThat(active.getTerminationCutoffSession()).isNull();
+        verify(notifications).sendAsync(eq("active@test.vn"), eq(4L), eq("Lop hoc tiep tuc"),
+                anyString(), eq("TERMINATION_UPDATED"), eq("AGREEMENT"), eq(active.getId().toString()));
+        verify(notifications, never()).sendAsync(eq("cancelled@test.vn"), anyLong(), anyString(),
+                anyString(), anyString(), anyString(), anyString());
+    }
     @Test void studentCanAddEvidenceToPendingRequest() {
         var c = request("REQUESTED", false);
         when(cases.findById(c.getId())).thenReturn(Optional.of(c));
@@ -184,6 +217,13 @@ class TerminationServiceTest {
         assertThatThrownBy(() -> service.addEvidence(c.getId(), user(2, "s@test.vn", "STUDENT"), stored))
                 .hasMessageContaining("409");
         verify(evidence, never()).save(any());
+    }
+    private ContractAgreement agreement(long studentId, String studentEmail, ContractAgreementStatus status) {
+        return ContractAgreement.builder()
+                .id(UUID.randomUUID()).classroomId(1L).studentId(studentId).studentEmail(studentEmail)
+                .studentWallet("0x1111111111111111111111111111111111111111")
+                .tutorId(3L).tutorEmail("t@test.vn").tutorWallet("0x2222222222222222222222222222222222222222")
+                .classroomReviewerEmail("staff@test.vn").status(status).tokenDecimals((short) 6).build();
     }
     private long now() { return System.currentTimeMillis() / 1000L; }
 }

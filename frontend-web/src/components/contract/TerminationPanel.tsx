@@ -32,6 +32,7 @@ import {
   FileText,
 } from 'lucide-react';
 import { contractsApi, AgreementSummary } from '../../api/contractsApi';
+import { useAuth } from '../../hooks/useAuth';
 import { terminationsApi, TerminationView } from '../../api/terminationsApi';
 
 const labels: Record<string, string> = {
@@ -98,6 +99,7 @@ interface TerminationPanelProps {
 }
 
 export function TerminationPanel({ activeRole, initialAgreements }: TerminationPanelProps) {
+  const { user } = useAuth();
   const [requests, setRequests] = useState<TerminationView[]>([]);
   const [agreements, setAgreements] = useState<AgreementSummary[]>(initialAgreements || []);
   const [error, setError] = useState('');
@@ -454,18 +456,45 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
             const tutorName = anchorAgreement?.tutorName || 'Chưa cập nhật gia sư';
             const studentName = anchorAgreement?.studentName || 'Chưa cập nhật học viên';
 
-            const affectedAgreements = c.wholeClass
+            const allClassAgreements = c.wholeClass
               ? classroomMap.get(c.classroomId) || (anchorAgreement ? [anchorAgreement] : [])
               : anchorAgreement
               ? [anchorAgreement]
               : [];
 
+            const itemMap = new Map(items.map((i) => [i.agreementId, i]));
+
+            // Only include agreements that are active/in-scope, or explicitly tracked by a termination item
+            const affectedAgreements = allClassAgreements.filter(
+              (a) => !['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(a.status) || itemMap.has(a.id)
+            );
+
+            // Previous agreements in the class that had already been terminated or completed prior to this request
+            const priorClosedAgreements = allClassAgreements.filter(
+              (a) => ['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(a.status) && !itemMap.has(a.id)
+            );
+
             const totalEscrowPool = affectedAgreements.reduce((sum, a) => sum + (Number(a.totalAmountUsdc) || 0), 0);
             const totalSettledUsdc = affectedAgreements.reduce((sum, a) => sum + (Number(a.releasedAmountUsdc) || 0), 0);
             const totalRemainingUsdc = Math.max(0, totalEscrowPool - totalSettledUsdc);
 
+            // If current viewer is a student, calculate their specific refund numbers
+            const studentSelfAgreement = isStudent
+              ? affectedAgreements.find(
+                  (a) =>
+                    (user?.id && a.studentId === user.id) ||
+                    (user?.email && a.studentEmail?.toLowerCase() === user.email.toLowerCase())
+                ) || anchorAgreement
+              : null;
+
+            const studentEscrowPool = studentSelfAgreement
+              ? Number(studentSelfAgreement.totalAmountUsdc) || 0
+              : totalEscrowPool;
+            const studentSettledUsdc = studentSelfAgreement
+              ? Number(studentSelfAgreement.releasedAmountUsdc) || 0
+              : totalSettledUsdc;
+            const studentRemainingUsdc = Math.max(0, studentEscrowPool - studentSettledUsdc);
             const auditEntries = parseAudit(c.auditJson);
-            const itemMap = new Map(items.map((i) => [i.agreementId, i]));
             const ownEvidenceCount = evidence.filter((ev) => ev.submittedByRole.toLowerCase() === normalizedRole).length;
 
             return (
@@ -840,19 +869,19 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                       <div className="p-3 bg-white rounded-xl border border-blue-200 space-y-1">
                         <span className="text-[10px] font-bold text-slate-500 uppercase block">Tổng tiền bạn đã cọc</span>
                         <span className="text-lg font-black text-slate-900 font-mono block">
-                          ${totalEscrowPool.toFixed(2)} USDC
+                          ${studentEscrowPool.toFixed(2)} USDC
                         </span>
                       </div>
                       <div className="p-3 bg-white rounded-xl border border-blue-200 space-y-1">
                         <span className="text-[10px] font-bold text-slate-500 uppercase block">Trừ các buổi đã học</span>
                         <span className="text-lg font-black text-amber-700 font-mono block">
-                          -${totalSettledUsdc.toFixed(2)} USDC
+                          -${studentSettledUsdc.toFixed(2)} USDC
                         </span>
                       </div>
                       <div className="p-3 bg-white rounded-xl border border-emerald-300 bg-emerald-50/50 space-y-1">
                         <span className="text-[10px] font-bold text-emerald-800 uppercase block">Số tiền nhận lại vào ví</span>
                         <span className="text-lg font-black text-emerald-700 font-mono block">
-                          +${totalRemainingUsdc.toFixed(2)} USDC
+                          +${studentRemainingUsdc.toFixed(2)} USDC
                         </span>
                         <span className="text-[10px] text-emerald-600 font-semibold">Hoàn sau khi các buổi trước cutoff quyết toán on-chain</span>
                       </div>
@@ -867,12 +896,12 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                       <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
                         <Users className="w-4 h-4 text-blue-600" />
                         {c.wholeClass
-                          ? `Danh sách hợp đồng trong lớp học (${affectedAgreements.length} học viên)`
+                          ? `Danh sách hợp đồng trong lớp học (${affectedAgreements.length} học viên đang xử lý)`
                           : 'Hợp đồng bị ảnh hưởng'}
                       </span>
                       <div className="flex items-center gap-3 text-xs font-bold text-slate-600">
                         <span>
-                          Tổng cọc lớp: <strong className="text-emerald-700 font-mono">${totalEscrowPool.toFixed(2)} USDC</strong>
+                          Tổng cọc cần xử lý: <strong className="text-emerald-700 font-mono">${totalEscrowPool.toFixed(2)} USDC</strong>
                         </span>
                         <span>&bull;</span>
                         <span>
@@ -975,6 +1004,33 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                     ) : (
                       <div className="p-3 text-center text-xs text-slate-400 italic">
                         Không tìm thấy hợp đồng nào liên kết với lớp học này.
+                      </div>
+                    )}
+
+                    {priorClosedAgreements.length > 0 && (
+                      <div className="rounded-xl border border-slate-200 bg-slate-100/70 p-3.5 text-xs text-slate-600 space-y-2">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-700">
+                          <Info className="w-4 h-4 text-slate-500 shrink-0" />
+                          <span>Hợp đồng trong lớp đã thanh lý/hủy trước đó ({priorClosedAgreements.length} học viên):</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {priorClosedAgreements.map((pa) => (
+                            <div
+                              key={pa.id}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-[11px] shadow-2xs"
+                            >
+                              <span className="font-bold text-slate-800">{pa.studentName || 'Học viên'}</span>
+                              <span className="font-mono text-[10px] text-slate-400">#{pa.id.slice(0, 8)}</span>
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-slate-100 text-slate-600 border border-slate-200">
+                                {pa.status}
+                              </span>
+                              <span className="text-[10px] text-slate-500 italic">(Đã thanh lý xong trước đó)</span>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-relaxed italic">
+                          Học viên trên đã hoàn tất thủ tục hủy hợp đồng từ trước, không nằm trong đợt hoàn tiền hay quyết toán của yêu cầu hủy lớp hiện tại.
+                        </p>
                       </div>
                     )}
                   </div>

@@ -131,10 +131,13 @@ public class ContractManagementController {
             String studentName,
             String studentEmail,
             String studentPhone,
+            String studentDateOfBirth,
+            String studentAddress,
             Long tutorId,
             String tutorName,
             String tutorEmail,
             String tutorPhone,
+            String tutorAddress,
             String studentWallet,
             String tutorWallet,
             BigDecimal pricePerSessionVnd,
@@ -197,6 +200,12 @@ public class ContractManagementController {
                 || isBlank(request.className())
                 || isBlank(request.studentEmail())
                 || isBlank(request.tutorEmail())
+                || isBlank(request.studentDateOfBirth())
+                || isBlank(request.studentAddress())
+                || isBlank(request.tutorAddress())
+                || !isIsoDate(request.studentDateOfBirth())
+                || request.studentAddress().trim().length() > 500
+                || request.tutorAddress().trim().length() > 500
                 || request.pricePerSessionVnd() == null || request.pricePerSessionVnd().signum() <= 0
                 || request.totalSessions() == null || request.totalSessions() <= 0) {
             return ResponseEntity.badRequest().build();
@@ -270,8 +279,11 @@ public class ContractManagementController {
                         request.schedules() == null ? List.of() : request.schedules(),
                         request.syllabus() == null ? List.of() : request.syllabus()),
                 new ContractTermsSnapshot.PartiesTerms(
-                        new ContractTermsSnapshot.PartyTerms(tutorName, request.tutorEmail(), tutorPhone, request.tutorWallet().toLowerCase(Locale.ROOT)),
-                        new ContractTermsSnapshot.PartyTerms(studentName, request.studentEmail(), studentPhone, studentWallet.toLowerCase(Locale.ROOT))),
+                        new ContractTermsSnapshot.PartyTerms(tutorName, request.tutorEmail(), tutorPhone,
+                                request.tutorWallet().toLowerCase(Locale.ROOT), null, request.tutorAddress().trim()),
+                        new ContractTermsSnapshot.PartyTerms(studentName, request.studentEmail(), studentPhone,
+                                studentWallet.toLowerCase(Locale.ROOT), request.studentDateOfBirth().trim(),
+                                request.studentAddress().trim())),
                 new ContractTermsSnapshot.FinancialTerms(pricePerSessionVnd, totalPriceVnd, vndPerUsdc, "USDC", tokenDecimals,
                         pricePerSessionUnits.toString(), totalAmountUnits.toString(), totalSessions),
                 new ContractTermsSnapshot.PlatformTerms(chainId, platformWallet, escrowAddress, tokenAddress),
@@ -430,6 +442,15 @@ public class ContractManagementController {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private boolean isIsoDate(String value) {
+        try {
+            java.time.LocalDate.parse(value);
+            return true;
+        } catch (java.time.format.DateTimeParseException | NullPointerException ex) {
+            return false;
+        }
     }
 
     private String resolveBytes32Hash(String suppliedHash, String source) {

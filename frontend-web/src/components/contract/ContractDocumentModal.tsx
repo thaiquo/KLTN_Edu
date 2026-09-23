@@ -213,7 +213,7 @@ export function ContractDocumentModal({
     try {
       if (document.tutorSignature.signed && document.studentSignature.signed) {
         let artifact = await contractsApi.getContractDocumentArtifact(agreementId).catch(() => null);
-        const canFinalize = ["WAITING_PAYMENT", "PAYMENT_CONFIRMING", "ACTIVE", "COMPLETED"].includes(document.status);
+        const canFinalize = ["ACTIVE", "COMPLETED", "CANCELLED"].includes(document.status);
         if (artifact?.status !== "READY" && canFinalize) {
           try {
             artifact = await contractsApi.finalizeContractDocument(agreementId);
@@ -236,10 +236,10 @@ export function ContractDocumentModal({
         }
 
         if (format === "pdf") {
-          // Keep an export route available while the official server-side PDF is being repaired.
-          console.warn("Official contract PDF is unavailable; opening the print dialog instead.", artifact?.failureMessage);
-          window.print();
-          return;
+          throw new Error(
+            artifact?.failureMessage
+              || "PDF chính thức chưa sẵn sàng. Hệ thống không dùng bản in giao diện để thay thế artifact đã ký."
+          );
         }
         if (artifact?.status !== "READY") {
           throw new Error(

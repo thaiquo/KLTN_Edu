@@ -145,20 +145,29 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
   - Mọi yêu cầu chấm dứt hoặc đề xuất hủy lớp bắt buộc phải ký số xác nhận Typed Data EIP-712 bằng chính địa chỉ ví đã ghi nhận trên hợp đồng (`studentWallet` cho học viên, `tutorWallet` cho gia sư).
   - Hệ thống kiểm tra đối chiếu ví kết nối MetaMask: nếu địa chỉ ví không khớp với ví đã ký hợp đồng và nạp cọc ban đầu, yêu cầu sẽ bị từ chối ngay lập tức để chống giả mạo danh tính và gian lận tài chính.
   - Quá trình ký EIP-712 hoàn toàn gasless (0 Sepolia ETH).
-- **Quy trình thẩm định và phân xử của Ban Quản trị (Staff/Admin):**
+- **Quy trình thẩm định và phân xử của Ban Quản trị (Staff vs Admin):**
   - Khi có yêu cầu chấm dứt hoặc đề xuất hủy lớp, hệ thống đồng bộ hold với Learning (`HOLD_PENDING` nếu cần retry, sau đó `REQUESTED`). Cutoff lấy theo thời gian server lúc hold thành công, không lấy theo thời gian Admin xử lý.
   - Student hold chỉ chặn các buổi tương lai của hợp đồng đó; lớp và các Student khác tiếp tục bình thường. Tutor hold chặn các buổi tương lai của toàn lớp, đóng băng đăng ký mới và hiển thị `Chờ duyệt hủy lớp`.
   - Hold không gửi giao dịch blockchain và không hoàn tiền. Buổi đã bắt đầu trước cutoff vẫn hoàn tất attendance, settlement và cửa sổ dispute như bình thường.
-- **Tài liệu minh chứng đính kèm (Evidence Management):**
+  - **Phân định thẩm quyền:**
+    - **Nhân viên (Staff):** Chỉ được xem và thẩm định các hồ sơ thuộc các lớp học do chính mình được phân công duyệt (`classroomReviewerEmail`). Staff có quyền ghi nhận ý kiến, yêu cầu bổ sung thông tin hoặc kiến nghị đề xuất (`RECOMMEND`), hoặc từ chối (`REJECT`). Staff không có thẩm quyền ra lệnh giải ngân/hoàn cọc Escrow.
+    - **Quản trị viên (Admin):** Có quyền quản trị toàn hệ thống, xem tất cả hồ sơ. Admin có thẩm quyền tối cao phê duyệt (`APPROVE` trực tiếp từ `REQUESTED` hoặc `RECOMMENDED`) để kích hoạt quyết toán thanh lý Escrow V1, hoặc từ chối (`REJECT`) để giải phóng hold và khôi phục lớp học.
+- **Tài liệu minh chứng đính kèm & Tính bất biến (Evidence Staging & Immutability):**
   - Học viên và Gia sư có thể đính kèm tối đa 5 file minh chứng (ảnh, video, ghi âm, tài liệu PDF, Word, Excel, TXT) với dung lượng tối đa 50 MB mỗi file.
-  - Sau khi chữ ký EIP-712 tạo hồ sơ thành công, các file được tải tuần tự lên Amazon S3 dưới đường dẫn an toàn `terminations/{caseId}/{role}/{uuid}-{filename}` kèm kiểm tra mã băm toàn vẹn SHA-256 và whitelist MIME.
-  - Các bên tham gia có thể bổ sung minh chứng trong thời gian hồ sơ đang được thẩm định (`HOLD_PENDING`, `REQUESTED`, `RECOMMENDED`).
-  - Phân quyền truy cập: Chỉ các bên trong hợp đồng/lớp học, Staff phụ trách duyệt lớp và Admin mới có quyền xem nội dung minh chứng thông qua streaming bảo mật.
+  - **Khu vực đệm (Staging Area):** Khi chọn file hoặc soạn thảo nội dung giải trình, người dùng có thể xem trước và tùy ý xóa bỏ (`[✕ Xóa]`) các file chọn nhầm trước khi nhấn gửi chính thức.
+  - **Tính bất biến sau khi nộp (Post-submission Immutability):** Ngay khi nhấn nút gửi, tài liệu được tải lên S3 (`terminations/{caseId}/{role}/{uuid}-{filename}`) kèm kiểm tra mã băm SHA-256 và whitelist MIME. Toàn bộ nội dung và minh chứng đã nộp sẽ được lưu vĩnh viễn vào hệ thống (audit trail), **không thể chỉnh sửa hay xóa bỏ**. Các lần bổ sung giải trình tiếp theo được phân tách và đánh số thứ tự rõ ràng (`LẦN 1`, `LẦN 2`...) kèm mốc thời gian gửi để đảm bảo tính minh bạch, khách quan trong phân xử.
+  - Phân quyền truy cập minh chứng: Chỉ các bên trong hợp đồng/lớp học, Staff phụ trách duyệt lớp và Admin mới có quyền xem nội dung minh chứng qua streaming bảo mật.
 - **Thanh lý và hoàn tiền Smart Contract Escrow khi Phê duyệt (`APPROVE`):**
+  - **Cơ chế thời hạn 24 giờ và quyết toán:** Thời hạn 24 giờ là cửa sổ khiếu nại của từng buổi học đã dạy trước cutoff, **không phải là thời hạn chờ cố định sau khi Admin duyệt**. Khi Admin phê duyệt, worker kiểm tra các buổi học liên quan: nếu các buổi trước cutoff đã quyết toán xong (hoặc đã kết thúc 24h khiếu nại không có tranh chấp), worker lập tức kích hoạt giao dịch on-chain `cancelAgreementAndRefundUnused` để hoàn trả phần cọc còn dư (`remainingDeposit`) về ví học viên mà không cần chờ thêm.
   - **Trường hợp Học viên đơn phương chấm dứt (`wholeClass = false`):** Giữ nguyên cutoff đã chụp khi gửi yêu cầu. Các buổi đã diễn ra hợp lệ được quyết toán cho gia sư, và Smart Contract Escrow hoàn trả tiền cọc chưa sử dụng về ví MetaMask của học viên.
   - **Trường hợp Gia sư hủy toàn bộ lớp học (`wholeClass = true`):** Chuyển hold thành đóng lớp, hủy lịch tương lai sau cutoff và xử lý từng agreement độc lập bằng Escrow V1. Các buổi đã dạy được quyết toán; tiền chưa sử dụng được hoàn về ví từng học viên.
-  - Khi chỉ một Student kết thúc hợp đồng, chỉ enrollment và attendance của Student đó tại các buổi sau cutoff bị gỡ; attendance đã diễn ra được giữ làm chứng cứ quyết toán. Danh sách thành viên của lớp tự cập nhật theo enrollment còn hiệu lực.
-  - Khi Admin duyệt hủy cả lớp, lớp chuyển `LOCKED` trong thời gian từng agreement đang settlement; Gia sư không thể tự mở lại hoặc nhận học viên mới. Lớp chỉ chuyển `CANCELLED` sau khi tất cả agreement đã đóng và refund/settlement được xác nhận. Các bên nhận notification cho từng agreement hoàn tất, Gia sư nhận thêm notification khi lớp đã hủy hoàn toàn.
+  - Khi hoàn tiền thành công trên Blockchain (`AgreementCancelled` confirmed): Cả hợp đồng (`contract_agreements`) và lượt đăng ký học (`enrollments`) đều chuyển sang trạng thái kết thúc `CANCELLED`; mốc dừng học chính thức đóng.
+  - Khi Admin duyệt hủy cả lớp, lớp chuyển `LOCKED` trong thời gian từng agreement đang settlement; Gia sư không thể tự mở lại hoặc nhận học viên mới. Lớp chỉ chuyển `CANCELLED` sau khi tất cả agreement đã đóng và refund/settlement được xác nhận.
+- **Bảng giám sát hoàn tiền (Refund Tracking):**
+  - Tích hợp bảng "Hoàn tiền hủy hợp đồng / hủy lớp" tại:
+    - **Admin → Quản lý Tài chính:** Giám sát toàn bộ tiến độ từng hợp đồng, mã lỗi phát sinh, số tiền hoàn trả và liên kết giao dịch blockchain (Sepolia Etherscan).
+    - **Học viên / Gia sư → Quản lý Ví:** Xem các hồ sơ thuộc quyền hạn của mình; hiển thị rõ ràng số tiền hoàn về địa chỉ ví học viên.
+  - Bảng tự động đồng bộ mỗi 15 giây, phân định 4 trạng thái tiến độ: Chờ duyệt (`WAITING_APPROVAL`), Chờ quyết toán (`WAITING_SETTLEMENT`), Chờ blockchain (`BLOCKCHAIN_PENDING`), và Hoàn tất (`COMPLETED`).
 
 ## 6. Contract & Payment Business Relationship
 

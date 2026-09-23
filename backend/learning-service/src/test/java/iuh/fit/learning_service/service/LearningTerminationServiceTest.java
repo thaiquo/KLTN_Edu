@@ -19,6 +19,7 @@ class LearningTerminationServiceTest {
     @Mock EnrollmentRequestRepository enrollments;
     @Mock LearningTerminationStopRepository stops;
     @Mock SessionAttendanceRepository attendances;
+    @Mock RollingSessionService rollingSessions;
     @InjectMocks LearningTerminationService service;
     ClassRoom room;
     EnrollmentRequest enrollment;
@@ -59,6 +60,8 @@ class LearningTerminationServiceTest {
         when(stops.findById(agreement)).thenReturn(Optional.of(stop));
         service.apply(new LearningTerminationService.Command(1L, 2L, agreement, false, "RELEASE"));
         verify(stops).delete(stop);
+        verify(attendances).deleteBySession_IdAndStudentId(future.getId(), 2L);
+        verify(rollingSessions).createMissingAttendancesForEnrollment(enrollment);
         assertThat(future.getStatus()).isEqualTo(ClassSessionStatus.SCHEDULED);
     }
 

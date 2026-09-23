@@ -78,6 +78,20 @@ function formatShortDayLabel(day) {
   return SHORT_DAY_LABELS[d] || `T${d}`;
 }
 
+function isHistoricalEnrollment(request, agreement) {
+  const enrollmentStatus = normalizeStatus(request?.status);
+  const agreementStatus = normalizeStatus(agreement?.status);
+  const classRoomStatus = normalizeStatus(request?.classRoomStatus);
+  return enrollmentStatus === 'CANCELLED'
+    || enrollmentStatus === 'COMPLETED'
+    || agreementStatus === 'CANCELLED'
+    || agreementStatus === 'COMPLETED'
+    || request?.terminationCutoffSession != null
+    || classRoomStatus === 'CANCELLED'
+    || classRoomStatus === 'CLOSED'
+    || (classRoomStatus === 'LOCKED' && request?.terminationCutoffSession != null);
+}
+
 export function StudentMyClassesPage() {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -129,13 +143,13 @@ export function StudentMyClassesPage() {
     loadRequests();
   }, []);
 
-  useRealtimeRefresh(['ENROLLMENT_ACCEPTED', 'ENROLLMENT_REJECTED', 'AGREEMENT_FUNDED', 'AGREEMENT_EXPIRED'], loadRequests);
+  useRealtimeRefresh(['ENROLLMENT_ACCEPTED', 'ENROLLMENT_REJECTED', 'ENROLLMENT_CANCELLED', 'AGREEMENT_FUNDED', 'AGREEMENT_EXPIRED', 'TERMINATION_COMPLETED'], loadRequests);
 
   // Calculate counts
   const enrolledClasses = useMemo(() => {
     return requests.filter((r) => {
       const s = normalizeStatus(r.status);
-      return s === 'ENROLLED' || s === 'COMPLETED';
+      return s === 'ENROLLED' || s === 'COMPLETED' || s === 'CANCELLED';
     });
   }, [requests]);
 
@@ -168,6 +182,7 @@ export function StudentMyClassesPage() {
     const map = new Map();
     enrolledClasses.forEach((req) => {
       const cid = Number(req.classRoomId);
+      if (isHistoricalEnrollment(req, agreementsMap[cid])) return;
       const classSessions = sessionsByClassId.get(cid) || [];
       const classSchedules = schedulesByClassId.get(cid) || [];
       const liveCheck = isClassLiveNow({
@@ -180,7 +195,7 @@ export function StudentMyClassesPage() {
       }
     });
     return map;
-  }, [enrolledClasses, sessionsByClassId, schedulesByClassId, currentTime]);
+  }, [enrolledClasses, sessionsByClassId, schedulesByClassId, currentTime, agreementsMap]);
 
   const activeLiveClasses = useMemo(() => {
     return enrolledClasses.filter((req) => isLiveMap.has(Number(req.classRoomId)));
@@ -196,22 +211,25 @@ export function StudentMyClassesPage() {
 
   const stats = useMemo(() => {
     return enrolledClasses.reduce((acc, item) => {
-      const status = normalizeStatus(item.status);
+      const status = isHistoricalEnrollment(item, agreementsMap[item.classRoomId])
+        ? 'HISTORY'
+        : normalizeStatus(item.status);
       acc[status] = (acc[status] || 0) + 1;
       return acc;
     }, {});
-  }, [enrolledClasses]);
+  }, [enrolledClasses, agreementsMap]);
 
   const filteredRequests = useMemo(() => {
     return enrolledClasses.filter((req) => {
-      const status = normalizeStatus(req.status);
+      const historical = isHistoricalEnrollment(req, agreementsMap[req.classRoomId]);
+      const status = historical ? 'HISTORY' : normalizeStatus(req.status);
       const isLive = isLiveMap.has(Number(req.classRoomId));
 
       let matchFilter = true;
       if (activeFilter === 'LIVE') {
         matchFilter = isLive;
-      } else if (activeFilter === 'COMPLETED') {
-        matchFilter = status === 'COMPLETED' || req.isCompleted;
+      } else if (activeFilter === 'HISTORY') {
+        matchFilter = historical;
       } else if (activeFilter === 'ENROLLED') {
         matchFilter = status === 'ENROLLED';
       } else if (activeFilter !== 'ALL') {
@@ -227,7 +245,7 @@ export function StudentMyClassesPage() {
       const note = (req.note || '').toLowerCase();
       return name.includes(query) || tutor.includes(query) || note.includes(query);
     });
-  }, [enrolledClasses, activeFilter, searchQuery, isLiveMap]);
+  }, [enrolledClasses, activeFilter, searchQuery, isLiveMap, agreementsMap]);
 
   const sortedFilteredRequests = useMemo(() => {
     return [...filteredRequests].sort((a, b) => {
@@ -468,18 +486,18 @@ export function StudentMyClassesPage() {
             </article>
 
             <article
-              onClick={() => setActiveFilter('COMPLETED')}
+              onClick={() => setActiveFilter('HISTORY')}
               className={`rounded-2xl border p-4 shadow-xs cursor-pointer transition-all ${
-                activeFilter === 'COMPLETED'
+                activeFilter === 'HISTORY'
                   ? 'bg-blue-700 text-white border-blue-700 ring-2 ring-blue-700/20 shadow-md'
                   : 'bg-white border-slate-200 hover:border-blue-300'
               }`}
             >
-              <p className={`text-[11px] font-black uppercase tracking-wider ${activeFilter === 'COMPLETED' ? 'text-blue-100' : 'text-blue-700'}`}>
-                Khóa học đã hoàn tất
+              <p className={`text-[11px] font-black uppercase tracking-wider ${activeFilter === 'HISTORY' ? 'text-blue-100' : 'text-blue-700'}`}>
+                Lịch sử học tập
               </p>
-              <p className={`mt-1 font-display text-2xl font-black ${activeFilter === 'COMPLETED' ? 'text-white' : 'text-slate-950'}`}>
-                {stats['COMPLETED'] || 0}
+              <p className={`mt-1 font-display text-2xl font-black ${activeFilter === 'HISTORY' ? 'text-white' : 'text-slate-950'}`}>
+                {stats['HISTORY'] || 0}
               </p>
             </article>
           </section>
@@ -529,14 +547,14 @@ export function StudentMyClassesPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveFilter('COMPLETED')}
+                onClick={() => setActiveFilter('HISTORY')}
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                  activeFilter === 'COMPLETED'
+                  activeFilter === 'HISTORY'
                     ? 'bg-blue-600 text-white shadow-xs'
                     : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
                 }`}
               >
-                Đã hoàn thành ({stats['COMPLETED'] || 0})
+                Lịch sử ({stats['HISTORY'] || 0})
               </button>
             </div>
 
@@ -612,11 +630,21 @@ function ClassSummaryCard({
 }) {
   const [classroomDetails, setClassroomDetails] = useState(null);
 
-  const status = normalizeStatus(request.status);
-  const meta = STATUS_META[status] || {
+  const isTerminatedClass = request?.terminationCutoffSession != null ||
+    classroomDetails?.terminationCutoffSession != null ||
+    classroomDetails?.status === 'CANCELLED' ||
+    classroomDetails?.status === 'CLOSED' ||
+    (classroomDetails?.status === 'LOCKED' && classroomDetails?.terminationCutoffSession != null);
+
+  const historical = isHistoricalEnrollment(request, agreement) || isTerminatedClass;
+  const status = isTerminatedClass ? 'TERMINATED' : (historical ? 'CANCELLED' : normalizeStatus(request.status));
+  const meta = isTerminatedClass ? {
+    label: 'Đã dừng giảng dạy (Xem lịch sử)',
+    className: 'bg-amber-50 text-amber-800 border-amber-300'
+  } : (STATUS_META[status] || {
     label: status,
     className: 'bg-slate-100 text-slate-600 border-slate-200'
-  };
+  });
 
   useEffect(() => {
     if (!request.classRoomId) return;
@@ -647,7 +675,7 @@ function ClassSummaryCard({
     });
   }, [liveCheckFromParent, classroomDetails, recurringSchedules, sessions, currentTime]);
 
-  const isLive = Boolean(liveCheck?.isLive);
+  const isLive = !historical && Boolean(liveCheck?.isLive);
 
   const weeklyDaysSummary = useMemo(() => {
     if (!classroomDetails?.schedules || classroomDetails.schedules.length === 0) return null;
@@ -724,7 +752,7 @@ function ClassSummaryCard({
             <span className={`rounded-full border px-3 py-0.5 text-xs font-black ${meta.className}`}>
               {meta.label}
             </span>
-            {status === 'ENROLLED' && (
+            {!isTerminatedClass && status === 'ENROLLED' && (
               <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
                 Escrow Bảo Vệ
@@ -831,7 +859,7 @@ function ClassSummaryCard({
         <span className={`text-xs font-bold flex items-center gap-1 ${
           isLive ? 'text-emerald-700 font-black' : 'text-indigo-600 group-hover:underline'
         }`}>
-          <span>Xem chi tiết buổi học & điểm danh</span>
+          <span>{historical ? 'Xem lịch sử buổi học & bài đã nộp' : 'Xem chi tiết buổi học & điểm danh'}</span>
         </span>
 
         <button
@@ -857,7 +885,7 @@ function ClassSummaryCard({
             </>
           ) : (
             <>
-              <span>Vào Lớp Học</span>
+              <span>{historical ? 'Xem Lịch Sử' : 'Vào Lớp Học'}</span>
               <ArrowRight size={14} />
             </>
           )}
@@ -923,6 +951,12 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) 
     (request?.tutorEmail ? request.tutorEmail.split('@')[0] : 'Gia sư');
 
   const meetingLink = classroomDetails?.meetingLink || request?.meetingLink || '';
+  const isTerminatedClass = request?.terminationCutoffSession != null ||
+    classroomDetails?.terminationCutoffSession != null ||
+    classroomDetails?.status === 'CANCELLED' ||
+    classroomDetails?.status === 'CLOSED' ||
+    (classroomDetails?.status === 'LOCKED' && classroomDetails?.terminationCutoffSession != null);
+  const historyMode = isHistoricalEnrollment(request, agreement) || isTerminatedClass;
 
   return (
     <div className="space-y-6">
@@ -952,11 +986,29 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) 
 
       {/* Class Overview Header Card */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs">
+        {historyMode && (
+          <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50/70 p-3.5 text-amber-900">
+            <History size={17} className="mt-0.5 shrink-0 text-amber-700" />
+            <div>
+              <strong className="block text-sm font-black text-amber-950">
+                Lớp học đã dừng giảng dạy · Chế độ xem lịch sử
+                {classroomDetails?.terminationCutoffSession != null && ` (Điểm cắt từ Buổi #${classroomDetails.terminationCutoffSession})`}
+              </strong>
+              <p className="mt-0.5 text-xs text-amber-800">
+                Hợp đồng đã có quyết định chấm dứt. Các buổi học tương lai, phòng học và điểm danh mới đã được khóa. Toàn bộ các buổi đã học, kết quả điểm danh và bài tập bạn đã nộp vẫn được lưu trữ đầy đủ để bạn tra cứu.
+              </p>
+            </div>
+          </div>
+        )}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap mb-2">
-              <span className="px-3 py-0.5 rounded-full text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Đang học chính thức
+              <span className={`px-3 py-0.5 rounded-full text-xs font-black border ${
+                historyMode
+                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              }`}>
+                {historyMode ? 'Đã dừng giảng dạy (Xem lịch sử)' : 'Đang học chính thức'}
               </span>
               <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
                 <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
@@ -1039,6 +1091,7 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) 
         learningMode={classroomDetails?.learningMode || request?.learningMode}
         address={classroomDetails?.address || request?.address}
         currentUserRole="STUDENT"
+        historyMode={historyMode}
       />
     </div>
   );

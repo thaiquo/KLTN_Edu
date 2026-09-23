@@ -2,14 +2,17 @@ package iuh.fit.contract_service.document;
 
 import iuh.fit.contract_service.config.ContractDocumentProperties;
 import org.junit.jupiter.api.Test;
+import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.springframework.core.io.DefaultResourceLoader;
 
+import java.io.ByteArrayInputStream;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PoiTlContractDocxRendererTest {
@@ -27,7 +30,7 @@ class PoiTlContractDocxRendererTest {
                 "http://localhost:5173/contracts/verify",
                 "EduConnect",
                 "Hệ thống EduConnect",
-                "support@educonnect.vn"
+                "ngocquocthai.004@gmail.com"
         );
 
         PoiTlContractDocxRenderer renderer = new PoiTlContractDocxRenderer(new DefaultResourceLoader(), properties);
@@ -67,7 +70,6 @@ class PoiTlContractDocxRendererTest {
         model.put("studentSignatureShort", "0xsig...re2");
         model.put("studentSignedAt", "15/09/2026 11:00:00");
         model.put("studentDateOfBirth", "01/01/2005");
-        model.put("studentGrade", "Lớp 12");
         model.put("studentAddress", "TP. Hồ Chí Minh");
 
         model.put("hasGuardian", false);
@@ -78,7 +80,7 @@ class PoiTlContractDocxRendererTest {
 
         model.put("platformOperatorName", "EduConnect");
         model.put("platformContactAddress", "Hệ thống EduConnect");
-        model.put("platformSupportEmail", "support@educonnect.vn");
+        model.put("platformSupportEmail", "ngocquocthai.004@gmail.com");
         model.put("platformWallet", "0x0000000000000000000000000000000000000000");
         model.put("escrowContract", "0x770aBC99D4884EB180c44B4C025219e59d95f8CE");
 
@@ -132,6 +134,24 @@ class PoiTlContractDocxRendererTest {
         byte[] result = renderer.render(model);
         assertNotNull(result);
         assertTrue(result.length > 1000);
+        try (XWPFDocument rendered = new XWPFDocument(new ByteArrayInputStream(result))) {
+            String text = rendered.getParagraphs().stream()
+                    .map(paragraph -> paragraph.getText())
+                    .reduce("", (left, right) -> left + "\n" + right);
+            text += rendered.getTables().stream()
+                    .flatMap(table -> table.getRows().stream())
+                    .flatMap(row -> row.getTableCells().stream())
+                    .flatMap(cell -> cell.getParagraphs().stream())
+                    .map(paragraph -> paragraph.getText())
+                    .reduce("", (left, right) -> left + "\n" + right);
+            assertTrue(text.contains("HỢP ĐỒNG DỊCH VỤ KẾT NỐI GIA SƯ VÀ HỌC VIÊN"));
+            assertTrue(text.contains("agreement đã hoàn tất, hết hạn hoặc chấm dứt trước đó không bị xử lý hay hoàn tiền lần hai"));
+            assertTrue(text.contains("Tệp DOCX/PDF chính thức được phát hành từ snapshot đã ký"));
+            assertTrue(text.contains("Trạng thái tại thời điểm phát hành"));
+            assertFalse(text.contains("{{"));
+        } catch (java.io.IOException ex) {
+            throw new AssertionError("Không thể kiểm tra nội dung DOCX đã render", ex);
+        }
         System.out.println("RENDERED DOCX SIZE: " + result.length + " bytes!");
 
         try {

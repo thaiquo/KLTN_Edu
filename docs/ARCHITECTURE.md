@@ -129,7 +129,7 @@ Nếu service tắt qua thời hạn, dữ liệu deadline/hàng đợi vẫn �
 - RabbitMQ 3.13 Management;
 - Gotenberg 8.
 
-Application service được chạy bằng Maven/PowerShell script, chưa được container hóa đầy đủ. Root `.env` là cấu hình dùng chung; chỉ biến `VITE_*` được phép lộ cho browser. Không commit JWT secret, AWS secret, private key hoặc operator keystore password.
+Application service được chạy bằng Maven/PowerShell script, chưa được container hóa đầy đủ. Root `.env` là cấu hình dùng chung; có thể copy cùng nội dung sang `frontend-web/.env` để Vite nhận các biến web, nhưng chỉ biến `VITE_*` được phép lộ cho browser. Không commit JWT secret, AWS secret, private key hoặc operator keystore password. Cấu hình Sepolia hiện giữ `BLOCKCHAIN_EVENT_BLOCK_BATCH_SIZE=10` để giảm nguy cơ RPC throttle khi quét event.
 
 ## 10. Giới hạn kiến trúc hiện tại
 

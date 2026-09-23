@@ -15,7 +15,8 @@ import {
   ShieldCheck,
   FileText,
   Search,
-  ArrowUpDown
+  ArrowUpDown,
+  History
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import { classApi } from "../../api/classes";
@@ -94,12 +95,24 @@ const dateValue = (value?: string) => {
   return Number.isFinite(time) ? time : Number.MAX_SAFE_INTEGER;
 };
 
+const isHistoricalClass = (cls: any) => {
+  const agreementStatus = String(cls?.agreementStatus || "").toUpperCase();
+  const enrollmentStatus = String(cls?.enrollmentStatus || "").toUpperCase();
+  const classStatus = String(cls?.status || "").toUpperCase();
+  return agreementStatus === "COMPLETED"
+    || agreementStatus === "CANCELLED"
+    || enrollmentStatus === "COMPLETED"
+    || enrollmentStatus === "CANCELLED"
+    || classStatus === "COMPLETED"
+    || classStatus === "CANCELLED";
+};
+
 export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ onNavigate }) => {
   const { user } = useAuth();
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
   const [pendingContractsCount, setPendingContractsCount] = useState<number>(0);
-  const [classFilter, setClassFilter] = useState<'ALL' | 'ACTIVE' | 'COMPLETED'>('ALL');
+  const [classFilter, setClassFilter] = useState<'ALL' | 'ACTIVE' | 'HISTORY'>('ALL');
   const [classSearch, setClassSearch] = useState<string>("");
   const [classSort, setClassSort] = useState<'UPCOMING' | 'NAME' | 'START_DATE'>('UPCOMING');
   const [loading, setLoading] = useState<boolean>(true);
@@ -115,7 +128,7 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
       const classMap = new Map<number, any>();
       let pendingCount = 0;
 
-      // 1. Lấy từ Hợp đồng & Ký quỹ Escrow (Chỉ lấy ACTIVE và COMPLETED cho lớp đang học)
+      // Hợp đồng đã hủy vẫn được giữ để học viên tra cứu lịch sử đã trả phí.
       try {
         const contractsData = await contractsApi.listAgreements({
           size: 50
@@ -139,8 +152,7 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
             pendingCount++;
           }
 
-          // Chỉ thêm vào Lớp học của tôi nếu đã nạp cọc (ACTIVE) hoặc đã kết thúc (COMPLETED)
-          if ((agr.status === 'ACTIVE' || agr.status === 'COMPLETED') && agr.classroomId) {
+          if ((agr.status === 'ACTIVE' || agr.status === 'COMPLETED' || agr.status === 'CANCELLED') && agr.classroomId) {
             try {
               const cls = await classApi.getPublicClassById(agr.classroomId);
               if (cls && cls.id) {
@@ -183,9 +195,11 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
             if (req.status === 'ACCEPTED') {
               // Yêu cầu đã chấp nhận nhưng chưa thành ACTIVE
               pendingCount++;
-            } else if ((req.status === "ENROLLED" || req.status === "COMPLETED") && req.classRoomId) {
-              // Chỉ thêm vào lớp học nếu ENROLLED hoặc COMPLETED
-              if (!classMap.has(req.classRoomId)) {
+            } else if ((req.status === "ENROLLED" || req.status === "COMPLETED" || req.status === "CANCELLED") && req.classRoomId) {
+              const existingClass = classMap.get(req.classRoomId);
+              if (existingClass) {
+                classMap.set(req.classRoomId, { ...existingClass, enrollmentStatus: req.status });
+              } else {
                 try {
                   const cls = await classApi.getPublicClassById(req.classRoomId);
                   if (cls && cls.id) {
@@ -238,13 +252,15 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
 
         list = list.map((cls) => ({
           ...cls,
-          nextSession: upcomingByClassId.get(Number(cls.id)) || fallbackNextSession(cls)
+          nextSession: isHistoricalClass(cls)
+            ? null
+            : upcomingByClassId.get(Number(cls.id)) || fallbackNextSession(cls)
         }));
       } catch (e) {
         console.warn("Could not load student schedule for class ordering:", e);
         list = list.map((cls) => ({
           ...cls,
-          nextSession: fallbackNextSession(cls)
+          nextSession: isHistoricalClass(cls) ? null : fallbackNextSession(cls)
         }));
       }
 
@@ -273,9 +289,9 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
   const filteredClasses = useMemo(() => {
     const keyword = normalizeText(classSearch);
     const result = classes.filter((cls) => {
-      const isCompleted = cls.agreementStatus === 'COMPLETED' || cls.enrollmentStatus === 'COMPLETED' || cls.status === 'COMPLETED';
-      if (classFilter === 'COMPLETED') return isCompleted;
-      if (classFilter === 'ACTIVE' && isCompleted) return false;
+      const historical = isHistoricalClass(cls);
+      if (classFilter === 'HISTORY') return historical;
+      if (classFilter === 'ACTIVE' && historical) return false;
       if (!keyword) return true;
       const searchText = normalizeText([
         cls.name,
@@ -457,17 +473,17 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
                     : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                 }`}
               >
-                Đang học ({classes.filter(c => c.agreementStatus !== 'COMPLETED' && c.enrollmentStatus !== 'COMPLETED').length})
+                Đang học ({classes.filter(c => !isHistoricalClass(c)).length})
               </button>
               <button
-                onClick={() => setClassFilter('COMPLETED')}
+                onClick={() => setClassFilter('HISTORY')}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 ${
-                  classFilter === 'COMPLETED'
+                  classFilter === 'HISTORY'
                     ? 'bg-blue-600 text-white shadow-xs'
                     : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
                 }`}
               >
-                Đã hoàn thành ({classes.filter(c => c.agreementStatus === 'COMPLETED' || c.enrollmentStatus === 'COMPLETED').length})
+                Lịch sử ({classes.filter(isHistoricalClass).length})
               </button>
             </div>
 
@@ -533,6 +549,15 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
           {/* Selected Class Info Header Card */}
           {selectedClass && (
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+              {isHistoricalClass(selectedClass) && (
+                <div className="mb-4 flex items-start gap-3 rounded-xl border border-slate-300 bg-slate-50 p-3.5 text-sm text-slate-700">
+                  <History className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" />
+                  <div>
+                    <strong className="block text-slate-900">Lớp học đã kết thúc hoặc hợp đồng đã chấm dứt</strong>
+                    <span className="text-xs">Bạn vẫn xem được các buổi đã tham gia, điểm danh, kết quả và bài tập đã nộp. Lịch tương lai và thao tác học mới đã được khóa.</span>
+                  </div>
+                </div>
+              )}
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
@@ -611,6 +636,7 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
                   learningMode={selectedClass.learningMode}
                   address={selectedClass.address}
                   currentUserRole="STUDENT"
+                  historyMode={isHistoricalClass(selectedClass)}
                 />
               </div>
             </div>

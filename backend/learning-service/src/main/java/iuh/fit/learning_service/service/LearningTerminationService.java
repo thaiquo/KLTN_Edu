@@ -18,6 +18,7 @@ public class LearningTerminationService {
     private final EnrollmentRequestRepository enrollments;
     private final LearningTerminationStopRepository stops;
     private final SessionAttendanceRepository attendances;
+    private final RollingSessionService rollingSessions;
 
     public record Command(Long classroomId, Long studentId, String agreementId, boolean wholeClass, String action) {}
     public record Snapshot(int cutoffSession, List<Long> requiredSessions) {}
@@ -47,6 +48,14 @@ public class LearningTerminationService {
         if ("RELEASE".equals(command.action())) {
             if (stop != null && !stop.isClosed()) stops.delete(stop);
             if (command.wholeClass()) room.setTerminationCutoffSession(null);
+            if (command.wholeClass()) {
+                for (var activeEnrollment : enrollments.findByClassRoomIdAndStatus(
+                        room.getId(), EnrollmentRequestStatus.ENROLLED)) {
+                    rollingSessions.createMissingAttendancesForEnrollment(activeEnrollment);
+                }
+            } else {
+                rollingSessions.createMissingAttendancesForEnrollment(enrollment);
+            }
             return new Snapshot(0, List.of());
         }
         if (stop == null) {
@@ -63,6 +72,17 @@ public class LearningTerminationService {
         if (command.wholeClass() && room.getTerminationCutoffSession() == null) {
             room.setTerminationCutoffSession(stop.getCutoffSession());
         }
+        if (Set.of("HOLD", "FREEZE").contains(command.action())) {
+            for (var session : rows) {
+                if (session.getSequenceNumber() > stop.getCutoffSession()) {
+                    if (command.wholeClass()) {
+                        attendances.deleteBySession_Id(session.getId());
+                    } else {
+                        attendances.deleteBySession_IdAndStudentId(session.getId(), enrollment.getStudentId());
+                    }
+                }
+            }
+        }
         if (command.wholeClass() && "FREEZE".equals(command.action())) {
             int cutoff = room.getTerminationCutoffSession();
             // Keep the classroom locked while the approved agreements settle.
@@ -71,7 +91,6 @@ public class LearningTerminationService {
             for (var session : rows) {
                 if (session.getSequenceNumber() > cutoff) {
                     session.setStatus(ClassSessionStatus.CANCELLED);
-                    attendances.deleteBySession_Id(session.getId());
                 }
             }
             for (var pending : enrollments.findByClassRoomIdAndStatus(room.getId(), EnrollmentRequestStatus.PENDING)) {
@@ -109,5 +128,10 @@ public class LearningTerminationService {
                 .anyMatch(s -> session.getSequenceNumber() > s.getCutoffSession())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Hop dong dang cham dut; buoi hoc da dung");
         }
+    }
+
+    public boolean isWholeClassSessionStopped(ClassSession session) {
+        Integer cutoff = session.getClassRoom().getTerminationCutoffSession();
+        return cutoff != null && session.getSequenceNumber() > cutoff;
     }
 }

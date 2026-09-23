@@ -84,8 +84,10 @@
 - IMPLEMENTED: poi-tl sinh DOCX, Gotenberg chuyển PDF, local/S3 storage abstraction và artifact hash/status.
 - IMPLEMENTED: durable backend blockchain pipeline, idempotency, locking, preflight, dispatch, receipt watch, event cursor/processed-event.
 - IMPLEMENTED: funding confirmation, per-session proposal/finalization, cancellation/refund unused và expiration.
-- IMPLEMENTED: luồng Chấm dứt hợp đồng & Đề xuất Hủy lớp học: Contract Flyway v12-v14, Learning v32; API `/api/contracts/terminations`; EIP-712 backend verification có freshness/replay guard; Student chỉ gửi cho hợp đồng mình, Tutor chỉ đề xuất cả lớp; hold/release Learning có retry, cutoff giữ từ lúc tiếp nhận; Staff xác minh và chỉ Admin duyệt thanh lý Escrow V1 theo từng agreement. Approval whole-class đặt lớp `LOCKED`, dừng session/enrollment tương lai; từng item đóng sẽ cập nhật enrollment/attendance tương lai, và lớp chỉ `CANCELLED` sau item cuối.
-- IMPLEMENTED: frontend termination có đúng hai điểm gửi nghiệp vụ: Student trong văn bản hợp đồng và Tutor trong quản lý lớp; tab hồ sơ chỉ theo dõi/xét duyệt. UI khóa scope theo vai trò, kiểm tra ví/chain, phân biệt `HOLD_PENDING` với hold đã thành công và chặn gửi trùng khi hồ sơ còn hiệu lực.
+- IMPLEMENTED: luồng Chấm dứt hợp đồng & Đề xuất Hủy lớp học: Contract Flyway v12-v14, Learning v32; API `/api/contracts/terminations`; EIP-712 backend verification có freshness/replay guard; Student chỉ gửi cho hợp đồng mình, Tutor chỉ đề xuất cả lớp; hold/release Learning có retry, cutoff giữ từ lúc tiếp nhận; Staff xác minh (giới hạn theo các lớp được phân công) và Admin duyệt (`APPROVE` trực tiếp từ `REQUESTED` hoặc `RECOMMENDED`) thanh lý Escrow V1 theo từng agreement. Approval whole-class đặt lớp `LOCKED`, dừng session/enrollment tương lai; từng item đóng sẽ cập nhật enrollment/attendance tương lai sang `CANCELLED`, và lớp chỉ `CANCELLED` sau item cuối.
+- IMPLEMENTED: frontend termination có đúng hai điểm gửi nghiệp vụ: Student trong văn bản hợp đồng và Tutor trong quản lý lớp; tab hồ sơ chỉ theo dõi/xét duyệt. Giao diện nộp minh chứng hỗ trợ khu vực đệm (staging) cho phép thêm/xóa file/ghi chú trước khi gửi; sau khi gửi dữ liệu được lưu bất biến vào S3/PostgreSQL và ghi vết theo từng đợt (LẦN 1, LẦN 2...).
+- IMPLEMENTED: Bảng “Hoàn tiền hủy hợp đồng / hủy lớp” tại Admin → Tài chính (theo dõi tiến độ từng hợp đồng, mã lỗi, số tiền hoàn, tx hash) và Học viên/Gia sư → Ví (theo dõi hồ sơ thuộc quyền, hiển thị rõ số tiền hoàn về ví học viên), tự động cập nhật mỗi 15 giây với 4 trạng thái: Chờ duyệt (`WAITING_APPROVAL`), Chờ quyết toán (`WAITING_SETTLEMENT`), Chờ blockchain (`BLOCKCHAIN_PENDING`), Hoàn tất (`COMPLETED`).
+- IMPLEMENTED: Quy tắc quyết toán khi chấm dứt: Cửa sổ 24 giờ là thời hạn khiếu nại của từng buổi học đã diễn ra trước cutoff, không áp đặt 24 giờ vô cớ sau khi Admin duyệt. Worker tự động chờ các buổi liên quan quyết toán xong rồi lập tức kích hoạt hoàn cọc còn dư (`remainingDeposit`) về ví học viên.
 - IMPLEMENTED: settlement distribution amounts lưu từ event, wallet/audit timeline dùng thời điểm/hash confirmed.
 - IMPLEMENTED: catch-up sau restart và bounded auto-retry cho lỗi chắc chắn trước broadcast.
 - LIMITED: chỉ một operator instance và một RPC primary; unknown receipt/confirmed revert không tự retry mù.
@@ -122,12 +124,14 @@
 - Funding thật đã được `AgreementFunded` ingest cho agreement hoạt động.
 - Payout `BOTH_PRESENT` 0.6 USDC: 0.51 Tutor + 0.09 Platform, tx `0xd835b8ae250b20141feb32d26eb081ca1a0d532c9c6780b9622812c91990dc2`.
 - Refund `TUTOR_ABSENT` 0.6 USDC cho Student, tx `0xf608981a95f001b0cc5bd338995bd2cb54cc4addcf35b15957e06536005a3ec1`.
+- Refund Chấm dứt hợp đồng `AgreementCancelled` hoàn **4,80 USDC** về ví học viên `0x58abad20adecebfba5862422091eacc3f65f60e7`, hoàn tất lúc 23:44:27 ngày 22/09/2026, tx [`0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b`](https://sepolia.etherscan.io/tx/0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b). Hợp đồng và enrollment chuyển trạng thái `CANCELLED`, mốc dừng học đã đóng thành công.
 
 Đây là bằng chứng cho các kịch bản cụ thể, không phải cam kết production SLA cho mọi điều kiện mạng.
 
 ## 6. Kiểm chứng gần nhất
 
-- Contract Termination & EIP-712 Signature: 15 unit & integration tests (`TerminationServiceTest`, `TerminationFlowIntegrationTest`, `Eip712VerificationServiceTest`) pass 100% ngày 2026-09-21; Frontend TypeScript & Vite build pass trong 1.53s.
+- Runtime Sepolia Testnet ngày 2026-09-22 lúc 23:44:27: Giao dịch hoàn cọc thanh lý hợp đồng `0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b` thành công; event `AgreementCancelled` được ingest, hoàn 4.80 USDC về ví học viên, DB ghi nhận cập nhật `contract_agreements` và `enrollments` thành `CANCELLED`.
+- Contract Termination & EIP-712 Signature: 17 unit & integration tests (`TerminationServiceTest`, `TerminationFlowIntegrationTest`, `Eip712VerificationServiceTest`) pass 100% ngày 2026-09-22; Frontend TypeScript & Vite build pass không lỗi.
 - Regression sau khi bổ sung operational hold/release ngày 2026-09-22: `contract-service` 176 test pass (7 Anvil test skip theo cấu hình), `learning-service` 71/71 test pass; frontend production build pass.
 - Contract: 14 test scheduler/transaction restart-recovery đã pass ngày 2026-09-14.
 - Learning: 12 test attendance + settlement delivery đã pass ngày 2026-09-14.

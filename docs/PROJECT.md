@@ -92,7 +92,7 @@ Tỷ lệ được tính theo base unit của USDC; Tutor và Platform được 
 ## 8. Trạng thái ngắn gọn
 
 - Đã có luồng chính Web cho Account, Tutor approval, catalog/class/enrollment, session/attendance/homework, contract/escrow/settlement/dispute và notification.
-- Sepolia đã có bằng chứng funding, payout 85/15 và refund 100% thực tế; chi tiết transaction nằm trong [BLOCKCHAIN.md](BLOCKCHAIN.md).
+- Sepolia đã có bằng chứng funding, payout 85/15, refund 100% và refund hoàn cọc thanh lý hợp đồng 4.80 USDC thực tế; chi tiết transaction nằm trong [BLOCKCHAIN.md](BLOCKCHAIN.md).
 - Chat backend có persistence/API/WebSocket nhưng Portal message hiện vẫn dùng mock state, nên luồng người dùng chưa hoàn chỉnh.
 - AI Matching chưa triển khai nghiệp vụ; `ai-service` mới là skeleton.
 - Student post, violation/support ticket, báo cáo quản trị đầy đủ và mobile feature parity chưa có.

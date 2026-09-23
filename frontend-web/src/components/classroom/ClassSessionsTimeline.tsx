@@ -70,6 +70,8 @@ export interface AttendanceRecord {
   submissionFileUrl?: string;
   submittedAt?: string;
   finalOutcome?: "BOTH_PRESENT" | "STUDENT_ABSENT_TUTOR_PRESENT" | "TUTOR_ABSENT";
+  enrollmentStatus?: "PENDING" | "ACCEPTED" | "ENROLLED" | "EXPIRED" | "REJECTED" | "CANCELLED";
+  attendanceLocked?: boolean;
 }
 
 interface Props {
@@ -81,6 +83,7 @@ interface Props {
   currentUserRole?: "TUTOR" | "STUDENT" | "ADMIN" | "STAFF";
   currentUserId?: number;
   currentUserEmail?: string;
+  historyMode?: boolean;
   onUpdateMeetingLink?: (newLink: string) => Promise<void>;
   onDisputeClick?: (session: ClassSessionItem) => void;
 }
@@ -106,6 +109,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   currentUserRole = "STUDENT",
   currentUserId,
   currentUserEmail,
+  historyMode = false,
   onUpdateMeetingLink,
   onDisputeClick
 }) => {
@@ -471,8 +475,14 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   };
 
   // Filtered sessions & Statistics
-  const completedSessions = useMemo(() => sessions.filter((s) => s.status === "COMPLETED"), [sessions]);
-  const upcomingSessions = useMemo(() => sessions.filter((s) => s.status !== "COMPLETED"), [sessions]);
+  const completedSessions = useMemo(
+    () => sessions.filter((s) => s.status === "COMPLETED" || s.status === "CANCELLED"),
+    [sessions]
+  );
+  const upcomingSessions = useMemo(
+    () => sessions.filter((s) => s.status === "SCHEDULED" || s.status === "IN_PROGRESS"),
+    [sessions]
+  );
 
   // 2 buổi trọng tâm mặc định: buổi gần nhất đã qua và buổi tiếp theo
   const focusedSessions = useMemo(() => {
@@ -552,7 +562,17 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
             </div>
 
             {/* Meeting Link Action Card (Online) or Address Card (Offline) */}
-            {isOffline ? (
+            {historyMode && currentUserRole === "STUDENT" ? (
+              <div className="flex items-center gap-3 bg-white/10 p-3 rounded-xl border border-white/20">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-slate-700 text-slate-200">
+                  <History className="w-5 h-5" />
+                </div>
+                <div className="max-w-[280px]">
+                  <div className="text-xs text-indigo-200 font-medium">Chế Độ Xem Lịch Sử</div>
+                  <div className="text-xs font-semibold text-white">Phòng học và điểm danh mới đã khóa</div>
+                </div>
+              </div>
+            ) : isOffline ? (
               <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-xl border border-white/20">
                 <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-emerald-600 text-white shadow-xs">
                   <MapPin className="w-5 h-5" />
@@ -1119,7 +1139,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
           <div className="space-y-4" id="sessions-timeline-list">
             {filteredSessions.map((session) => {
               const active = isStrictSessionActive(session);
+              const isCancelled = session.status === "CANCELLED";
               const isCompleted = session.status === "COMPLETED";
+              const isPassedOrDone = isCompleted || isCancelled;
               const isTutorOrAdmin = currentUserRole === "TUTOR" || currentUserRole === "ADMIN" || currentUserRole === "STAFF";
               const isStudentUnlocked = session.myCheckedIn === true;
               const canAccessAssignment = isTutorOrAdmin || isStudentUnlocked;
@@ -1390,17 +1412,29 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                     )}
                                   </div>
 
-                                  <button
-                                    onClick={() => handleOpenHomeworkSubmission(session)}
-                                    className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs shrink-0 ${
-                                      hasSubmittedHomework
-                                        ? "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
-                                        : "bg-indigo-600 hover:bg-indigo-700 text-white"
-                                    }`}
-                                  >
-                                    <UploadCloud className="w-3.5 h-3.5" />
-                                    <span>{hasSubmittedHomework ? "Sửa / Nộp Lại" : "Nộp Bài Tập"}</span>
-                                  </button>
+                                  {isCancelled ? (
+                                    <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-500">
+                                      <Lock className="h-3.5 w-3.5" />
+                                      Buổi học đã hủy
+                                    </span>
+                                  ) : historyMode ? (
+                                    <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">
+                                      <Lock className="h-3.5 w-3.5" />
+                                      Chỉ xem lịch sử
+                                    </span>
+                                  ) : (
+                                    <button
+                                      onClick={() => handleOpenHomeworkSubmission(session)}
+                                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs shrink-0 ${
+                                        hasSubmittedHomework
+                                          ? "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
+                                          : "bg-indigo-600 hover:bg-indigo-700 text-white"
+                                      }`}
+                                    >
+                                      <UploadCloud className="w-3.5 h-3.5" />
+                                      <span>{hasSubmittedHomework ? "Sửa / Nộp Lại" : "Nộp Bài Tập"}</span>
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -1421,7 +1455,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                   </span>
                                 </div>
                                 <p className="text-slate-500 mt-1 leading-relaxed">
-                                  🔒 <i>Bạn cần bấm <b>"Điểm Danh Vào Học"</b> trong khung giờ ({session.startTime} - {session.endTime}) để mở khóa hướng dẫn làm bài và nộp bài tập cho gia sư.</i>
+                                  🔒 <i>{historyMode
+                                    ? "Buổi này không thuộc phần lịch sử đã tham gia hoặc trước đây bạn chưa điểm danh để mở khóa nội dung."
+                                    : <>Bạn cần bấm <b>"Điểm Danh Vào Học"</b> trong khung giờ ({session.startTime} - {session.endTime}) để mở khóa hướng dẫn làm bài và nộp bài tập cho gia sư.</>}</i>
                                 </p>
                               </div>
                             </div>
@@ -1500,9 +1536,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                       )}
 
                       {/* Student Actions */}
-                      {currentUserRole === "STUDENT" && (
+                      {currentUserRole === "STUDENT" && !historyMode && !isCancelled && (
                         <>
-                          {!isCompleted && !session.myCheckedIn && (
+                          {!isPassedOrDone && !session.myCheckedIn && (
                             <div className="flex flex-col items-end gap-1.5">
                               <button
                                 disabled={!active || actionLoading}
@@ -1801,6 +1837,10 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
                         ĐÃ CHỐT SỔ
                       </span>
+                    ) : activeSession.status === "CANCELLED" ? (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-200 text-slate-700">
+                        ĐÃ HỦY
+                      </span>
                     ) : (
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 animate-pulse">
                         ĐANG ĐIỂM DANH
@@ -1860,6 +1900,11 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                             <div>
                               <div className="text-sm font-bold text-slate-900 flex items-center gap-2">
                                 <span>{att.studentName || `Học viên #${att.studentId}`}</span>
+                                {att.attendanceLocked && (
+                                  <span className="inline-flex items-center gap-1 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-bold text-slate-700">
+                                    <Lock className="h-3 w-3" /> Đã chấm dứt hợp đồng
+                                  </span>
+                                )}
                                 {att.studentChecked && (
                                   <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
                                     Đã tự Check-in
@@ -1940,7 +1985,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-5 pt-4 border-t border-slate-100">
                 <div className="text-xs text-slate-500">
                   <span>Có mặt: <b className="text-emerald-700">{checkedInCount}</b>/{attendanceList.length} học viên</span>
-                  {activeSession.status !== "COMPLETED" && (
+                  {activeSession.status !== "COMPLETED" && activeSession.status !== "CANCELLED" && (
                     <span className="block text-[11px] text-amber-700 mt-0.5">
                       ⏳ Hệ thống sẽ tự động chốt kết quả và giải ngân sau buổi học
                     </span>
@@ -1954,7 +1999,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                   >
                     Đóng
                   </button>
-                  {activeSession.status !== "COMPLETED" && (
+                  {activeSession.status !== "COMPLETED" && activeSession.status !== "CANCELLED" && (
                     <button
                       disabled={actionLoading}
                       onClick={handleTutorFinalizeAttendance}

@@ -224,13 +224,15 @@ Backend chat is implemented, but current Portal `MessagesView` still uses `INITI
 
 ## 3.8 Contract Termination & Cancellation API status
 
+Luồng Chấm dứt hợp đồng & Đề xuất Hủy lớp học tích hợp bảo chứng chữ ký số EIP-712 gasless, khu vực đệm minh chứng trước khi gửi và theo dõi hoàn tiền tự động 15 giây.
+
 Controller: `TerminationController` in `contract-service` (prefix `/api/contracts/terminations`).
 
 | Method | Endpoint | Purpose | Scope / Authorization |
 | --- | --- | --- | --- |
 | `GET` | `/api/contracts/terminations` | List termination requests & cancellation cases. | Role-scoped: Student sees own cases, Tutor sees own classroom cases, Staff/Admin sees all manageable cases. |
 | `POST` | `/api/contracts/terminations` | Submit termination request with cryptographic EIP-712 verification and create a retryable Learning hold. | Student: own agreement only (`wholeClass=false`). Tutor: whole class only (`wholeClass=true`). Signed timestamp must be within five minutes and a signature cannot be reused. |
-| `POST` | `/api/contracts/terminations/{id}/actions` | Respond, recommend, approve or reject a termination case. | Parties may `RESPOND`; assigned Staff/Admin may `RECOMMEND`/`REJECT`; only Admin may `APPROVE`. Reject releases the hold; approve preserves its cutoff and starts settlement/refund processing. |
+| `POST` | `/api/contracts/terminations/{id}/actions` | Respond, recommend, approve or reject a termination case. | Parties may `RESPOND`; assigned Staff may `RECOMMEND`/`REJECT` (scoped to assigned classrooms); Admin has supreme authority to `APPROVE` (directly from `REQUESTED` or `RECOMMENDED`) or `REJECT`. Reject releases hold and restores class; approve preserves cutoff and initiates session settlement / escrow refund processing. |
 | `POST` | `/api/contracts/terminations/{id}/evidence` | Upload termination evidence file (image, video, audio, PDF, Word, Excel, text). | Parties (`STUDENT`, `TUTOR`) for active cases (`HOLD_PENDING`, `REQUESTED`, `RECOMMENDED`). Max 5 files per party, max 50 MB per file. Whitelist MIME check, SHA-256 integrity, stored on S3. |
 | `GET` | `/api/contracts/terminations/{id}/evidence/{evidenceId}/content` | Stream/download stored termination evidence file. | Parties on the agreement/class, assigned Staff reviewer, and Admin. Streams with original filename and nosniff header. |
 

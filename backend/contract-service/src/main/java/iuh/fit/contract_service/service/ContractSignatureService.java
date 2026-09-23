@@ -75,7 +75,7 @@ public class ContractSignatureService {
                 || expectedWallet.equalsIgnoreCase("0x" + "0".repeat(40)) || agreement.isLegacyExcluded()) {
             throw new IllegalArgumentException("Signing wallet must match the immutable agreement party wallet");
         }
-        if (ContractTermsSnapshotService.SCHEMA_VERSION.equals(snapshotVersion(agreement))
+        if (hasSupportedSnapshot(agreement)
                 && !new ContractTermsSnapshotService().matchesHash(agreement.getTermsJson(), agreement.getTermsHash())) {
             throw new IllegalStateException("Agreement terms hash does not match its immutable snapshot");
         }
@@ -86,7 +86,7 @@ public class ContractSignatureService {
                 ? agreement.getEscrowContractAddress()
                 : "0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3";
         if ("STUDENT".equals(normalizedRole)
-                && ContractTermsSnapshotService.SCHEMA_VERSION.equals(snapshotVersion(agreement))
+                && hasSupportedSnapshot(agreement)
                 && !normalizedWallet.equalsIgnoreCase(agreement.getStudentWallet())) {
             throw new IllegalArgumentException("Ví ký của học viên không khớp ví đã được snapshot trong điều khoản hợp đồng.");
         }
@@ -184,9 +184,15 @@ public class ContractSignatureService {
     }
 
     private String snapshotVersion(ContractAgreement agreement) {
-        String terms = agreement.getTermsJson();
-        return terms != null && terms.contains("\"schemaVersion\":\"contract-terms-v2\"")
-                ? ContractTermsSnapshotService.SCHEMA_VERSION : null;
+        return new ContractTermsSnapshotService().parse(agreement.getTermsJson())
+                .map(ContractTermsSnapshot::schemaVersion)
+                .orElse(null);
+    }
+
+    private boolean hasSupportedSnapshot(ContractAgreement agreement) {
+        String version = snapshotVersion(agreement);
+        return "contract-terms-v2".equals(version)
+                || ContractTermsSnapshotService.SCHEMA_VERSION.equals(version);
     }
 
     public List<ContractAcceptance> getAcceptances(UUID agreementId) {
