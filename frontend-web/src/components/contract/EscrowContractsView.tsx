@@ -45,6 +45,7 @@ import { useAuth } from '../../hooks/useAuth';
 interface EscrowContractsViewProps {
   activeRole: 'student' | 'tutor' | 'staff' | 'admin' | string;
   userEmail?: string;
+  onNavigate?: (page: string) => void;
 }
 
 // Status display mapping
@@ -66,7 +67,7 @@ const TERMINATION_LABELS: Record<string, string> = {
   RELEASE_PENDING: 'Đang khôi phục lịch học',
   REQUESTED: 'Chờ xem xét',
   RECOMMENDED: 'Đề xuất chấm dứt',
-  APPROVED: 'Admin đã duyệt - đang chờ quyết toán on-chain',
+  APPROVED: 'Admin đã duyệt, đang xử lý hoàn cọc',
   REJECTED: 'Không chấp thuận',
   COMPLETED: 'Hoàn tất',
   LEARNING_PENDING: 'Chờ dừng lịch học',
@@ -102,6 +103,7 @@ const FILTER_TABS = [
 export function EscrowContractsView({
   activeRole,
   userEmail = '',
+  onNavigate,
 }: EscrowContractsViewProps) {
   const { address, chainId, usdcBalance } = useWeb3Wallet();
   const { user } = useAuth();
@@ -1329,14 +1331,14 @@ export function EscrowContractsView({
                               <p className="font-extrabold text-amber-950 text-[13px]">
                                 {activeTermination.wholeClass
                                   ? activeTermination.status === 'APPROVED'
-                                    ? 'Admin đã duyệt hủy lớp - đang quyết toán từng hợp đồng'
+                                    ? 'Admin đã duyệt hủy lớp - đang xử lý từng hợp đồng'
                                     : 'Đang có đề xuất dừng & hủy toàn bộ lớp'
                                   : activeTermination.status === 'APPROVED'
-                                    ? 'Admin đã duyệt chấm dứt - đang quyết toán trước khi hoàn escrow'
+                                    ? 'Admin đã duyệt chấm dứt - đang xử lý tiền cọc'
                                     : 'Đang có yêu cầu chấm dứt hợp đồng này'}
                               </p>
                               <p className="text-[11px] font-medium text-amber-800 mt-0.5">
-                                Trạng thái: <span className="font-bold underline">{TERMINATION_LABELS[activeTermination.status] || activeTermination.status}</span>
+                                Trạng thái: <span className="font-bold underline">{TERMINATION_LABELS[activeTermination.itemStatus || activeTermination.status] || activeTermination.itemStatus || activeTermination.status}</span>
                                 {activeTermination.reason ? (
                                   <span className="italic"> &bull; "{activeTermination.reason.slice(0, 50)}{activeTermination.reason.length > 50 ? '...' : ''}"</span>
                                 ) : null}
@@ -1646,7 +1648,7 @@ export function EscrowContractsView({
       {/* TERMINATIONS TAB */}
       {activeTab === 'TERMINATIONS' && (
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-          <TerminationPanel activeRole={activeRole} initialAgreements={enrichedAgreements} />
+          <TerminationPanel activeRole={activeRole} initialAgreements={enrichedAgreements} onNavigate={onNavigate} />
         </div>
       )}
 

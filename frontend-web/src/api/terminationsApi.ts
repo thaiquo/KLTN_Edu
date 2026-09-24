@@ -10,6 +10,12 @@ export interface TerminationItem {
   studentName: string;
   tokenDecimals: number;
   chainId: number | null;
+  depositedUnits?: string;
+  tutorPaidUnits?: string;
+  platformFeeUnits?: string;
+  sessionRefundedUnits?: string;
+  remainingUnits?: string;
+  updatedAt?: string | null;
 }
 
 export interface TerminationEvidenceView {
@@ -43,6 +49,7 @@ export interface TerminationView {
 
 export const terminationsApi = {
   list: (): Promise<TerminationView[]> => apiRequest('/api/contracts/terminations'),
+  listRefunds: (): Promise<TerminationView[]> => apiRequest('/api/contracts/terminations/refunds'),
   request: (
     agreementId: string,
     wholeClass: boolean,

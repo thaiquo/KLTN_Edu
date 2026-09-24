@@ -59,9 +59,22 @@ public class TerminationProcessor {
                 if (rows.stream().anyMatch(s -> s.getSessionId() > snapshot.cutoffSession())) {
                     throw new IllegalStateException("A future session already has a proposal; review its audit before cancelling");
                 }
-                if (rows.stream().anyMatch(s -> !settled(s))) return;
-                if (snapshot.requiredSessions().stream().anyMatch(id -> rows.stream()
-                        .noneMatch(s -> id.equals(s.getSessionId()) && settled(s)))) return;
+                var unsettled = rows.stream().filter(s -> !settled(s)).toList();
+                if (!unsettled.isEmpty()) {
+                    String waiting = unsettled.stream()
+                            .map(s -> "#" + s.getSessionId() + " (" + s.getStatus() + ")")
+                            .reduce((left, right) -> left + ", " + right).orElse("");
+                    item.setLastError("Waiting for confirmed session settlement: " + waiting);
+                    return;
+                }
+                var missing = snapshot.requiredSessions().stream().filter(id -> rows.stream()
+                        .noneMatch(s -> id.equals(s.getSessionId()) && settled(s))).toList();
+                if (!missing.isEmpty()) {
+                    String waiting = missing.stream().map(id -> "#" + id)
+                            .reduce((left, right) -> left + ", " + right).orElse("");
+                    item.setLastError("Waiting for Learning settlement delivery: " + waiting);
+                    return;
+                }
                 if (failedTransaction(a, item, "CANCEL")) return;
                 lifecycle.initiateCancellation(a.getId(), c.getReason());
                 reflectTransaction(a, item, "CANCEL");

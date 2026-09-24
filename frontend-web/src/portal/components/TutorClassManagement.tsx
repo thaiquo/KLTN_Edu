@@ -17,7 +17,7 @@ const terminationStatusLabel: Record<string, string> = {
   HOLD_PENDING: 'Đang đồng bộ tạm dừng',
   REQUESTED: 'Chờ xác minh',
   RECOMMENDED: 'Chờ Admin quyết định',
-  APPROVED: 'Đang thanh lý',
+  APPROVED: 'Admin đã duyệt, đang xử lý hoàn cọc',
   RELEASE_PENDING: 'Đang khôi phục lịch',
 };
 

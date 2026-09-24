@@ -27,6 +27,10 @@ public class TerminationController {
 
     @GetMapping public List<TerminationService.View> list() { return service.list(users.requireCurrentUser()); }
 
+    @GetMapping("/refunds") public List<TerminationService.View> listRefunds() {
+        return service.listRefunds(users.requireCurrentUser());
+    }
+
     @PostMapping public TerminationService.View request(@RequestBody Request body) {
         return service.request(body.agreementId(), body.wholeClass(), body.reason(), body.signature(), body.signerWallet(), body.requestedAtTimestamp(), users.requireCurrentUser());
     }

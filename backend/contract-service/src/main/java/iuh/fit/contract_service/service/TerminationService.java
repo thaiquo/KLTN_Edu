@@ -3,6 +3,8 @@ package iuh.fit.contract_service.service;
 import iuh.fit.contract_service.config.security.*;
 import iuh.fit.contract_service.entity.*;
 import iuh.fit.contract_service.enums.ContractAgreementStatus;
+import iuh.fit.contract_service.enums.DisputeStatus;
+import iuh.fit.contract_service.enums.SettlementStatus;
 import iuh.fit.contract_service.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -13,6 +15,7 @@ import org.web3j.crypto.Hash;
 import org.web3j.utils.Numeric;
 import tools.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
+import java.math.BigInteger;
 import java.time.OffsetDateTime;
 import java.util.*;
 
@@ -22,6 +25,8 @@ public class TerminationService {
     private final TerminationItemRepository items;
     private final TerminationEvidenceRepository evidence;
     private final ContractAgreementRepository agreements;
+    private final SessionSettlementRepository settlements;
+    private final DisputeRepository disputes;
     private final ContractAccessControl access;
     private final ObjectMapper mapper;
     private final NotificationDispatcher notifications;
@@ -31,17 +36,15 @@ public class TerminationService {
     private static final long SIGNATURE_CLOCK_SKEW_SECONDS = 300;
 
     public record ItemView(UUID agreementId, String status, String lastError, String transactionHash,
-                           String refundedUnits, String studentName, int tokenDecimals, Long chainId) {}
+                           String refundedUnits, String studentName, int tokenDecimals, Long chainId,
+                           String depositedUnits, String tutorPaidUnits, String platformFeeUnits,
+                           String sessionRefundedUnits, String remainingUnits, OffsetDateTime updatedAt) {}
     public record EvidenceView(UUID id, String originalFilename, String contentType, long sizeBytes,
                                String submittedByRole, java.time.Instant createdAt) {}
     public record View(TerminationCase request, List<ItemView> items, List<EvidenceView> evidence) {}
     private View view(TerminationCase c) {
-        var itemViews = items.findByCaseIdOrderByAgreementId(c.getId()).stream().map(i -> {
-            var a = agreements.findById(i.getAgreementId()).orElseThrow();
-            return new ItemView(i.getAgreementId(), i.getStatus(), i.getLastError(), i.getTransactionHash(),
-                    i.getRefundedUnits() == null ? null : i.getRefundedUnits().toString(),
-                    a.getStudentName() == null ? a.getStudentEmail() : a.getStudentName(), a.getTokenDecimals(), a.getChainId());
-        }).toList();
+        var itemViews = items.findByCaseIdOrderByAgreementId(c.getId()).stream()
+                .map(i -> itemView(i, agreements.findById(i.getAgreementId()).orElseThrow())).toList();
         var evidenceViews = evidence.findByTerminationCaseIdOrderByCreatedAtAsc(c.getId()).stream()
                 .map(item -> new EvidenceView(item.getId(), item.getOriginalFilename(), item.getContentType(),
                         item.getSizeBytes(), item.getSubmittedByRole(), item.getCreatedAt()))
@@ -49,11 +52,67 @@ public class TerminationService {
         return new View(c, itemViews, evidenceViews);
     }
 
+    private ItemView itemView(TerminationItem item, ContractAgreement agreement) {
+        BigInteger tutorPaid = BigInteger.ZERO;
+        BigInteger platformFee = BigInteger.ZERO;
+        BigInteger sessionRefunded = BigInteger.ZERO;
+        for (var settlement : settlements.findByAgreementId(agreement.getId())) {
+            if (settlement.getStatus() != SettlementStatus.SETTLED && settlement.getStatus() != SettlementStatus.REFUNDED) continue;
+            tutorPaid = tutorPaid.add(zeroIfNull(settlement.getTutorAmount()));
+            platformFee = platformFee.add(zeroIfNull(settlement.getPlatformAmount()));
+            sessionRefunded = sessionRefunded.add(zeroIfNull(settlement.getStudentRefundAmount()));
+        }
+        BigInteger deposited = zeroIfNull(agreement.getTotalAmountUsdcUnits());
+        BigInteger refunded = zeroIfNull(item.getRefundedUnits());
+        BigInteger remaining = deposited.subtract(tutorPaid).subtract(platformFee)
+                .subtract(sessionRefunded).subtract(refunded).max(BigInteger.ZERO);
+        if (agreement.getStatus() == ContractAgreementStatus.CANCELLED) remaining = BigInteger.ZERO;
+        return new ItemView(item.getAgreementId(), item.getStatus(), item.getLastError(), item.getTransactionHash(),
+                item.getRefundedUnits() == null ? null : item.getRefundedUnits().toString(),
+                agreement.getStudentName() == null ? agreement.getStudentEmail() : agreement.getStudentName(),
+                agreement.getTokenDecimals(), agreement.getChainId(), deposited.toString(), tutorPaid.toString(),
+                platformFee.toString(), sessionRefunded.toString(), remaining.toString(), item.getUpdatedAt());
+    }
+
+    private BigInteger zeroIfNull(BigInteger value) { return value == null ? BigInteger.ZERO : value; }
+
     @Transactional(readOnly = true)
     public List<View> list(ContractUserPrincipal user) {
         return cases.findAll().stream().filter(c -> canView(c, user))
                 .sorted(Comparator.comparing(TerminationCase::getCreatedAt).reversed())
                 .map(this::view).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<View> listRefunds(ContractUserPrincipal user) {
+        if (!user.hasActiveAuthority("STUDENT")) return list(user);
+        return cases.findAll().stream()
+                .sorted(Comparator.comparing(TerminationCase::getCreatedAt).reversed())
+                .map(c -> c.isWholeClass() ? studentClassRefundView(c, user)
+                        : (canView(c, user) ? view(c) : null))
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    private View studentClassRefundView(TerminationCase c, ContractUserPrincipal user) {
+        var ownItems = items.findByCaseIdOrderByAgreementId(c.getId()).stream()
+                .map(item -> new AbstractMap.SimpleImmutableEntry<>(item, agreements.findById(item.getAgreementId()).orElse(null)))
+                .filter(entry -> entry.getValue() != null && access.canViewAgreement(entry.getValue(), user))
+                .map(entry -> itemView(entry.getKey(), entry.getValue())).toList();
+        if (ownItems.isEmpty()) return null;
+
+        var summary = new TerminationCase();
+        summary.setId(c.getId());
+        summary.setAnchorAgreementId(ownItems.get(0).agreementId());
+        summary.setClassroomId(c.getClassroomId());
+        summary.setWholeClass(true);
+        summary.setReason("Gia sư đề xuất hủy lớp");
+        summary.setRequestedBy("TUTOR");
+        summary.setStatus(c.getStatus());
+        summary.setCreatedAt(c.getCreatedAt());
+        summary.setUpdatedAt(c.getUpdatedAt());
+        summary.setAuditJson("[]");
+        return new View(summary, ownItems, List.of());
     }
 
     @Transactional
@@ -169,17 +228,21 @@ public class TerminationService {
             }
             case "RECOMMEND" -> {
                 if (!user.hasActiveAuthority("STAFF")) fail(HttpStatus.FORBIDDEN, "Only assigned Staff can recommend termination");
-                requireStatus(c, "REQUESTED"); c.setStatus("RECOMMENDED");
+                requireStatus(c, "REQUESTED");
+                requireNoPendingDisputes(c);
+                c.setStatus("RECOMMENDED");
             }
             case "REJECT" -> {
                 if (!manager) fail(HttpStatus.FORBIDDEN, "Assigned Staff/Admin required");
                 requireStatus(c, "REQUESTED", "RECOMMENDED");
+                requireNoPendingDisputes(c);
                 c.setStatus("RELEASE_PENDING");
                 synchronizeRelease(c, anchor);
             }
             case "APPROVE" -> {
                 if (!user.hasActiveAuthority("ADMIN")) fail(HttpStatus.FORBIDDEN, "Only Admin can approve termination");
                 requireStatus(c, "REQUESTED", "RECOMMENDED");
+                requireNoPendingDisputes(c);
                 if (anchor.getTerminationCutoffSession() == null) synchronizeHold(c, anchor);
                 if (anchor.getTerminationCutoffSession() == null) {
                     fail(HttpStatus.CONFLICT, "Learning hold is not ready; retry after synchronization");
@@ -222,6 +285,23 @@ public class TerminationService {
             }
         }
         return view(c);
+    }
+
+    private void requireNoPendingDisputes(TerminationCase termination) {
+        var targets = termination.isWholeClass()
+                ? agreements.findByClassroomIdOrderByCreatedAtAsc(termination.getClassroomId())
+                : List.of(agreements.findById(termination.getAnchorAgreementId()).orElseThrow());
+        var unresolved = List.of(DisputeStatus.OPENING, DisputeStatus.OPEN, DisputeStatus.UNDER_REVIEW,
+                DisputeStatus.RESOLUTION_PENDING, DisputeStatus.FAILED_RETRYABLE);
+        var affectedAgreementIds = targets.stream()
+                .filter(agreement -> !terminal(agreement))
+                .filter(agreement -> disputes.existsBySettlement_Agreement_IdAndStatusIn(agreement.getId(), unresolved))
+                .map(agreement -> agreement.getId().toString())
+                .toList();
+        if (!affectedAgreementIds.isEmpty()) {
+            fail(HttpStatus.CONFLICT, "Chưa thể xử lý yêu cầu hủy/chấm dứt. Hãy giải quyết các khiếu nại đang chờ ở buổi học thuộc hợp đồng bị ảnh hưởng trước; lịch học tương lai hiện vẫn theo trạng thái của yêu cầu hủy. Hợp đồng cần xử lý: "
+                    + String.join(", ", affectedAgreementIds) + ". Mở tab Khiếu nại để xử lý trước.");
+        }
     }
 
     public boolean canView(TerminationCase c, ContractUserPrincipal user) {

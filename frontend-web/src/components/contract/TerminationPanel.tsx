@@ -31,9 +31,10 @@ import {
   Trash2,
   FileText,
 } from 'lucide-react';
-import { contractsApi, AgreementSummary } from '../../api/contractsApi';
+import { contractsApi, AgreementSummary, DisputeDto } from '../../api/contractsApi';
 import { useAuth } from '../../hooks/useAuth';
 import { terminationsApi, TerminationView } from '../../api/terminationsApi';
+import { terminationCaseLabel, terminationItemLabel, terminationProgressText, terminationWaitingDetail } from './terminationStatus';
 
 const labels: Record<string, string> = {
   HOLD_PENDING: 'Đang tạm dừng lịch học',
@@ -56,11 +57,11 @@ const labels: Record<string, string> = {
 };
 
 const statusTone = (status: string) => {
-  if (status === 'COMPLETED' || status === 'APPROVED') return 'text-emerald-700 bg-emerald-50 border-emerald-200';
+  if (status === 'COMPLETED') return 'text-emerald-700 bg-emerald-50 border-emerald-200';
   if (status === 'TRANSACTION_FAILED') return 'text-red-700 bg-red-50 border-red-200';
   if (status === 'REJECTED') return 'text-slate-600 bg-slate-100 border-slate-200';
   if (status === 'RECOMMENDED') return 'text-indigo-700 bg-indigo-50 border-indigo-200';
-  if (['HOLD_PENDING', 'REQUESTED', 'RELEASE_PENDING', 'WAITING_SETTLEMENT', 'WAITING_PAYMENT'].includes(status))
+  if (['HOLD_PENDING', 'REQUESTED', 'RELEASE_PENDING', 'APPROVED', 'WAITING_SETTLEMENT', 'WAITING_PAYMENT'].includes(status))
     return 'text-amber-700 bg-amber-50 border-amber-200';
   return 'text-blue-700 bg-blue-50 border-blue-200';
 };
@@ -71,6 +72,16 @@ const units = (value?: string | null, decimals: number = 6) => {
   if (!value) return '0';
   const digits = String(value).padStart(decimals + 1, '0');
   return decimals ? `${digits.slice(0, -decimals)}.${digits.slice(-decimals)}` : digits;
+};
+
+const remainingEscrow = (agreement: AgreementSummary) => {
+  if (agreement.remainingDeposit != null && Number.isFinite(Number(agreement.remainingDeposit))) {
+    return Math.max(0, Number(agreement.remainingDeposit));
+  }
+  return Math.max(0,
+    (Number(agreement.totalAmountUsdc) || 0)
+      - (Number(agreement.releasedAmountUsdc) || 0)
+      - (Number(agreement.refundedAmountUsdc) || 0));
 };
 
 const parseAudit = (json?: string | null) => {
@@ -96,13 +107,28 @@ const getFileIcon = (contentType: string, filename: string) => {
 interface TerminationPanelProps {
   activeRole: string;
   initialAgreements?: AgreementSummary[];
+  onNavigate?: (page: string) => void;
 }
 
-export function TerminationPanel({ activeRole, initialAgreements }: TerminationPanelProps) {
+const UNRESOLVED_DISPUTE_STATUSES = new Set(['OPENING', 'OPEN', 'UNDER_REVIEW', 'RESOLUTION_PENDING', 'FAILED_RETRYABLE']);
+
+const fetchAllDisputes = async (): Promise<DisputeDto[]> => {
+  const first = await contractsApi.listDisputes({ page: 0, size: 100 });
+  const rows = [...(first.content ?? [])];
+  for (let page = 1; page < first.totalPages; page++) {
+    const next = await contractsApi.listDisputes({ page, size: 100 });
+    rows.push(...(next.content ?? []));
+  }
+  return rows;
+};
+
+export function TerminationPanel({ activeRole, initialAgreements, onNavigate }: TerminationPanelProps) {
   const { user } = useAuth();
   const [requests, setRequests] = useState<TerminationView[]>([]);
   const [agreements, setAgreements] = useState<AgreementSummary[]>(initialAgreements || []);
+  const [disputes, setDisputes] = useState<DisputeDto[]>([]);
   const [error, setError] = useState('');
+  const [complaintBlockWarning, setComplaintBlockWarning] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -138,26 +164,42 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
   useEffect(() => {
     let active = true;
     void load();
-    const timer = window.setInterval(load, 15000);
-    void (async () => {
-      try {
-        const result: AgreementSummary[] = [];
-        for (let page = 0; ; page++) {
-          const response = await contractsApi.listAgreements({ page, size: 100 });
-          const content = response.content ?? [];
-          result.push(...content);
-          if (content.length < 100 || result.length >= response.totalElements) break;
+    const refreshRelated = () => {
+      void (async () => {
+        try {
+          const result: AgreementSummary[] = [];
+          for (let page = 0; ; page++) {
+            const response = await contractsApi.listAgreements({ page, size: 100 });
+            const content = response.content ?? [];
+            result.push(...content);
+            if (content.length < 100 || result.length >= response.totalElements) break;
+          }
+          if (active) setAgreements(result);
+        } catch (e) {
+          if (active) setError(message(e));
         }
-        if (active) setAgreements(result);
-      } catch (e) {
-        if (active) setError(message(e));
+      })();
+      if (isManager) {
+        void (async () => {
+          try {
+            const rows = await fetchAllDisputes();
+            if (active) setDisputes(rows);
+          } catch {
+            // The backend remains authoritative and will reject a review if a complaint is pending.
+          }
+        })();
       }
-    })();
+    };
+    refreshRelated();
+    const timer = window.setInterval(() => {
+      void load();
+      refreshRelated();
+    }, 15000);
     return () => {
       active = false;
       window.clearInterval(timer);
     };
-  }, [load]);
+  }, [load, isManager]);
 
   const agreementMap = useMemo(() => new Map(agreements.map((a) => [a.id, a])), [agreements]);
   const classroomMap = useMemo(() => {
@@ -171,6 +213,38 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
     });
     return map;
   }, [agreements]);
+
+  const getPendingDisputes = useCallback((termination: TerminationView, allDisputes: DisputeDto[]) => {
+    const targets = termination.request.wholeClass
+      ? (classroomMap.get(Number(termination.request.classroomId)) || [])
+          .filter((a) => !['CANCELLED', 'EXPIRED', 'COMPLETED'].includes(a.status))
+          .map((a) => a.id)
+      : [termination.request.anchorAgreementId];
+    const targetIds = new Set(targets);
+    return allDisputes.filter((d) => targetIds.has(d.agreementId) && UNRESOLVED_DISPUTE_STATUSES.has(d.status));
+  }, [classroomMap]);
+
+  const beginManagerAction = async (termination: TerminationView, type: string) => {
+    let currentDisputes = disputes;
+    try {
+      currentDisputes = await fetchAllDisputes();
+      setDisputes(currentDisputes);
+    } catch {
+      // Submission still goes through the backend's authoritative dispute check.
+      currentDisputes = [];
+    }
+    const pending = getPendingDisputes(termination, currentDisputes);
+    if (pending.length) {
+      const sessions = [...new Set(pending.map((d) => `#${d.sessionId}`))].join(', ');
+      setComplaintBlockWarning(`Chưa thể xử lý yêu cầu này: cần giải quyết khiếu nại ở buổi ${sessions} trước. Khiếu nại chỉ giữ quyết toán các buổi đó; yêu cầu hủy lớp vẫn giữ nguyên trạng thái dừng lịch tương lai.`);
+      setAction(null);
+      return;
+    }
+    setError('');
+    setComplaintBlockWarning('');
+    setAction({ id: termination.request.id, type });
+    setReviewReason('');
+  };
 
   const stats = useMemo(() => {
     const total = requests.length;
@@ -191,10 +265,16 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
       await terminationsApi.act(action.id, action.type, reviewReason);
       setAction(null);
       setReviewReason('');
+      setComplaintBlockWarning('');
       setSuccess('Đã cập nhật quyết định thành công.');
       await load();
     } catch (e) {
-      setError(message(e));
+      const text = message(e);
+      if (text.toLowerCase().includes('khiếu nại')) {
+        setComplaintBlockWarning(text);
+      } else {
+        setError(text);
+      }
     } finally {
       setBusy(false);
     }
@@ -413,10 +493,15 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
       )}
 
       {/* Notifications */}
-      {error && (
-        <div className="flex items-center gap-2 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold">
+      {(error || complaintBlockWarning) && (
+        <div className="flex flex-wrap items-center gap-2 p-4 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold">
           <XCircle className="w-4 h-4 shrink-0" />
-          <span>{error}</span>
+          <span className="flex-1">{complaintBlockWarning || error}</span>
+          {complaintBlockWarning && onNavigate && (
+            <button type="button" onClick={() => { setComplaintBlockWarning(''); onNavigate('complaints'); }} className="inline-flex items-center gap-1 rounded-lg bg-white px-3 py-2 text-red-800 border border-red-200 hover:bg-red-100">
+              <ExternalLink size={14} /> Mở xử lý khiếu nại
+            </button>
+          )}
         </div>
       )}
       {success && (
@@ -476,7 +561,13 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
 
             const totalEscrowPool = affectedAgreements.reduce((sum, a) => sum + (Number(a.totalAmountUsdc) || 0), 0);
             const totalSettledUsdc = affectedAgreements.reduce((sum, a) => sum + (Number(a.releasedAmountUsdc) || 0), 0);
-            const totalRemainingUsdc = Math.max(0, totalEscrowPool - totalSettledUsdc);
+            const totalConfirmedRefundUsdc = items.reduce((sum, item) => sum +
+              (item.status === 'COMPLETED' && item.refundedUnits != null
+                ? Number(item.refundedUnits) / 10 ** item.tokenDecimals : 0), 0);
+            const totalPendingRefundUsdc = affectedAgreements.reduce((sum, agreement) =>
+              sum + (itemMap.get(agreement.id)?.status === 'COMPLETED' ? 0 : remainingEscrow(agreement)), 0);
+            const totalRefundUsdc = c.status === 'REJECTED' ? 0 : totalConfirmedRefundUsdc + totalPendingRefundUsdc;
+            const refundConfirmed = c.status === 'COMPLETED';
 
             // If current viewer is a student, calculate their specific refund numbers
             const studentSelfAgreement = isStudent
@@ -490,10 +581,11 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
             const studentEscrowPool = studentSelfAgreement
               ? Number(studentSelfAgreement.totalAmountUsdc) || 0
               : totalEscrowPool;
-            const studentSettledUsdc = studentSelfAgreement
-              ? Number(studentSelfAgreement.releasedAmountUsdc) || 0
-              : totalSettledUsdc;
-            const studentRemainingUsdc = Math.max(0, studentEscrowPool - studentSettledUsdc);
+            const studentItem = studentSelfAgreement ? itemMap.get(studentSelfAgreement.id) : null;
+            const studentRefundUsdc = studentItem?.status === 'COMPLETED' && studentItem.refundedUnits != null
+              ? Number(studentItem.refundedUnits) / 10 ** studentItem.tokenDecimals
+              : studentSelfAgreement ? remainingEscrow(studentSelfAgreement) : totalRefundUsdc;
+            const studentSettledUsdc = Math.max(0, studentEscrowPool - studentRefundUsdc);
             const auditEntries = parseAudit(c.auditJson);
             const ownEvidenceCount = evidence.filter((ev) => ev.submittedByRole.toLowerCase() === normalizedRole).length;
 
@@ -544,7 +636,7 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                       )}`}
                     >
                       <span className="w-2 h-2 rounded-full bg-current animate-pulse"></span>
-                      {labels[c.status] || c.status}
+                      {terminationProgressText({ request: c, items, evidence })}
                     </span>
                   </div>
                 </div>
@@ -554,12 +646,20 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                   <div className="rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-50 to-orange-50 p-4 text-xs space-y-1.5 text-amber-950 shadow-2xs">
                     <div className="flex items-center gap-2 font-black text-[13px]">
                       <Info className="w-4 h-4 text-amber-700" />
-                      {c.wholeClass
+                      {c.status === 'COMPLETED'
+                        ? (c.wholeClass ? 'Lớp đã hủy và tiền cọc dư đã được xử lý xong' : 'Hợp đồng của học viên đã chấm dứt và tất toán')
+                        : c.status === 'REJECTED'
+                        ? 'Yêu cầu đã bị từ chối, lịch học được khôi phục'
+                        : c.wholeClass
                         ? 'Đề xuất dừng toàn bộ lớp học của bạn đang được xử lý'
                         : `Học viên ${studentName} đã gửi yêu cầu xin dừng học hợp đồng này`}
                     </div>
                     <p className="text-amber-800 font-medium leading-relaxed">
-                      {c.wholeClass
+                      {c.status === 'COMPLETED'
+                        ? 'Các buổi trước mốc hủy đã được quyết toán. Phần cọc dư đã hoàn về ví từng học viên theo giao dịch xác nhận bên dưới.'
+                        : c.status === 'REJECTED'
+                        ? 'Hồ sơ không được chấp thuận. Lớp hoặc lịch của học viên tiếp tục theo trạng thái đã khôi phục.'
+                        : c.wholeClass
                         ? 'Đề xuất dừng lớp của bạn đang được Staff & Admin thẩm định. Hệ thống bảo lưu các buổi bạn đã giảng dạy để quyết toán thù lao.'
                         : `Lịch học tương lai của học viên ${studentName} đã được tạm dừng. Gia sư chỉ cần theo dõi tiến trình xử lý tại đây; toàn bộ thù lao các buổi bạn đã dạy sẽ được đảm bảo quyết toán đầy đủ khi hồ sơ được duyệt.`}
                     </p>
@@ -570,10 +670,20 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                   <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 text-xs space-y-1.5 text-blue-950 shadow-2xs">
                     <div className="flex items-center gap-2 font-black text-[13px]">
                       <Info className="w-4 h-4 text-blue-700" />
-                      Yêu cầu chấm dứt của bạn đang được xem xét
+                      {c.status === 'COMPLETED'
+                        ? 'Hồ sơ đã hoàn tất, xem tiền hoàn và giao dịch bên dưới'
+                        : c.status === 'REJECTED'
+                        ? 'Yêu cầu đã bị từ chối, lịch học được khôi phục'
+                        : c.wholeClass ? 'Gia sư đề xuất hủy lớp, hồ sơ đang được xử lý' : 'Yêu cầu chấm dứt của bạn đang được xử lý'}
                     </div>
                     <p className="text-blue-800 font-medium leading-relaxed">
-                      Để Staff và Admin giải quyết nhanh chóng, bạn có thể <strong>bổ sung thêm minh chứng</strong> (giấy tờ khám bệnh, giấy công tác, tài liệu xác nhận) hoặc <strong>gửi thêm lời nhắn giải thích chi tiết</strong> ở ngay bên dưới.
+                      {c.status === 'COMPLETED'
+                        ? 'Hệ thống đã ghi nhận kết quả thanh lý. Số tiền hoàn hiển thị bên dưới lấy từ giao dịch đã xác nhận.'
+                        : c.status === 'REJECTED'
+                        ? 'Hồ sơ không phát sinh giao dịch hoàn cọc. Hãy xem lý do xử lý trong lịch sử bên dưới.'
+                        : c.status === 'APPROVED'
+                        ? 'Các buổi trước mốc hủy phải được quyết toán xong, sau đó hệ thống sẽ tự gửi giao dịch hoàn phần cọc dư.'
+                        : <>Bạn có thể <strong>bổ sung minh chứng</strong> hoặc <strong>gửi lời giải thích</strong> trong khi hồ sơ đang chờ xét duyệt.</>}
                     </p>
                   </div>
                 )}
@@ -589,6 +699,8 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                     <p className="mt-1.5 text-violet-900">
                       {c.status === 'COMPLETED'
                         ? 'Tất cả hợp đồng đã hoàn tất thanh lý. Lớp đã chuyển sang CANCELLED, không nhận học viên và Gia sư không thể tự mở lại.'
+                        : c.status === 'REJECTED'
+                        ? 'Yêu cầu hủy lớp đã bị từ chối. Lịch học tương lai được khôi phục.'
                         : c.status === 'APPROVED'
                         ? `Admin đã duyệt. Lớp đang LOCKED, các buổi tương lai đã dừng; ${affectedAgreements.length} hợp đồng được quyết toán riêng trên Escrow trước khi lớp được hủy hoàn toàn.`
                         : 'Lớp chưa bị hủy. Hệ thống chỉ đang giữ các buổi tương lai để Admin/Staff xem xét; điểm danh và lịch sử buổi đã diễn ra vẫn được bảo toàn để quyết toán.'}
@@ -597,6 +709,8 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                     <p className="mt-1.5 text-sky-900">
                       {c.status === 'COMPLETED'
                         ? 'Hợp đồng đã thanh lý xong. Enrollment của học viên đã được hủy và học viên không còn trong danh sách thành viên lớp; các học viên khác không bị ảnh hưởng.'
+                        : c.status === 'REJECTED'
+                        ? 'Yêu cầu chấm dứt đã bị từ chối. Lịch học của học viên được khôi phục.'
                         : c.status === 'APPROVED'
                         ? 'Admin đã duyệt. Chỉ học viên của hợp đồng này bị dừng các buổi sau cutoff; lịch sử điểm danh cũ được giữ để settlement, sau đó enrollment sẽ tự chuyển CANCELLED khi chain xác nhận.'
                         : 'Yêu cầu này chỉ ảnh hưởng một hợp đồng. Lớp, danh sách các học viên khác và lịch chung vẫn tiếp tục bình thường.'}
@@ -824,7 +938,7 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                         Quyền lợi thù lao của Gia sư (Bảo vệ bởi Escrow)
                       </span>
                       <span className="text-[11px] font-bold text-emerald-800">
-                        {labels[c.status] || c.status}
+                        {terminationCaseLabel(c.status)}
                       </span>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -845,21 +959,21 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                       <div className="p-3 bg-white rounded-xl border border-emerald-200 space-y-1">
                         <span className="text-[10px] font-bold text-slate-500 uppercase block">Cọc hoàn lại cho học viên</span>
                         <span className="text-lg font-black text-blue-700 font-mono block">
-                          ${totalRemainingUsdc.toFixed(2)} USDC
+                          ${totalRefundUsdc.toFixed(2)} USDC
                         </span>
-                        <span className="text-[10px] text-slate-500 font-medium">Các buổi chưa diễn ra</span>
+                        <span className="text-[10px] text-slate-500 font-medium">{refundConfirmed ? 'Đã xác nhận trên blockchain' : 'Dự tính, sẽ chốt sau quyết toán'}</span>
                       </div>
                     </div>
                   </div>
                 )}
 
                 {/* STUDENT REFUND CARD */}
-                {isStudent && (
+                {isStudent && c.status !== 'REJECTED' && (
                   <div className="rounded-2xl border border-blue-200 bg-blue-50/40 p-4.5 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-black uppercase tracking-wider text-blue-900 flex items-center gap-2">
                         <DollarSign className="w-4 h-4 text-blue-700" />
-                        Dự tính số tiền cọc hoàn trả về ví MetaMask của bạn
+                        {refundConfirmed ? 'Tiền cọc dư đã hoàn về ví MetaMask của bạn' : 'Dự tính tiền cọc dư sẽ hoàn về ví MetaMask của bạn'}
                       </span>
                       <span className="text-[11px] font-bold text-blue-800">
                         Smart Contract Escrow
@@ -873,17 +987,17 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                         </span>
                       </div>
                       <div className="p-3 bg-white rounded-xl border border-blue-200 space-y-1">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Trừ các buổi đã học</span>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block">Đã phân bổ cho các buổi trước mốc hủy</span>
                         <span className="text-lg font-black text-amber-700 font-mono block">
                           -${studentSettledUsdc.toFixed(2)} USDC
                         </span>
                       </div>
                       <div className="p-3 bg-white rounded-xl border border-emerald-300 bg-emerald-50/50 space-y-1">
-                        <span className="text-[10px] font-bold text-emerald-800 uppercase block">Số tiền nhận lại vào ví</span>
+                        <span className="text-[10px] font-bold text-emerald-800 uppercase block">{studentItem?.status === 'COMPLETED' ? 'Đã hoàn về ví' : 'Dự tính sẽ hoàn về ví'}</span>
                         <span className="text-lg font-black text-emerald-700 font-mono block">
-                          +${studentRemainingUsdc.toFixed(2)} USDC
+                          +${studentRefundUsdc.toFixed(2)} USDC
                         </span>
-                        <span className="text-[10px] text-emerald-600 font-semibold">Hoàn sau khi các buổi trước cutoff quyết toán on-chain</span>
+                        <span className="text-[10px] text-emerald-600 font-semibold">{studentItem?.status === 'COMPLETED' ? 'Đã xác nhận từ sự kiện hoàn tiền trên blockchain' : 'Chỉ là ước tính đến khi giao dịch hoàn tiền được xác nhận'}</span>
                       </div>
                     </div>
                   </div>
@@ -905,7 +1019,7 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                         </span>
                         <span>&bull;</span>
                         <span>
-                          Ước tính hoàn: <strong className="text-blue-700 font-mono">${totalRemainingUsdc.toFixed(2)} USDC</strong>
+                          {refundConfirmed ? 'Đã hoàn:' : 'Dự tính hoàn:'} <strong className="text-blue-700 font-mono">${totalRefundUsdc.toFixed(2)} USDC</strong>
                         </span>
                       </div>
                     </div>
@@ -960,7 +1074,7 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                                     {termItem ? (
                                       <div className="space-y-0.5">
                                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${statusTone(termItem.status)}`}>
-                                          {labels[termItem.status] || termItem.status}
+                                          {terminationItemLabel(termItem)}
                                         </span>
                                         {termItem.refundedUnits != null && (
                                           <p className="text-[11px] font-bold text-emerald-700 font-mono">
@@ -980,7 +1094,7 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                                           </p>
                                         )}
                                         {termItem.lastError && (
-                                          <p className="text-[10px] text-red-600 font-semibold">{termItem.lastError}</p>
+                                          <p className={`text-[10px] font-semibold ${termItem.lastError.startsWith('Waiting for') ? 'text-amber-700' : 'text-red-600'}`}>{terminationWaitingDetail(termItem.lastError)}</p>
                                         )}
                                       </div>
                                     ) : (
@@ -1176,8 +1290,7 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                             <button
                               className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:opacity-90 text-white text-xs font-black transition-all shadow-xs inline-flex items-center gap-1.5 cursor-pointer"
                               onClick={() => {
-                                setAction({ id: c.id, type: 'RECOMMEND' });
-                                setReviewReason('');
+                                beginManagerAction({ request: c, items, evidence }, 'RECOMMEND');
                               }}
                               disabled={busy}
                             >
@@ -1188,8 +1301,7 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                             <button
                               className="px-4 py-2 rounded-xl bg-white hover:bg-red-50 text-red-700 border border-red-200 text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer"
                               onClick={() => {
-                                setAction({ id: c.id, type: 'REJECT' });
-                                setReviewReason('');
+                                beginManagerAction({ request: c, items, evidence }, 'REJECT');
                               }}
                               disabled={busy}
                             >
@@ -1232,8 +1344,7 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                               <button
                                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-95 text-white text-xs font-black transition-all shadow-md inline-flex items-center gap-2 cursor-pointer"
                                 onClick={() => {
-                                  setAction({ id: c.id, type: 'APPROVE' });
-                                  setReviewReason('');
+                                  beginManagerAction({ request: c, items, evidence }, 'APPROVE');
                                 }}
                                 disabled={busy}
                               >
@@ -1242,8 +1353,7 @@ export function TerminationPanel({ activeRole, initialAgreements }: TerminationP
                               <button
                                 className="px-4 py-2.5 rounded-xl bg-white hover:bg-red-50 text-red-700 border border-red-200 text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
                                 onClick={() => {
-                                  setAction({ id: c.id, type: 'REJECT' });
-                                  setReviewReason('');
+                                  beginManagerAction({ request: c, items, evidence }, 'REJECT');
                                 }}
                                 disabled={busy}
                               >

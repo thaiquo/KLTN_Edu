@@ -361,7 +361,7 @@ export function AdminFinanceMonitoring() {
         {/* Student Refund */}
         <div className="bg-white p-5 rounded-2xl border border-purple-100 shadow-sm hover:shadow-md transition bg-gradient-to-br from-white to-purple-50/40">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-purple-800 uppercase tracking-wider">Hoàn tiền Học viên</span>
+            <span className="text-xs font-bold text-purple-800 uppercase tracking-wider">Tổng đã hoàn Học viên</span>
             <div className="w-9 h-9 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center">
               <RotateCcw className="w-5 h-5" />
             </div>
@@ -372,7 +372,7 @@ export function AdminFinanceMonitoring() {
             </span>
             <span className="ml-1 text-xs font-bold text-purple-600">USDC</span>
           </div>
-          <p className="mt-1 text-xs text-purple-600">Xử lý theo phán quyết khiếu nại</p>
+          <p className="mt-1 text-xs text-purple-600">Hoàn theo buổi {sessionRefundedUsdc.toFixed(2)} + cọc dư khi hủy {terminationRefundedUsdc.toFixed(2)} USDC</p>
         </div>
 
         {/* Termination Refund */}
@@ -390,7 +390,7 @@ export function AdminFinanceMonitoring() {
             <span className="ml-1 text-xs font-bold text-rose-600">USDC</span>
           </div>
           <p className="mt-1 text-xs text-rose-600">
-            {overview?.totalCompletedTerminationItems ?? 0} hợp đồng đã hoàn cọc chưa dùng
+            {overview?.totalCompletedTerminationItems ?? 0} hợp đồng; khoản này đã nằm trong “Tổng đã hoàn Học viên”
           </p>
         </div>
       </div>
@@ -432,6 +432,7 @@ export function AdminFinanceMonitoring() {
             )}
           </div>
         </div>
+        <p className="mt-3 text-[11px] text-slate-500">Tiền hoàn buổi và hoàn cọc dư là hai nhánh khác nhau. Khoản đang chờ hoàn vẫn nằm trong “Đang khóa” cho tới khi giao dịch được xác nhận.</p>
       </div>
 
       {/* Operational Highlights & Smart Contract Addresses Bar */}
@@ -471,7 +472,7 @@ export function AdminFinanceMonitoring() {
         </div>
       </div>
 
-      <TerminationRefundTracker />
+      <TerminationRefundTracker viewerRole="admin" />
 
       {/* Main Tabs Navigation */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">

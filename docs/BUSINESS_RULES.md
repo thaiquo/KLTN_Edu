@@ -149,6 +149,7 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
   - Khi có yêu cầu chấm dứt hoặc đề xuất hủy lớp, hệ thống đồng bộ hold với Learning (`HOLD_PENDING` nếu cần retry, sau đó `REQUESTED`). Cutoff lấy theo thời gian server lúc hold thành công, không lấy theo thời gian Admin xử lý.
   - Student hold chỉ chặn các buổi tương lai của hợp đồng đó; lớp và các Student khác tiếp tục bình thường. Tutor hold chặn các buổi tương lai của toàn lớp, đóng băng đăng ký mới và hiển thị `Chờ duyệt hủy lớp`.
   - Hold không gửi giao dịch blockchain và không hoàn tiền. Buổi đã bắt đầu trước cutoff vẫn hoàn tất attendance, settlement và cửa sổ dispute như bình thường.
+  - Khiếu nại chỉ giữ quyết toán của buổi học và agreement liên quan; các buổi tương lai vẫn diễn ra bình thường nếu không có yêu cầu chấm dứt/hủy lớp riêng. Khi Staff kiến nghị/từ chối hoặc Admin duyệt/từ chối yêu cầu chấm dứt, mọi khiếu nại còn mở trên các agreement bị ảnh hưởng phải được phân xử trước. Khiếu nại đã `APPROVED` hoặc `REJECTED` không chặn quyết định; sau đó worker vẫn chờ settlement của từng buổi được xác nhận trước khi hoàn cọc dư.
   - **Phân định thẩm quyền:**
     - **Nhân viên (Staff):** Chỉ được xem và thẩm định các hồ sơ thuộc các lớp học do chính mình được phân công duyệt (`classroomReviewerEmail`). Staff có quyền ghi nhận ý kiến, yêu cầu bổ sung thông tin hoặc kiến nghị đề xuất (`RECOMMEND`), hoặc từ chối (`REJECT`). Staff không có thẩm quyền ra lệnh giải ngân/hoàn cọc Escrow.
     - **Quản trị viên (Admin):** Có quyền quản trị toàn hệ thống, xem tất cả hồ sơ. Admin có thẩm quyền tối cao phê duyệt (`APPROVE` trực tiếp từ `REQUESTED` hoặc `RECOMMENDED`) để kích hoạt quyết toán thanh lý Escrow V1, hoặc từ chối (`REJECT`) để giải phóng hold và khôi phục lớp học.
@@ -168,6 +169,7 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
     - **Admin → Quản lý Tài chính:** Giám sát toàn bộ tiến độ từng hợp đồng, mã lỗi phát sinh, số tiền hoàn trả và liên kết giao dịch blockchain (Sepolia Etherscan).
     - **Học viên / Gia sư → Quản lý Ví:** Xem các hồ sơ thuộc quyền hạn của mình; hiển thị rõ ràng số tiền hoàn về địa chỉ ví học viên.
   - Bảng tự động đồng bộ mỗi 15 giây, phân định 4 trạng thái tiến độ: Chờ duyệt (`WAITING_APPROVAL`), Chờ quyết toán (`WAITING_SETTLEMENT`), Chờ blockchain (`BLOCKCHAIN_PENDING`), và Hoàn tất (`COMPLETED`).
+  - Giao diện hồ sơ hiển thị cụ thể bước đang chờ: xử lý lịch học, quyết toán buổi trước cutoff, xác nhận giao dịch, xác nhận sự kiện hoàn tiền hoặc lỗi cần nhân viên kiểm tra. Số tiền hoàn trong hồ sơ hoàn tất lấy từ `UnusedAmountRefunded` đã xác nhận; trước đó mọi số tiền chỉ là ước tính.
 
 ## 6. Contract & Payment Business Relationship
 

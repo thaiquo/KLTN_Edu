@@ -125,11 +125,14 @@
 - Payout `BOTH_PRESENT` 0.6 USDC: 0.51 Tutor + 0.09 Platform, tx `0xd835b8ae250b20141feb32d26eb081ca1a0d532c9c6780b9622812c91990dc2`.
 - Refund `TUTOR_ABSENT` 0.6 USDC cho Student, tx `0xf608981a95f001b0cc5bd338995bd2cb54cc4addcf35b15957e06536005a3ec1`.
 - Refund Chấm dứt hợp đồng `AgreementCancelled` hoàn **4,80 USDC** về ví học viên `0x58abad20adecebfba5862422091eacc3f65f60e7`, hoàn tất lúc 23:44:27 ngày 22/09/2026, tx [`0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b`](https://sepolia.etherscan.io/tx/0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b). Hợp đồng và enrollment chuyển trạng thái `CANCELLED`, mốc dừng học đã đóng thành công.
+- Refund hủy toàn bộ lớp `classroom_id=3`: buổi 5 hết hạn khiếu nại ngày 24/09/2026, tự chốt `REFUNDED`; giao dịch `CANCEL` [`0xb29f3db16e21a887319a79b1e3a7297d59b3c3961bb2b0d60b1b2d7c55c3a251`](https://sepolia.etherscan.io/tx/0xb29f3db16e21a887319a79b1e3a7297d59b3c3961bb2b0d60b1b2d7c55c3a251) confirmed với receipt status 1 và event `UnusedAmountRefunded` **4,20 USDC**. Case/item `COMPLETED`, agreement và class room `CANCELLED`.
 
 Đây là bằng chứng cho các kịch bản cụ thể, không phải cam kết production SLA cho mọi điều kiện mạng.
 
 ## 6. Kiểm chứng gần nhất
 
+- Ngày 2026-09-24: xác nhận trực tiếp PostgreSQL và Sepolia RPC cho hồ sơ hủy lớp trên; luồng tự tiến từ `WAITING_SETTLEMENT` qua `BLOCKCHAIN_PENDING` đến `COMPLETED`. Frontend dùng số hoàn từ event đã xác nhận khi hoàn tất, diễn giải các bước chờ rõ ràng và làm mới dữ liệu hợp đồng/khiếu nại định kỳ. Kiểm tra TypeScript và kiểm thử `TerminationProcessorTest`, `TerminationServiceTest` đạt.
+- Bổ sung bảng dòng tiền theo từng agreement tại ví Học viên/Gia sư và màn hình Tài chính Admin: tách tiền đã trả Gia sư, phí nền tảng, hoàn theo buổi, hoàn cọc dư khi hủy và tiền còn trong Escrow. API `/terminations/refunds` cho Học viên xem khoản của chính mình khi Gia sư hủy cả lớp mà không lộ lý do/minh chứng riêng của Gia sư. Bảng ví không cộng tiền chờ hoàn hai lần vào công thức đối soát; kiểm tra TypeScript và `TerminationServiceTest` đạt. Thay đổi nguồn này cần được chạy cùng phiên bản backend/frontend mới để xuất hiện trên giao diện.
 - Runtime Sepolia Testnet ngày 2026-09-22 lúc 23:44:27: Giao dịch hoàn cọc thanh lý hợp đồng `0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b` thành công; event `AgreementCancelled` được ingest, hoàn 4.80 USDC về ví học viên, DB ghi nhận cập nhật `contract_agreements` và `enrollments` thành `CANCELLED`.
 - Contract Termination & EIP-712 Signature: 17 unit & integration tests (`TerminationServiceTest`, `TerminationFlowIntegrationTest`, `Eip712VerificationServiceTest`) pass 100% ngày 2026-09-22; Frontend TypeScript & Vite build pass không lỗi.
 - Regression sau khi bổ sung operational hold/release ngày 2026-09-22: `contract-service` 176 test pass (7 Anvil test skip theo cấu hình), `learning-service` 71/71 test pass; frontend production build pass.
