@@ -20,6 +20,7 @@ import {
   Network,
   Receipt,
   RefreshCw,
+  RotateCcw,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
@@ -32,6 +33,8 @@ import { DEFAULT_CHAIN_ID, SUPPORTED_CHAINS, getContractAddresses } from "../../
 import { apiRequest } from "../../api/client";
 import { userApi } from "../../api/user";
 import { contractsApi, AgreementSummary, SettlementDto } from "../../api/contractsApi";
+import { terminationsApi } from "../../api/terminationsApi";
+import { TerminationRefundTracker } from "../../components/contract/TerminationRefundTracker";
 import { useAuth } from "../../hooks/useAuth";
 
 interface MyWalletViewProps {
@@ -57,7 +60,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
 
   const [copied, setCopied] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<"ALL" | "FUND" | "SETTLE">("ALL");
+  const [activeTab, setActiveTab] = useState<"ALL" | "FUND" | "SETTLE" | "REFUND">("ALL");
   const [agreements, setAgreements] = useState<AgreementSummary[]>([]);
   const [settlements, setSettlements] = useState<SettlementDto[]>([]);
   const [txLogs, setTxLogs] = useState<any[]>([]);
@@ -100,13 +103,17 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
       if (!email && !user?.id) return;
       setLoadingAgreements(true);
       try {
-        const data = await contractsApi.listAgreements({
-          page: 0,
-          size: 50,
-        }).catch(() => null);
+        const [data, terminationCases] = await Promise.all([
+          contractsApi.listAgreements({
+            page: 0,
+            size: 50,
+          }).catch(() => null),
+          terminationsApi.listRefunds().catch(() => []),
+        ]);
 
         const list: AgreementSummary[] = data?.content || (Array.isArray(data) ? data : []);
         setAgreements(list);
+        const agreementById = new Map(list.map((agreement) => [agreement.id, agreement]));
 
         // Build the financial ledger from confirmed settlements. Transaction
         // intents stay visible for diagnostics but are never presented as payouts.
@@ -230,6 +237,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                   type: isDeposit ? "FUND" : "OTHER",
                   actionName: isDeposit
                     ? (isTutor ? "Học viên nạp tiền cọc Smart Contract" : "Đã nạp tiền cọc học phí vào Smart Contract")
+                    : tx.action === 'CANCEL' ? 'Lệnh hủy hợp đồng đã gửi; tiền hoàn xem ở dòng hoàn cọc dư'
                     : (tx.action || "Giao dịch Escrow"),
                   txHash: tx.transactionHash,
                   amountUsdc: isDeposit ? (isTutor ? null : ag.totalAmountUsdc) : null,
@@ -243,8 +251,38 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
             console.warn(`Could not load txs for agreement ${ag.id}:`, e);
           }
         }
+
+        for (const termination of terminationCases || []) {
+          for (const item of termination.items || []) {
+            if (item.status !== "COMPLETED" || !item.refundedUnits) continue;
+            const agreement = agreementById.get(item.agreementId);
+            if (!agreement || agreement.legacyUnreconciled || !agreement.onchainFunded) continue;
+            const decimals = Number(item.tokenDecimals ?? 6);
+            const refunded = Number(item.refundedUnits) / Math.pow(10, decimals);
+            if (!Number.isFinite(refunded) || refunded <= 0) continue;
+            allTxEvents.push({
+              id: `termination-${termination.request.id}-${item.agreementId}`,
+              agreementId: item.agreementId,
+              className: agreement.className || `Lá»›p há»c #${agreement.classroomId}`,
+              type: "REFUND",
+              actionName: termination.request.wholeClass
+                ? "Hoàn cọc chưa dùng do Admin hủy lớp"
+                : "Hoàn cọc chưa dùng do chấm dứt hợp đồng",
+              txHash: item.transactionHash,
+              amountUsdc: refunded,
+              isDeduction: false,
+              distribution: termination.request.wholeClass
+                ? "Hoàn unused escrow của hợp đồng trong lớp bị hủy"
+                : "Hoàn unused escrow của hợp đồng cá nhân",
+              status: item.status,
+              createdAt: item.updatedAt || termination.request.createdAt,
+            });
+          }
+        }
         setSettlements(allSettlements);
-        setTxLogs(allTxEvents);
+        setTxLogs(allTxEvents.sort((left, right) =>
+          new Date(right.createdAt || 0).getTime() - new Date(left.createdAt || 0).getTime()
+        ));
       } catch (err) {
         console.warn("Could not load agreements for wallet overview:", err);
       } finally {
@@ -327,16 +365,14 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
     return Math.max(fromAgreements, fromSettlements);
   }, [agreements, settlements]);
 
-  // Tổng tiền học phí đã hoàn trả về ví học viên (do khiếu nại thành công hoặc gia sư vắng mặt/hủy cọc)
-  const totalRefundedAmount = useMemo(() => {
-    const fromAgreements = agreements
-      .filter((a) => a.onchainFunded && !a.legacyUnreconciled)
-      .reduce((acc, curr) => acc + (Number(curr.refundedAmountUsdc) || 0), 0);
-    const fromSettlements = settlements
+  const totalSessionRefundedAmount = useMemo(() =>
+    settlements
       .filter((s) => s.status === "REFUNDED" || s.status === "SETTLED")
-      .reduce((total, s) => total + Number(s.studentRefundUsdc || 0), 0);
-    return Math.max(fromAgreements, fromSettlements);
-  }, [agreements, settlements]);
+      .reduce((total, s) => total + Number(s.studentRefundUsdc || 0), 0), [settlements]);
+  const totalTerminationRefundedAmount = useMemo(() =>
+    txLogs.filter((entry) => String(entry.id).startsWith('termination-') && entry.status === 'COMPLETED')
+      .reduce((total, entry) => total + Number(entry.amountUsdc || 0), 0), [txLogs]);
+  const totalRefundedAmount = totalSessionRefundedAmount + totalTerminationRefundedAmount;
 
   const totalDisbursedAmount = settlements
     .filter((settlement) => settlement.status === "SETTLED")
@@ -371,6 +407,15 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
     }, 0);
 
   const pendingProposedCount = settlements.filter((s) => s.status === "PROPOSED" || s.status === "FINALIZE_PENDING" || s.status === "FAILED_RETRYABLE").length;
+  const nextSettlementDeadline = settlements
+    .filter((s) => s.status === "PROPOSED" && s.disputeDeadline)
+    .map((s) => s.disputeDeadline as string)
+    .sort((left, right) => new Date(left).getTime() - new Date(right).getTime())[0] || null;
+  const formattedNextSettlementDeadline = nextSettlementDeadline
+    ? new Intl.DateTimeFormat("vi-VN", {
+        day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+      }).format(new Date(nextSettlementDeadline))
+    : null;
 
   return (
     <section className="mx-auto max-w-6xl pb-16 font-sans text-slate-800 space-y-8 select-none">
@@ -693,6 +738,11 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
               <p className="text-indigo-700 leading-relaxed">
                 Thời hạn khiếu nại kéo dài 24 giờ kể từ khi đề xuất được ghi nhận trên blockchain. Sau thời hạn này, dịch vụ vận hành gửi yêu cầu quyết toán; USDC chỉ được ghi nhận đã chuyển khi giao dịch được xác nhận.
               </p>
+              {formattedNextSettlementDeadline && (
+                <p className="pt-1 text-indigo-950 leading-relaxed">
+                  Mốc sớm nhất được phép quyết toán: <span className="font-black">{formattedNextSettlementDeadline}</span>. Đây là thời điểm hệ thống tự gửi giao dịch finalize, không phải thời điểm tiền đã chắc chắn về ví. Với hợp đồng đang chấm dứt, lệnh hoàn phần escrow chưa dùng chỉ được gửi sau khi mọi buổi trước cutoff đã finalize thành công.
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -724,12 +774,12 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
 
               <div className="rounded-2xl border border-amber-200/80 bg-amber-50/50 p-4 space-y-1">
                 <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">
-                  Thu nhập tạm giữ (Escrow)
+                  Tiền học viên còn trong Escrow
                 </span>
                 <p className="font-mono text-2xl font-black text-amber-900">
                   {escrowHoldingAmount.toLocaleString("vi-VN")} USDC
                 </p>
-                <p className="text-[11px] font-bold text-amber-600">Sẽ giải ngân theo từng buổi học</p>
+                <p className="text-[11px] font-bold text-amber-600">Chưa phải thu nhập của gia sư; còn tùy kết quả từng buổi</p>
               </div>
 
               <div className="rounded-2xl border border-blue-200/80 bg-blue-50/50 p-4 space-y-1">
@@ -780,12 +830,17 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
               {/* Card 4: Đã hoàn trả về ví học viên */}
               <div className="rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-4 space-y-1">
                 <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700">
-                  Đã hoàn trả về ví học viên
+                  Hoàn theo từng buổi học
                 </span>
                 <p className="font-mono text-2xl font-black text-emerald-900">
-                  {totalRefundedAmount.toLocaleString("vi-VN")} USDC
+                  {totalSessionRefundedAmount.toLocaleString("vi-VN")} USDC
                 </p>
-                <p className="text-[11px] font-bold text-emerald-600">Do khiếu nại thành công / hủy buổi</p>
+                <p className="text-[11px] font-bold text-emerald-600">Gia sư vắng, học viên vắng hoặc phán quyết khiếu nại</p>
+              </div>
+
+              <div className="col-span-full rounded-2xl border border-rose-200 bg-rose-50/60 p-4 text-sm text-rose-950">
+                <strong>Hoàn cọc dư khi hủy hợp đồng/lớp: {totalTerminationRefundedAmount.toLocaleString("vi-VN")} USDC.</strong>
+                <span className="ml-2">Tổng đã hoàn về ví: {totalRefundedAmount.toLocaleString("vi-VN")} USDC, gồm hoàn theo buổi và hoàn cọc dư.</span>
               </div>
 
               {/* Transparent Reconciliation Formula */}
@@ -808,22 +863,23 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                   </span>
                   <span className="text-slate-400 font-black text-sm">+</span>
                   <span className="px-2.5 py-1 rounded-xl bg-emerald-100/90 text-emerald-900 font-bold border border-emerald-200/70 shadow-2xs">
-                    Đã hoàn ví {totalRefundedAmount.toLocaleString("vi-VN")} USDC
+                    Hoàn buổi {totalSessionRefundedAmount.toLocaleString("vi-VN")} USDC
                   </span>
-                  {totalPendingRefundAmount > 0 && (
-                    <>
-                      <span className="text-slate-400 font-black text-sm">+</span>
-                      <span className="px-2.5 py-1 rounded-xl bg-indigo-100/90 text-indigo-900 font-bold border border-indigo-200/70 shadow-2xs">
-                        Chờ hoàn {totalPendingRefundAmount.toLocaleString("vi-VN")} USDC
-                      </span>
-                    </>
-                  )}
+                  <span className="text-slate-400 font-black text-sm">+</span>
+                  <span className="px-2.5 py-1 rounded-xl bg-rose-100/90 text-rose-900 font-bold border border-rose-200/70 shadow-2xs">
+                    Hoàn cọc dư {totalTerminationRefundedAmount.toLocaleString("vi-VN")} USDC
+                  </span>
                 </div>
+                {totalPendingRefundAmount > 0 && (
+                  <p className="text-[11px] text-indigo-800">Dự tính hoàn theo buổi đang chờ: {totalPendingRefundAmount.toLocaleString("vi-VN")} USDC. Khoản này vẫn nằm trong “Đang giữ”, chưa cộng thêm vào tiền đã hoàn.</p>
+                )}
               </div>
             </>
           )}
         </div>
       </div>
+
+      <TerminationRefundTracker viewerRole={isTutor ? 'tutor' : 'student'} />
 
       {/* 4. Transaction Audit & Escrow History Table */}
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
@@ -863,6 +919,14 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
               }`}
             >
               Giải ngân
+            </button>
+            <button
+              onClick={() => setActiveTab("REFUND")}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                activeTab === "REFUND" ? "bg-white text-purple-700 shadow-sm" : "text-slate-500 hover:text-slate-800"
+              }`}
+            >
+              Hoàn cọc
             </button>
           </div>
         </div>
@@ -906,6 +970,10 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
                       {item.type === "FUND" && item.status === "CONFIRMED" ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-blue-700 border border-blue-200">
                           <CheckCircle2 className="h-3 w-3 text-blue-600" /> {item.actionName}
+                        </span>
+                      ) : item.type === "REFUND" ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-purple-700 border border-purple-200">
+                          <RotateCcw className="h-3 w-3 text-purple-600" /> {item.actionName}
                         </span>
                       ) : item.type === "SETTLE" ? (
                         item.status === "PROPOSED" ? (

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ShieldCheck,
   Lock,
@@ -20,16 +20,24 @@ import {
   Wallet,
   DollarSign,
   TrendingUp,
-  Award
+  Award,
+  ChevronDown,
+  ChevronUp,
+  LayoutGrid,
+  Users,
+  FileText,
+  ExternalLink,
 } from 'lucide-react';
 import { EtherscanLink } from '../common/EtherscanLink';
 import { EscrowPaymentModal, AgreementPaymentDetails } from './EscrowPaymentModal';
 import { DisputeManagementPanel } from './DisputeManagementPanel';
 import { ContractAuditTimeline } from './ContractAuditTimeline';
 import { ContractDocumentModal } from './ContractDocumentModal';
+import { TerminationPanel } from './TerminationPanel';
+import { terminationsApi, TerminationView } from '../../api/terminationsApi';
 import { useWeb3Wallet } from '../../web3/useWeb3Wallet';
 import { DEFAULT_CHAIN_ID } from '../../web3/web3Config';
-import { contractsApi, AgreementSummary } from '../../api/contractsApi';
+import { contractsApi, AgreementSummary, SettlementDto } from '../../api/contractsApi';
 import { classApi } from '../../api/classes';
 import { signContractAgreementEip712 } from '../../web3/eip712Signer';
 import { useAuth } from '../../hooks/useAuth';
@@ -37,6 +45,7 @@ import { useAuth } from '../../hooks/useAuth';
 interface EscrowContractsViewProps {
   activeRole: 'student' | 'tutor' | 'staff' | 'admin' | string;
   userEmail?: string;
+  onNavigate?: (page: string) => void;
 }
 
 // Status display mapping
@@ -53,11 +62,40 @@ const STATUS_CONFIG: Record<string, { label: string; cls: string }> = {
   CANCELLED: { label: 'Đã hủy', cls: 'bg-slate-100 text-slate-500 border-slate-200' },
 };
 
+const TERMINATION_LABELS: Record<string, string> = {
+  HOLD_PENDING: 'Đang đồng bộ tạm dừng',
+  RELEASE_PENDING: 'Đang khôi phục lịch học',
+  REQUESTED: 'Chờ xem xét',
+  RECOMMENDED: 'Đề xuất chấm dứt',
+  APPROVED: 'Admin đã duyệt, đang xử lý hoàn cọc',
+  REJECTED: 'Không chấp thuận',
+  COMPLETED: 'Hoàn tất',
+  LEARNING_PENDING: 'Chờ dừng lịch học',
+  WAITING_SETTLEMENT: 'Chờ quyết toán buổi đã học',
+  WAITING_PAYMENT: 'Chờ xác nhận / hết hạn thanh toán',
+  BLOCKCHAIN_PENDING: 'Chờ xác nhận giao dịch',
+  TRANSACTION_FAILED: 'Giao dịch cần kiểm tra',
+  WAITING_REFUND_EVENT: 'Chờ xác nhận hoàn tiền',
+};
+
+const formatDeadline = (value?: string | null) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('vi-VN', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(date);
+};
+
+const isSettlementOpen = (status: string) =>
+  ['PREPARING', 'PROPOSE_PENDING', 'PROPOSED', 'FINALIZE_PENDING', 'FAILED_RETRYABLE', 'DISPUTE_OPENING', 'DISPUTED'].includes(status);
+
 const FILTER_TABS = [
   { value: 'ALL', label: 'Tất cả' },
   { value: 'ACTIVE', label: 'Đang học (Đã nạp cọc)' },
   { value: 'WAITING_PAYMENT', label: 'Chờ nạp cọc' },
   { value: 'PENDING_SIGNATURE', label: 'Chờ ký xác nhận' },
+  { value: 'TERMINATION_PENDING', label: '⚠️ Chờ xử lý chấm dứt' },
   { value: 'COMPLETED', label: 'Hoàn tất' },
   { value: 'HISTORY', label: 'Lịch sử (Quá hạn / Hủy)' },
 ];
@@ -65,12 +103,13 @@ const FILTER_TABS = [
 export function EscrowContractsView({
   activeRole,
   userEmail = '',
+  onNavigate,
 }: EscrowContractsViewProps) {
   const { address, chainId, usdcBalance } = useWeb3Wallet();
   const { user } = useAuth();
   const activeChainId = chainId || DEFAULT_CHAIN_ID;
 
-  const [activeTab, setActiveTab] = useState<'AGREEMENTS' | 'DISPUTES' | 'TIMELINE'>('AGREEMENTS');
+  const [activeTab, setActiveTab] = useState<'AGREEMENTS' | 'DISPUTES' | 'TIMELINE' | 'TERMINATIONS'>('AGREEMENTS');
   const [selectedAgreementForPayment, setSelectedAgreementForPayment] = useState<AgreementPaymentDetails | null>(null);
   const [selectedAgreementForTimeline, setSelectedAgreementForTimeline] = useState<AgreementSummary | null>(null);
   const [selectedAgreementForDocument, setSelectedAgreementForDocument] = useState<string | null>(null);
@@ -78,9 +117,13 @@ export function EscrowContractsView({
   const [operationalFilter, setOperationalFilter] = useState<'ALL' | 'OPERATIONAL' | 'LEGACY'>('OPERATIONAL');
   const [selectedClassId, setSelectedClassId] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [viewMode, setViewMode] = useState<'BY_CLASS' | 'FLAT_CARDS'>('BY_CLASS');
+  const [expandedClassKeys, setExpandedClassKeys] = useState<Set<string>>(new Set());
 
   // Real data state
   const [agreements, setAgreements] = useState<AgreementSummary[]>([]);
+  const [terminationsList, setTerminationsList] = useState<TerminationView[]>([]);
+  const [terminationSettlements, setTerminationSettlements] = useState<Record<string, SettlementDto[]>>({});
   const [classroomCache, setClassroomCache] = useState<Record<number, any>>({});
   const [requestsCache, setRequestsCache] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(false);
@@ -92,18 +135,35 @@ export function EscrowContractsView({
     setError('');
     try {
       const isTutor = activeRole === 'tutor';
-      const [agreementsData, tutorClasses] = await Promise.all([
+      const [agreementsData, tutorClasses, terminationsData] = await Promise.all([
         contractsApi.listAgreements({
-          status: (statusFilter === 'ALL' || statusFilter === 'PENDING_SIGNATURE' || statusFilter === 'HISTORY') ? undefined : statusFilter,
+          status: (statusFilter === 'ALL' || statusFilter === 'PENDING_SIGNATURE' || statusFilter === 'HISTORY' || statusFilter === 'TERMINATION_PENDING') ? undefined : statusFilter,
           page: 0,
           size: 100,
         }),
         isTutor ? classApi.getMyClasses().catch(() => []) : Promise.resolve([]),
+        terminationsApi.list().catch(() => []),
       ]);
 
       const content: AgreementSummary[] = agreementsData?.content ?? (Array.isArray(agreementsData) ? agreementsData : []);
       setAgreements(content);
+      setTerminationsList(terminationsData || []);
       setTotalElements(agreementsData?.totalElements ?? content.length);
+
+      // A termination cannot refund unused escrow until every session before its
+      // cutoff is settled. Load those records so the contract card can say which
+      // exact on-chain condition is still pending rather than a vague "waiting".
+      const activeAgreementIds = new Set<string>();
+      (terminationsData || []).forEach((termination) => {
+        if (['COMPLETED', 'REJECTED'].includes(termination.request.status)) return;
+        if (termination.request.anchorAgreementId) activeAgreementIds.add(termination.request.anchorAgreementId);
+        termination.items?.forEach((item) => activeAgreementIds.add(item.agreementId));
+      });
+      const settlementEntries = await Promise.all([...activeAgreementIds].map(async (agreementId) => [
+        agreementId,
+        await contractsApi.getSettlements(agreementId).catch(() => [] as SettlementDto[]),
+      ] as const));
+      setTerminationSettlements(Object.fromEntries(settlementEntries));
 
       // Build classroom cache from myClasses
       const classMap: Record<number, any> = {};
@@ -170,6 +230,11 @@ export function EscrowContractsView({
 
   useEffect(() => {
     fetchAgreements();
+  }, [fetchAgreements]);
+
+  useEffect(() => {
+    const timer = window.setInterval(fetchAgreements, 30000);
+    return () => window.clearInterval(timer);
   }, [fetchAgreements]);
 
   useEffect(() => {
@@ -249,6 +314,44 @@ export function EscrowContractsView({
     });
   }, [agreements, classroomCache, requestsCache, user, activeRole]);
 
+  // Count of pending termination requests
+  const pendingTerminationsCount = useMemo(() => {
+    return terminationsList.filter((t) => !['COMPLETED', 'REJECTED'].includes(t.request.status)).length;
+  }, [terminationsList]);
+
+  // Active termination map by agreement ID
+  const activeTerminationMap = useMemo(() => {
+    const map = new Map<string, { status: string; wholeClass: boolean; reason: string; itemStatus?: string; transactionHash?: string | null }>();
+    terminationsList.forEach((t) => {
+      const isPending = !['COMPLETED', 'REJECTED'].includes(t.request.status);
+      if (!isPending) return;
+      const info = { status: t.request.status, wholeClass: t.request.wholeClass, reason: t.request.reason };
+      const itemAgreementIds = new Set(t.items?.map((i) => i.agreementId) || []);
+
+      if (t.request.anchorAgreementId) {
+        const anchor = agreements.find((a) => a.id === t.request.anchorAgreementId);
+        const isAnchorTerminal = anchor ? ['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(anchor.status) : false;
+        if (!isAnchorTerminal || itemAgreementIds.has(t.request.anchorAgreementId)) {
+          map.set(t.request.anchorAgreementId, info);
+        }
+      }
+      if (t.items && t.items.length > 0) {
+        t.items.forEach((i) => map.set(i.agreementId, { ...info, itemStatus: i.status, transactionHash: i.transactionHash }));
+      }
+      if (t.request.wholeClass && t.request.classroomId) {
+        agreements.forEach((a) => {
+          if (a.classroomId === t.request.classroomId) {
+            const isTerminal = ['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(a.status);
+            if (!isTerminal || itemAgreementIds.has(a.id)) {
+              map.set(a.id, map.get(a.id) || info);
+            }
+          }
+        });
+      }
+    });
+    return map;
+  }, [terminationsList, agreements]);
+
   // Distinct classrooms list for dropdown filter
   const distinctClasses = useMemo(() => {
     const map = new Map<number, string>();
@@ -273,7 +376,9 @@ export function EscrowContractsView({
       }
 
       // Filter by status tab
-      if (statusFilter === 'PENDING_SIGNATURE') {
+      if (statusFilter === 'TERMINATION_PENDING') {
+        if (!activeTerminationMap.has(a.id)) return false;
+      } else if (statusFilter === 'PENDING_SIGNATURE') {
         if (a.status !== 'PENDING_TUTOR_ACCEPTANCE' && a.status !== 'PENDING_STUDENT_ACCEPTANCE') {
           return false;
         }
@@ -316,6 +421,97 @@ export function EscrowContractsView({
       return true;
     });
   }, [enrichedAgreements, selectedClassId, searchTerm, statusFilter, operationalFilter, activeRole, user]);
+
+  // Group filtered agreements by classroom
+  const classroomGroups = useMemo(() => {
+    const groupMap = new Map<string, {
+      key: string;
+      classroomId: number | null;
+      className: string;
+      tutorName?: string;
+      tutorEmail?: string;
+      tutorPhone?: string;
+      tutorWallet?: string;
+      agreements: typeof filteredAgreements;
+      totalEscrowUsdc: number;
+      totalSettledUsdc: number;
+      totalStudents: number;
+      activeCount: number;
+      cancelledCount: number;
+      pendingSignatureCount: number;
+      waitingPaymentCount: number;
+      hasTerminationPending: boolean;
+    }>();
+
+    filteredAgreements.forEach((a) => {
+      const key = a.classroomId ? String(a.classroomId) : `independent_${a.id}`;
+      let group = groupMap.get(key);
+      if (!group) {
+        group = {
+          key,
+          classroomId: a.classroomId || null,
+          className: a.className || (a.classroomId ? `Lớp #${a.classroomId}` : 'Hợp đồng độc lập'),
+          tutorName: a.tutorName,
+          tutorEmail: a.tutorEmail,
+          tutorPhone: a.tutorPhone,
+          tutorWallet: a.tutorWallet,
+          agreements: [],
+          totalEscrowUsdc: 0,
+          totalSettledUsdc: 0,
+          totalStudents: 0,
+          activeCount: 0,
+          cancelledCount: 0,
+          pendingSignatureCount: 0,
+          waitingPaymentCount: 0,
+          hasTerminationPending: false,
+        };
+        groupMap.set(key, group);
+      }
+      group.agreements.push(a);
+      if (a.onchainFunded) {
+        group.totalEscrowUsdc += Number(a.totalAmountUsdc) || 0;
+        group.totalSettledUsdc += Number(a.releasedAmountUsdc) || 0;
+      }
+      group.totalStudents += 1;
+      if (a.status === 'FUNDED') group.activeCount += 1;
+      if (['CANCELLED', 'EXPIRED'].includes(a.status)) group.cancelledCount += 1;
+      if (['PENDING_TUTOR_ACCEPTANCE', 'PENDING_STUDENT_ACCEPTANCE'].includes(a.status)) group.pendingSignatureCount += 1;
+      if (a.status === 'WAITING_PAYMENT') group.waitingPaymentCount += 1;
+
+      if (activeTerminationMap.has(a.id)) {
+        group.hasTerminationPending = true;
+      }
+    });
+
+    return Array.from(groupMap.values());
+  }, [filteredAgreements, activeTerminationMap]);
+
+  // Auto-expand all classes initially
+  useEffect(() => {
+    if (classroomGroups.length > 0 && expandedClassKeys.size === 0) {
+      setExpandedClassKeys(new Set(classroomGroups.map((g) => g.key)));
+    }
+  }, [classroomGroups]);
+
+  const toggleClassExpand = (key: string) => {
+    setExpandedClassKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const expandAllClasses = () => {
+    setExpandedClassKeys(new Set(classroomGroups.map((g) => g.key)));
+  };
+
+  const collapseAllClasses = () => {
+    setExpandedClassKeys(new Set());
+  };
 
   // Financial KPIs
   const kpis = useMemo(() => {
@@ -524,6 +720,21 @@ export function EscrowContractsView({
           >
             Khiếu Nại (Disputes)
           </button>
+          <button
+            onClick={() => setActiveTab('TERMINATIONS')}
+            className={`px-4 py-2 rounded-xl text-xs font-display font-black transition-all flex items-center gap-1.5 ${
+              activeTab === 'TERMINATIONS'
+                ? 'bg-white text-amber-700 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <XCircle size={14} /> Chấm Dứt Hợp Đồng
+            {pendingTerminationsCount > 0 && (
+              <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white shadow-xs animate-pulse">
+                {pendingTerminationsCount} chờ xử lý
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -615,24 +826,91 @@ export function EscrowContractsView({
               </button>
             </div>
 
+            {/* View Mode & Expand Controls */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 w-fit">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('BY_CLASS')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    viewMode === 'BY_CLASS'
+                      ? 'bg-white text-blue-700 shadow-xs font-black'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Gom nhóm hợp đồng theo từng lớp học"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>Theo lớp học ({classroomGroups.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('FLAT_CARDS')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    viewMode === 'FLAT_CARDS'
+                      ? 'bg-white text-blue-700 shadow-xs font-black'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Xem dạng thẻ từng hợp đồng riêng lẻ"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <span>Thẻ lẻ ({filteredAgreements.length})</span>
+                </button>
+              </div>
+
+              {viewMode === 'BY_CLASS' && classroomGroups.length > 0 && (
+                <div className="flex items-center gap-3 text-xs">
+                  <button
+                    type="button"
+                    onClick={expandAllClasses}
+                    className="font-bold text-blue-600 hover:text-blue-800 hover:underline inline-flex items-center gap-1"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5" /> Mở rộng tất cả
+                  </button>
+                  <span className="text-slate-300">&bull;</span>
+                  <button
+                    type="button"
+                    onClick={collapseAllClasses}
+                    className="font-bold text-slate-500 hover:text-slate-700 hover:underline inline-flex items-center gap-1"
+                  >
+                    <ChevronUp className="w-3.5 h-3.5" /> Thu gọn tất cả
+                  </button>
+                </div>
+              )}
+            </div>
+
             {/* Status Filter Tabs */}
             <div className="flex items-center gap-2 flex-wrap pt-2 border-t border-slate-100">
               <span className="text-xs font-bold text-slate-400 flex items-center gap-1">
                 <Filter className="w-3.5 h-3.5" /> Trạng thái:
               </span>
-              {FILTER_TABS.map((tab) => (
-                <button
-                  key={tab.value}
-                  onClick={() => setStatusFilter(tab.value)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                    statusFilter === tab.value
-                      ? 'bg-slate-900 text-white shadow-sm'
-                      : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
+              {FILTER_TABS.map((tab) => {
+                const isTerminationTab = tab.value === 'TERMINATION_PENDING';
+                const count = isTerminationTab ? enrichedAgreements.filter((a) => activeTerminationMap.has(a.id)).length : undefined;
+                return (
+                  <button
+                    key={tab.value}
+                    onClick={() => setStatusFilter(tab.value)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                      statusFilter === tab.value
+                        ? isTerminationTab
+                          ? 'bg-amber-600 text-white shadow-sm font-black'
+                          : 'bg-slate-900 text-white shadow-sm'
+                        : isTerminationTab
+                        ? 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300 font-extrabold'
+                        : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    {count !== undefined && count > 0 && (
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                        statusFilter === tab.value ? 'bg-white text-amber-800' : 'bg-amber-500 text-white animate-pulse'
+                      }`}>
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
               <span className="ml-auto text-xs text-slate-400 font-semibold">
                 Hiển thị <strong>{filteredAgreements.length}</strong> / {enrichedAgreements.length} hợp đồng
               </span>
@@ -686,8 +964,300 @@ export function EscrowContractsView({
             </div>
           )}
 
-          {/* Agreements Grid */}
-          {!loading && filteredAgreements.length > 0 && (
+          {/* Agreements Render Area */}
+          {!loading && filteredAgreements.length > 0 && viewMode === 'BY_CLASS' && (
+            <div className="space-y-5">
+              {classroomGroups.map((group) => {
+                const isExpanded = expandedClassKeys.has(group.key);
+                return (
+                  <div
+                    key={group.key}
+                    className="bg-white rounded-3xl border border-slate-200/90 shadow-2xs hover:shadow-md transition-all overflow-hidden"
+                  >
+                    {/* Class Group Header */}
+                    <div
+                      onClick={() => toggleClassExpand(group.key)}
+                      className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 via-white to-slate-50 border-b border-slate-200/80 flex flex-col lg:flex-row lg:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/80 transition-colors select-none"
+                    >
+                      <div className="flex items-start gap-3.5 min-w-0">
+                        <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-md shadow-blue-500/20">
+                          <BookOpen className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-display font-black text-slate-950 text-base sm:text-lg">
+                              {group.className}
+                            </h3>
+                            {group.classroomId && (
+                              <span className="px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 text-xs font-mono font-bold border border-blue-200">
+                                Lớp #{group.classroomId}
+                              </span>
+                            )}
+                            {group.hasTerminationPending && (
+                              <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black animate-pulse flex items-center gap-1 shadow-2xs">
+                                <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" /> Đang có đề xuất dừng / hủy lớp
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mt-1">
+                            <span className="flex items-center gap-1.5 font-bold text-slate-800">
+                              <GraduationCap className="w-3.5 h-3.5 text-blue-600" /> Gia sư: {group.tutorName || 'Chưa cập nhật'}
+                            </span>
+                            {group.tutorEmail && (
+                              <span className="flex items-center gap-1 text-slate-600">
+                                <Mail className="w-3 h-3 text-slate-400" /> {group.tutorEmail}
+                              </span>
+                            )}
+                            {group.tutorPhone && (
+                              <span className="flex items-center gap-1 text-slate-600">
+                                <Phone className="w-3 h-3 text-slate-400" /> {group.tutorPhone}
+                              </span>
+                            )}
+                            {group.tutorWallet && (
+                              <EtherscanLink address={group.tutorWallet} chainId={activeChainId} />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Summary Metrics & Toggle Button */}
+                      <div className="flex items-center gap-3 shrink-0 flex-wrap justify-between lg:justify-end">
+                        <div className="flex items-center gap-2 text-xs font-bold">
+                          <span className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1.5">
+                            <Users className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>{group.totalStudents} học viên</span>
+                          </span>
+                          <span className="px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            Quỹ cọc: <strong className="font-mono text-emerald-950">${group.totalEscrowUsdc.toFixed(2)} USDC</strong>
+                          </span>
+                          {group.totalSettledUsdc > 0 && (
+                            <span className="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-200">
+                              Đã quyết toán: <strong className="font-mono text-blue-950">${group.totalSettledUsdc.toFixed(2)} USDC</strong>
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold border border-slate-200 shadow-2xs transition-colors">
+                          <span>{isExpanded ? 'Thu gọn' : `Xem ${group.agreements.length} HĐ`}</span>
+                          {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Class Termination Banner if applicable */}
+                    {group.hasTerminationPending && (
+                      <div className="px-5 py-3 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-950">
+                        <div className="flex items-center gap-2 font-medium">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 animate-pulse" />
+                          <span>
+                            Lớp học này đang có hồ sơ đề xuất dừng & hủy lớp. Các buổi học tương lai được bảo lưu và tiền cọc chưa dùng sẽ được hoàn theo phê duyệt của Admin.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('TERMINATIONS')}
+                          className="px-3 py-1 rounded-xl bg-amber-200 hover:bg-amber-300 text-amber-950 text-xs font-black shrink-0 transition-colors shadow-2xs cursor-pointer"
+                        >
+                          Theo dõi tiến độ chấm dứt &rarr;
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Expanded: Class Contracts Table */}
+                    {isExpanded && (
+                      <div className="p-4 sm:p-5 bg-slate-50/60">
+                        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-2xs">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-600 font-bold">
+                                <th className="py-3 px-3.5">Học viên tham gia</th>
+                                <th className="py-3 px-3.5">Trạng thái HĐ</th>
+                                <th className="py-3 px-3.5">Tiến độ buổi học</th>
+                                <th className="py-3 px-3.5">Tài chính ký quỹ</th>
+                                <th className="py-3 px-3.5 text-right">Thao tác</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {group.agreements.map((item) => {
+                                const cfg = getStatusCfg(item.status);
+                                const isWaitingPayment = item.status === 'WAITING_PAYMENT';
+                                const isActive = item.status === 'ACTIVE';
+                                const isLegacy = Boolean(item.legacyUnreconciled);
+                                const progressPct = item.totalSessions > 0
+                                  ? Math.round((item.settledSessions / item.totalSessions) * 100)
+                                  : 0;
+
+                                const isStudentWalletMismatch =
+                                  !!address &&
+                                  !!item.studentWallet &&
+                                  item.studentWallet !== "0x0000000000000000000000000000000000000000" &&
+                                  address.toLowerCase() !== item.studentWallet.toLowerCase();
+
+                                const activeTermination = activeTerminationMap.get(item.id);
+
+                                return (
+                                  <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                                    {/* Student Column */}
+                                    <td className="py-3 px-3.5">
+                                      <p className="font-bold text-slate-900 text-xs">
+                                        {item.studentName || 'Chưa cập nhật tên'}
+                                      </p>
+                                      <p className="text-[11px] text-slate-500 mt-0.5">
+                                        {item.studentEmail}
+                                      </p>
+                                      {item.studentPhone && (
+                                        <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                          <Phone className="w-3 h-3 text-slate-400" /> {item.studentPhone}
+                                        </p>
+                                      )}
+                                      <div className="flex items-center gap-2 mt-1">
+                                        <span className="text-[10px] font-mono text-slate-400">
+                                          HĐ #{item.id.slice(0, 8)} &bull; {item.tokenSymbol}
+                                        </span>
+                                        {item.studentWallet && (
+                                          <EtherscanLink address={item.studentWallet} chainId={activeChainId} />
+                                        )}
+                                      </div>
+                                    </td>
+
+                                    {/* Status Column */}
+                                    <td className="py-3 px-3.5">
+                                      <div className="space-y-1">
+                                        <span className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border ${cfg.cls}`}>
+                                          {cfg.label}
+                                        </span>
+                                        {activeTermination && (
+                                          <div>
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black animate-pulse shadow-2xs">
+                                              <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" /> Chờ xử lý chấm dứt
+                                            </span>
+                                          </div>
+                                        )}
+                                        {isLegacy && (
+                                          <span className="block text-[10px] font-mono text-amber-700">Legacy audit</span>
+                                        )}
+                                      </div>
+                                    </td>
+
+                                    {/* Progress Column */}
+                                    <td className="py-3 px-3.5">
+                                      <span className="font-bold text-slate-800">
+                                        {item.settledSessions} / {item.totalSessions} buổi ({progressPct}%)
+                                      </span>
+                                      <div className="w-24 h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
+                                        <div
+                                          className="h-full bg-blue-500 rounded-full transition-all"
+                                          style={{ width: `${progressPct}%` }}
+                                        />
+                                      </div>
+                                    </td>
+
+                                    {/* Financial Column */}
+                                    <td className="py-3 px-3.5">
+                                      <p className="font-black text-emerald-700 font-mono text-xs">
+                                        ${Number(item.totalAmountUsdc).toFixed(2)} {item.tokenSymbol}
+                                      </p>
+                                      <p className="text-[10px] text-slate-400">
+                                        ${Number(item.pricePerSessionUsdc).toFixed(2)}/buổi
+                                      </p>
+                                      {Number(item.releasedAmountUsdc) > 0 && (
+                                        <p className="text-[10px] font-semibold text-blue-600 font-mono">
+                                          Đã quyết toán: ${Number(item.releasedAmountUsdc).toFixed(2)}
+                                        </p>
+                                      )}
+                                    </td>
+
+                                    {/* Actions Column */}
+                                    <td className="py-3 px-3.5 text-right">
+                                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedAgreementForDocument(item.id)}
+                                          className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[11px] font-bold border border-indigo-200 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                          title="Xem và tải văn bản hợp đồng Word/PDF"
+                                        >
+                                          <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                                          <span>Văn bản</span>
+                                        </button>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => setSelectedAgreementForTimeline(item)}
+                                          className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold border border-slate-200 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                          title="Xem lịch sử tiến trình hợp đồng"
+                                        >
+                                          <Clock className="w-3.5 h-3.5 text-slate-500" />
+                                          <span>Audit</span>
+                                        </button>
+
+                                        {item.status === 'PENDING_TUTOR_ACCEPTANCE' && activeRole === 'tutor' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleSignByTutor(item)}
+                                            className="px-2.5 py-1 text-white text-[11px] font-bold rounded-lg shadow-xs bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 transition-all cursor-pointer inline-flex items-center gap-1"
+                                          >
+                                            <CheckCircle2 className="w-3.5 h-3.5" />
+                                            <span>Ký</span>
+                                          </button>
+                                        )}
+
+                                        {item.status === 'PENDING_STUDENT_ACCEPTANCE' && activeRole === 'student' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleSignByStudent(item)}
+                                            disabled={isStudentWalletMismatch}
+                                            className={`px-2.5 py-1 text-white text-[11px] font-bold rounded-lg shadow-xs transition-all inline-flex items-center gap-1 ${
+                                              isStudentWalletMismatch
+                                                ? 'bg-slate-400 cursor-not-allowed opacity-60'
+                                                : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90 cursor-pointer'
+                                            }`}
+                                          >
+                                            <CheckCircle2 className="w-3.5 h-3.5" />
+                                            <span>Ký</span>
+                                          </button>
+                                        )}
+
+                                        {isWaitingPayment && activeRole === 'student' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenPayment(item)}
+                                            disabled={isStudentWalletMismatch}
+                                            className="px-2.5 py-1 text-white text-[11px] font-bold rounded-lg shadow-xs bg-emerald-600 hover:bg-emerald-700 transition-all cursor-pointer inline-flex items-center gap-1"
+                                          >
+                                            <Lock className="w-3.5 h-3.5" />
+                                            <span>Ký quỹ</span>
+                                          </button>
+                                        )}
+
+                                        {activeTermination && (
+                                          <button
+                                            type="button"
+                                            onClick={() => setActiveTab('TERMINATIONS')}
+                                            className="px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-bold border border-amber-300 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                            title="Theo dõi tiến độ chấm dứt hợp đồng"
+                                          >
+                                            <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+                                            <span>Chấm dứt</span>
+                                          </button>
+                                        )}
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Agreements Grid (Flat Cards Mode) */}
+          {!loading && filteredAgreements.length > 0 && viewMode === 'FLAT_CARDS' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {filteredAgreements.map((item) => {
                 const cfg = getStatusCfg(item.status);
@@ -710,11 +1280,24 @@ export function EscrowContractsView({
                 const displayStudentEmail = item.studentEmail || "Chưa cập nhật email";
                 const displayTutorEmail = item.tutorEmail || "Chưa cập nhật email";
 
+                const activeTermination = activeTerminationMap.get(item.id);
+                const terminationSessions = terminationSettlements[item.id] || [];
+                const openTerminationSessions = terminationSessions.filter((session) => isSettlementOpen(session.status));
+                const proposedTerminationSessions = openTerminationSessions
+                  .filter((session) => session.status === 'PROPOSED' && session.disputeDeadline)
+                  .sort((left, right) => new Date(left.disputeDeadline || 0).getTime() - new Date(right.disputeDeadline || 0).getTime());
+                const nextFinalization = proposedTerminationSessions[0]?.disputeDeadline || null;
+                const refundEstimate = Math.max(0, Number(item.remainingDeposit) || 0);
+
                 return (
                   <div
                     key={item.id}
                     className={`rounded-3xl border p-6 shadow-sm hover:shadow-md transition-all space-y-5 flex flex-col justify-between ${
-                      isLegacy ? 'bg-amber-50/40 border-amber-300' : 'bg-white border-slate-200'
+                      activeTermination
+                        ? 'bg-amber-50/20 border-amber-300 ring-1 ring-amber-300/60'
+                        : isLegacy
+                        ? 'bg-amber-50/40 border-amber-300'
+                        : 'bg-white border-slate-200'
                     }`}
                   >
                     {/* Top Row: Class Name & Status */}
@@ -727,10 +1310,67 @@ export function EscrowContractsView({
                             ? `On-chain: ${item.onchainAgreementId.slice(0, 10)}...`
                             : 'Hợp đồng điện tử'}
                         </span>
-                        <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider border ${cfg.cls}`}>
-                          {cfg.label}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          {activeTermination && (
+                            <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black animate-pulse flex items-center gap-1 shadow-2xs">
+                              <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" /> Chờ xử lý chấm dứt
+                            </span>
+                          )}
+                          <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider border ${cfg.cls}`}>
+                            {cfg.label}
+                          </span>
+                        </div>
                       </div>
+
+                      {/* Prominent Termination Notice Banner */}
+                      {activeTermination && (
+                        <div className="flex items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 p-3.5 text-xs text-amber-950 shadow-2xs">
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 mt-0.5 animate-pulse" />
+                            <div className="min-w-0">
+                              <p className="font-extrabold text-amber-950 text-[13px]">
+                                {activeTermination.wholeClass
+                                  ? activeTermination.status === 'APPROVED'
+                                    ? 'Admin đã duyệt hủy lớp - đang xử lý từng hợp đồng'
+                                    : 'Đang có đề xuất dừng & hủy toàn bộ lớp'
+                                  : activeTermination.status === 'APPROVED'
+                                    ? 'Admin đã duyệt chấm dứt - đang xử lý tiền cọc'
+                                    : 'Đang có yêu cầu chấm dứt hợp đồng này'}
+                              </p>
+                              <p className="text-[11px] font-medium text-amber-800 mt-0.5">
+                                Trạng thái: <span className="font-bold underline">{TERMINATION_LABELS[activeTermination.itemStatus || activeTermination.status] || activeTermination.itemStatus || activeTermination.status}</span>
+                                {activeTermination.reason ? (
+                                  <span className="italic"> &bull; "{activeTermination.reason.slice(0, 50)}{activeTermination.reason.length > 50 ? '...' : ''}"</span>
+                                ) : null}
+                              </p>
+                              {activeTermination.status === 'APPROVED' && proposedTerminationSessions.length > 0 && nextFinalization && (
+                                <p className="mt-1.5 text-[11px] leading-relaxed text-amber-950">
+                                  Còn {proposedTerminationSessions.length} buổi trong cửa sổ khiếu nại 24 giờ. Sớm nhất hệ thống được phép quyết toán lúc{' '}
+                                  <span className="font-black">{formatDeadline(nextFinalization)}</span>. Sau khi các buổi này được xác nhận on-chain, hệ thống tự gửi giao dịch hủy và hoàn{' '}
+                                  <span className="font-black">{refundEstimate.toLocaleString('vi-VN')} USDC</span> cọc chưa dùng về ví học viên.
+                                </p>
+                              )}
+                              {activeTermination.status === 'APPROVED' && proposedTerminationSessions.length === 0 && activeTermination.itemStatus === 'BLOCKCHAIN_PENDING' && (
+                                <p className="mt-1.5 text-[11px] leading-relaxed text-amber-950">
+                                  Các buổi trước cutoff đã xong. Giao dịch hủy và hoàn escrow đã được gửi; hệ thống đang chờ event blockchain xác nhận trước khi cập nhật lớp và ví.
+                                </p>
+                              )}
+                              {activeTermination.status === 'APPROVED' && proposedTerminationSessions.length === 0 && activeTermination.itemStatus === 'WAITING_REFUND_EVENT' && (
+                                <p className="mt-1.5 text-[11px] leading-relaxed text-amber-950">
+                                  Smart contract đã xử lý hủy hợp đồng. Hệ thống đang chờ event hoàn tiền để xác nhận số USDC đã về đúng ví học viên.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('TERMINATIONS')}
+                            className="shrink-0 px-3 py-1.5 rounded-xl bg-amber-200/90 hover:bg-amber-300 text-amber-950 text-xs font-black transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                          >
+                            Theo dõi tiến độ
+                          </button>
+                        </div>
+                      )}
 
                       {isLegacy && (
                         <div className="flex items-start gap-2.5 rounded-xl border border-amber-300 bg-amber-100/70 p-3 text-[11px] font-semibold leading-relaxed text-amber-950">
@@ -873,64 +1513,65 @@ export function EscrowContractsView({
 
                     {/* Footer Action Buttons */}
                     <div className="border-t border-slate-100 pt-4 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2.5 shrink-0">
                         <button
                           onClick={() => handleOpenTimeline(item)}
-                          className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline"
+                          className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline whitespace-nowrap"
                         >
-                          <Layers className="w-3.5 h-3.5" />
+                          <Layers className="w-3.5 h-3.5 shrink-0" />
                           <span>Xem Audit</span>
                         </button>
+                        <span className="text-slate-300 font-light">•</span>
                         <button
                           onClick={() => setSelectedAgreementForDocument(item.id)}
-                          className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 hover:underline"
+                          className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 hover:underline whitespace-nowrap"
                         >
-                          <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                          <ShieldCheck className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                           <span>Văn bản hợp đồng</span>
                         </button>
                       </div>
 
-                      {item.status === 'PENDING_TUTOR_ACCEPTANCE' && activeRole === 'tutor' && (
-                        <button
-                          onClick={() => handleSignByTutor(item)}
-                          className="flex items-center gap-1.5 px-4 py-2 text-white text-xs font-display font-black rounded-xl shadow-sm transition-all bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 hover:shadow"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Ký hợp đồng (Gia sư)</span>
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {item.status === 'PENDING_TUTOR_ACCEPTANCE' && activeRole === 'tutor' && (
+                          <button
+                            onClick={() => handleSignByTutor(item)}
+                            className="flex items-center gap-1.5 px-3.5 py-2 text-white text-xs font-display font-black rounded-xl shadow-xs transition-all bg-gradient-to-r from-brand-primary to-brand-secondary hover:opacity-90 whitespace-nowrap cursor-pointer"
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                            <span>Ký hợp đồng</span>
+                          </button>
+                        )}
 
-                      {item.status === 'PENDING_STUDENT_ACCEPTANCE' && activeRole === 'student' && (
-                        <button
-                          onClick={() => handleSignByStudent(item)}
-                          disabled={isStudentWalletMismatch}
-                          className={`flex items-center gap-1.5 px-4 py-2 text-white text-xs font-display font-black rounded-xl shadow-sm transition-all ${
-                            isStudentWalletMismatch
-                              ? 'bg-slate-400 cursor-not-allowed opacity-60'
-                              : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90 hover:shadow'
-                          }`}
-                          title={isStudentWalletMismatch ? 'Vui lòng chuyển sang đúng ví học viên trong MetaMask' : undefined}
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Ký xác nhận hợp đồng</span>
-                        </button>
-                      )}
+                        {item.status === 'PENDING_STUDENT_ACCEPTANCE' && activeRole === 'student' && (
+                          <button
+                            onClick={() => handleSignByStudent(item)}
+                            disabled={isStudentWalletMismatch}
+                            className={`flex items-center gap-1.5 px-3.5 py-2 text-white text-xs font-display font-black rounded-xl shadow-xs transition-all whitespace-nowrap ${
+                              isStudentWalletMismatch
+                                ? 'bg-slate-400 cursor-not-allowed opacity-60'
+                                : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:opacity-90 cursor-pointer'
+                            }`}
+                            title={isStudentWalletMismatch ? 'Vui lòng chuyển sang đúng ví học viên trong MetaMask' : undefined}
+                          >
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                            <span>Ký xác nhận</span>
+                          </button>
+                        )}
 
-                      {isWaitingPayment && activeRole === 'student' && (() => {
-                        const balanceNum = parseFloat(usdcBalance || '0');
-                        const isInsufficientBalance = Boolean(address) && balanceNum < item.totalAmountUsdc;
+                        {isWaitingPayment && activeRole === 'student' && (() => {
+                          const balanceNum = parseFloat(usdcBalance || '0');
+                          const isInsufficientBalance = Boolean(address) && balanceNum < item.totalAmountUsdc;
 
-                        return (
-                          <div className="flex items-center gap-2 flex-wrap">
+                          return (
                             <button
                               onClick={() => handleOpenPayment(item)}
                               disabled={isStudentWalletMismatch}
-                              className={`flex items-center gap-1.5 px-4 py-2 text-white text-xs font-display font-black rounded-xl shadow-sm transition-all ${
+                              className={`flex items-center gap-1.5 px-3.5 py-2 text-white text-xs font-display font-black rounded-xl shadow-xs transition-all whitespace-nowrap ${
                                 isStudentWalletMismatch
                                   ? 'bg-slate-400 cursor-not-allowed opacity-60'
                                   : isInsufficientBalance
-                                  ? 'bg-amber-600 hover:bg-amber-700'
-                                  : 'bg-emerald-600 hover:bg-emerald-700 hover:shadow'
+                                  ? 'bg-amber-600 hover:bg-amber-700 cursor-pointer'
+                                  : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'
                               }`}
                               title={
                                 isStudentWalletMismatch
@@ -940,57 +1581,53 @@ export function EscrowContractsView({
                                   : undefined
                               }
                             >
-                              <Lock className="w-3.5 h-3.5" />
+                              <Lock className="w-3.5 h-3.5 shrink-0" />
                               <span>
                                 {isInsufficientBalance
-                                  ? `Ký quỹ (${item.totalAmountUsdc.toFixed(2)} ${item.tokenSymbol} • Thiếu số dư)`
-                                  : `Ký quỹ ngay (${item.totalAmountUsdc.toFixed(2)} ${item.tokenSymbol})`}
+                                  ? `Ký quỹ (Thiếu $${(item.totalAmountUsdc - balanceNum).toFixed(2)})`
+                                  : `Ký quỹ ngay ($${item.totalAmountUsdc.toFixed(2)})`}
                               </span>
                             </button>
-                            {isInsufficientBalance && !isStudentWalletMismatch && (
-                              <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
-                                ⚠️ Ví có ${balanceNum.toFixed(2)} USDC (Thiếu ${(item.totalAmountUsdc - balanceNum).toFixed(2)})
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })()}
+                          );
+                        })()}
 
-                      {isActive && item.settlementEligible && (
-                        <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
-                          Đang bảo vệ bởi Escrow
-                        </span>
-                      )}
+                        {isActive && item.settlementEligible && (
+                          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-xl border border-emerald-200 whitespace-nowrap">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            Đang bảo vệ bởi Escrow
+                          </span>
+                        )}
 
-                      {isLegacy && (
-                        <span className="text-[11px] font-bold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-xl border border-amber-300">
-                          Chỉ tra cứu • không quyết toán
-                        </span>
-                      )}
+                        {isLegacy && (
+                          <span className="text-[11px] font-bold text-amber-800 bg-amber-100 px-2.5 py-1 rounded-xl border border-amber-300 whitespace-nowrap">
+                            Chỉ tra cứu
+                          </span>
+                        )}
 
-                      {activeRole === 'admin' && isWaitingPayment && (
-                        <button
-                          onClick={() => handleExpireAgreement(item)}
-                          className="flex items-center gap-1.5 px-3 py-2 text-white text-xs font-display font-black rounded-xl bg-slate-700 hover:bg-slate-800 transition-all"
-                        >
-                          <Clock className="w-3.5 h-3.5" />
-                          <span>Expire</span>
-                        </button>
-                      )}
+                        {activeRole === 'admin' && isWaitingPayment && (
+                          <button
+                            onClick={() => handleExpireAgreement(item)}
+                            className="flex items-center gap-1.5 px-3 py-2 text-white text-xs font-display font-black rounded-xl bg-slate-700 hover:bg-slate-800 transition-all whitespace-nowrap"
+                          >
+                            <Clock className="w-3.5 h-3.5" />
+                            <span>Expire</span>
+                          </button>
+                        )}
 
-                      {item.status === 'COMPLETED' && (
-                        <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-xl border border-blue-200 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
-                          Đã hoàn tất
-                        </span>
-                      )}
+                        {item.status === 'COMPLETED' && (
+                          <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-xl border border-blue-200 flex items-center gap-1 whitespace-nowrap">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Đã hoàn tất
+                          </span>
+                        )}
 
-                      {(item.status === 'EXPIRED' || item.status === 'CANCELLED') && (
-                        <span className="text-[11px] font-bold text-slate-500 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200 flex items-center gap-1">
-                          <XCircle className="w-3 h-3" />
-                          {item.status === 'EXPIRED' ? 'Hết hạn' : 'Đã hủy'}
-                        </span>
-                      )}
+                        {(item.status === 'EXPIRED' || item.status === 'CANCELLED') && (
+                          <span className="text-[11px] font-bold text-slate-500 bg-slate-50 px-2.5 py-1 rounded-xl border border-slate-200 flex items-center gap-1 whitespace-nowrap">
+                            <XCircle className="w-3 h-3" />
+                            {item.status === 'EXPIRED' ? 'Hết hạn' : 'Đã hủy'}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -1006,6 +1643,13 @@ export function EscrowContractsView({
           activeRole={activeRole as any}
           userEmail={userEmail}
         />
+      )}
+
+      {/* TERMINATIONS TAB */}
+      {activeTab === 'TERMINATIONS' && (
+        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+          <TerminationPanel activeRole={activeRole} initialAgreements={enrichedAgreements} onNavigate={onNavigate} />
+        </div>
       )}
 
       {/* TIMELINE TAB */}
@@ -1030,6 +1674,7 @@ export function EscrowContractsView({
       {selectedAgreementForDocument && (
         <ContractDocumentModal
           agreementId={selectedAgreementForDocument}
+          agreementSummary={agreements.find(a => a.id === selectedAgreementForDocument)}
           onClose={() => {
             setSelectedAgreementForDocument(null);
             fetchAgreements();
@@ -1062,6 +1707,7 @@ export function EscrowContractsView({
           }}
         />
       )}
+
     </div>
   );
 }

@@ -22,6 +22,7 @@ import iuh.fit.contract_service.repository.BlockchainTransactionRepository;
 import iuh.fit.contract_service.repository.DisputeRepository;
 import iuh.fit.contract_service.repository.DisputeEvidenceRepository;
 import iuh.fit.contract_service.repository.ProcessedEventRepository;
+import iuh.fit.contract_service.repository.TerminationItemRepository;
 import iuh.fit.contract_service.service.AgreementLifecycleWorkflowService;
 import iuh.fit.contract_service.service.DisputeWorkflowService;
 import iuh.fit.contract_service.service.SessionSettlementWorkflowService;
@@ -67,11 +68,13 @@ public class ContractManagementController {
     private final iuh.fit.contract_service.service.AgreementRegistrationWorkflowService registrationWorkflowService;
     private final iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository;
     private final ProcessedEventRepository processedEventRepository;
+    private final TerminationItemRepository terminationItemRepository;
     private final ContractAcceptanceRepository acceptanceRepository;
     private final iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher;
     private final CurrentUserContext currentUserContext;
     private final ContractAccessControl accessControl;
     private final OperationalFundingPolicy operationalFundingPolicy;
+    private final iuh.fit.contract_service.service.TerminationService terminationService;
     private final org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway;
 
     public ContractManagementController(
@@ -89,12 +92,14 @@ public class ContractManagementController {
             iuh.fit.contract_service.service.AgreementRegistrationWorkflowService registrationWorkflowService,
             iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository,
             ProcessedEventRepository processedEventRepository,
+            TerminationItemRepository terminationItemRepository,
             ContractAcceptanceRepository acceptanceRepository,
             iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher,
             CurrentUserContext currentUserContext,
             ContractAccessControl accessControl,
             org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway,
-            OperationalFundingPolicy operationalFundingPolicy) {
+            OperationalFundingPolicy operationalFundingPolicy,
+            iuh.fit.contract_service.service.TerminationService terminationService) {
         this.agreementRepository = agreementRepository;
         this.settlementRepository = settlementRepository;
         this.transactionRepository = transactionRepository;
@@ -109,12 +114,14 @@ public class ContractManagementController {
         this.registrationWorkflowService = registrationWorkflowService;
         this.escrowPaymentRepository = escrowPaymentRepository;
         this.processedEventRepository = processedEventRepository;
+        this.terminationItemRepository = terminationItemRepository;
         this.acceptanceRepository = acceptanceRepository;
         this.learningServiceDispatcher = learningServiceDispatcher;
         this.currentUserContext = currentUserContext;
         this.accessControl = accessControl;
         this.blockchainGateway = blockchainGateway;
         this.operationalFundingPolicy = operationalFundingPolicy;
+        this.terminationService = terminationService;
     }
 
     public record InitiateAgreementRequest(
@@ -124,10 +131,13 @@ public class ContractManagementController {
             String studentName,
             String studentEmail,
             String studentPhone,
+            String studentDateOfBirth,
+            String studentAddress,
             Long tutorId,
             String tutorName,
             String tutorEmail,
             String tutorPhone,
+            String tutorAddress,
             String studentWallet,
             String tutorWallet,
             BigDecimal pricePerSessionVnd,
@@ -180,6 +190,7 @@ public class ContractManagementController {
     ) {}
 
     @PostMapping("/agreements/initiate")
+    @org.springframework.transaction.annotation.Transactional
     public ResponseEntity<AgreementDetailDto> initiateAgreement(
             @RequestBody InitiateAgreementRequest request) {
 
@@ -189,6 +200,12 @@ public class ContractManagementController {
                 || isBlank(request.className())
                 || isBlank(request.studentEmail())
                 || isBlank(request.tutorEmail())
+                || isBlank(request.studentDateOfBirth())
+                || isBlank(request.studentAddress())
+                || isBlank(request.tutorAddress())
+                || !isIsoDate(request.studentDateOfBirth())
+                || request.studentAddress().trim().length() > 500
+                || request.tutorAddress().trim().length() > 500
                 || request.pricePerSessionVnd() == null || request.pricePerSessionVnd().signum() <= 0
                 || request.totalSessions() == null || request.totalSessions() <= 0) {
             return ResponseEntity.badRequest().build();
@@ -199,6 +216,7 @@ public class ContractManagementController {
                 new ContractAccessControl.ContractAgreementSeed(request.tutorId(), request.tutorEmail()),
                 currentUser);
 
+        terminationService.requireClassCanCreate(request.classroomId());
         // Return existing active/pending agreement if already initiated for this class and student
         Optional<ContractAgreement> existing = agreementRepository.findByClassroomIdAndStudentIdAndContractVersion(
                 request.classroomId(), request.studentId(), 1);
@@ -261,8 +279,11 @@ public class ContractManagementController {
                         request.schedules() == null ? List.of() : request.schedules(),
                         request.syllabus() == null ? List.of() : request.syllabus()),
                 new ContractTermsSnapshot.PartiesTerms(
-                        new ContractTermsSnapshot.PartyTerms(tutorName, request.tutorEmail(), tutorPhone, request.tutorWallet().toLowerCase(Locale.ROOT)),
-                        new ContractTermsSnapshot.PartyTerms(studentName, request.studentEmail(), studentPhone, studentWallet.toLowerCase(Locale.ROOT))),
+                        new ContractTermsSnapshot.PartyTerms(tutorName, request.tutorEmail(), tutorPhone,
+                                request.tutorWallet().toLowerCase(Locale.ROOT), null, request.tutorAddress().trim()),
+                        new ContractTermsSnapshot.PartyTerms(studentName, request.studentEmail(), studentPhone,
+                                studentWallet.toLowerCase(Locale.ROOT), request.studentDateOfBirth().trim(),
+                                request.studentAddress().trim())),
                 new ContractTermsSnapshot.FinancialTerms(pricePerSessionVnd, totalPriceVnd, vndPerUsdc, "USDC", tokenDecimals,
                         pricePerSessionUnits.toString(), totalAmountUnits.toString(), totalSessions),
                 new ContractTermsSnapshot.PlatformTerms(chainId, platformWallet, escrowAddress, tokenAddress),
@@ -423,6 +444,15 @@ public class ContractManagementController {
         return value == null || value.isBlank();
     }
 
+    private boolean isIsoDate(String value) {
+        try {
+            java.time.LocalDate.parse(value);
+            return true;
+        } catch (java.time.format.DateTimeParseException | NullPointerException ex) {
+            return false;
+        }
+    }
+
     private String resolveBytes32Hash(String suppliedHash, String source) {
         if (suppliedHash != null && suppliedHash.matches("^0x[0-9a-fA-F]{64}$")) {
             return suppliedHash.toLowerCase(Locale.ROOT);
@@ -513,11 +543,14 @@ public class ContractManagementController {
         double totalTutorPaid = 0.0;
         double totalPlatformFee = 0.0;
         double totalStudentRefunded = 0.0;
+        double totalSessionRefunded = 0.0;
+        double totalTerminationRefunded = 0.0;
         double totalEscrowLocked = 0.0;
         int activeAgreements = 0;
         int settledSessions = 0;
         int pendingSessions = 0;
         int disputedSessions = 0;
+        int completedTerminationItems = 0;
 
         String platformWallet = null;
         String escrowAddress = null;
@@ -548,6 +581,7 @@ public class ContractManagementController {
                         totalTutorPaid += tutorPart;
                         totalPlatformFee += platPart;
                         totalStudentRefunded += refPart;
+                        totalSessionRefunded += refPart;
 
                         agreementReleased = agreementReleased
                                 .add(zeroIfNull(s.getTutorAmount()))
@@ -561,6 +595,7 @@ public class ContractManagementController {
                     } else if (s.getStatus() == SettlementStatus.REFUNDED) {
                         double refPart = toUsdc(s.getStudentRefundAmount(), a.getTokenDecimals());
                         totalStudentRefunded += refPart;
+                        totalSessionRefunded += refPart;
                         agreementRefunded = agreementRefunded
                                 .add(zeroIfNull(s.getStudentRefundAmount()));
                     }
@@ -576,16 +611,31 @@ public class ContractManagementController {
             }
         }
 
+        Map<UUID, ContractAgreement> agreementMap = agreements.stream()
+                .collect(Collectors.toMap(ContractAgreement::getId, a -> a, (left, right) -> left));
+        for (var item : terminationItemRepository.findAll()) {
+            if (!"COMPLETED".equalsIgnoreCase(item.getStatus()) || item.getRefundedUnits() == null) continue;
+            ContractAgreement agreement = agreementMap.get(item.getAgreementId());
+            if (agreement == null || !hasConfirmedFundingEvent(agreement)) continue;
+            double refund = toUsdc(item.getRefundedUnits(), agreement.getTokenDecimals());
+            totalTerminationRefunded += refund;
+            totalStudentRefunded += refund;
+            completedTerminationItems++;
+        }
+
         AdminFinancialOverviewDto dto = new AdminFinancialOverviewDto(
                 roundFourDecimals(totalEscrowFunded),
                 roundFourDecimals(totalTutorPaid),
                 roundFourDecimals(totalPlatformFee),
                 roundFourDecimals(totalStudentRefunded),
+                roundFourDecimals(totalSessionRefunded),
+                roundFourDecimals(totalTerminationRefunded),
                 roundFourDecimals(totalEscrowLocked),
                 activeAgreements,
                 settledSessions,
                 pendingSessions,
                 disputedSessions,
+                completedTerminationItems,
                 platformWallet,
                 escrowAddress,
                 chainId
@@ -1120,6 +1170,8 @@ public class ContractManagementController {
             @RequestBody(required = false) InternalAutoProposeRequest body) {
         List<ContractAgreement> agreements = agreementRepository.findAll().stream()
                 .filter(a -> a.getClassroomId().equals(classroomId) && isSettlementEligible(a))
+                .filter(a -> a.getTerminationCutoffSession() == null || a.getTerminationCutoffSession() < 0
+                        || sessionId <= a.getTerminationCutoffSession())
                 .toList();
 
         if (agreements.isEmpty()) {
@@ -1619,11 +1671,14 @@ public class ContractManagementController {
             double totalTutorPaidUsdc,
             double totalPlatformFeeUsdc,
             double totalStudentRefundedUsdc,
+            double totalSessionRefundedUsdc,
+            double totalTerminationRefundedUsdc,
             double totalEscrowLockedUsdc,
             int totalActiveAgreements,
             int totalSettledSessions,
             int totalPendingSessions,
             int totalDisputedSessions,
+            int totalCompletedTerminationItems,
             String platformWallet,
             String escrowContractAddress,
             Long chainId

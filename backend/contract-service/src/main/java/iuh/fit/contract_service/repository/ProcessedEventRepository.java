@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.UUID;
 
 public interface ProcessedEventRepository extends JpaRepository<ProcessedEvent, UUID> {
+    java.util.List<ProcessedEvent> findByEventTypeIgnoreCaseAndChainId(String eventType, Long chainId);
     java.util.List<ProcessedEvent> findByEventTypeIgnoreCaseAndChainIdAndTransactionHashIgnoreCase(
             String eventType, Long chainId, String transactionHash);
     boolean existsByChainIdAndTransactionHashIgnoreCaseAndLogIndex(

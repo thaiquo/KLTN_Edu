@@ -33,4 +33,23 @@ public class BlockchainEventPollingWorker {
             running.set(false);
         }
     }
+
+    @Scheduled(
+            initialDelayString = "${blockchain.event-reconcile-initial-delay-ms:15000}",
+            fixedDelayString = "${blockchain.event-reconcile-interval-ms:30000}")
+    public void reconcileConfirmedTransactionEvents() {
+        if (!running.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            int recovered = ingestionService.reconcileConfirmedTransactionEvents();
+            if (recovered > 0) {
+                log.info("Recovered {} blockchain event(s) from confirmed transaction receipts", recovered);
+            }
+        } catch (RuntimeException exception) {
+            log.warn("Confirmed transaction event reconciliation failed: {}", exception.getMessage());
+        } finally {
+            running.set(false);
+        }
+    }
 }

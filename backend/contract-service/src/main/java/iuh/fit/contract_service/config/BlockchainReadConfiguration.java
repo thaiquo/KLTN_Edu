@@ -7,6 +7,7 @@ import iuh.fit.contract_service.blockchain.Web3jBlockchainRpcClient;
 import iuh.fit.contract_service.blockchain.EduConnectEscrowEventDecoder;
 import iuh.fit.contract_service.repository.BlockchainEventCursorRepository;
 import iuh.fit.contract_service.repository.ProcessedEventRepository;
+import iuh.fit.contract_service.repository.BlockchainTransactionRepository;
 import iuh.fit.contract_service.service.AgreementFundingWorkflowService;
 import iuh.fit.contract_service.service.AgreementLifecycleWorkflowService;
 import iuh.fit.contract_service.service.AgreementRegistrationWorkflowService;
@@ -62,6 +63,7 @@ public class BlockchainReadConfiguration {
             EduConnectEscrowEventDecoder decoder,
             BlockchainEventCursorRepository cursorRepository,
             ProcessedEventRepository eventRepository,
+            BlockchainTransactionRepository transactionRepository,
             AgreementRegistrationWorkflowService registrationWorkflowService,
             AgreementFundingWorkflowService fundingWorkflowService,
             SessionSettlementWorkflowService settlementWorkflowService,
@@ -75,6 +77,7 @@ public class BlockchainReadConfiguration {
                 decoder,
                 cursorRepository,
                 eventRepository,
+                transactionRepository,
                 registrationWorkflowService,
                 fundingWorkflowService,
                 settlementWorkflowService,

@@ -23,6 +23,9 @@ Không mô tả ETH là tiền học phí. Không xem local status hoặc receip
 | `EduConnectEscrow` | `0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3` |
 | Test USDC | `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238` |
 | Operator/Arbitrator đã kiểm chứng | `0x10dd719B6a13e9d275990d706C2640ab6F1CA28e` |
+| Payout `BOTH_PRESENT` (0.6 USDC) | [`0xd835b8ae...90dc2`](https://sepolia.etherscan.io/tx/0xd835b8ae250b20141feb32d26eb081ca1a0d532c9c6780b9622812c91990dc2) |
+| Refund `TUTOR_ABSENT` (0.6 USDC) | [`0xf608981a...5a3ec1`](https://sepolia.etherscan.io/tx/0xf608981a95f001b0cc5bd338995bd2cb54cc4addcf35b15957e06536005a3ec1) |
+| Refund `AgreementCancelled` (4.80 USDC) | [`0x11c562e5...06d6b`](https://sepolia.etherscan.io/tx/0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b) (23:44:27 22/09/2026) |
 
 Frontend defaults hiện khớp deployment Sepolia và artifact Anvil: local token `0x5fb...aa3`, local escrow `0xe7f...512`. `ESCROW_ABI` dùng `bytes32 agreementId/sessionId` và các signature hiện khớp `IEduConnectEscrow.sol`.
 
@@ -129,6 +132,35 @@ Nếu browser submit txHash sau event ingest, API xử lý idempotent. Nếu g�
 
 Giới hạn V1: on-chain dispute chỉ cho `BOTH_PRESENT`. Muốn dispute các outcome khác phải thiết kế/deploy contract version mới và migrate có chủ đích.
 
+## 9.1 Chấm dứt hợp đồng & Đề xuất hủy lớp học (Termination & Refund)
+
+Mọi thao tác chấm dứt hợp đồng đơn phương (Student) hoặc đề xuất dừng giảng dạy & hủy lớp (Tutor) đều được bảo chứng bằng chữ ký số EIP-712 Typed Data:
+
+- **Domain Name**: `EduConnect Platform` (version `1`)
+- **Primary Type**: `TerminationRequest`
+- **Type Structure**:
+  ```solidity
+  TerminationRequest(string contractId,bytes32 reasonHash,bool wholeClass,uint256 requestedAt)
+  ```
+- **Xác thực Backend (`Eip712VerificationService`)**:
+  - `reasonHash`: Keccak-256 của chuỗi lý do text UTF-8 do người dùng nhập.
+  - `wholeClass`: `false` đối với Học viên đơn phương hủy hợp đồng; `true` đối với Gia sư đề xuất hủy toàn bộ lớp.
+  - `expectedWallet`: Đối chiếu `signerWallet` phục hồi từ chữ ký với `studentWallet` (nếu là Học viên) hoặc `tutorWallet` (nếu là Gia sư) đã chốt trên hợp đồng.
+  - `requestedAt` phải nằm trong khoảng lệch tối đa 5 phút so với server; chữ ký đã dùng không được sử dụng lại.
+  - Nếu chữ ký giả mạo, hoặc ví MetaMask không khớp ví hợp đồng, yêu cầu lập tức bị từ chối ở tầng backend.
+- **Hold vận hành và thực thi On-chain**:
+  - Khi tiếp nhận chữ ký, hệ thống giữ cutoff tại Learning và Contract nhưng chưa gửi giao dịch blockchain. Hold/release có trạng thái retry bền khi liên service tạm gián đoạn.
+  - Sau Staff đề xuất (`RECOMMEND`) hoặc Admin phê duyệt trực tiếp (`APPROVE`), hệ thống giữ nguyên cutoff đã chụp.
+  - **Quy tắc thời hạn quyết toán & Hoàn cọc:** Cửa sổ 24 giờ là thời hạn khiếu nại của từng buổi học đã dạy trước cutoff, không phải thời hạn chờ bắt buộc sau khi Admin duyệt. Worker kiểm tra các buổi học liên quan: ngay sau khi tất cả các buổi học trước cutoff hoàn tất quyết toán (sau 24h khiếu nại hoặc phán quyết xong), worker lập tức gọi `cancelAgreementAndRefundUnused(bytes32 agreementId, bytes32 resolutionHash)` qua Arbitrator để hoàn cọc còn dư (`remainingDeposit`) về ví học viên.
+  - **Bằng chứng giao dịch thực tế trên Sepolia:**
+    - Transaction hash: [`0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b`](https://sepolia.etherscan.io/tx/0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b).
+    - Event: `AgreementCancelled(bytes32 agreementId, uint256 refundAmount, bytes32 resolutionHash)`.
+    - Số tiền hoàn trả: **4,80 USDC** về ví học viên `0x58abad20adecebfba5862422091eacc3f65f60e7`.
+    - Thời điểm hoàn tất: **23:44:27 ngày 22/09/2026**.
+    - Cả hợp đồng (`contract_agreements`) và lượt đăng ký (`enrollments`) đều chuyển thành `CANCELLED`; mốc dừng học đã đóng thành công.
+  - Toàn bộ số dư ký quỹ chưa quyết toán (`remainingDeposit`) được Smart Contract hoàn trả trực tiếp về ví của học viên, và phát event `AgreementCancelled`.
+  - Với Escrow V1, đề xuất hủy cả lớp (`wholeClass=true`) được thanh lý bằng nhiều transaction độc lập, có trạng thái/retry theo từng agreement; không mô tả nhầm là một batch transaction.
+
 ## 10. Backend transaction pipeline
 
 Mỗi write là durable `blockchain_transaction` intent:
@@ -139,7 +171,7 @@ Mỗi write là durable `blockchain_transaction` intent:
 4. Kiểm tra chain/role/gas khi startup; `eth_call` preflight trước ký.
 5. Prepare ký, lưu nonce/expected hash/signed bytes.
 6. Broadcast và watch receipt.
-7. Poll escrow logs, deduplicate `processed_event`, rồi chuyển domain state.
+7. Poll escrow logs, deduplicate `processed_event`, rồi chuyển domain state. Định kỳ đối soát receipt của các transaction đã `CONFIRMED` để phục hồi event bị RPC bỏ sót; vẫn chống trùng theo `(chainId, transactionHash, logIndex)` và kiểm tra block hash.
 
 Trạng thái transaction: `CREATED → DISPATCHING → SUBMITTED → CONFIRMED|FAILED`.
 
@@ -156,6 +188,10 @@ Yêu cầu runtime: `BLOCKCHAIN_ENABLED=true`, `BLOCKCHAIN_OPERATOR_ENABLED=true
 - Learning gửi lại completed session chưa acknowledged sau initial 5 giây và mỗi 30 giây.
 - Contract quét `PROPOSED` quá deadline sau initial 30 giây và mỗi 60 giây.
 - Dispatcher/receipt watcher chạy mỗi 5 giây.
+- Event poller đọc log theo `BLOCKCHAIN_EVENT_BLOCK_BATCH_SIZE`; cấu hình local
+  chuẩn là `10` block/lần quét để tránh nghẽn/throttle RPC Sepolia. Nếu copy env
+  sang `frontend-web/.env`, giá trị này vẫn chỉ phục vụ cấu hình dùng chung; mã
+  trình duyệt chỉ đọc các biến `VITE_*`.
 
 Nếu tất cả service tắt, không có giao dịch được gửi trong thời gian tắt. Sau restart worker đọc state bền vững và catch up. Dispute đang mở không bao giờ bị auto-finalize.
 
@@ -182,3 +218,23 @@ V1 không có rescue/sweep cho excess raw-transfer balance; tài liệu không �
 - Sepolia/test USDC là môi trường thử nghiệm, không phải production mainnet accounting.
 - Phải giám sát ETH gas, RPC, event cursor, failed intent, overdue proposal và S3.
 - Không dùng `docker compose down -v` nếu muốn giữ PostgreSQL volume.
+
+## 15. Smart contract V2 (Đã sẵn sàng mã nguồn & test, chưa deploy)
+
+Phiên bản V2 đã được lập trình sẵn và lưu trữ song song với V1, hoàn toàn không ảnh hưởng hay thay đổi V1 đang chạy trên Sepolia:
+
+- Mã nguồn: `blockchain/src/EduConnectEscrowV2.sol`, `blockchain/src/interfaces/IEduConnectEscrowV2.sol`
+- Script triển khai: `blockchain/script/DeployEduConnectEscrowV2.s.sol`
+- Kiểm thử: `blockchain/test/EduConnectEscrowV2.t.sol` (9/9 pass, 44/44 tổng số bài test pass 100%)
+
+### Các tính năng nâng cấp trong V2:
+1. **Token Rescue an toàn (`rescueERC20`)**:
+   - Cho phép Admin rút lại token gửi nhầm hoặc lượng USDC thặng dư (surplus do chuyển nhầm không qua agreement).
+   - Có cơ chế bảo vệ nghiêm ngặt: Biến trạng thái `totalEscrowLiability` tự động theo dõi tổng tiền USDC đang bị khóa cho các hợp đồng đang hoạt động. Admin không bao giờ có thể rút vào phần tiền ký quỹ này.
+2. **Hủy hàng loạt (`batchCancelAgreementsAndRefundUnused`)**:
+   - Cho phép hủy và hoàn tiền đồng loạt nhiều hợp đồng trong một giao dịch duy nhất khi một lớp học bị hủy toàn bộ, tiết kiệm đáng kể chi phí gas và thời gian xử lý của backend.
+3. **Khiếu nại & Phân xử đa kịch bản (`openDispute` / `resolveDispute`)**:
+   - Mở rộng phân xử linh hoạt không chỉ giới hạn ở `BOTH_PRESENT` như V1, mà cho phép khiếu nại cả trường hợp `STUDENT_ABSENT_TUTOR_PRESENT`, và Arbitrator có thể chỉ định outcome cuối cùng phù hợp với bằng chứng thực tế.
+4. **Tương thích ngược 100%**:
+   - Giữ nguyên toàn bộ các hàm V1 (`openTutorFraudDispute`, `resolveTutorFraudDispute`, `cancelAgreementAndRefundUnused`, `fundAgreement`, v.v.).
+

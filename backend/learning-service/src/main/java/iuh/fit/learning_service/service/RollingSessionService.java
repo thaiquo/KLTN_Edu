@@ -37,6 +37,7 @@ public class RollingSessionService {
     public List<ClassSession> generateInitialWeekSessions(Long classroomId) {
         ClassRoom classRoom = classRoomRepository.findByIdForUpdate(classroomId)
                 .orElseThrow(() -> new IllegalArgumentException("ClassRoom not found: " + classroomId));
+        if (classRoom.getTerminationCutoffSession() != null) return Collections.emptyList();
 
         long existingCount = classSessionRepository.countByClassRoomId(classroomId);
         if (existingCount > 0) {
@@ -107,6 +108,7 @@ public class RollingSessionService {
     public List<ClassSession> generateNextBatchIfNeeded(Long classroomId) {
         ClassRoom classRoom = classRoomRepository.findByIdForUpdate(classroomId)
                 .orElseThrow(() -> new IllegalArgumentException("ClassRoom not found: " + classroomId));
+        if (classRoom.getTerminationCutoffSession() != null) return Collections.emptyList();
 
         List<ClassSession> existingSessions = classSessionRepository.findByClassRoomIdOrderBySequenceNumberAsc(classroomId);
         if (existingSessions.isEmpty()) {
@@ -201,7 +203,7 @@ public class RollingSessionService {
 
         List<ClassSession> sessions = classSessionRepository.findByClassRoomIdOrderBySequenceNumberAsc(classRoom.getId());
         for (ClassSession session : sessions) {
-            if (session.getStatus() == ClassSessionStatus.COMPLETED) {
+            if (session.getStatus() == ClassSessionStatus.COMPLETED || session.getStatus() == ClassSessionStatus.CANCELLED) {
                 continue;
             }
             if (sessionAttendanceRepository.findBySessionIdAndStudentId(session.getId(), enrollmentRequest.getStudentId()).isPresent()) {

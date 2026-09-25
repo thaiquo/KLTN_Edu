@@ -2,6 +2,30 @@
 
 ---
 
+## 22/09/2026 — Hoàn tất Chấm dứt hợp đồng, Xác thực EIP-712 và Hoàn tiền Escrow Sepolia Thành công
+
+- **Nghiệp vụ Chấm dứt & Hủy lớp**:
+  - Học viên đơn phương chấm dứt hợp đồng (`wholeClass=false`) thực hiện trong văn bản hợp đồng cá nhân.
+  - Gia sư đề xuất dừng giảng dạy & hủy toàn bộ lớp học (`wholeClass=true`) trong mục Quản lý Lớp học.
+  - Cả hai thao tác đều xác thực chữ ký số điện tử EIP-712 Typed Data gasless, đối chiếu địa chỉ ví MetaMask với ví đã chốt trên hợp đồng/nạp cọc để chống giả mạo danh tính và gian lận tài chính.
+- **Khu vực đệm Minh chứng & Tính bất biến (Evidence Staging & Immutability)**:
+  - Bổ sung cơ chế đệm (staging) cho phép người dùng xem trước, thêm/xóa (`[✕ Xóa]`) file tài liệu và ghi chú giải trình trước khi nhấn nút gửi chính thức.
+  - Sau khi gửi, tài liệu được lưu bất biến vào S3 và PostgreSQL (audit trail), không cho phép xóa hay sửa đổi. Các lần gửi bổ sung được phân tách và đánh số theo đợt (`LẦN 1`, `LẦN 2`...) kèm mốc thời gian rõ ràng.
+- **Phân định thẩm quyền Ban Quản trị**:
+  - Nhân viên (Staff): Chỉ xem và thẩm định các hồ sơ thuộc lớp do mình được phân công duyệt (`classroomReviewerEmail`), có quyền kiến nghị (`RECOMMEND`) hoặc từ chối (`REJECT`).
+  - Quản trị viên (Admin): Toàn quyền hệ thống, có thể phê duyệt trực tiếp (`APPROVE`) từ trạng thái `REQUESTED` hoặc `RECOMMENDED` để kích hoạt quyết toán & thanh lý Escrow V1, hoặc từ chối (`REJECT`) để giải phóng hold và khôi phục lớp học.
+- **Xác thực Giao dịch Hoàn tiền Thực tế trên Sepolia**:
+  - Giao dịch thanh lý hợp đồng thành công lúc **23:44:27 ngày 22/09/2026**: [`0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b`](https://sepolia.etherscan.io/tx/0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b).
+  - Event `AgreementCancelled` ghi nhận hoàn **4,80 USDC** về ví học viên `0x58abad20adecebfba5862422091eacc3f65f60e7`.
+  - Hợp đồng (`contract_agreements`) và enrollment đều chuyển trạng thái `CANCELLED`; mốc dừng học đã đóng thành công.
+- **Cơ chế Quyết toán & Thời hạn 24 giờ**:
+  - Làm rõ quy tắc: Thời hạn 24 giờ là cửa sổ khiếu nại của từng buổi học đã dạy trước cutoff, không phải thời hạn chờ bắt buộc sau khi Admin duyệt.
+  - Worker tự động chờ các buổi liên quan quyết toán xong (sau 24h hoặc phán quyết) rồi lập tức kích hoạt hoàn cọc còn dư (`remainingDeposit`) về ví học viên.
+- **Bảng Theo dõi Hoàn tiền Tự động**:
+  - Tích hợp bảng "Hoàn tiền hủy hợp đồng / hủy lớp" tại Admin Tài chính và Ví cá nhân (Học viên / Gia sư).
+  - Tự động đồng bộ mỗi 15 giây, phân định 4 trạng thái tiến độ: Chờ duyệt (`WAITING_APPROVAL`), Chờ quyết toán (`WAITING_SETTLEMENT`), Chờ blockchain (`BLOCKCHAIN_PENDING`), và Hoàn tất (`COMPLETED`).
+
+---
 ## 15/09/2026 — Đồng bộ tài liệu toàn dự án
 
 - Audit lại service/module, controller, entity, migration, security, frontend route/API, Solidity và runtime settlement evidence.

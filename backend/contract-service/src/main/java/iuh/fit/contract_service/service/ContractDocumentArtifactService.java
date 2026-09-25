@@ -24,7 +24,7 @@ import java.util.*;
 @Service
 public class ContractDocumentArtifactService {
     private static final Set<String> FINALIZABLE_STATUSES = Set.of(
-            "WAITING_PAYMENT", "PAYMENT_CONFIRMING", "ACTIVE", "COMPLETED");
+            "ACTIVE", "COMPLETED", "CANCELLED");
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter DATE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss");
     private static final ZoneId VIETNAM = ZoneId.of("Asia/Ho_Chi_Minh");
@@ -72,6 +72,7 @@ public class ContractDocumentArtifactService {
                 .orElseGet(() -> newArtifact(view));
         if (artifact.getStatus() == ContractDocumentArtifactStatus.READY) return artifact;
 
+        artifact.setTemplateVersion(properties.templateVersion());
         artifact.setStatus(ContractDocumentArtifactStatus.GENERATING);
         artifact.setFailureCode(null);
         artifact.setFailureMessage(null);
@@ -135,13 +136,16 @@ public class ContractDocumentArtifactService {
 
     private void validateFinalizable(ContractDocumentViewDto view) {
         if (!FINALIZABLE_STATUSES.contains(view.status())) {
-            throw new IllegalStateException("Chỉ sinh file cuối sau khi cả hai bên đã ký");
+            throw new IllegalStateException("Chỉ phát hành file chính thức sau khi hợp đồng đã kích hoạt hoặc chuyển sang trạng thái lịch sử đủ chữ ký");
         }
         if (!view.tutorSignature().signed() || !hasText(view.tutorSignature().signature())
                 || !view.studentSignature().signed() || !hasText(view.studentSignature().signature())) {
             throw new IllegalStateException("Hợp đồng chưa đủ hai chữ ký EIP-712");
         }
-        if (!hasText(view.className()) || !complete(view.tutor()) || !complete(view.student())) {
+        if (!hasText(view.className()) || !complete(view.tutor()) || !complete(view.student())
+                || !hasText(view.tutor().address())
+                || !hasText(view.student().dateOfBirth())
+                || !hasText(view.student().address())) {
             throw new IllegalStateException("Snapshot hợp đồng thiếu tên lớp hoặc danh tính thật của hai bên");
         }
     }
@@ -174,8 +178,8 @@ public class ContractDocumentArtifactService {
         String tutorSignature = value(view.tutorSignature().signature(), missing);
         String studentSignature = value(view.studentSignature().signature(), missing);
         String bundleHash = Hash.sha3String(view.termsHash() + "|" + tutorSignature + "|" + studentSignature);
-        String fundingTx = paymentRepository.findByAgreementId(UUID.fromString(view.agreementId()))
-                .map(payment -> value(payment.getFundTxHash(), "Chưa phát sinh"))
+        var payment = paymentRepository.findByAgreementId(UUID.fromString(view.agreementId()));
+        String fundingTx = payment.map(value -> value(value.getFundTxHash(), "Chưa phát sinh"))
                 .orElse("Chưa phát sinh");
 
         m.put("contractNo", "EDU-" + view.createdAt().getYear() + "-" + view.agreementId().substring(0, 8).toUpperCase(Locale.ROOT));
@@ -193,10 +197,9 @@ public class ContractDocumentArtifactService {
         putParty(m, "tutor", view.tutor(), view.tutorSignature(), privateId, missing);
         putParty(m, "student", view.student(), view.studentSignature(), privateId, missing);
         m.put("tutorStatus", "Tài khoản EduConnect đã xác thực");
-        m.put("tutorAddress", missing);
-        m.put("studentDateOfBirth", missing);
-        m.put("studentGrade", missing);
-        m.put("studentAddress", missing);
+        m.put("tutorAddress", value(view.tutor().address(), missing));
+        m.put("studentDateOfBirth", localDate(view.student().dateOfBirth(), missing));
+        m.put("studentAddress", value(view.student().address(), missing));
         m.put("hasGuardian", false);
         m.put("guardianFullName", missing);
         m.put("guardianRelationship", missing);
@@ -215,9 +218,12 @@ public class ContractDocumentArtifactService {
         ContractDocumentViewDto.LearningTermsDto learning = view.learningTerms();
         m.put("durationPerSessionMinutes", learning.durationPerSessionMinutes());
         m.put("learningMode", learning.learningMode());
-        m.put("meetingPlatform", value(learning.meetingPlatform(), missing));
-        m.put("meetingLink", value(learning.meetingLink(), missing));
-        m.put("learningAddress", value(learning.learningAddress(), missing));
+        boolean online = "ONLINE".equalsIgnoreCase(learning.learningMode());
+        m.put("meetingPlatform", online
+                ? value(learning.meetingPlatform(), "Theo liên kết phòng học đã xác nhận")
+                : "Không áp dụng");
+        m.put("meetingLink", online ? value(learning.meetingLink(), missing) : "Không áp dụng");
+        m.put("learningAddress", online ? "Không áp dụng" : value(learning.learningAddress(), missing));
         m.put("courseStartDate", learning.courseStartDate());
         m.put("courseEndDate", learning.courseEndDate());
         m.put("ss", learning.schedules().stream().map(schedule -> Map.of(
@@ -237,9 +243,11 @@ public class ContractDocumentArtifactService {
         m.put("paymentTokenAddress", value(view.platform().tokenAddress(), missing));
         m.put("paymentTokenDecimals", view.financialTerms().tokenDecimals());
         m.put("paymentDeadline", dateTime(view.paymentDeadline()));
-        m.put("agreementStatus", view.status());
+        m.put("agreementStatus", agreementStatusAtIssue(view.status()));
         m.put("fundingTxHash", fundingTx);
-        m.put("activatedAt", "Không áp dụng tại thời điểm ký");
+        m.put("activatedAt", payment.filter(value -> hasText(value.getFundTxHash()))
+                .map(value -> "Đã xác nhận qua giao dịch nạp quỹ")
+                .orElse("Không phát sinh giao dịch nạp quỹ"));
         m.put("signatureBundleHash", bundleHash);
         m.put("eip712DomainName", "EduConnectEscrow");
         m.put("eip712DomainVersion", String.valueOf(view.contractVersion()));
@@ -272,6 +280,24 @@ public class ContractDocumentArtifactService {
 
     private String chainName(Long chainId) {
         return Objects.equals(chainId, 11155111L) ? "Ethereum Sepolia Testnet" : "Mạng EVM";
+    }
+
+    private String localDate(String value, String fallback) {
+        if (!hasText(value)) return fallback;
+        try {
+            return java.time.LocalDate.parse(value).format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+        } catch (java.time.format.DateTimeParseException ignored) {
+            return value.trim();
+        }
+    }
+
+    private String agreementStatusAtIssue(String status) {
+        return switch (status == null ? "" : status) {
+            case "ACTIVE" -> "ĐÃ KÍCH HOẠT (ACTIVE)";
+            case "COMPLETED" -> "ĐÃ HOÀN TẤT (COMPLETED)";
+            case "CANCELLED" -> "ĐÃ CHẤM DỨT (CANCELLED)";
+            default -> status;
+        };
     }
 
     private String vietnameseDay(Integer dayOfWeek) {

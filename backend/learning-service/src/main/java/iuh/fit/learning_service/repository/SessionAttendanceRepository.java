@@ -16,5 +16,9 @@ public interface SessionAttendanceRepository extends JpaRepository<SessionAttend
 
     List<SessionAttendance> findByStudentId(Long studentId);
 
+    void deleteBySession_Id(Long sessionId);
+
+    void deleteBySession_IdAndStudentId(Long sessionId, Long studentId);
+
     long countBySessionIdAndStudentCheckedTrue(Long sessionId);
 }

@@ -4,12 +4,15 @@ import iuh.fit.learning_service.dto.ClassSessionDtos;
 import iuh.fit.learning_service.entity.ClassRoom;
 import iuh.fit.learning_service.entity.ClassSession;
 import iuh.fit.learning_service.entity.SessionAttendance;
+import iuh.fit.learning_service.entity.EnrollmentRequest;
 import iuh.fit.learning_service.enums.AttendanceOutcome;
 import iuh.fit.learning_service.enums.ClassSessionStatus;
+import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 import iuh.fit.learning_service.exception.ForbiddenException;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.ClassSessionRepository;
 import iuh.fit.learning_service.repository.SessionAttendanceRepository;
+import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,6 +44,9 @@ class SessionAttendanceServiceTest {
     private SessionAttendanceRepository sessionAttendanceRepository;
 
     @Mock
+    private EnrollmentRequestRepository enrollmentRequestRepository;
+
+    @Mock
     private ClassRoomRepository classRoomRepository;
 
     @Mock
@@ -51,6 +57,8 @@ class SessionAttendanceServiceTest {
 
     @Mock
     private ContractServiceDispatcher contractServiceDispatcher;
+    @Mock
+    private LearningTerminationService terminationService;
 
     @InjectMocks
     private SessionAttendanceService sessionAttendanceService;
@@ -302,6 +310,67 @@ class SessionAttendanceServiceTest {
         assertThat(response.bothPresentCount()).isEqualTo(1);
         assertThat(response.studentAbsentCount()).isEqualTo(1);
         assertThat(response.tutorAbsentCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("cancelled student sees only sessions retained in their learning history")
+    void cancelledStudentOnlySeesOwnHistoricalSessions() {
+        ClassSession futureSession = new ClassSession();
+        futureSession.setId(2L);
+        futureSession.setClassRoom(classRoom);
+        futureSession.setSequenceNumber(2);
+        futureSession.setSessionDate(LocalDate.now().plusDays(1));
+        futureSession.setStartTime("08:00");
+        futureSession.setEndTime("10:00");
+        futureSession.setStatus(ClassSessionStatus.SCHEDULED);
+
+        SessionAttendance historicalAttendance = new SessionAttendance();
+        historicalAttendance.setSession(session);
+        historicalAttendance.setStudentId(201L);
+        historicalAttendance.setStudentChecked(true);
+
+        when(classRoomRepository.findById(100L)).thenReturn(Optional.of(classRoom));
+        when(classSessionRepository.findByClassRoomIdOrderBySequenceNumberAsc(100L))
+                .thenReturn(List.of(session, futureSession));
+        when(sessionAccessControl.currentStudentId()).thenReturn(201L);
+        when(sessionAccessControl.isHistoricalOnlyStudent(classRoom, 201L)).thenReturn(true);
+        when(sessionAttendanceRepository.findBySessionIdAndStudentId(1L, 201L))
+                .thenReturn(Optional.of(historicalAttendance));
+        when(sessionAttendanceRepository.findBySessionIdAndStudentId(2L, 201L))
+                .thenReturn(Optional.empty());
+        when(sessionAttendanceRepository.findBySessionId(1L)).thenReturn(List.of(historicalAttendance));
+
+        List<ClassSessionDtos.ClassSessionResponse> result = sessionAttendanceService.getSessionsByClassRoomId(100L);
+
+        assertThat(result).extracting(ClassSessionDtos.ClassSessionResponse::id).containsExactly(1L);
+    }
+
+    @Test
+    @DisplayName("tutor roster marks a cancelled enrollment as historical and locked")
+    void tutorRosterMarksCancelledEnrollment() {
+        SessionAttendance attendance = new SessionAttendance();
+        attendance.setId(101L);
+        attendance.setSession(session);
+        attendance.setStudentId(201L);
+        attendance.setTutorId(10L);
+        attendance.setStudentChecked(true);
+
+        EnrollmentRequest enrollment = new EnrollmentRequest();
+        enrollment.setClassRoom(classRoom);
+        enrollment.setStudentId(201L);
+        enrollment.setStatus(EnrollmentRequestStatus.CANCELLED);
+
+        when(classSessionRepository.findById(1L)).thenReturn(Optional.of(session));
+        when(sessionAttendanceRepository.findBySessionId(1L)).thenReturn(List.of(attendance));
+        when(enrollmentRequestRepository.findByClassRoomIdWithDetails(100L)).thenReturn(List.of(enrollment));
+
+        List<ClassSessionDtos.SessionAttendanceResponse> result =
+                sessionAttendanceService.getAttendancesBySessionId(1L, "tutor@edu.vn");
+
+        assertThat(result).singleElement().satisfies(response -> {
+            assertThat(response.enrollmentStatus()).isEqualTo(EnrollmentRequestStatus.CANCELLED);
+            assertThat(response.attendanceLocked()).isTrue();
+        });
     }
 
     @Test

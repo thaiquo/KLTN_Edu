@@ -13,6 +13,7 @@ import iuh.fit.contract_service.repository.DisputeEvidenceRepository;
 import iuh.fit.contract_service.repository.EscrowPaymentRepository;
 import iuh.fit.contract_service.repository.ProcessedEventRepository;
 import iuh.fit.contract_service.repository.SessionSettlementRepository;
+import iuh.fit.contract_service.repository.TerminationItemRepository;
 import iuh.fit.contract_service.service.AgreementFundingWorkflowService;
 import iuh.fit.contract_service.service.AgreementLifecycleWorkflowService;
 import iuh.fit.contract_service.service.ContractSignatureService;
@@ -73,6 +74,8 @@ class ContractManagementControllerPaymentTest {
     @Mock
     private ProcessedEventRepository processedEventRepository;
     @Mock
+    private TerminationItemRepository terminationItemRepository;
+    @Mock
     private ContractAcceptanceRepository acceptanceRepository;
     @Mock
     private LearningServiceDispatcher learningServiceDispatcher;
@@ -102,13 +105,15 @@ class ContractManagementControllerPaymentTest {
                 registrationWorkflowService,
                 escrowPaymentRepository,
                 processedEventRepository,
+                terminationItemRepository,
                 acceptanceRepository,
                 learningServiceDispatcher,
                 currentUserContext,
                 accessControl,
                 blockchainGateway, new iuh.fit.contract_service.service.OperationalFundingPolicy(
                         agreementRepository, escrowPaymentRepository, processedEventRepository,
-                        new tools.jackson.databind.ObjectMapper()));
+                        new tools.jackson.databind.ObjectMapper()),
+                org.mockito.Mockito.mock(iuh.fit.contract_service.service.TerminationService.class));
     }
 
     @Test

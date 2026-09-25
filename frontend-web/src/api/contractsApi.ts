@@ -39,9 +39,11 @@ export interface AgreementSummary {
   settlementEligible?: boolean;
   totalAmount?: number;
   remainingDeposit?: number;
+  remainingAmountUsdc?: number;
   releasedAmountUsdc?: number;
   refundedAmountUsdc?: number;
   fundedTxHash?: string;
+  affectedAgreements?: number;
 }
 
 export interface AgreementDetail {
@@ -56,6 +58,8 @@ export interface ContractDocumentParty {
   email: string | null;
   phone: string | null;
   walletAddress: string | null;
+  dateOfBirth: string | null;
+  address: string | null;
 }
 
 export interface ContractSignatureProof {
@@ -221,11 +225,14 @@ export interface AdminFinancialOverview {
   totalTutorPaidUsdc: number;
   totalPlatformFeeUsdc: number;
   totalStudentRefundedUsdc: number;
+  totalSessionRefundedUsdc?: number;
+  totalTerminationRefundedUsdc?: number;
   totalEscrowLockedUsdc: number;
   totalActiveAgreements: number;
   totalSettledSessions: number;
   totalPendingSessions: number;
   totalDisputedSessions: number;
+  totalCompletedTerminationItems?: number;
   platformWallet: string | null;
   escrowContractAddress: string | null;
   chainId: number | null;
@@ -428,10 +435,13 @@ export const contractsApi = {
     studentName: string;
     studentEmail: string;
     studentPhone: string;
+    studentDateOfBirth: string;
+    studentAddress: string;
     tutorId: number;
     tutorName: string;
     tutorEmail: string;
     tutorPhone?: string;
+    tutorAddress: string;
     studentWallet: string;
     tutorWallet: string;
     pricePerSessionVnd?: number;

@@ -28,6 +28,11 @@ import java.util.UUID;
 @Table(name = "contract_agreement")
 @NoArgsConstructor
 public class ContractAgreement {
+    // -1 blocks proposals until Learning has persisted the teaching cutoff.
+    @Column(name = "termination_cutoff_session")
+    private Integer terminationCutoffSession;
+    @Column(name = "termination_sessions_json", columnDefinition = "TEXT")
+    private String terminationSessionsJson;
     @Column(name = "legacy_excluded", nullable = false)
     private boolean legacyExcluded;
     @Id

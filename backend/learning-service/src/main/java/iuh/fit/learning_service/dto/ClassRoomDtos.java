@@ -175,7 +175,8 @@ public final class ClassRoomDtos {
             List<ScheduleResponse> schedules,
             List<ChapterResponse> chapters,
             LocalDateTime createdAt,
-            LocalDateTime updatedAt
+            LocalDateTime updatedAt,
+            Integer terminationCutoffSession
     ) {}
 
     public record RejectClassRequest(

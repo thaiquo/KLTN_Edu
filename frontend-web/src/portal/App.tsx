@@ -485,7 +485,7 @@ export default function App({ user, onLogout }: AppProps) {
         return fullTutorAccess ? <TeachingRegistrationPage embedded={true} /> : null;
 
       case "contracts":
-        return <EscrowContractsView activeRole={activeRole} userEmail={user.email} />;
+        return <EscrowContractsView activeRole={activeRole} userEmail={user.email} onNavigate={handleNavigate} />;
 
       case "wallet":
         return activeRole === "tutor"
