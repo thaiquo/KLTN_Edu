@@ -19,7 +19,6 @@ import { TutorProfilePage } from './pages/tutor/TutorProfilePage';
 import { TeachingRegistrationPage } from './pages/tutor/TeachingRegistrationPage';
 import { StudentContractsPage } from './pages/student/StudentContractsPage';
 import { StudentComplaintsPage } from './pages/student/StudentComplaintsPage';
-import { StudentMatchingPage } from './pages/student/StudentMatchingPage';
 import { StudentMessagesPage } from './pages/student/StudentMessagesPage';
 import { StudentMyClassesPage } from './pages/student/StudentMyClassesPage';
 import { StudentSchedulePage } from './pages/student/StudentSchedulePage';
@@ -223,15 +222,6 @@ export default function App() {
                 </ProtectedStudentPage>
               }
             />
-            <Route
-              path="/matching"
-              element={
-                <ProtectedStudentPage>
-                  <StudentMatchingPage />
-                </ProtectedStudentPage>
-              }
-            />
-            <Route path="/student/tutor-matching" element={<Navigate to="/matching" replace />} />
             <Route
               path="/messages"
               element={

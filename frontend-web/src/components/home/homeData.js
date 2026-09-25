@@ -1,7 +1,6 @@
 export const homeNavLinks = [
   { label: 'Tìm gia sư', href: '/tutors' },
   { label: 'Tìm lớp', href: '/classes' },
-  { label: 'Gợi ý phù hợp', href: '#matching' },
   { label: 'An toàn & hợp đồng', href: '#trust' },
 ];
 
@@ -11,7 +10,6 @@ export const studentNavLinks = [
   { label: 'Tìm lớp', href: '/classes', icon: 'book' },
   { label: 'Lịch học', href: '/my-schedule', icon: 'calendar' },
   { label: 'Lớp học của tôi', href: '/my-classes', icon: 'book' },
-  { label: 'AI Matching', href: '/matching', icon: 'sparkles' },
   { label: 'Tin nhắn', href: '/messages', icon: 'message' },
 ];
 

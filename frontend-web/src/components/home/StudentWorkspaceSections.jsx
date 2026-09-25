@@ -4,15 +4,13 @@ import {
   CalendarDays,
   CheckCircle2,
   ClipboardList,
-  MessageCircle,
-  Sparkles
+  MessageCircle
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { featuredTutors } from './homeData';
 import { TutorCard } from './TutorCard';
 
 const learningProfile = null;
-const recommendations = [];
 const activeClasses = [];
 
 export function StudentWorkspaceSections() {
@@ -27,32 +25,6 @@ export function StudentWorkspaceSections() {
             <LearningProfileCard hasLearningProfile={hasLearningProfile} />
             <NextClassCard hasClasses={hasClasses} />
           </div>
-        </div>
-      </section>
-
-      <section id="matching" className="py-12 bg-bg scroll-mt-[96px]" aria-labelledby="matching-title">
-        <div className="container-app">
-          <SectionHeader
-            eyebrow="AI Matching"
-            title="Gợi ý dành cho bạn"
-            description="Khi Learning Profile và matching-service sẵn sàng, khu vực này sẽ hiển thị gia sư phù hợp cùng lý do đề xuất."
-          />
-
-          {recommendations.length > 0 ? (
-            <div className="mt-8 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-              {recommendations.map((recommendation) => (
-                <RecommendationCard key={recommendation.id} recommendation={recommendation} />
-              ))}
-            </div>
-          ) : (
-            <EmptyState
-              icon={<Sparkles size={22} />}
-              title="Chưa có gợi ý cá nhân hóa"
-              description="Hoàn thiện hồ sơ học tập để hệ thống có đủ dữ liệu về môn học, mục tiêu, lịch rảnh và ngân sách trước khi đề xuất gia sư."
-              actionHref="/matching"
-              actionLabel="Xem AI Matching"
-            />
-          )}
         </div>
       </section>
 
@@ -199,7 +171,6 @@ function ReadinessList() {
       <div className="mt-5 grid gap-3">
         {[
           'Student Learning Profile',
-          'AI Matching',
           'Tutor Recommendation',
           'Request / Agreement',
           'Electronic Contract',
@@ -260,10 +231,3 @@ function EmptyState({ icon, title, description, actionHref, actionLabel }) {
   );
 }
 
-function RecommendationCard({ recommendation }) {
-  return (
-    <article className="rounded-[8px] border border-slate-200 bg-white p-5">
-      <h3 className="font-display text-lg font-extrabold">{recommendation.tutorName}</h3>
-    </article>
-  );
-}

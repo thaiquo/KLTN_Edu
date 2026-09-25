@@ -16,6 +16,7 @@ import {
   Search,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
   Star,
   UsersRound,
   WalletCards,
@@ -25,6 +26,7 @@ import { tutorApi } from '../../api/tutors';
 import { teachingCatalogApi } from '../../api/teachingRegistrations';
 import { referenceApi } from '../../api/reference';
 import { HomeHeader } from '../../components/home/HomeHeader';
+import { StudentMatchingInputForm } from '../../components/matching/StudentMatchingInputForm';
 
 const DEFAULT_PAGE_SIZE = 9;
 const DAY_OPTIONS = [
@@ -71,6 +73,7 @@ export function TutorMarketplacePage() {
   const [page, setPage] = useState(toPositiveInt(searchParams.get('page'), 0));
   const [sort, setSort] = useState(searchParams.get('sort') || 'name,asc');
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [matchingModalOpen, setMatchingModalOpen] = useState(false);
   const [catalog, setCatalog] = useState({ programTypes: [], educationLevels: [], categories: [], subjects: [], levels: [] });
   const [locations, setLocations] = useState({ provinces: [], communes: [] });
   const [result, setResult] = useState(emptyPage());
@@ -205,6 +208,9 @@ export function TutorMarketplacePage() {
         next.levelId = '';
       } else if (name === 'subjectId') {
         next.levelId = '';
+      } else if (name === 'teachingMode' && value === 'ONLINE') {
+        next.provinceCode = '';
+        next.communeCode = '';
       } else if (name === 'provinceCode') {
         next.communeCode = '';
       }
@@ -278,9 +284,16 @@ export function TutorMarketplacePage() {
                 </span>
                 <h2 className="font-display text-2xl font-extrabold text-slate-950">Chưa biết nên chọn ai?</h2>
                 <p className="text-sm font-semibold leading-7 text-slate-600">
-                  EduConnect có thể hỗ trợ phân tích nhu cầu học tập và gợi ý gia sư dựa trên môn học,
-                  lịch học, ngân sách và hình thức học. Tính năng AI Matching sẽ được giới thiệu khi có dữ liệu xếp hạng thật.
+                  Nhập nhu cầu học tập để EduConnect kiểm tra dữ liệu Matching trước khi bước sang luồng gợi ý ở Phase 4.
+                  Marketplace hiện vẫn giữ tìm kiếm thủ công và không tạo xếp hạng giả.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setMatchingModalOpen(true)}
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-slate-900 px-5 text-sm font-black text-white transition-colors hover:bg-primary"
+                >
+                  <Sparkles size={17} /> Tìm gia sư phù hợp
+                </button>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs font-extrabold text-slate-700">
                 <HeroMetric icon={ShieldCheck} label="Hồ sơ xét duyệt" />
@@ -358,11 +371,42 @@ export function TutorMarketplacePage() {
           </div>
         </div>
       )}
+
+      {matchingModalOpen && <MatchingModal onClose={() => setMatchingModalOpen(false)} />}
+    </div>
+  );
+}
+
+function MatchingModal({ onClose }) {
+  return (
+    <div className="fixed inset-0 z-[60] bg-slate-950/60 p-3 backdrop-blur-sm sm:p-5" role="dialog" aria-modal="true" aria-labelledby="matching-modal-title">
+      <div className="mx-auto flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-[8px] bg-slate-50 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 sm:px-6">
+          <div>
+            <p className="text-[11px] font-extrabold uppercase tracking-wider text-primary">Matching Input</p>
+            <h2 id="matching-modal-title" className="font-display text-xl font-extrabold text-slate-950 sm:text-2xl">
+              Tìm gia sư phù hợp với nhu cầu học tập
+            </h2>
+            <p className="mt-1 text-sm font-semibold leading-6 text-slate-500">
+              Nhập nhu cầu học tập để kiểm tra dữ liệu đầu vào. Phase này chưa sinh danh sách xếp hạng.
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="grid h-10 w-10 shrink-0 place-items-center rounded-[8px] bg-slate-100 text-slate-600 hover:bg-slate-200" aria-label="Đóng Matching Input">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="overflow-y-auto p-4 sm:p-6">
+          <StudentMatchingInputForm variant="modal" onCancel={onClose} submitLabel="Kiểm tra nhu cầu học tập" />
+        </div>
+      </div>
     </div>
   );
 }
 
 function FilterPanel({ filters, catalog, locations, updateFilter, clearFilters, hasActiveFilters }) {
+  const [advancedOpen, setAdvancedOpen] = useState(Boolean(filters.levelId || filters.minRating || filters.minExperience));
+  const locationDisabled = filters.teachingMode === 'ONLINE';
+
   return (
     <div className="rounded-[8px] border border-slate-200 bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,.05)]">
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-4">
@@ -370,17 +414,90 @@ function FilterPanel({ filters, catalog, locations, updateFilter, clearFilters, 
         {hasActiveFilters && <button type="button" onClick={clearFilters} className="inline-flex items-center gap-1.5 text-xs font-extrabold text-rose-600 hover:text-rose-700"><RotateCcw size={13} /> Xóa</button>}
       </div>
       <div className="mt-5 grid gap-4">
-        <Field label="Chương trình"><select value={filters.programTypeId} onChange={(event) => updateFilter('programTypeId', event.target.value)} className={controlClass()}><option value="">Tất cả chương trình</option>{catalog.programTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-        <Field label="Cấp học"><select value={filters.educationLevelId} onChange={(event) => updateFilter('educationLevelId', event.target.value)} className={controlClass()}><option value="">Tất cả cấp học</option>{catalog.educationLevels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-        <Field label="Lĩnh vực"><select value={filters.categoryId} onChange={(event) => updateFilter('categoryId', event.target.value)} className={controlClass()} disabled={!filters.programTypeId && catalog.categories.length === 0}><option value="">Tất cả lĩnh vực</option>{catalog.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-        <Field label="Môn học"><select value={filters.subjectId} onChange={(event) => updateFilter('subjectId', event.target.value)} className={controlClass()} disabled={!filters.categoryId && catalog.subjects.length === 0}><option value="">Tất cả môn học</option>{catalog.subjects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-        <Field label="Cấp độ"><select value={filters.levelId} onChange={(event) => updateFilter('levelId', event.target.value)} className={controlClass()} disabled={!filters.subjectId && catalog.levels.length === 0}><option value="">Tất cả cấp độ</option>{catalog.levels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
-        <Field label="Hình thức học"><div className="grid grid-cols-2 gap-2"><SegmentButton active={filters.teachingMode === 'ONLINE'} onClick={() => updateFilter('teachingMode', filters.teachingMode === 'ONLINE' ? '' : 'ONLINE')} icon={Laptop}>Online</SegmentButton><SegmentButton active={filters.teachingMode === 'OFFLINE'} onClick={() => updateFilter('teachingMode', filters.teachingMode === 'OFFLINE' ? '' : 'OFFLINE')} icon={MapPin}>Trực tiếp</SegmentButton></div></Field>
-        <Field label="Khu vực"><select value={filters.provinceCode} onChange={(event) => updateFilter('provinceCode', event.target.value)} className={controlClass()}><option value="">Tất cả tỉnh/thành</option>{locations.provinces.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}</select><select value={filters.communeCode} onChange={(event) => updateFilter('communeCode', event.target.value)} className={controlClass()} disabled={!filters.provinceCode}><option value="">Tất cả phường/xã</option>{locations.communes.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}</select></Field>
-        <Field label="Mức nhận dạy / buổi"><div className="grid grid-cols-2 gap-2"><input value={filters.minPrice} onChange={(event) => updateFilter('minPrice', event.target.value)} className={controlClass()} inputMode="numeric" placeholder="Từ" /><input value={filters.maxPrice} onChange={(event) => updateFilter('maxPrice', event.target.value)} className={controlClass()} inputMode="numeric" placeholder="Đến" /></div></Field>
-        <Field label="Đánh giá"><select value={filters.minRating} onChange={(event) => updateFilter('minRating', event.target.value)} className={controlClass()}><option value="">Tất cả đánh giá</option><option value="4">Từ 4 sao trở lên</option><option value="3">Từ 3 sao trở lên</option><option value="2">Từ 2 sao trở lên</option></select></Field>
-        <Field label="Kinh nghiệm"><select value={filters.minExperience} onChange={(event) => updateFilter('minExperience', event.target.value)} className={controlClass()}><option value="">Tất cả kinh nghiệm</option><option value="1">Từ 1 năm</option><option value="3">Từ 3 năm</option><option value="5">Từ 5 năm</option><option value="7">Từ 7 năm</option></select></Field>
-        <Field label="Lịch có thể dạy"><select value={filters.dayOfWeek} onChange={(event) => updateFilter('dayOfWeek', event.target.value)} className={controlClass()}><option value="">Bất kỳ ngày nào</option>{DAY_OPTIONS.map((day) => <option key={day.value} value={day.value}>{day.label}</option>)}</select><div className="grid grid-cols-2 gap-2"><input type="time" value={filters.startTime} onChange={(event) => updateFilter('startTime', event.target.value)} className={controlClass()} aria-label="Giờ bắt đầu" /><input type="time" value={filters.endTime} onChange={(event) => updateFilter('endTime', event.target.value)} className={controlClass()} aria-label="Giờ kết thúc" /></div><p className="text-[11px] font-semibold normal-case leading-5 tracking-normal text-slate-500">Gia sư cần có một khung lịch bao phủ toàn bộ khoảng thời gian bạn chọn.</p></Field>
+        <Field label="Chương trình">
+          <select value={filters.programTypeId} onChange={(event) => updateFilter('programTypeId', event.target.value)} className={controlClass()}>
+            <option value="">Tất cả chương trình</option>
+            {catalog.programTypes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Cấp học">
+          <select value={filters.educationLevelId} onChange={(event) => updateFilter('educationLevelId', event.target.value)} className={controlClass()} disabled={!filters.programTypeId}>
+            <option value="">{filters.programTypeId ? 'Tất cả cấp học phù hợp' : 'Chọn chương trình trước'}</option>
+            {catalog.educationLevels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Nhóm môn">
+          <select value={filters.categoryId} onChange={(event) => updateFilter('categoryId', event.target.value)} className={controlClass()} disabled={!filters.programTypeId || catalog.categories.length === 0}>
+            <option value="">{!filters.programTypeId ? 'Chọn chương trình trước' : catalog.categories.length ? 'Tất cả nhóm môn' : 'Không có nhóm môn phù hợp'}</option>
+            {catalog.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Môn học">
+          <select value={filters.subjectId} onChange={(event) => updateFilter('subjectId', event.target.value)} className={controlClass()} disabled={!filters.categoryId || catalog.subjects.length === 0}>
+            <option value="">{filters.categoryId ? 'Tất cả môn học' : 'Chọn nhóm môn trước'}</option>
+            {catalog.subjects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Hình thức học">
+          <div className="grid grid-cols-2 gap-2">
+            <SegmentButton active={filters.teachingMode === 'ONLINE'} onClick={() => updateFilter('teachingMode', filters.teachingMode === 'ONLINE' ? '' : 'ONLINE')} icon={Laptop}>Online</SegmentButton>
+            <SegmentButton active={filters.teachingMode === 'OFFLINE'} onClick={() => updateFilter('teachingMode', filters.teachingMode === 'OFFLINE' ? '' : 'OFFLINE')} icon={MapPin}>Trực tiếp</SegmentButton>
+          </div>
+        </Field>
+        <Field label="Khu vực">
+          <select value={filters.provinceCode} onChange={(event) => updateFilter('provinceCode', event.target.value)} className={controlClass()} disabled={locationDisabled}>
+            <option value="">{locationDisabled ? 'Không áp dụng cho Online' : 'Tất cả tỉnh/thành'}</option>
+            {locations.provinces.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
+          </select>
+          <select value={filters.communeCode} onChange={(event) => updateFilter('communeCode', event.target.value)} className={controlClass()} disabled={locationDisabled || !filters.provinceCode}>
+            <option value="">{filters.provinceCode && !locationDisabled ? 'Tất cả phường/xã' : 'Chọn tỉnh trước'}</option>
+            {locations.communes.map((item) => <option key={item.code} value={item.code}>{item.name}</option>)}
+          </select>
+          <p className="text-[11px] font-semibold normal-case leading-5 tracking-normal text-slate-500">Khu vực chỉ dùng khi cần học trực tiếp.</p>
+        </Field>
+        <Field label="Mức nhận dạy / buổi">
+          <div className="grid grid-cols-2 gap-2">
+            <input value={filters.minPrice} onChange={(event) => updateFilter('minPrice', event.target.value)} className={controlClass()} inputMode="numeric" placeholder="Từ" />
+            <input value={filters.maxPrice} onChange={(event) => updateFilter('maxPrice', event.target.value)} className={controlClass()} inputMode="numeric" placeholder="Đến" />
+          </div>
+        </Field>
+
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((value) => !value)}
+          className="inline-flex min-h-10 items-center justify-between gap-2 rounded-[8px] border border-slate-200 bg-slate-50 px-3 text-xs font-black text-slate-700 hover:bg-white"
+        >
+          Bộ lọc thêm
+          <SlidersHorizontal size={15} className="text-primary" />
+        </button>
+
+        {advancedOpen && (
+          <div className="grid gap-4 rounded-[8px] border border-slate-200 bg-slate-50 p-3">
+            <Field label="Cấp độ">
+              <select value={filters.levelId} onChange={(event) => updateFilter('levelId', event.target.value)} className={controlClass()} disabled={!filters.subjectId && catalog.levels.length === 0}>
+                <option value="">{filters.subjectId ? 'Tất cả cấp độ' : 'Chọn môn học trước'}</option>
+                {catalog.levels.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+              </select>
+            </Field>
+            <Field label="Đánh giá">
+              <select value={filters.minRating} onChange={(event) => updateFilter('minRating', event.target.value)} className={controlClass()}>
+                <option value="">Tất cả đánh giá</option>
+                <option value="4">Từ 4 sao trở lên</option>
+                <option value="3">Từ 3 sao trở lên</option>
+                <option value="2">Từ 2 sao trở lên</option>
+              </select>
+            </Field>
+            <Field label="Kinh nghiệm">
+              <select value={filters.minExperience} onChange={(event) => updateFilter('minExperience', event.target.value)} className={controlClass()}>
+                <option value="">Tất cả kinh nghiệm</option>
+                <option value="1">Từ 1 năm</option>
+                <option value="3">Từ 3 năm</option>
+                <option value="5">Từ 5 năm</option>
+                <option value="7">Từ 7 năm</option>
+              </select>
+            </Field>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -552,7 +669,7 @@ function buildActiveChips(filters, catalog, locations) {
   if (filters.keyword) chips.push({ key: 'keyword', label: `Từ khóa: ${filters.keyword}` });
   pushLookupChip(chips, 'programTypeId', 'Chương trình', filters.programTypeId, catalog.programTypes);
   pushLookupChip(chips, 'educationLevelId', 'Cấp học', filters.educationLevelId, catalog.educationLevels);
-  pushLookupChip(chips, 'categoryId', 'Lĩnh vực', filters.categoryId, catalog.categories);
+  pushLookupChip(chips, 'categoryId', 'Nhóm môn', filters.categoryId, catalog.categories);
   pushLookupChip(chips, 'subjectId', 'Môn', filters.subjectId, catalog.subjects);
   pushLookupChip(chips, 'levelId', 'Cấp độ', filters.levelId, catalog.levels);
   if (filters.teachingMode) chips.push({ key: 'teachingMode', label: teachingModeLabel(filters.teachingMode) });
@@ -562,9 +679,6 @@ function buildActiveChips(filters, catalog, locations) {
   if (filters.maxPrice) chips.push({ key: 'maxPrice', label: `Đến ${formatMoney(filters.maxPrice)}` });
   if (filters.minRating) chips.push({ key: 'minRating', label: `Từ ${filters.minRating} sao` });
   if (filters.minExperience) chips.push({ key: 'minExperience', label: `Từ ${filters.minExperience} năm` });
-  if (filters.dayOfWeek) chips.push({ key: 'dayOfWeek', label: dayLabel(filters.dayOfWeek) });
-  if (filters.startTime) chips.push({ key: 'startTime', label: `Sau ${filters.startTime}` });
-  if (filters.endTime) chips.push({ key: 'endTime', label: `Trước ${filters.endTime}` });
   return chips;
 }
 
