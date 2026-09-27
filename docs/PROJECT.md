@@ -21,7 +21,7 @@ EduConnect dùng **Service-Based Architecture**, không gọi là Microservices 
 | `api-gateway` | 8080 | Spring Cloud Gateway, CORS, REST/WebSocket routing. |
 | `account-service` | 8081 | JWT/OTP/session, user/role, hồ sơ Student/Tutor, hồ sơ xét duyệt Tutor, S3. |
 | `learning-service` | 8082 | Danh mục, chuyên môn/lịch rảnh, lớp, enrollment, lịch học, buổi học, điểm danh, bài tập. |
-| `contract-service` | 8083 | Hợp đồng, EIP-712, DOCX/PDF, escrow, transaction pipeline, settlement, dispute và evidence. |
+| `contract-service` | 8083 | Hợp đồng, EIP-712, DOCX/PDF, escrow, transaction pipeline, settlement, dispute, evidence, chấm dứt hợp đồng đơn phương & đề xuất hủy lớp. |
 | `notification-service` | 8084 | Notification lưu bền, Bell REST/WebSocket; chat persistence/API/WebSocket. |
 | `ai-service` | 8085 | Service skeleton và `GET /api/ai/health`; AI nghiệp vụ chưa triển khai. |
 | `frontend-web` | 5173 | React/Vite cho Guest, Student, Tutor, Staff, Admin. |
@@ -92,7 +92,7 @@ Tỷ lệ được tính theo base unit của USDC; Tutor và Platform được 
 ## 8. Trạng thái ngắn gọn
 
 - Đã có luồng chính Web cho Account, Tutor approval, catalog/class/enrollment, session/attendance/homework, contract/escrow/settlement/dispute và notification.
-- Sepolia đã có bằng chứng funding, payout 85/15 và refund 100% thực tế; chi tiết transaction nằm trong [BLOCKCHAIN.md](BLOCKCHAIN.md).
+- Sepolia đã có bằng chứng funding, payout 85/15, refund 100% và refund hoàn cọc thanh lý hợp đồng 4.80 USDC thực tế; chi tiết transaction nằm trong [BLOCKCHAIN.md](BLOCKCHAIN.md).
 - Chat backend có persistence/API/WebSocket nhưng Portal message hiện vẫn dùng mock state, nên luồng người dùng chưa hoàn chỉnh.
 - AI Matching chưa triển khai nghiệp vụ; `ai-service` mới là skeleton.
 - Student post, violation/support ticket, báo cáo quản trị đầy đủ và mobile feature parity chưa có.

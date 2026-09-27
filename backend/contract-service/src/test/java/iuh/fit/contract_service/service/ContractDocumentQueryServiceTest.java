@@ -87,6 +87,27 @@ class ContractDocumentQueryServiceTest {
                 .doesNotContain("userId", "id");
     }
 
+    @Test
+    void readsPersonalIdentityFieldsFromImmutableTermsSnapshot() {
+        UUID agreementId = UUID.randomUUID();
+        ContractAgreement agreement = agreement(agreementId, OffsetDateTime.now());
+        agreement.setTermsJson("""
+                {"schemaVersion":"contract-terms-v3","parties":{
+                  "tutor":{"address":"12 Nguyễn Huệ, TP. Hồ Chí Minh"},
+                  "student":{"dateOfBirth":"2005-01-01","address":"34 Lê Lợi, TP. Hồ Chí Minh"}
+                }}
+                """);
+
+        when(agreementRepository.findById(agreementId)).thenReturn(Optional.of(agreement));
+        when(acceptanceRepository.findByAgreementId(agreementId)).thenReturn(List.of());
+
+        ContractDocumentViewDto view = service.findDocumentView(agreementId).orElseThrow();
+
+        assertThat(view.tutor().address()).isEqualTo("12 Nguyễn Huệ, TP. Hồ Chí Minh");
+        assertThat(view.student().dateOfBirth()).isEqualTo("2005-01-01");
+        assertThat(view.student().address()).isEqualTo("34 Lê Lợi, TP. Hồ Chí Minh");
+    }
+
     private List<String> componentNames(Class<?> recordType) {
         return Stream.of(recordType.getRecordComponents())
                 .map(component -> component.getName())

@@ -27,8 +27,8 @@ class ContractTermsSnapshotServiceTest {
                         "2026-09-10", "2026-10-10", 90,
                         List.of(new ContractTermsSnapshot.ScheduleTerms(2, "18:00", "19:30")), List.of()),
                 new ContractTermsSnapshot.PartiesTerms(
-                        new ContractTermsSnapshot.PartyTerms("Tutor", "tutor@example.com", "0901", "0x0000000000000000000000000000000000000001"),
-                        new ContractTermsSnapshot.PartyTerms("Student", "student@example.com", "0902", "0x0000000000000000000000000000000000000002")),
+                        new ContractTermsSnapshot.PartyTerms("Tutor", "tutor@example.com", "0901", "0x0000000000000000000000000000000000000001", null, "TP. Hồ Chí Minh"),
+                        new ContractTermsSnapshot.PartyTerms("Student", "student@example.com", "0902", "0x0000000000000000000000000000000000000002", "2005-01-01", "TP. Hồ Chí Minh")),
                 new ContractTermsSnapshot.FinancialTerms(new BigDecimal("250000"), new BigDecimal("1000000"), new BigDecimal("25000"),
                         "USDC", (short) 6, "10000000", "40000000", 4),
                 new ContractTermsSnapshot.PlatformTerms(11155111L, "0x0000000000000000000000000000000000000003",

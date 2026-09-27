@@ -63,6 +63,38 @@ public class DisputeEvidenceStorageService {
         }
     }
 
+    public StoredEvidence storeTermination(
+            UUID caseId,
+            String role,
+            MultipartFile file) {
+        validate(file);
+        String contentType = normalizeContentType(file.getContentType());
+        String originalFilename = sanitizeFilename(file.getOriginalFilename());
+        String objectKey = "terminations/" + caseId
+                + "/" + role.toLowerCase(Locale.ROOT)
+                + "/" + UUID.randomUUID() + "-" + originalFilename;
+        try {
+            byte[] bytes = file.getBytes();
+            storage.put(objectKey, bytes, contentType);
+            return new StoredEvidence(objectKey, originalFilename, contentType, bytes.length, sha256(bytes));
+        } catch (java.io.IOException ex) {
+            throw new IllegalStateException("Không thể đọc file minh chứng.", ex);
+        }
+    }
+
+    private void validate(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("Vui lòng chọn file minh chứng.");
+        }
+        if (file.getSize() > properties.maxFileBytes()) {
+            throw new IllegalArgumentException("File minh chứng vượt quá giới hạn 50 MB.");
+        }
+        String contentType = normalizeContentType(file.getContentType());
+        if (!ALLOWED_CONTENT_TYPES.contains(contentType)) {
+            throw new IllegalArgumentException("Định dạng file minh chứng không được hỗ trợ: " + contentType);
+        }
+    }
+
     public byte[] read(String objectKey) {
         requireManagedKey(objectKey);
         return storage.get(objectKey);
@@ -78,7 +110,14 @@ public class DisputeEvidenceStorageService {
     }
 
     public boolean isManagedKey(String objectKey) {
-        return objectKey != null && objectKey.startsWith("disputes/");
+        return objectKey != null && (objectKey.startsWith("disputes/") || objectKey.startsWith("terminations/"));
+    }
+
+    public byte[] readTermination(String objectKey) {
+        if (objectKey == null || !objectKey.startsWith("terminations/")) {
+            throw new IllegalArgumentException("Minh chứng chấm dứt không hợp lệ.");
+        }
+        return storage.get(objectKey);
     }
 
     public String filename(String objectKey) {

@@ -33,7 +33,18 @@ Stopping application processes does not delete database state. Learning and
 Contract catch up durable overdue work on the next start. Avoid
 `docker compose down -v` unless deleting PostgreSQL/RabbitMQ volumes is intended.
 
-The root `.env` and `frontend-web/.env` are fully synchronized with the master configuration,
-and their respective `.env.example` files are sanitized templates without secrets for safe Git tracking.
-Developers only need one master `.env` file to deploy across both locations.
-Restart Vite after changing environment.
+The root `.env` and `frontend-web/.env` are intentionally kept compatible so a
+developer can use one master local env file in both locations:
+
+```powershell
+Copy-Item .\.env .\frontend-web\.env
+```
+
+Vite only exposes variables prefixed with `VITE_` to browser code; backend-only
+keys in `frontend-web/.env` are ignored by Vite runtime. Keep secrets out of
+`VITE_*`. Restart Vite after changing environment.
+
+For Sepolia RPC stability, keep `BLOCKCHAIN_EVENT_BLOCK_BATCH_SIZE=10` unless a
+higher-throughput private RPC plan is confirmed. Larger ranges such as 500 can
+cause public/free RPC providers to throttle log scans and delay settlement or
+refund catch-up.

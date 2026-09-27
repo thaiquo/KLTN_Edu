@@ -39,6 +39,10 @@ public class ContractDocumentQueryService {
 
     private ContractDocumentViewDto toDocumentView(ContractAgreement agreement) {
         ContractTermsSnapshot snapshot = termsSnapshotService.parse(agreement.getTermsJson()).orElse(null);
+        ContractTermsSnapshot.PartyTerms tutorTerms = snapshot != null && snapshot.parties() != null
+                ? snapshot.parties().tutor() : null;
+        ContractTermsSnapshot.PartyTerms studentTerms = snapshot != null && snapshot.parties() != null
+                ? snapshot.parties().student() : null;
         List<ContractAcceptance> currentAcceptances = acceptanceRepository.findByAgreementId(agreement.getId())
                 .stream()
                 .filter(acceptance -> agreement.getContractVersion() == null || acceptance.getContractVersion() == null || agreement.getContractVersion().equals(acceptance.getContractVersion()))
@@ -69,12 +73,16 @@ public class ContractDocumentQueryService {
                         generatedLabelOrNull(agreement.getTutorName(), "Gia sư"),
                         nullIfBlank(agreement.getTutorEmail()),
                         nullIfBlank(agreement.getTutorPhone()),
-                        walletOrNull(agreement.getTutorWallet())),
+                        walletOrNull(agreement.getTutorWallet()),
+                        tutorTerms != null ? nullIfBlank(tutorTerms.dateOfBirth()) : null,
+                        tutorTerms != null ? nullIfBlank(tutorTerms.address()) : null),
                 new ContractDocumentViewDto.PartyDto(
                         generatedLabelOrNull(agreement.getStudentName(), "Học viên"),
                         nullIfBlank(agreement.getStudentEmail()),
                         nullIfBlank(agreement.getStudentPhone()),
-                        walletOrNull(agreement.getStudentWallet())),
+                        walletOrNull(agreement.getStudentWallet()),
+                        studentTerms != null ? nullIfBlank(studentTerms.dateOfBirth()) : null,
+                        studentTerms != null ? nullIfBlank(studentTerms.address()) : null),
                 new ContractDocumentViewDto.PlatformDto(
                         nullIfBlank(agreement.getPlatformWallet()),
                         agreement.getChainId(),

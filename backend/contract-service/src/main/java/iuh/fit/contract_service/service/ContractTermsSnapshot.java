@@ -42,8 +42,15 @@ public record ContractTermsSnapshot(
     @JsonPropertyOrder({"tutor", "student"})
     public record PartiesTerms(PartyTerms tutor, PartyTerms student) {}
 
-    @JsonPropertyOrder({"fullName", "email", "phone", "walletAddress"})
-    public record PartyTerms(String fullName, String email, String phone, String walletAddress) {}
+    @JsonPropertyOrder({"fullName", "email", "phone", "walletAddress", "dateOfBirth", "address"})
+    public record PartyTerms(
+            String fullName,
+            String email,
+            String phone,
+            String walletAddress,
+            String dateOfBirth,
+            String address
+    ) {}
 
     @JsonPropertyOrder({"pricePerSessionVnd", "totalPriceVnd", "vndPerUsdc", "tokenSymbol", "tokenDecimals", "pricePerSessionUsdcUnits", "totalAmountUsdcUnits", "totalSessions"})
     public record FinancialTerms(

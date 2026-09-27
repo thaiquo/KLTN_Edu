@@ -41,7 +41,7 @@ public class SessionAccessControl {
 
     public void requireStudent(ClassRoom room, Long studentId) {
         if (!hasRole("STUDENT") || !Objects.equals(user().userId(), studentId)
-                || !isEnrolled(room, studentId)) {
+                || !hasActiveEnrollment(room, studentId)) {
             throw new ForbiddenException("Confirmed enrollment is required");
         }
     }
@@ -50,12 +50,22 @@ public class SessionAccessControl {
         if (hasRole("ADMIN")
                 || (hasRole("STAFF") && user().email().equalsIgnoreCase(room.getReviewedByEmail()))
                 || (hasRole("TUTOR") && user().email().equalsIgnoreCase(room.getTutorEmail()))
-                || (hasRole("STUDENT") && isEnrolled(room, user().userId()))) return;
+                || (hasRole("STUDENT") && hasLearningHistory(room, user().userId()))) return;
         throw new ForbiddenException("This classroom belongs to other users");
     }
 
-    private boolean isEnrolled(ClassRoom room, Long studentId) {
+    public boolean hasActiveEnrollment(ClassRoom room, Long studentId) {
         return enrollments.findFirstByClassRoomIdAndStudentIdAndStatusInOrderByCreatedAtDesc(
                 room.getId(), studentId, List.of(EnrollmentRequestStatus.ENROLLED)).isPresent();
+    }
+
+    public boolean isHistoricalOnlyStudent(ClassRoom room, Long studentId) {
+        return hasLearningHistory(room, studentId) && !hasActiveEnrollment(room, studentId);
+    }
+
+    private boolean hasLearningHistory(ClassRoom room, Long studentId) {
+        return enrollments.findFirstByClassRoomIdAndStudentIdAndStatusInOrderByCreatedAtDesc(
+                room.getId(), studentId,
+                List.of(EnrollmentRequestStatus.ENROLLED, EnrollmentRequestStatus.CANCELLED)).isPresent();
     }
 }

@@ -8,10 +8,14 @@ import iuh.fit.contract_service.blockchain.DecodedEscrowEvent;
 import iuh.fit.contract_service.blockchain.EduConnectEscrowEventDecoder;
 import iuh.fit.contract_service.config.BlockchainProperties;
 import iuh.fit.contract_service.entity.BlockchainEventCursor;
+import iuh.fit.contract_service.entity.BlockchainTransaction;
 import iuh.fit.contract_service.entity.ProcessedEvent;
 import iuh.fit.contract_service.repository.BlockchainEventCursorRepository;
 import iuh.fit.contract_service.repository.ProcessedEventRepository;
+import iuh.fit.contract_service.repository.BlockchainTransactionRepository;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
@@ -30,6 +34,7 @@ public class BlockchainEventIngestionService {
     private final EduConnectEscrowEventDecoder decoder;
     private final BlockchainEventCursorRepository cursorRepository;
     private final ProcessedEventRepository eventRepository;
+    private final BlockchainTransactionRepository transactionRepository;
     private final AgreementRegistrationWorkflowService registrationWorkflowService;
     private final AgreementFundingWorkflowService fundingWorkflowService;
     private final SessionSettlementWorkflowService settlementWorkflowService;
@@ -44,6 +49,7 @@ public class BlockchainEventIngestionService {
             EduConnectEscrowEventDecoder decoder,
             BlockchainEventCursorRepository cursorRepository,
             ProcessedEventRepository eventRepository,
+            BlockchainTransactionRepository transactionRepository,
             AgreementRegistrationWorkflowService registrationWorkflowService,
             AgreementFundingWorkflowService fundingWorkflowService,
             SessionSettlementWorkflowService settlementWorkflowService,
@@ -56,6 +62,7 @@ public class BlockchainEventIngestionService {
         this.decoder = decoder;
         this.cursorRepository = cursorRepository;
         this.eventRepository = eventRepository;
+        this.transactionRepository = transactionRepository;
         this.registrationWorkflowService = registrationWorkflowService;
         this.fundingWorkflowService = fundingWorkflowService;
         this.settlementWorkflowService = settlementWorkflowService;
@@ -63,6 +70,25 @@ public class BlockchainEventIngestionService {
         this.lifecycleWorkflowService = lifecycleWorkflowService;
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+    }
+
+    /** Compatibility constructor for focused ingestion tests and embedded callers. */
+    public BlockchainEventIngestionService(
+            BlockchainProperties properties,
+            BlockchainEventRpcClient rpcClient,
+            EduConnectEscrowEventDecoder decoder,
+            BlockchainEventCursorRepository cursorRepository,
+            ProcessedEventRepository eventRepository,
+            AgreementRegistrationWorkflowService registrationWorkflowService,
+            AgreementFundingWorkflowService fundingWorkflowService,
+            SessionSettlementWorkflowService settlementWorkflowService,
+            DisputeWorkflowService disputeWorkflowService,
+            AgreementLifecycleWorkflowService lifecycleWorkflowService,
+            ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager) {
+        this(properties, rpcClient, decoder, cursorRepository, eventRepository, null,
+                registrationWorkflowService, fundingWorkflowService, settlementWorkflowService,
+                disputeWorkflowService, lifecycleWorkflowService, objectMapper, transactionManager);
     }
 
     public int scanNextConfirmedRange() {
@@ -77,6 +103,40 @@ public class BlockchainEventIngestionService {
         }
         Integer result = transactionTemplate.execute(status -> scanLocked(safeHead));
         return result == null ? 0 : result;
+    }
+
+    /**
+     * Replays logs from confirmed receipts so a transient eth_getLogs failure
+     * cannot permanently strand a settlement in PROPOSE_PENDING/FINALIZE_PENDING.
+     */
+    @Transactional
+    public int reconcileConfirmedTransactionEvents() {
+        if (transactionRepository == null) {
+            return 0;
+        }
+        int persisted = 0;
+        for (BlockchainTransaction transaction : transactionRepository.findConfirmedWithHash(PageRequest.of(0, 100))) {
+            for (BlockchainLog log : rpcClient.getTransactionLogs(transaction.getTransactionHash())) {
+                if (!properties.getEscrowAddress().equalsIgnoreCase(log.address())
+                        || eventRepository.existsByChainIdAndTransactionHashIgnoreCaseAndLogIndex(
+                        properties.getChainId(), log.transactionHash(), log.logIndex())) {
+                    continue;
+                }
+                validateLog(log, log.blockNumber(), log.blockNumber(), new HashMap<>());
+                DecodedEscrowEvent decoded = decoder.decode(log).orElse(null);
+                if (decoded == null) {
+                    continue;
+                }
+                ProcessedEvent event = ProcessedEvent.blockchainLog(
+                        properties.getChainId(), properties.getEscrowAddress(), log,
+                        decoded.type().name(), serialize(decoded), OffsetDateTime.now(ZoneOffset.UTC));
+                eventRepository.save(event);
+                processPersistedEvent(event);
+                persisted++;
+            }
+        }
+        eventRepository.flush();
+        return persisted;
     }
 
     private int scanLocked(long safeHead) {

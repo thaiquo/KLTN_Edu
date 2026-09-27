@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 @Getter
 @Setter
@@ -34,6 +35,12 @@ public class EnrollmentRequest {
 
     @Column(name = "student_wallet", length = 42)
     private String studentWallet;
+
+    @Column(name = "student_date_of_birth")
+    private LocalDate studentDateOfBirth;
+
+    @Column(name = "student_address", length = 500)
+    private String studentAddress;
 
     @Column(name = "agreement_id", length = 36)
     private String agreementId;

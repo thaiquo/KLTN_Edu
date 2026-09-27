@@ -6,12 +6,14 @@ import iuh.fit.learning_service.entity.ClassSession;
 import iuh.fit.learning_service.entity.SessionAttendance;
 import iuh.fit.learning_service.enums.AttendanceOutcome;
 import iuh.fit.learning_service.enums.ClassSessionStatus;
+import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 import iuh.fit.learning_service.exception.BadRequestException;
 import iuh.fit.learning_service.exception.ForbiddenException;
 import iuh.fit.learning_service.exception.ResourceNotFoundException;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.ClassSessionRepository;
 import iuh.fit.learning_service.repository.SessionAttendanceRepository;
+import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,6 +23,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -29,10 +33,12 @@ public class SessionAttendanceService {
 
     private final ClassSessionRepository classSessionRepository;
     private final SessionAttendanceRepository sessionAttendanceRepository;
+    private final EnrollmentRequestRepository enrollmentRequestRepository;
     private final ClassRoomRepository classRoomRepository;
     private final RollingSessionService rollingSessionService;
     private final SessionAccessControl sessionAccessControl;
     private final ContractServiceDispatcher contractServiceDispatcher;
+    private final LearningTerminationService terminationService;
 
     /**
      * Lấy danh sách các buổi học của một lớp học. Tự động sinh tuần đầu tiên nếu lớp chưa có buổi học nào.
@@ -43,6 +49,13 @@ public class SessionAttendanceService {
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found"));
         sessionAccessControl.requireCanView(room);
         List<ClassSession> sessions = classSessionRepository.findByClassRoomIdOrderBySequenceNumberAsc(classRoomId);
+        Long studentId = sessionAccessControl.currentStudentId();
+        if (studentId != null && sessionAccessControl.isHistoricalOnlyStudent(room, studentId)) {
+            sessions = sessions.stream()
+                    .filter(session -> sessionAttendanceRepository
+                            .findBySessionIdAndStudentId(session.getId(), studentId).isPresent())
+                    .toList();
+        }
         return sessions.stream().map(this::toSessionResponse).toList();
     }
 
@@ -67,6 +80,12 @@ public class SessionAttendanceService {
         ClassSession session = classSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Buổi học không tồn tại: " + sessionId));
         sessionAccessControl.requireCanView(session.getClassRoom());
+        Long studentId = sessionAccessControl.currentStudentId();
+        if (studentId != null
+                && sessionAccessControl.isHistoricalOnlyStudent(session.getClassRoom(), studentId)
+                && sessionAttendanceRepository.findBySessionIdAndStudentId(sessionId, studentId).isEmpty()) {
+            throw new ForbiddenException("This session is outside the student's learning history");
+        }
         return toSessionResponse(session);
     }
 
@@ -80,7 +99,17 @@ public class SessionAttendanceService {
 
         sessionAccessControl.requireTutor(session.getClassRoom());
         List<SessionAttendance> attendances = sessionAttendanceRepository.findBySessionId(sessionId);
-        return attendances.stream().map(this::toAttendanceResponse).toList();
+        Map<Long, EnrollmentRequestStatus> enrollmentStatuses = enrollmentRequestRepository
+                .findByClassRoomIdWithDetails(session.getClassRoom().getId()).stream()
+                .filter(enrollment -> enrollment.getStudentId() != null)
+                .collect(Collectors.toMap(
+                        enrollment -> enrollment.getStudentId(),
+                        enrollment -> enrollment.getStatus(),
+                        (latest, ignored) -> latest
+                ));
+        return attendances.stream()
+                .map(attendance -> toAttendanceResponse(attendance, enrollmentStatuses.get(attendance.getStudentId())))
+                .toList();
     }
 
     /**
@@ -164,6 +193,7 @@ public class SessionAttendanceService {
 
         sessionAccessControl.requireStudent(session.getClassRoom(), studentId);
         validateStrictSessionTimeWindow(session);
+        terminationService.requireCanAttend(session, studentId);
 
         SessionAttendance attendance = sessionAttendanceRepository.findBySessionIdAndStudentId(sessionId, studentId)
                 .orElseThrow(() -> new BadRequestException("Bạn không có tên trong danh sách lớp học của buổi này"));
@@ -208,6 +238,7 @@ public class SessionAttendanceService {
         validateStrictSessionTimeWindow(session);
 
         List<SessionAttendance> attendances = sessionAttendanceRepository.findBySessionId(sessionId);
+        terminationService.requireCanAttend(session, null);
 
         LocalDateTime now = LocalDateTime.now();
 
@@ -260,6 +291,9 @@ public class SessionAttendanceService {
         }
 
         for (ClassSession session : activeSessions) {
+            if (terminationService.isWholeClassSessionStopped(session)) {
+                continue;
+            }
             try {
                 List<SessionAttendance> attendances = sessionAttendanceRepository.findBySessionId(session.getId());
                 for (SessionAttendance att : attendances) {
@@ -442,6 +476,13 @@ public class SessionAttendanceService {
     }
 
     private ClassSessionDtos.SessionAttendanceResponse toAttendanceResponse(SessionAttendance att) {
+        return toAttendanceResponse(att, null);
+    }
+
+    private ClassSessionDtos.SessionAttendanceResponse toAttendanceResponse(
+            SessionAttendance att,
+            EnrollmentRequestStatus enrollmentStatus
+    ) {
         return new ClassSessionDtos.SessionAttendanceResponse(
                 att.getId(),
                 att.getSession().getId(),
@@ -456,7 +497,9 @@ public class SessionAttendanceService {
                 att.getFinalOutcome(),
                 att.getSubmissionText(),
                 att.getSubmissionFileUrl(),
-                att.getSubmittedAt()
+                att.getSubmittedAt(),
+                enrollmentStatus,
+                enrollmentStatus == EnrollmentRequestStatus.CANCELLED
         );
     }
 }

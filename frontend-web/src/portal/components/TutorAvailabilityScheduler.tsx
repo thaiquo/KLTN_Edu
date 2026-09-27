@@ -174,7 +174,7 @@ export function TutorAvailabilityScheduler() {
         const occupied: OccupiedClassSlot[] = [];
         if (Array.isArray(myClasses)) {
           for (const cls of myClasses) {
-            if (BLOCKING_CLASS_STATUSES.has(cls.status)) {
+            if (BLOCKING_CLASS_STATUSES.has(cls.status) && !cls.terminationCutoffSession) {
               if (Array.isArray(cls.schedules)) {
                 for (const sch of cls.schedules) {
                   occupied.push({

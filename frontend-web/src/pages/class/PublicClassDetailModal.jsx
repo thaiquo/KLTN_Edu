@@ -19,13 +19,20 @@ const VIETNAMESE_DAYS = [
   { value: 8, label: 'CN' }
 ];
 
+function formatProfileAddress(user) {
+  return [user?.addressDetail, user?.commune || user?.ward, user?.district, user?.province]
+    .map((part) => typeof part === 'string' ? part.trim() : '')
+    .filter((part, index, parts) => part && parts.indexOf(part) === index)
+    .join(', ');
+}
+
 function checkProfileCompletion(user) {
   if (!user) return { isComplete: false, missingFields: ['Chưa đăng nhập'] };
 
   const hasName = Boolean(user.fullName && user.fullName.trim());
   const hasPhone = Boolean(user.phone && user.phone.trim());
   const hasDob = Boolean(user.dateOfBirth);
-  const hasAddress = Boolean(user.province || user.commune || user.ward || user.address);
+  const hasAddress = Boolean(formatProfileAddress(user));
   const hasWallet = Boolean(user.walletAddress && /^0x[a-fA-F0-9]{40}$/.test(user.walletAddress));
 
   const missingFields = [];
@@ -116,7 +123,9 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
         joinKey: classRoom.joinMode === 'INVITE_KEY' ? joinKey.trim() : undefined,
         studentName: studentName,
         studentPhone: user?.phone,
-        studentWallet: user?.walletAddress
+        studentWallet: user?.walletAddress,
+        studentDateOfBirth: user?.dateOfBirth,
+        studentAddress: formatProfileAddress(user)
       });
       feedback.success('Đã gửi yêu cầu tham gia lớp.');
       setShowInviteKeyForm(false);

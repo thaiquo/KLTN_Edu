@@ -91,7 +91,9 @@ class EnrollmentRequestServiceNotificationTest {
                         "note",
                         "An",
                         "0900000000",
-                        WALLET));
+                        WALLET,
+                        java.time.LocalDate.of(2005, 1, 1),
+                        "TP. Hồ Chí Minh"));
 
         verify(eventPublisher).publishEnrollmentRequested(
                 500L,

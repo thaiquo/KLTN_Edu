@@ -37,6 +37,8 @@ interface EnrollmentRequestItem {
   studentName?: string;
   studentPhone?: string;
   studentWallet?: string;
+  studentDateOfBirth?: string;
+  studentAddress?: string;
   agreementId?: string;
   status: "PENDING" | "ACCEPTED" | "ENROLLED" | "EXPIRED" | "REJECTED" | "CANCELLED";
   joinKey?: string;
@@ -44,6 +46,13 @@ interface EnrollmentRequestItem {
   rejectReason?: string;
   createdAt: string;
   updatedAt?: string;
+}
+
+function formatProfileAddress(user: any): string {
+  return [user?.addressDetail, user?.commune || user?.ward, user?.district, user?.province]
+    .map((part) => typeof part === "string" ? part.trim() : "")
+    .filter((part, index, parts) => part && parts.indexOf(part) === index)
+    .join(", ");
 }
 
 interface StudentRequestsViewProps {
@@ -203,9 +212,11 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
 
   const handleConfirmInitiateContract = async () => {
     if (!contractModalReq) return;
-    if (!contractModalReq.studentId || !contractModalReq.studentName || !contractModalReq.studentPhone || !contractModalReq.studentWallet) {
+    if (!contractModalReq.studentId || !contractModalReq.studentName || !contractModalReq.studentPhone
+        || !contractModalReq.studentWallet || !contractModalReq.studentDateOfBirth
+        || !contractModalReq.studentAddress) {
       setActionMsg({
-        text: "Yêu cầu cũ đang thiếu ID, họ tên hoặc số điện thoại học viên. Học viên cần gửi lại yêu cầu sau khi cập nhật hồ sơ.",
+        text: "Yêu cầu cũ đang thiếu thông tin định danh hợp đồng (họ tên, số điện thoại, ngày sinh hoặc địa chỉ). Học viên cần gửi lại yêu cầu sau khi cập nhật hồ sơ.",
         tone: "error",
       });
       return;
@@ -215,7 +226,8 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
       setActionMsg({ text: "Lớp học chưa có đủ hình thức, thời gian hoặc lịch học để đóng băng vào hợp đồng.", tone: "error" });
       return;
     }
-    if (!user?.id || !user?.fullName || !user?.email) {
+    const tutorAddress = formatProfileAddress(user);
+    if (!user?.id || !user?.fullName || !user?.email || !tutorAddress) {
       setActionMsg({ text: "Hồ sơ gia sư chưa đầy đủ. Vui lòng cập nhật trước khi tạo hợp đồng.", tone: "error" });
       return;
     }
@@ -238,10 +250,13 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
         studentName: contractModalReq.studentName,
         studentEmail: contractModalReq.studentEmail,
         studentPhone: contractModalReq.studentPhone,
+        studentDateOfBirth: contractModalReq.studentDateOfBirth,
+        studentAddress: contractModalReq.studentAddress,
         tutorId: user.id,
         tutorName: user.fullName,
         tutorEmail: user?.email,
         tutorPhone: user?.phone || (user as any)?.phoneNumber || "",
+        tutorAddress,
         studentWallet,
         tutorWallet: tutorWallet,
         pricePerSessionVnd: pricePerSession,

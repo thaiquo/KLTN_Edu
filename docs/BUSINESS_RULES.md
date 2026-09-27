@@ -136,6 +136,41 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
 - Staff moderation: Staff kiểm duyệt nội dung, giám sát lớp, quản lý vi phạm, hỗ trợ người dùng.
 - Admin management: Admin quản lý người dùng, danh mục, Blockchain, thanh toán và thống kê.
 
+### Quy tắc chấm dứt hợp đồng và hủy lớp học trước thời hạn
+
+- **Phân định trách nhiệm và phạm vi theo Actor:**
+  - **Phía Học viên (Student):** Mỗi học viên chỉ có **1 hợp đồng duy nhất** ở 1 lớp học. Vì vậy, khi gia sư vi phạm cam kết hoặc học viên gặp sự cố bất khả kháng, học viên có quyền gửi **yêu cầu đơn phương chấm dứt hợp đồng** của chính mình (`wholeClass = false`). Thao tác được thực hiện trực tiếp trong văn bản hợp đồng cá nhân.
+  - **Phía Gia sư (Tutor):** Gia sư quản lý **toàn bộ lớp học** gồm nhiều học viên (nhiều hợp đồng). Gia sư **không được phép tự ý chấm dứt riêng lẻ từng hợp đồng** của từng học viên vì lý do cá nhân không thể tiếp tục giảng dạy. Nếu gia sư gặp sự cố bất khả kháng (sức khỏe, tai nạn, bận đột xuất...), gia sư phải vào mục **"Lớp học của tôi"** để gửi **"Đề xuất dừng giảng dạy & Hủy lớp học"** cho toàn bộ lớp (`wholeClass = true`).
+- **Xác thực chữ ký số Web3 EIP-712:**
+  - Mọi yêu cầu chấm dứt hoặc đề xuất hủy lớp bắt buộc phải ký số xác nhận Typed Data EIP-712 bằng chính địa chỉ ví đã ghi nhận trên hợp đồng (`studentWallet` cho học viên, `tutorWallet` cho gia sư).
+  - Hệ thống kiểm tra đối chiếu ví kết nối MetaMask: nếu địa chỉ ví không khớp với ví đã ký hợp đồng và nạp cọc ban đầu, yêu cầu sẽ bị từ chối ngay lập tức để chống giả mạo danh tính và gian lận tài chính.
+  - Quá trình ký EIP-712 hoàn toàn gasless (0 Sepolia ETH).
+- **Quy trình thẩm định và phân xử của Ban Quản trị (Staff vs Admin):**
+  - Khi có yêu cầu chấm dứt hoặc đề xuất hủy lớp, hệ thống đồng bộ hold với Learning (`HOLD_PENDING` nếu cần retry, sau đó `REQUESTED`). Cutoff lấy theo thời gian server lúc hold thành công, không lấy theo thời gian Admin xử lý.
+  - Student hold chỉ chặn các buổi tương lai của hợp đồng đó; lớp và các Student khác tiếp tục bình thường. Tutor hold chặn các buổi tương lai của toàn lớp, đóng băng đăng ký mới và hiển thị `Chờ duyệt hủy lớp`.
+  - Hold không gửi giao dịch blockchain và không hoàn tiền. Buổi đã bắt đầu trước cutoff vẫn hoàn tất attendance, settlement và cửa sổ dispute như bình thường.
+  - Khiếu nại chỉ giữ quyết toán của buổi học và agreement liên quan; các buổi tương lai vẫn diễn ra bình thường nếu không có yêu cầu chấm dứt/hủy lớp riêng. Khi Staff kiến nghị/từ chối hoặc Admin duyệt/từ chối yêu cầu chấm dứt, mọi khiếu nại còn mở trên các agreement bị ảnh hưởng phải được phân xử trước. Khiếu nại đã `APPROVED` hoặc `REJECTED` không chặn quyết định; sau đó worker vẫn chờ settlement của từng buổi được xác nhận trước khi hoàn cọc dư.
+  - **Phân định thẩm quyền:**
+    - **Nhân viên (Staff):** Chỉ được xem và thẩm định các hồ sơ thuộc các lớp học do chính mình được phân công duyệt (`classroomReviewerEmail`). Staff có quyền ghi nhận ý kiến, yêu cầu bổ sung thông tin hoặc kiến nghị đề xuất (`RECOMMEND`), hoặc từ chối (`REJECT`). Staff không có thẩm quyền ra lệnh giải ngân/hoàn cọc Escrow.
+    - **Quản trị viên (Admin):** Có quyền quản trị toàn hệ thống, xem tất cả hồ sơ. Admin có thẩm quyền tối cao phê duyệt (`APPROVE` trực tiếp từ `REQUESTED` hoặc `RECOMMENDED`) để kích hoạt quyết toán thanh lý Escrow V1, hoặc từ chối (`REJECT`) để giải phóng hold và khôi phục lớp học.
+- **Tài liệu minh chứng đính kèm & Tính bất biến (Evidence Staging & Immutability):**
+  - Học viên và Gia sư có thể đính kèm tối đa 5 file minh chứng (ảnh, video, ghi âm, tài liệu PDF, Word, Excel, TXT) với dung lượng tối đa 50 MB mỗi file.
+  - **Khu vực đệm (Staging Area):** Khi chọn file hoặc soạn thảo nội dung giải trình, người dùng có thể xem trước và tùy ý xóa bỏ (`[✕ Xóa]`) các file chọn nhầm trước khi nhấn gửi chính thức.
+  - **Tính bất biến sau khi nộp (Post-submission Immutability):** Ngay khi nhấn nút gửi, tài liệu được tải lên S3 (`terminations/{caseId}/{role}/{uuid}-{filename}`) kèm kiểm tra mã băm SHA-256 và whitelist MIME. Toàn bộ nội dung và minh chứng đã nộp sẽ được lưu vĩnh viễn vào hệ thống (audit trail), **không thể chỉnh sửa hay xóa bỏ**. Các lần bổ sung giải trình tiếp theo được phân tách và đánh số thứ tự rõ ràng (`LẦN 1`, `LẦN 2`...) kèm mốc thời gian gửi để đảm bảo tính minh bạch, khách quan trong phân xử.
+  - Phân quyền truy cập minh chứng: Chỉ các bên trong hợp đồng/lớp học, Staff phụ trách duyệt lớp và Admin mới có quyền xem nội dung minh chứng qua streaming bảo mật.
+- **Thanh lý và hoàn tiền Smart Contract Escrow khi Phê duyệt (`APPROVE`):**
+  - **Cơ chế thời hạn 24 giờ và quyết toán:** Thời hạn 24 giờ là cửa sổ khiếu nại của từng buổi học đã dạy trước cutoff, **không phải là thời hạn chờ cố định sau khi Admin duyệt**. Khi Admin phê duyệt, worker kiểm tra các buổi học liên quan: nếu các buổi trước cutoff đã quyết toán xong (hoặc đã kết thúc 24h khiếu nại không có tranh chấp), worker lập tức kích hoạt giao dịch on-chain `cancelAgreementAndRefundUnused` để hoàn trả phần cọc còn dư (`remainingDeposit`) về ví học viên mà không cần chờ thêm.
+  - **Trường hợp Học viên đơn phương chấm dứt (`wholeClass = false`):** Giữ nguyên cutoff đã chụp khi gửi yêu cầu. Các buổi đã diễn ra hợp lệ được quyết toán cho gia sư, và Smart Contract Escrow hoàn trả tiền cọc chưa sử dụng về ví MetaMask của học viên.
+  - **Trường hợp Gia sư hủy toàn bộ lớp học (`wholeClass = true`):** Chuyển hold thành đóng lớp, hủy lịch tương lai sau cutoff và xử lý từng agreement độc lập bằng Escrow V1. Các buổi đã dạy được quyết toán; tiền chưa sử dụng được hoàn về ví từng học viên.
+  - Khi hoàn tiền thành công trên Blockchain (`AgreementCancelled` confirmed): Cả hợp đồng (`contract_agreements`) và lượt đăng ký học (`enrollments`) đều chuyển sang trạng thái kết thúc `CANCELLED`; mốc dừng học chính thức đóng.
+  - Khi Admin duyệt hủy cả lớp, lớp chuyển `LOCKED` trong thời gian từng agreement đang settlement; Gia sư không thể tự mở lại hoặc nhận học viên mới. Lớp chỉ chuyển `CANCELLED` sau khi tất cả agreement đã đóng và refund/settlement được xác nhận.
+- **Bảng giám sát hoàn tiền (Refund Tracking):**
+  - Tích hợp bảng "Hoàn tiền hủy hợp đồng / hủy lớp" tại:
+    - **Admin → Quản lý Tài chính:** Giám sát toàn bộ tiến độ từng hợp đồng, mã lỗi phát sinh, số tiền hoàn trả và liên kết giao dịch blockchain (Sepolia Etherscan).
+    - **Học viên / Gia sư → Quản lý Ví:** Xem các hồ sơ thuộc quyền hạn của mình; hiển thị rõ ràng số tiền hoàn về địa chỉ ví học viên.
+  - Bảng tự động đồng bộ mỗi 15 giây, phân định 4 trạng thái tiến độ: Chờ duyệt (`WAITING_APPROVAL`), Chờ quyết toán (`WAITING_SETTLEMENT`), Chờ blockchain (`BLOCKCHAIN_PENDING`), và Hoàn tất (`COMPLETED`).
+  - Giao diện hồ sơ hiển thị cụ thể bước đang chờ: xử lý lịch học, quyết toán buổi trước cutoff, xác nhận giao dịch, xác nhận sự kiện hoàn tiền hoặc lỗi cần nhân viên kiểm tra. Số tiền hoàn trong hồ sơ hoàn tất lấy từ `UnusedAmountRefunded` đã xác nhận; trước đó mọi số tiền chỉ là ước tính.
+
 ## 6. Contract & Payment Business Relationship
 
 - Student và Tutor cùng tham gia Contract.

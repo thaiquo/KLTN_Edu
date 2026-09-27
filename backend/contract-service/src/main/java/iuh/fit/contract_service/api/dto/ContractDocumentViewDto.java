@@ -29,7 +29,9 @@ public record ContractDocumentViewDto(
             String fullName,
             String email,
             String phone,
-            String walletAddress
+            String walletAddress,
+            String dateOfBirth,
+            String address
     ) {}
 
     public record PlatformDto(

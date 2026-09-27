@@ -65,7 +65,7 @@ public class SessionSettlementWorkflowService {
     @Transactional
     public BlockchainTransactionIntentResult initiateSessionProposal(
             UUID agreementId, Long sessionId, SettlementOutcome outcome, String evidenceHash) {
-        ContractAgreement agreement = agreementRepository.findById(agreementId)
+        ContractAgreement agreement = agreementRepository.lockById(agreementId)
                 .orElseThrow(() -> new IllegalArgumentException("Contract agreement not found: " + agreementId));
 
         if (agreement.getStatus() != ContractAgreementStatus.ACTIVE) {
@@ -73,6 +73,10 @@ public class SessionSettlementWorkflowService {
         }
         if (sessionId == null || sessionId <= 0 || sessionId > agreement.getTotalSessions()) {
             throw new IllegalArgumentException("sessionId must be between 1 and totalSessions (" + agreement.getTotalSessions() + ")");
+        }
+        if (agreement.getTerminationCutoffSession() != null
+                && sessionId > agreement.getTerminationCutoffSession()) {
+            throw new IllegalStateException("Session is outside the approved termination cutoff");
         }
 
         String onchainSessionId = computeOnchainSessionId(sessionId);

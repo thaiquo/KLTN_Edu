@@ -2,6 +2,7 @@ package iuh.fit.learning_service.dto;
 
 import iuh.fit.learning_service.enums.AttendanceOutcome;
 import iuh.fit.learning_service.enums.ClassSessionStatus;
+import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -58,7 +59,9 @@ public class ClassSessionDtos {
             AttendanceOutcome finalOutcome,
             String submissionText,
             String submissionFileUrl,
-            LocalDateTime submittedAt
+            LocalDateTime submittedAt,
+            EnrollmentRequestStatus enrollmentStatus,
+            Boolean attendanceLocked
     ) {}
 
     public record SubmitHomeworkRequest(

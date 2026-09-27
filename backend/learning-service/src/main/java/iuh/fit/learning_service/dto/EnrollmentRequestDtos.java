@@ -4,6 +4,7 @@ import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 public final class EnrollmentRequestDtos {
     private EnrollmentRequestDtos() {}
@@ -13,7 +14,9 @@ public final class EnrollmentRequestDtos {
             @Size(max = 1000) String note,
             @Size(max = 255) String studentName,
             @Size(max = 50) String studentPhone,
-            @Size(min = 42, max = 42) String studentWallet
+            @Size(min = 42, max = 42) String studentWallet,
+            LocalDate studentDateOfBirth,
+            @Size(max = 500) String studentAddress
     ) {}
 
     public record RejectRequestPayload(
@@ -41,8 +44,12 @@ public final class EnrollmentRequestDtos {
             String studentName,
             String studentPhone,
             String studentWallet,
+            LocalDate studentDateOfBirth,
+            String studentAddress,
             String agreementId,
             EnrollmentRequestStatus status,
+            String classRoomStatus,
+            Integer terminationCutoffSession,
             String joinKey,
             String note,
             String rejectReason,
