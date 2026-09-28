@@ -33,6 +33,7 @@ import { useFeedback } from '../../components/feedback/useFeedback';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import { StudentEmptyState, StudentPageScaffold } from './StudentPageScaffold';
 import { ClassSessionsTimeline } from '../../components/classroom/ClassSessionsTimeline';
+import { ClassroomMaterialsSection } from '../../components/classroom/ClassroomMaterialsSection';
 import { isClassLiveNow } from '../../utils/scheduleUtils';
 
 const STATUS_META = {
@@ -1081,6 +1082,13 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) 
           </div>
         </div>
       </div>
+
+      {/* Course Materials: accessible immediately without check-in */}
+      <ClassroomMaterialsSection
+        classRoomId={classRoomId}
+        currentUserRole="STUDENT"
+        classRoomDetails={classroomDetails}
+      />
 
       {/* Main Class Sessions Timeline with Hero Spotlight, Roadmap & History */}
       <ClassSessionsTimeline

@@ -65,6 +65,8 @@ Dispute file evidence uses multipart endpoints in `DisputeEvidenceController`. F
 
 Contract Service authentication now follows the same browser-cookie baseline as the other protected services: it reads the current account from the `access_token` JWT cookie and derives `userId`, `email`, `activeRole`, and `roles` server-side. Contract list/detail/document/sign/payment/dispute/transaction authorization must not trust frontend-supplied `role`, `userId`, `email`, `X-User-Role`, `X-User-Id`, or `X-User-Email`.
 
+Official contract retention policy: PostgreSQL keeps the immutable signed terms JSON, hashes and EIP-712 proofs; the blockchain keeps the agreement terms hash and escrow state. After an agreement is `ACTIVE`, Contract Service renders and retains exactly one final PDF per agreement version in private object storage, with its SHA-256 and size in PostgreSQL. DOCX is a transient conversion input and is not retained; legacy DOCX objects are removed by a scheduled cleanup job. Contract files are streamed only after agreement authorization.
+
 ## 3.1 Notification API
 
 Current Notification Service endpoints:
@@ -182,9 +184,9 @@ Current Contract Service protected APIs derive identity from the authenticated c
 | Agreement expire/cancel | `access_token` cookie JWT | Assigned Staff/Admin can enqueue lifecycle transactions. Scheduler also queues overdue WAITING_PAYMENT expiry. Local agreement status changes only after confirmed escrow lifecycle events. |
 | Transaction list/detail | `access_token` cookie JWT | Staff/Admin active roles can view administrative transaction lists; Student/Tutor sees own agreement transactions. |
 
-## 3.5 Session, attendance and settlement bridge
+## 3.5 Session, attendance, homework and storage API
 
-| Method | Endpoint | Rule |
+| Method | Endpoint | Rule / Purpose |
 | --- | --- | --- |
 | `GET` | `/api/classes/{classId}/sessions` | Returns session timeline subject to classroom access rules. |
 | `PUT` | `/api/classes/{classId}/meeting-link` | Tutor updates the classroom-level link; later sessions read the new value. |
@@ -192,6 +194,20 @@ Current Contract Service protected APIs derive identity from the authenticated c
 | `GET` | `/api/sessions/{sessionId}/student-meeting-link` | Returns link only after the current Student's valid check-in. |
 | `POST` | `/api/sessions/{sessionId}/tutor-attendance` | Tutor checks in for teaching; the request cannot mark Students present. |
 | `POST` | `/api/sessions/{sessionId}/homework-submission` | Checked-in Student submits homework on their attendance record. |
+| `POST multipart` | `/api/learning/sessions/{sessionId}/homework-submission-file` | Student uploads actual homework submission file to S3 with optional notes. |
+| `GET` | `/api/learning/sessions/{sessionId}/submissions/{attendanceId}/download-url` | Presigned download URL for student homework submission (Tutor or owning Student). |
+| `PUT` | `/api/learning/sessions/{sessionId}/attendances/{attendanceId}/grade` | Tutor grades homework and provides feedback. |
+| `GET` | `/api/learning/sessions/tutor-homework-overview` | List sessions with homework/submission metrics for Tutor Homework Management. |
+| `POST multipart` | `/api/learning/sessions/{sessionId}/assignment-files` | Tutor uploads up to 5 assignment files to S3 for this session. |
+| `POST multipart` | `/api/learning/sessions/{sessionId}/material-files` | Tutor uploads lecture slide / material files to S3 for this session. |
+| `DELETE` | `/api/learning/sessions/{sessionId}/files/{fileId}` | Tutor deletes a session assignment or material file. |
+| `GET` | `/api/learning/sessions/{sessionId}/files/{fileId}/download-url` | Presigned download URL for session assignment/slide (Tutor, or Student ONLY IF `studentChecked == true`). |
+| `GET` | `/api/learning/classes/{classId}/materials` | List class-level materials (enrolled Student or Tutor). |
+| `POST multipart` | `/api/learning/classes/{classId}/materials` | Tutor uploads multiple class-level materials to S3. |
+| `DELETE` | `/api/learning/classes/{classId}/materials/{materialId}` | Tutor deletes a class-level material. |
+| `GET` | `/api/learning/classes/{classId}/materials/{materialId}/download-url` | Presigned download URL for class-level material (no check-in required). |
+| `POST multipart` | `/api/learning/classes/{classId}/syllabus` | Tutor uploads syllabus / curriculum file to S3. |
+| `GET` | `/api/learning/classes/{classId}/syllabus/download-url` | Presigned download URL for class syllabus file. |
 | `POST` | `/api/contracts/internal/classrooms/{classroomId}/sessions/{sessionId}/auto-propose` | Signed internal Learning call; proposes one settlement for every eligible agreement and defaults missing/corrupt attendance to `TUTOR_ABSENT`. |
 
 Learning keeps `settlementDispatched=false` until Contract returns a successful proposal list. A worker retries completed sessions after restart; Contract independently finalizes only confirmed `PROPOSED` settlements whose on-chain deadline expired and which are not disputed.

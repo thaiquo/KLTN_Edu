@@ -10,6 +10,17 @@ import java.util.List;
 
 public class ClassSessionDtos {
 
+    public record SessionFileItem(
+            Long id,
+            Long sessionId,
+            String fileCategory,
+            String fileName,
+            Long fileSize,
+            String contentType,
+            Integer fileOrder,
+            LocalDateTime createdAt
+    ) {}
+
     public record ClassSessionResponse(
             Long id,
             Long classRoomId,
@@ -21,28 +32,50 @@ public class ClassSessionDtos {
             String assignmentTitle,
             String assignmentDescription,
             String assignmentFileUrl,
+            LocalDateTime assignmentDueAt,
+            Boolean submissionRequired,
+            Boolean lateSubmissionAllowed,
+            String materialUrl,
+            String materialDescription,
             ClassSessionStatus status,
             LocalDateTime createdAt,
             LocalDateTime updatedAt,
             Integer totalAttendees,
             Integer presentCount,
+            Long myAttendanceId,
             Boolean myCheckedIn,
             String mySubmissionText,
             String mySubmissionFileUrl,
             LocalDateTime mySubmittedAt,
+            String myGradeScore,
+            String myTutorFeedback,
+            LocalDateTime myGradedAt,
             Boolean tutorCheckedIn,
             AttendanceOutcome myFinalOutcome,
             Integer bothPresentCount,
             Integer studentAbsentCount,
             Integer tutorAbsentCount,
-            Boolean settlementDispatched
+            Boolean settlementDispatched,
+            List<SessionFileItem> assignmentFiles,
+            List<SessionFileItem> materialFiles,
+            String assignmentExternalUrl,
+            String materialExternalUrl,
+            String mySubmissionFileName,
+            Long mySubmissionFileSize
     ) {}
 
     public record UpdateSessionDetailsRequest(
             String topic,
             String assignmentTitle,
             String assignmentDescription,
-            String assignmentFileUrl
+            String assignmentFileUrl,
+            LocalDateTime assignmentDueAt,
+            Boolean submissionRequired,
+            Boolean lateSubmissionAllowed,
+            String materialUrl,
+            String materialDescription,
+            String assignmentExternalUrl,
+            String materialExternalUrl
     ) {}
 
     public record SessionAttendanceResponse(
@@ -60,13 +93,25 @@ public class ClassSessionDtos {
             String submissionText,
             String submissionFileUrl,
             LocalDateTime submittedAt,
+            String gradeScore,
+            String tutorFeedback,
+            LocalDateTime gradedAt,
+            String gradedByTutorEmail,
+            Boolean isLateSubmission,
             EnrollmentRequestStatus enrollmentStatus,
-            Boolean attendanceLocked
+            Boolean attendanceLocked,
+            String submissionFileName,
+            Long submissionFileSize
     ) {}
 
     public record SubmitHomeworkRequest(
             String submissionText,
             String submissionFileUrl
+    ) {}
+
+    public record GradeHomeworkRequest(
+            String gradeScore,
+            String tutorFeedback
     ) {}
 
     public record TutorAttendanceRequest(
@@ -77,5 +122,69 @@ public class ClassSessionDtos {
 
     public record UpdateClassMeetingLinkRequest(
             String meetingLink
+    ) {}
+
+    public record TutorHomeworkItemResponse(
+            Long sessionId,
+            Long classRoomId,
+            String classTitle,
+            Integer sequenceNumber,
+            String topic,
+            LocalDate sessionDate,
+            String startTime,
+            String endTime,
+            String assignmentTitle,
+            String assignmentDescription,
+            String assignmentFileUrl,
+            LocalDateTime assignmentDueAt,
+            Boolean submissionRequired,
+            Boolean lateSubmissionAllowed,
+            String materialUrl,
+            String materialDescription,
+            Integer totalStudents,
+            Integer submittedCount,
+            Integer gradedCount,
+            List<SessionAttendanceResponse> submissions,
+            List<SessionFileItem> assignmentFiles,
+            List<SessionFileItem> materialFiles,
+            String assignmentExternalUrl,
+            String materialExternalUrl
+    ) {}
+
+    public record StudentHomeworkItemResponse(
+            Long sessionId,
+            Long attendanceId,
+            Long classRoomId,
+            String classTitle,
+            String tutorName,
+            Integer sequenceNumber,
+            String topic,
+            LocalDate sessionDate,
+            String startTime,
+            String endTime,
+            String assignmentTitle,
+            String assignmentDescription,
+            String assignmentFileUrl,
+            LocalDateTime assignmentDueAt,
+            Boolean submissionRequired,
+            Boolean lateSubmissionAllowed,
+            String materialUrl,
+            String materialDescription,
+            Boolean studentCheckedIn,
+            String submissionText,
+            String submissionFileUrl,
+            LocalDateTime submittedAt,
+            String gradeScore,
+            String tutorFeedback,
+            LocalDateTime gradedAt,
+            String status,
+            List<SessionFileItem> assignmentFiles,
+            List<SessionFileItem> materialFiles,
+            String assignmentExternalUrl,
+            String materialExternalUrl,
+            String submissionFileName,
+            Long submissionFileSize,
+            Boolean isLateSubmission,
+            Boolean submissionBlockedByDeadline
     ) {}
 }

@@ -25,10 +25,24 @@ import {
   Sparkles,
   BarChart3,
   Award,
-  MapPin
+  MapPin,
+  Download,
+  Trash2
 } from "lucide-react";
 import { apiRequest } from "../../api/client";
+import { classApi } from "../../api/classes";
 import { contractsApi, type SettlementDto } from "../../api/contractsApi";
+
+export interface SessionFileItem {
+  id: number;
+  sessionId: number;
+  fileCategory: "ASSIGNMENT" | "MATERIAL";
+  fileName: string;
+  fileSize: number;
+  contentType: string;
+  fileOrder: number;
+  createdAt: string;
+}
 
 export interface ClassSessionItem {
   id: number;
@@ -41,19 +55,34 @@ export interface ClassSessionItem {
   assignmentTitle?: string;
   assignmentDescription?: string;
   assignmentFileUrl?: string;
+  assignmentDueAt?: string;
+  submissionRequired?: boolean;
+  lateSubmissionAllowed?: boolean;
+  materialUrl?: string;
+  materialDescription?: string;
   status: "SCHEDULED" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
   totalAttendees?: number;
   presentCount?: number;
+  myAttendanceId?: number;
   myCheckedIn?: boolean;
   mySubmissionText?: string;
   mySubmissionFileUrl?: string;
   mySubmittedAt?: string;
+  myGradeScore?: string;
+  myTutorFeedback?: string;
+  myGradedAt?: string;
   tutorCheckedIn?: boolean;
   myFinalOutcome?: "BOTH_PRESENT" | "STUDENT_ABSENT_TUTOR_PRESENT" | "TUTOR_ABSENT";
   bothPresentCount?: number;
   studentAbsentCount?: number;
   tutorAbsentCount?: number;
   settlementDispatched?: boolean;
+  assignmentFiles?: SessionFileItem[];
+  materialFiles?: SessionFileItem[];
+  assignmentExternalUrl?: string;
+  materialExternalUrl?: string;
+  mySubmissionFileName?: string;
+  mySubmissionFileSize?: number;
 }
 
 export interface AttendanceRecord {
@@ -69,9 +98,16 @@ export interface AttendanceRecord {
   submissionText?: string;
   submissionFileUrl?: string;
   submittedAt?: string;
+  gradeScore?: string;
+  tutorFeedback?: string;
+  gradedAt?: string;
+  gradedByTutorEmail?: string;
+  isLateSubmission?: boolean;
   finalOutcome?: "BOTH_PRESENT" | "STUDENT_ABSENT_TUTOR_PRESENT" | "TUTOR_ABSENT";
   enrollmentStatus?: "PENDING" | "ACCEPTED" | "ENROLLED" | "EXPIRED" | "REJECTED" | "CANCELLED";
   attendanceLocked?: boolean;
+  submissionFileName?: string;
+  submissionFileSize?: number;
 }
 
 interface Props {
@@ -174,12 +210,34 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   const [assignmentTitle, setAssignmentTitle] = useState<string>("");
   const [assignmentDesc, setAssignmentDesc] = useState<string>("");
   const [assignmentFileUrl, setAssignmentFileUrl] = useState<string>("");
+  const [assignmentDueAt, setAssignmentDueAt] = useState<string>("");
+  const [assignmentMaterialUrl, setAssignmentMaterialUrl] = useState<string>("");
+  const [assignmentMaterialDesc, setAssignmentMaterialDesc] = useState<string>("");
+
+  // Quick grading state in attendance roster
+  const [gradingScoreMap, setGradingScoreMap] = useState<Record<number, string>>({});
+  const [gradingFeedbackMap, setGradingFeedbackMap] = useState<Record<number, string>>({});
+  const [gradingSavingMap, setGradingSavingMap] = useState<Record<number, boolean>>({});
 
   // Student Homework Submission Modal
   const [showHomeworkModal, setShowHomeworkModal] = useState<boolean>(false);
   const [submittingSession, setSubmittingSession] = useState<ClassSessionItem | null>(null);
   const [studentSubmissionText, setStudentSubmissionText] = useState<string>("");
   const [studentSubmissionFileUrl, setStudentSubmissionFileUrl] = useState<string>("");
+  const [studentSubmissionFile, setStudentSubmissionFile] = useState<File | null>(null);
+  const [selectedAssignmentFiles, setSelectedAssignmentFiles] = useState<File[]>([]);
+  const [selectedMaterialFiles, setSelectedMaterialFiles] = useState<File[]>([]);
+  const [uploadingSessionFiles, setUploadingSessionFiles] = useState<boolean>(false);
+  const [downloadingSessionFileId, setDownloadingSessionFileId] = useState<number | null>(null);
+  const [downloadingSubmissionSessionId, setDownloadingSubmissionSessionId] = useState<number | null>(null);
+
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
 
   // Attendance modal (Tutor)
   const [showAttendanceModal, setShowAttendanceModal] = useState<boolean>(false);
@@ -352,10 +410,40 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       const data: AttendanceRecord[] = await apiRequest(`/api/learning/sessions/${session.id}/attendances`);
       if (Array.isArray(data)) {
         setAttendanceList(data);
+        const scoreInit: Record<number, string> = {};
+        const feedbackInit: Record<number, string> = {};
+        data.forEach((att) => {
+          if (att.gradeScore) scoreInit[att.id] = att.gradeScore;
+          if (att.tutorFeedback) feedbackInit[att.id] = att.tutorFeedback;
+        });
+        setGradingScoreMap(scoreInit);
+        setGradingFeedbackMap(feedbackInit);
       }
     } catch (err: any) {
       setShowAttendanceModal(false);
       showToast(err.message || 'Không thể tải danh sách điểm danh.', 'error');
+    }
+  };
+
+  const handleGradeStudentHomework = async (attId: number) => {
+    if (!activeSession) return;
+    setGradingSavingMap((prev) => ({ ...prev, [attId]: true }));
+    try {
+      const score = gradingScoreMap[attId] || "";
+      const feedback = gradingFeedbackMap[attId] || "";
+      const updated = await classApi.gradeSessionHomework(activeSession.id, attId, {
+        gradeScore: score,
+        tutorFeedback: feedback
+      });
+      setAttendanceList((prev) =>
+        prev.map((a) => (a.id === attId ? { ...a, gradeScore: updated.gradeScore, tutorFeedback: updated.tutorFeedback, gradedAt: updated.gradedAt } : a))
+      );
+      showToast("Đã lưu điểm và nhận xét thành công!", "success");
+      fetchSessions();
+    } catch (err: any) {
+      showToast(err.message || "Lỗi khi lưu chấm điểm", "error");
+    } finally {
+      setGradingSavingMap((prev) => ({ ...prev, [attId]: false }));
     }
   };
 
@@ -403,10 +491,13 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
           topic: assignmentTopic,
           assignmentTitle: assignmentTitle,
           assignmentDescription: assignmentDesc,
-          assignmentFileUrl: assignmentFileUrl
+          assignmentFileUrl: assignmentFileUrl,
+          assignmentDueAt: assignmentDueAt ? (assignmentDueAt.length === 16 ? `${assignmentDueAt}:00` : assignmentDueAt) : undefined,
+          materialUrl: assignmentMaterialUrl,
+          materialDescription: assignmentMaterialDesc
         })
       });
-      showToast("Đã cập nhật bài tập và chủ đề buổi học!", "success");
+      showToast("Đã cập nhật bài tập và tài liệu buổi học!", "success");
       setShowAssignmentModal(false);
       fetchSessions();
     } catch (err: any) {
@@ -419,32 +510,187 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   const handleOpenHomeworkSubmission = (session: ClassSessionItem) => {
     setSubmittingSession(session);
     setStudentSubmissionText(session.mySubmissionText || "");
-    setStudentSubmissionFileUrl(session.mySubmissionFileUrl || "");
+    setStudentSubmissionFileUrl(session.mySubmissionFileUrl || session.assignmentExternalUrl || "");
+    setStudentSubmissionFile(null);
     setShowHomeworkModal(true);
+  };
+
+  const hasMySubmission = (session?: ClassSessionItem | null) =>
+    Boolean(session?.mySubmittedAt || session?.mySubmissionText || session?.mySubmissionFileUrl || session?.mySubmissionFileName);
+
+  const canMutateMySubmission = (session?: ClassSessionItem | null) => {
+    if (!session || session.myCheckedIn !== true || session.submissionRequired === false) return false;
+    if (session.myGradedAt || session.myGradeScore) return false;
+    if (session.assignmentDueAt && new Date() > new Date(session.assignmentDueAt) && session.lateSubmissionAllowed === false) return false;
+    return true;
   };
 
   const handleSubmitHomework = async () => {
     if (!submittingSession) return;
-    if (!studentSubmissionText.trim() && !studentSubmissionFileUrl.trim()) {
-      showToast("Vui lòng nhập nội dung bài nộp hoặc đường dẫn link file/hình ảnh.", "error");
+    if (!canMutateMySubmission(submittingSession)) {
+      showToast("Bài đã được chấm hoặc đã đóng hạn nên không thể cập nhật bài nộp.", "error");
+      return;
+    }
+    if (!studentSubmissionFile && !studentSubmissionFileUrl.trim() && !studentSubmissionText.trim()) {
+      showToast("Vui lòng chọn file S3, dán link GitHub/Google Drive hoặc nhập nội dung bài làm.", "error");
       return;
     }
     setActionLoading(true);
     try {
-      await apiRequest(`/api/learning/sessions/${submittingSession.id}/homework-submission`, {
-        method: "POST",
-        body: JSON.stringify({
+      if (studentSubmissionFile) {
+        const formData = new FormData();
+        formData.append("file", studentSubmissionFile);
+        if (studentSubmissionText.trim()) formData.append("submissionText", studentSubmissionText.trim());
+        if (studentSubmissionFileUrl.trim()) formData.append("submissionFileUrl", studentSubmissionFileUrl.trim());
+        await classApi.submitHomeworkWithFile(submittingSession.id, formData);
+      } else {
+        await classApi.submitHomework(submittingSession.id, {
           submissionText: studentSubmissionText.trim(),
           submissionFileUrl: studentSubmissionFileUrl.trim()
-        })
-      });
-      showToast("Nộp bài tập thành công!", "success");
+        });
+      }
+      showToast("Đã nộp bài tập thành công.", "success");
       setShowHomeworkModal(false);
+      setStudentSubmissionFile(null);
       fetchSessions();
     } catch (err: any) {
       showToast(err.message || "Không thể nộp bài tập.", "error");
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleRemoveHomeworkSubmission = async () => {
+    if (!submittingSession || !hasMySubmission(submittingSession)) return;
+    if (!canMutateMySubmission(submittingSession)) {
+      showToast("Bài đã được chấm hoặc đã đóng hạn nên không thể gỡ bài nộp.", "error");
+      return;
+    }
+    if (!window.confirm("Gỡ bài nộp hiện tại? Nếu có file lưu trên S3, hệ thống sẽ xóa file đó sau khi cập nhật thành công.")) {
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await classApi.deleteHomeworkSubmission(submittingSession.id);
+      showToast("Đã gỡ bài nộp. File S3 cũ sẽ được dọn sau khi cập nhật thành công.", "success");
+      setStudentSubmissionText("");
+      setStudentSubmissionFileUrl("");
+      setStudentSubmissionFile(null);
+      setShowHomeworkModal(false);
+      fetchSessions();
+    } catch (err: any) {
+      showToast(err.message || "Không thể gỡ bài nộp.", "error");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDownloadSessionFile = async (sessionId: number, fileId: number) => {
+    setDownloadingSessionFileId(fileId);
+    try {
+      const res = await classApi.getSessionFileDownloadUrl(sessionId, fileId);
+      if (res && res.downloadUrl) {
+        window.open(res.downloadUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (err: any) {
+      showToast(err?.message || "Không thể tải file buổi học. Vui lòng đảm bảo bạn đã điểm danh buổi học này.", "error");
+    } finally {
+      setDownloadingSessionFileId(null);
+    }
+  };
+
+  const handleDownloadSubmission = async (sessionId: number, attendanceId?: number) => {
+    setDownloadingSubmissionSessionId(sessionId);
+    try {
+      const resolvedAttendanceId = attendanceId || sessions.find((s) => s.id === sessionId)?.myAttendanceId;
+      if (!resolvedAttendanceId) {
+        throw new Error("Không tìm thấy mã bài nộp để tải xuống.");
+      }
+      const res = await classApi.getSubmissionDownloadUrl(sessionId, resolvedAttendanceId);
+      if (res && res.downloadUrl) {
+        window.open(res.downloadUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (err: any) {
+      showToast(err?.message || "Không thể tải bài làm đã nộp.", "error");
+    } finally {
+      setDownloadingSubmissionSessionId(null);
+    }
+  };
+
+  const handleUploadAssignmentFiles = async () => {
+    if (!editingSession || selectedAssignmentFiles.length === 0) return;
+    setUploadingSessionFiles(true);
+    try {
+      const formData = new FormData();
+      selectedAssignmentFiles.forEach((file) => formData.append("files", file));
+      const uploaded = await classApi.uploadSessionAssignmentFiles(editingSession.id, formData);
+      setEditingSession((prev) => prev ? {
+        ...prev,
+        assignmentFiles: [...(prev.assignmentFiles || []), ...uploaded]
+      } : null);
+      setSessions((prev) => prev.map((s) => s.id === editingSession.id ? {
+        ...s,
+        assignmentFiles: [...(s.assignmentFiles || []), ...uploaded]
+      } : s));
+      setSelectedAssignmentFiles([]);
+      showToast("Đã tải lên các file bài tập lên S3!", "success");
+    } catch (err: any) {
+      showToast(err?.message || "Không thể tải lên file bài tập.", "error");
+    } finally {
+      setUploadingSessionFiles(false);
+    }
+  };
+
+  const handleUploadMaterialFiles = async () => {
+    if (!editingSession || selectedMaterialFiles.length === 0) return;
+    setUploadingSessionFiles(true);
+    try {
+      const formData = new FormData();
+      selectedMaterialFiles.forEach((file) => formData.append("files", file));
+      const uploaded = await classApi.uploadSessionMaterialFiles(editingSession.id, formData);
+      setEditingSession((prev) => prev ? {
+        ...prev,
+        materialFiles: [...(prev.materialFiles || []), ...uploaded]
+      } : null);
+      setSessions((prev) => prev.map((s) => s.id === editingSession.id ? {
+        ...s,
+        materialFiles: [...(s.materialFiles || []), ...uploaded]
+      } : s));
+      setSelectedMaterialFiles([]);
+      showToast("Đã tải lên slide / bài giảng lên S3!", "success");
+    } catch (err: any) {
+      showToast(err?.message || "Không thể tải lên file slide.", "error");
+    } finally {
+      setUploadingSessionFiles(false);
+    }
+  };
+
+  const handleDeleteSessionFile = async (sessionId: number, fileId: number, category: "ASSIGNMENT" | "MATERIAL") => {
+    if (!window.confirm("Bạn có chắc chắn muốn xóa file này?")) return;
+    try {
+      await classApi.deleteSessionFile(sessionId, fileId);
+      if (editingSession) {
+        if (category === "ASSIGNMENT") {
+          setEditingSession((prev) => prev ? {
+            ...prev,
+            assignmentFiles: (prev.assignmentFiles || []).filter((f) => f.id !== fileId)
+          } : null);
+        } else {
+          setEditingSession((prev) => prev ? {
+            ...prev,
+            materialFiles: (prev.materialFiles || []).filter((f) => f.id !== fileId)
+          } : null);
+        }
+      }
+      setSessions((prev) => prev.map((s) => {
+        if (s.id !== sessionId) return s;
+        return category === "ASSIGNMENT"
+          ? { ...s, assignmentFiles: (s.assignmentFiles || []).filter((f) => f.id !== fileId) }
+          : { ...s, materialFiles: (s.materialFiles || []).filter((f) => f.id !== fileId) };
+      }));
+      showToast("Đã xóa file thành công!", "success");
+    } catch (err: any) {
+      showToast(err?.message || "Không thể xóa file.", "error");
     }
   };
 
@@ -1145,7 +1391,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               const isTutorOrAdmin = currentUserRole === "TUTOR" || currentUserRole === "ADMIN" || currentUserRole === "STAFF";
               const isStudentUnlocked = session.myCheckedIn === true;
               const canAccessAssignment = isTutorOrAdmin || isStudentUnlocked;
-              const hasSubmittedHomework = !!(session.mySubmissionText || session.mySubmissionFileUrl);
+              const hasSubmittedHomework = !!(session.mySubmissionText || session.mySubmissionFileUrl || session.mySubmissionFileName);
               const mySettlement = mySettlementBySession[session.sequenceNumber];
               const tutorWasPresent = session.tutorCheckedIn === true;
               const finalizedOutcomeCount = (session.bothPresentCount || 0)
@@ -1353,18 +1599,93 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                     </p>
                                   )}
 
-                                  {session.assignmentFileUrl && (
+                                  {/* S3 Assignment files */}
+                                  {session.assignmentFiles && session.assignmentFiles.length > 0 && (
+                                    <div className="mt-2 pt-2 border-t border-emerald-200/60 flex flex-wrap items-center gap-2">
+                                      {session.assignmentFiles.map((file) => (
+                                        <button
+                                          key={file.id}
+                                          type="button"
+                                          onClick={() => handleDownloadSessionFile(session.id, file.id)}
+                                          disabled={downloadingSessionFileId === file.id}
+                                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white text-emerald-800 font-bold hover:bg-emerald-100 border border-emerald-300 rounded-lg shadow-2xs transition-all text-xs"
+                                        >
+                                          {downloadingSessionFileId === file.id ? (
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          ) : (
+                                            <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                                          )}
+                                          <span>{file.fileName}</span>
+                                          <span className="text-[10px] text-emerald-600/80 font-normal">({formatFileSize(file.fileSize)})</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {(session.assignmentExternalUrl || (!session.assignmentFiles?.length && session.assignmentFileUrl)) && (
                                     <div className="mt-2 pt-2 border-t border-emerald-200/60">
                                       <a
-                                        href={session.assignmentFileUrl}
+                                        href={session.assignmentExternalUrl || session.assignmentFileUrl}
                                         target="_blank"
                                         rel="noreferrer"
                                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-emerald-800 font-bold hover:bg-emerald-100 border border-emerald-300 rounded-lg shadow-2xs transition-all"
                                       >
                                         <FileText className="w-3.5 h-3.5 text-emerald-600" />
-                                        <span>Tải đề bài & tài liệu đính kèm</span>
+                                        <span>Đề bài link ngoài / bổ sung</span>
                                         <ExternalLink className="w-3 h-3 ml-0.5 text-emerald-500" />
                                       </a>
+                                    </div>
+                                  )}
+
+                                  {/* S3 Material files (Slides) */}
+                                  {session.materialFiles && session.materialFiles.length > 0 && (
+                                    <div className="mt-2 pt-2 border-t border-emerald-200/60 flex flex-wrap items-center gap-2">
+                                      {session.materialFiles.map((file) => (
+                                        <button
+                                          key={file.id}
+                                          type="button"
+                                          onClick={() => handleDownloadSessionFile(session.id, file.id)}
+                                          disabled={downloadingSessionFileId === file.id}
+                                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-600 text-white font-bold hover:bg-emerald-700 rounded-lg shadow-2xs transition-all text-xs"
+                                        >
+                                          {downloadingSessionFileId === file.id ? (
+                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                          ) : (
+                                            <BookOpen className="w-3.5 h-3.5 text-white" />
+                                          )}
+                                          <span>{file.fileName}</span>
+                                          <span className="text-[10px] text-emerald-100 font-normal">({formatFileSize(file.fileSize)})</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {(session.materialExternalUrl || (!session.materialFiles?.length && session.materialUrl)) && (
+                                    <div className="mt-2 pt-2 border-t border-emerald-200/60">
+                                      <a
+                                        href={session.materialExternalUrl || session.materialUrl}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white font-bold hover:bg-emerald-700 rounded-lg shadow-2xs transition-all text-xs"
+                                      >
+                                        <BookOpen className="w-3.5 h-3.5 text-white" />
+                                        <span>Slide link ngoài / bổ sung</span>
+                                        <ExternalLink className="w-3 h-3 ml-0.5" />
+                                      </a>
+                                      {session.materialDescription && (
+                                        <p className="text-[11px] text-emerald-900 mt-1 italic">
+                                          Ghi chú tài liệu: {session.materialDescription}
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {session.assignmentDueAt && (
+                                    <div className="mt-2 flex items-center gap-1 text-[11px] font-bold text-slate-600">
+                                      <Clock className="w-3.5 h-3.5 text-slate-500" />
+                                      <span>
+                                        Hạn nộp bài: {new Date(session.assignmentDueAt).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}
+                                      </span>
                                     </div>
                                   )}
                                 </div>
@@ -1390,6 +1711,25 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                             "{session.mySubmissionText}"
                                           </p>
                                         )}
+                                        {session.mySubmissionFileName && (
+                                          <div className="mt-1.5">
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDownloadSubmission(session.id)}
+                                              disabled={downloadingSubmissionSessionId === session.id}
+                                              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 font-bold hover:bg-blue-100 border border-blue-200 rounded-lg text-xs transition"
+                                            >
+                                              {downloadingSubmissionSessionId === session.id ? (
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                              ) : (
+                                                <FileText className="w-3.5 h-3.5 text-blue-600" />
+                                              )}
+                                              <span>Bài nộp S3: {session.mySubmissionFileName}</span>
+                                              {session.mySubmissionFileSize ? <span className="text-[10px] text-blue-500 font-normal">({formatFileSize(session.mySubmissionFileSize)})</span> : null}
+                                            </button>
+                                          </div>
+                                        )}
+
                                         {session.mySubmissionFileUrl && (
                                           <div className="mt-1">
                                             <a
@@ -1401,6 +1741,25 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                               <ExternalLink className="w-3 h-3" />
                                               Xem bài làm / hình ảnh đã nộp
                                             </a>
+                                          </div>
+                                        )}
+
+                                        {session.myGradeScore && (
+                                          <div className="mt-2 p-2.5 rounded-lg bg-emerald-100/90 border border-emerald-300 text-xs">
+                                            <div className="flex items-center justify-between">
+                                              <span className="font-black text-emerald-950 flex items-center gap-1">
+                                                <Award className="w-3.5 h-3.5 text-emerald-700" />
+                                                Điểm gia sư chấm:
+                                              </span>
+                                              <span className="px-2.5 py-0.5 rounded bg-emerald-700 text-white font-black text-xs">
+                                                {session.myGradeScore}
+                                              </span>
+                                            </div>
+                                            {session.myTutorFeedback && (
+                                              <p className="mt-1 text-slate-800 italic">
+                                                "{session.myTutorFeedback}"
+                                              </p>
+                                            )}
                                           </div>
                                         )}
                                       </div>
@@ -1484,6 +1843,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                               setAssignmentTitle(session.assignmentTitle || "");
                               setAssignmentDesc(session.assignmentDescription || "");
                               setAssignmentFileUrl(session.assignmentFileUrl || "");
+                              setAssignmentDueAt(session.assignmentDueAt ? session.assignmentDueAt.slice(0, 16) : "");
+                              setAssignmentMaterialUrl(session.materialUrl || "");
+                              setAssignmentMaterialDesc(session.materialDescription || "");
                               setShowAssignmentModal(true);
                             }}
                             className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all"
@@ -1702,17 +2064,164 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                 />
               </div>
 
+              {/* S3 Assignment Files (up to 5 files) */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800">
+                    File bài tập đính kèm (Tối đa 5 file - Lưu S3):
+                  </label>
+                  <span className="text-[11px] font-bold text-slate-500">
+                    {(editingSession.assignmentFiles?.length || 0)}/5 file
+                  </span>
+                </div>
+
+                {editingSession.assignmentFiles && editingSession.assignmentFiles.length > 0 && (
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {editingSession.assignmentFiles.map((file) => (
+                      <div key={file.id} className="flex items-center justify-between p-1.5 rounded-lg bg-white border border-slate-200 text-xs">
+                        <span className="truncate text-slate-700 font-semibold">{file.fileName} ({formatFileSize(file.fileSize)})</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSessionFile(editingSession.id, file.id, "ASSIGNMENT")}
+                          className="text-rose-600 hover:text-rose-800 text-xs font-bold px-1"
+                        >
+                          Xóa
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {(editingSession.assignmentFiles?.length || 0) < 5 && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="file"
+                      multiple
+                      onChange={(e) => {
+                        if (e.target.files) {
+                          const files = Array.from(e.target.files);
+                          const remaining = 5 - (editingSession.assignmentFiles?.length || 0);
+                          if (files.length > remaining) {
+                            alert(`Chỉ được tải thêm tối đa ${remaining} file.`);
+                            setSelectedAssignmentFiles(files.slice(0, remaining));
+                          } else {
+                            setSelectedAssignmentFiles(files);
+                          }
+                        }
+                      }}
+                      className="flex-1 text-xs text-slate-600 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white cursor-pointer"
+                    />
+                    {selectedAssignmentFiles.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleUploadAssignmentFiles}
+                        disabled={uploadingSessionFiles}
+                        className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1 shrink-0"
+                      >
+                        {uploadingSessionFiles ? <Loader2 className="w-3 h-3 animate-spin" /> : <UploadCloud className="w-3 h-3" />}
+                        Tải {selectedAssignmentFiles.length} file
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-0.5">Link đề bài ngoài bổ sung (tùy chọn):</label>
+                  <input
+                    type="text"
+                    value={assignmentFileUrl}
+                    onChange={(e) => setAssignmentFileUrl(e.target.value)}
+                    placeholder="https://drive.google.com/..."
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Đường dẫn File tài liệu / Đề bài (Google Drive / S3 / Dropbox)
+                  Hạn nộp bài tập (Deadline)
                 </label>
                 <input
-                  type="text"
-                  value={assignmentFileUrl}
-                  onChange={(e) => setAssignmentFileUrl(e.target.value)}
-                  placeholder="https://drive.google.com/file/d/..."
+                  type="datetime-local"
+                  value={assignmentDueAt}
+                  onChange={(e) => setAssignmentDueAt(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500"
                 />
+              </div>
+
+              {/* S3 Lecture Slides / Materials */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-800">
+                    Slide / Bài giảng buổi học (Lưu S3):
+                  </label>
+                  <span className="text-[11px] font-bold text-slate-500">
+                    {editingSession.materialFiles?.length || 0} file
+                  </span>
+                </div>
+
+                {editingSession.materialFiles && editingSession.materialFiles.length > 0 && (
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {editingSession.materialFiles.map((file) => (
+                      <div key={file.id} className="flex items-center justify-between p-1.5 rounded-lg bg-white border border-slate-200 text-xs">
+                        <span className="truncate text-slate-700 font-semibold">{file.fileName} ({formatFileSize(file.fileSize)})</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSessionFile(editingSession.id, file.id, "MATERIAL")}
+                          className="text-rose-600 hover:text-rose-800 text-xs font-bold px-1"
+                        >
+                          Xóa
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    multiple
+                    onChange={(e) => {
+                      if (e.target.files) {
+                        setSelectedMaterialFiles(Array.from(e.target.files));
+                      }
+                    }}
+                    className="flex-1 text-xs text-slate-600 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
+                  />
+                  {selectedMaterialFiles.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleUploadMaterialFiles}
+                      disabled={uploadingSessionFiles}
+                      className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1 shrink-0"
+                    >
+                      {uploadingSessionFiles ? <Loader2 className="w-3 h-3 animate-spin" /> : <UploadCloud className="w-3 h-3" />}
+                      Tải {selectedMaterialFiles.length} file
+                    </button>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-0.5">Link slide ngoài bổ sung (tùy chọn):</label>
+                  <input
+                    type="text"
+                    value={assignmentMaterialUrl}
+                    onChange={(e) => setAssignmentMaterialUrl(e.target.value)}
+                    placeholder="https://drive.google.com/..."
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-slate-500 mb-0.5">Ghi chú tài liệu buổi học:</label>
+                  <input
+                    type="text"
+                    value={assignmentMaterialDesc}
+                    onChange={(e) => setAssignmentMaterialDesc(e.target.value)}
+                    placeholder="Ví dụ: Đọc từ trang 12 đến 25..."
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1752,6 +2261,26 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               <div className="mb-4 p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-700">
                 <span className="font-bold block text-slate-900 mb-1">Đề bài & Hướng dẫn từ gia sư:</span>
                 <p className="leading-relaxed">{submittingSession.assignmentDescription}</p>
+                {submittingSession.assignmentFiles && submittingSession.assignmentFiles.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <span className="text-[11px] font-bold text-slate-700 block">File đề bài từ gia sư (S3):</span>
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {submittingSession.assignmentFiles.map((file) => (
+                        <button
+                          key={file.id}
+                          type="button"
+                          onClick={() => handleDownloadSessionFile(submittingSession.id, file.id)}
+                          disabled={downloadingSessionFileId === file.id}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-indigo-50 text-indigo-700 text-xs font-semibold hover:bg-indigo-100 border border-indigo-200"
+                        >
+                          {downloadingSessionFileId === file.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                          <span className="truncate max-w-[200px]">{file.fileName}</span>
+                          <span className="text-[10px] text-indigo-500 font-normal">({formatFileSize(file.fileSize)})</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {submittingSession.assignmentFileUrl && (
                   <a
                     href={submittingSession.assignmentFileUrl}
@@ -1760,13 +2289,73 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                     className="inline-flex items-center gap-1 text-indigo-600 hover:underline mt-2 font-semibold"
                   >
                     <ExternalLink className="w-3 h-3" />
-                    Xem file đính kèm của gia sư
+                    Xem link đề bài ngoài bổ sung
                   </a>
                 )}
               </div>
             )}
 
+            {/* Previously submitted file if any */}
+            {submittingSession.mySubmissionFileName && (
+              <div className="mb-3.5 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <div>
+                    <span className="font-bold text-emerald-800 block">Bạn đã nộp file: {submittingSession.mySubmissionFileName}</span>
+                    {submittingSession.mySubmissionFileSize && (
+                      <span className="text-[10px] text-emerald-600 font-medium">Kích thước: {formatFileSize(submittingSession.mySubmissionFileSize)}</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadSubmission(submittingSession.id)}
+                  disabled={downloadingSubmissionSessionId === submittingSession.id}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white font-bold hover:bg-emerald-700 flex items-center gap-1 transition shadow-xs"
+                >
+                  {downloadingSubmissionSessionId === submittingSession.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                  Tải về xem lại
+                </button>
+              </div>
+            )}
+
+            {hasMySubmission(submittingSession) && canMutateMySubmission(submittingSession) && (
+              <div className="mb-3.5">
+                <button
+                  type="button"
+                  onClick={handleRemoveHomeworkSubmission}
+                  disabled={actionLoading}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold disabled:opacity-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Gỡ bài nộp hiện tại
+                </button>
+              </div>
+            )}
+
             <div className="space-y-3.5">
+              {/* S3 File Upload Input */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <label className="block text-xs font-bold text-slate-800">
+                  File bài làm đính kèm (Lưu trữ AWS S3) <span className="text-rose-500">*</span>:
+                </label>
+                <input
+                  type="file"
+                  onChange={(e) => setStudentSubmissionFile(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer"
+                />
+                {studentSubmissionFile ? (
+                  <p className="text-[11px] text-emerald-600 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Đã chọn: {studentSubmissionFile.name} ({formatFileSize(studentSubmissionFile.size)})
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-slate-400">
+                    Hỗ trợ file PDF, Word, Excel, hình ảnh, mã nguồn hoặc file nén .ZIP/.RAR.
+                  </p>
+                )}
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
                   Nội dung bài làm / Lời giải / Ghi chú cho gia sư
@@ -1782,7 +2371,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Link bài làm / File bài nộp / Hình ảnh bài giải (Google Drive, Imgur, OneDrive)
+                  Link bài làm ngoài bổ sung (Google Drive, Imgur, OneDrive - Tùy chọn)
                 </label>
                 <input
                   type="text"
@@ -1792,7 +2381,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                   className="w-full px-3.5 py-2 rounded-lg border border-slate-300 text-sm focus:ring-2 focus:ring-indigo-500"
                 />
                 <p className="text-[11px] text-slate-400 mt-1">
-                  Mẹo: Bạn có thể tải ảnh chụp bài làm lên Google Drive hoặc Imgur rồi dán link vào đây.
+                  Mẹo: Bạn có thể dán link ngoài dự phòng hoặc driver nếu file quá lớn.
                 </p>
               </div>
             </div>
@@ -1805,9 +2394,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                 Hủy
               </button>
               <button
-                disabled={actionLoading}
+                disabled={actionLoading || !canMutateMySubmission(submittingSession)}
                 onClick={handleSubmitHomework}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-md flex items-center gap-1.5"
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-md flex items-center gap-1.5 disabled:opacity-50"
               >
                 {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                 <span>Xác Nhận Nộp Bài</span>
@@ -1821,7 +2410,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       {showAttendanceModal && activeSession && (() => {
         const checkedInCount = attendanceList.filter((a) => a.studentChecked).length;
         const absentCount = attendanceList.length - checkedInCount;
-        const submittedCount = attendanceList.filter((a) => a.submissionText || a.submissionFileUrl).length;
+        const submittedCount = attendanceList.filter((a) => a.submissionText || a.submissionFileUrl || a.submissionFileName).length;
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
@@ -1880,7 +2469,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                 <div className="space-y-3 overflow-y-auto flex-1 pr-1 max-h-[350px]">
                   {attendanceList.map((att) => {
                     const isPresent = !!att.studentChecked;
-                    const hasSubmitted = !!(att.submissionText || att.submissionFileUrl);
+                    const hasSubmitted = !!(att.submissionText || att.submissionFileUrl || att.submissionFileName);
                     const isExpanded = expandedSubmissionStudentId === att.studentId;
 
                     return (
@@ -1960,6 +2549,22 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                 <p className="whitespace-pre-wrap">{att.submissionText}</p>
                               </div>
                             )}
+                            {att.submissionFileName && (
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDownloadSubmission(activeSession.id, att.id)}
+                                  disabled={downloadingSubmissionSessionId === activeSession.id}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold border border-emerald-200 rounded-lg transition-all"
+                                >
+                                  {downloadingSubmissionSessionId === activeSession.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                                  <span>Tải file bài nộp S3: {att.submissionFileName}</span>
+                                  {att.submissionFileSize && (
+                                    <span className="text-[10px] text-emerald-600 font-normal">({formatFileSize(att.submissionFileSize)})</span>
+                                  )}
+                                </button>
+                              </div>
+                            )}
                             {att.submissionFileUrl && (
                               <div>
                                 <a
@@ -1969,10 +2574,55 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold border border-indigo-200 rounded-lg transition-all"
                                 >
                                   <ExternalLink className="w-3.5 h-3.5" />
-                                  <span>Mở đường dẫn file / ảnh bài nộp</span>
+                                  <span>Mở đường dẫn file / ảnh ngoài bổ sung</span>
                                 </a>
                               </div>
                             )}
+
+                            {/* Tutor Grading & Feedback Section */}
+                            <div className="mt-3 pt-3 border-t border-slate-200 bg-slate-50/80 p-3 rounded-lg space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-slate-800 flex items-center gap-1">
+                                  <Award className="w-3.5 h-3.5 text-emerald-600" />
+                                  Chấm điểm & Nhận xét của Gia sư:
+                                </span>
+                                {att.gradedAt && (
+                                  <span className="text-[10px] text-emerald-700 font-semibold">
+                                    Đã chấm: <b>{att.gradeScore}</b> ({new Date(att.gradedAt).toLocaleString('vi-VN')})
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex flex-col sm:flex-row gap-2">
+                                <div className="w-full sm:w-36">
+                                  <input
+                                    type="text"
+                                    value={gradingScoreMap[att.id] ?? att.gradeScore ?? ""}
+                                    onChange={(e) => setGradingScoreMap((prev) => ({ ...prev, [att.id]: e.target.value }))}
+                                    placeholder="Điểm (0-10, Đạt...)"
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs font-bold bg-white focus:ring-1 focus:ring-emerald-500"
+                                  />
+                                </div>
+                                <div className="flex-1">
+                                  <input
+                                    type="text"
+                                    value={gradingFeedbackMap[att.id] ?? att.tutorFeedback ?? ""}
+                                    onChange={(e) => setGradingFeedbackMap((prev) => ({ ...prev, [att.id]: e.target.value }))}
+                                    placeholder="Nhận xét bài làm..."
+                                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 text-xs bg-white focus:ring-1 focus:ring-emerald-500"
+                                  />
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={gradingSavingMap[att.id]}
+                                  onClick={() => handleGradeStudentHomework(att.id)}
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs shadow-xs transition flex items-center justify-center gap-1 shrink-0 disabled:opacity-50"
+                                >
+                                  {gradingSavingMap[att.id] ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                                  Lưu điểm
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>

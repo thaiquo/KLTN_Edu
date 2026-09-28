@@ -50,6 +50,26 @@ public class ClassSession {
     @Column(length = 1000)
     private String assignmentFileUrl;
 
+    private LocalDateTime assignmentDueAt;
+
+    @Column(nullable = false)
+    private boolean submissionRequired = false;
+
+    @Column(nullable = false)
+    private boolean lateSubmissionAllowed = true;
+
+    @Column(length = 1000)
+    private String materialUrl;
+
+    @Column(columnDefinition = "TEXT")
+    private String materialDescription;
+
+    @Column(length = 1000)
+    private String assignmentExternalUrl;
+
+    @Column(length = 1000)
+    private String materialExternalUrl;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private ClassSessionStatus status = ClassSessionStatus.SCHEDULED;
@@ -61,6 +81,9 @@ public class ClassSession {
     private LocalDateTime createdAt = LocalDateTime.now();
 
     private LocalDateTime updatedAt;
+
+    @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<SessionFile> sessionFiles = new ArrayList<>();
 
     @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<SessionAttendance> attendances = new ArrayList<>();

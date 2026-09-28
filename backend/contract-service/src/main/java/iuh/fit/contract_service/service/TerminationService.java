@@ -134,7 +134,9 @@ public class TerminationService {
         if (wholeClass && user.hasActiveAuthority("STUDENT")) fail(HttpStatus.FORBIDDEN, "Student can request only their own agreement");
         if (!wholeClass && user.hasActiveAuthority("TUTOR")) fail(HttpStatus.FORBIDDEN, "Tutor must request termination for the whole class");
         requireText(reason);
-        if (terminal(anchor) || anchor.isLegacyExcluded()) fail(HttpStatus.CONFLICT, "Agreement is terminal or audit-only");
+        if (anchor.getStatus() != ContractAgreementStatus.ACTIVE || anchor.isLegacyExcluded()) {
+            fail(HttpStatus.CONFLICT, "Chỉ có thể yêu cầu chấm dứt đối với hợp đồng đã được hai bên ký kết và hoàn tất nạp cọc Escrow (ACTIVE).");
+        }
         for (var existing : cases.findByClassroomIdOrderByCreatedAtDesc(anchor.getClassroomId())) {
             if (!Set.of("REJECTED", "COMPLETED").contains(existing.getStatus())
                     && (wholeClass || existing.isWholeClass() || existing.getAnchorAgreementId().equals(agreementId))) {
@@ -249,9 +251,10 @@ public class TerminationService {
                 }
                 var targets = c.isWholeClass() ? agreements.findByClassroomIdOrderByCreatedAtAsc(c.getClassroomId()) : List.of(anchor);
                 for (var target : targets) {
-                    if (terminal(target)) continue;
+                    if (!activeTerminationAgreement(target)) continue;
                     if (target.isLegacyExcluded()) fail(HttpStatus.CONFLICT, "Class contains audit-only agreements; reconcile before closure");
                     var locked = agreements.lockById(target.getId()).orElseThrow();
+                    if (!activeTerminationAgreement(locked)) continue;
                     if (items.existsById(locked.getId())) {
                         if (terminal(locked) && "COMPLETED".equals(items.findById(locked.getId()).orElseThrow().getStatus())) continue;
                         fail(HttpStatus.CONFLICT, "Agreement already belongs to an approved termination");
@@ -294,7 +297,7 @@ public class TerminationService {
         var unresolved = List.of(DisputeStatus.OPENING, DisputeStatus.OPEN, DisputeStatus.UNDER_REVIEW,
                 DisputeStatus.RESOLUTION_PENDING, DisputeStatus.FAILED_RETRYABLE);
         var affectedAgreementIds = targets.stream()
-                .filter(agreement -> !terminal(agreement))
+                .filter(TerminationService::activeTerminationAgreement)
                 .filter(agreement -> disputes.existsBySettlement_Agreement_IdAndStatusIn(agreement.getId(), unresolved))
                 .map(agreement -> agreement.getId().toString())
                 .toList();
@@ -378,14 +381,14 @@ public class TerminationService {
                     ? agreements.findByClassroomIdOrderByCreatedAtAsc(c.getClassroomId())
                     : List.of(anchor);
             for (var target : targets) {
-                if (!terminal(target)) target.setTerminationCutoffSession(snapshot.cutoffSession());
+                if (activeTerminationAgreement(target)) target.setTerminationCutoffSession(snapshot.cutoffSession());
             }
             if ("HOLD_PENDING".equals(c.getStatus())) c.setStatus("REQUESTED");
             c.setLastError(null);
             c.setUpdatedAt(OffsetDateTime.now());
             if (c.isWholeClass()) {
                 for (var target : targets) {
-                    if (target.getId().equals(anchor.getId()) || terminal(target)) continue;
+                    if (target.getId().equals(anchor.getId()) || !activeTerminationAgreement(target)) continue;
                     notifications.sendAsync(target.getStudentEmail(), target.getStudentId(),
                             "Lop hoc tam dung cho xu ly",
                             "Gia su da gui de xuat dung giang day. Cac buoi tuong lai dang tam dung trong khi Admin xem xet.",
@@ -406,14 +409,14 @@ public class TerminationService {
                     ? agreements.findByClassroomIdOrderByCreatedAtAsc(c.getClassroomId())
                     : List.of(anchor);
             for (var target : targets) {
-                if (!terminal(target)) target.setTerminationCutoffSession(null);
+                if (activeTerminationAgreement(target)) target.setTerminationCutoffSession(null);
             }
             c.setStatus("REJECTED");
             c.setLastError(null);
             c.setUpdatedAt(OffsetDateTime.now());
             if (c.isWholeClass()) {
                 for (var target : targets) {
-                    if (target.getId().equals(anchor.getId()) || terminal(target)) continue;
+                    if (target.getId().equals(anchor.getId()) || !activeTerminationAgreement(target)) continue;
                     notifications.sendAsync(target.getStudentEmail(), target.getStudentId(),
                             "Lop hoc tiep tuc",
                             "De xuat dung giang day khong duoc chap thuan. Lich hoc tuong lai da duoc khoi phuc.",
@@ -460,6 +463,9 @@ public class TerminationService {
     }
     public static boolean terminal(ContractAgreement a) {
         return Set.of(ContractAgreementStatus.CANCELLED, ContractAgreementStatus.EXPIRED, ContractAgreementStatus.COMPLETED).contains(a.getStatus());
+    }
+    private static boolean activeTerminationAgreement(ContractAgreement a) {
+        return a.getStatus() == ContractAgreementStatus.ACTIVE && !a.isLegacyExcluded();
     }
     private static void requireStatus(TerminationCase c, String... statuses) {
         if (!List.of(statuses).contains(c.getStatus())) fail(HttpStatus.CONFLICT, "Request has already moved to " + c.getStatus());

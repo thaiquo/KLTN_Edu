@@ -98,6 +98,17 @@ public class ClassRoom {
     @Column(length = 1000)
     private String syllabusFileUrl;
 
+    @Column(length = 500)
+    private String syllabusFileKey;
+
+    @Column(length = 255)
+    private String syllabusFileName;
+
+    private Long syllabusFileSize;
+
+    @Column(length = 100)
+    private String syllabusContentType;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private JoinMode joinMode = JoinMode.OPEN_REQUEST;

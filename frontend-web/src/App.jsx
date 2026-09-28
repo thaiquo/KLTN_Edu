@@ -24,6 +24,7 @@ import { StudentMessagesPage } from './pages/student/StudentMessagesPage';
 import { StudentMyClassesPage } from './pages/student/StudentMyClassesPage';
 import { StudentSchedulePage } from './pages/student/StudentSchedulePage';
 import { StudentWalletPage } from './pages/student/StudentWalletPage';
+import { StudentHomeworkPage } from './pages/student/StudentHomeworkPage';
 import { useTutorApplication } from './hooks/useTutorApplication';
 
 const DashboardPage = lazy(() =>
@@ -216,6 +217,14 @@ export default function App() {
               }
             />
             <Route
+              path="/my-homework"
+              element={
+                <ProtectedStudentPage>
+                  <StudentHomeworkPage />
+                </ProtectedStudentPage>
+              }
+            />
+            <Route
               path="/my-schedule"
               element={
                 <ProtectedStudentPage>
@@ -259,6 +268,8 @@ export default function App() {
             />
 
             {/* Backward-compatible Student aliases */}
+            <Route path="/student/homework" element={<Navigate to="/my-homework" replace />} />
+            <Route path="/student/my-homework" element={<Navigate to="/my-homework" replace />} />
             <Route path="/student/schedule" element={<Navigate to="/my-schedule" replace />} />
             <Route path="/student/my-schedule" element={<Navigate to="/my-schedule" replace />} />
             <Route path="/student/contracts" element={<Navigate to="/contracts" replace />} />

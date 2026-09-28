@@ -92,6 +92,14 @@ class TerminationServiceTest {
                 .hasMessageContaining("409");
         verifyNoInteractions(verificationService);
     }
+    @Test void studentRequestRejectsNonActiveAgreement() {
+        a.setStatus(ContractAgreementStatus.WAITING_PAYMENT);
+        assertThatThrownBy(() -> service.request(a.getId(), false, "Accident", "0xsig",
+                "0x1111111111111111111111111111111111111111", now(),
+                user(2, "s@test.vn", "STUDENT")))
+                .hasMessageContaining("409")
+                .hasMessageContaining("ACTIVE");
+    }
     @Test void managersCannotSubmitUnsignedPartyRequests() {
         assertThatThrownBy(() -> service.request(a.getId(), false, "Accident",
                 user(1, "admin@test.vn", "ADMIN")))
@@ -240,25 +248,31 @@ class TerminationServiceTest {
     }
     @Test void wholeClassHoldNotifiesOnlyStudentsWithActiveAgreements() {
         var active = agreement(4L, "active@test.vn", ContractAgreementStatus.ACTIVE);
+        var waitingPayment = agreement(6L, "waiting@test.vn", ContractAgreementStatus.WAITING_PAYMENT);
         var cancelled = agreement(5L, "cancelled@test.vn", ContractAgreementStatus.CANCELLED);
-        when(agreements.findByClassroomIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(a, active, cancelled));
+        when(agreements.findByClassroomIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(a, active, waitingPayment, cancelled));
 
         service.request(a.getId(), true, "Tutor cannot continue", "0xsig",
                 "0x2222222222222222222222222222222222222222", now(), user(3, "t@test.vn", "TUTOR"));
 
         assertThat(active.getTerminationCutoffSession()).isEqualTo(1);
+        assertThat(waitingPayment.getTerminationCutoffSession()).isNull();
         assertThat(cancelled.getTerminationCutoffSession()).isNull();
         verify(notifications).sendAsync(eq("active@test.vn"), eq(4L), eq("Lop hoc tam dung cho xu ly"),
                 anyString(), eq("TERMINATION_UPDATED"), eq("AGREEMENT"), eq(active.getId().toString()));
+        verify(notifications, never()).sendAsync(eq("waiting@test.vn"), anyLong(), anyString(),
+                anyString(), anyString(), anyString(), anyString());
         verify(notifications, never()).sendAsync(eq("cancelled@test.vn"), anyLong(), anyString(),
                 anyString(), anyString(), anyString(), anyString());
     }
     @Test void wholeClassRejectionNotifiesActiveStudentsAndIgnoresPreviousCancellations() {
         var active = agreement(4L, "active@test.vn", ContractAgreementStatus.ACTIVE);
+        var waitingPayment = agreement(6L, "waiting@test.vn", ContractAgreementStatus.WAITING_PAYMENT);
         var cancelled = agreement(5L, "cancelled@test.vn", ContractAgreementStatus.CANCELLED);
         a.setTerminationCutoffSession(1);
         active.setTerminationCutoffSession(1);
-        when(agreements.findByClassroomIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(a, active, cancelled));
+        waitingPayment.setTerminationCutoffSession(1);
+        when(agreements.findByClassroomIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(a, active, waitingPayment, cancelled));
         var c = request("REQUESTED", true);
 
         service.act(c.getId(), "REJECT", "Class can continue", user(1, "admin@test.vn", "ADMIN"));
@@ -266,10 +280,32 @@ class TerminationServiceTest {
         assertThat(c.getStatus()).isEqualTo("REJECTED");
         assertThat(a.getTerminationCutoffSession()).isNull();
         assertThat(active.getTerminationCutoffSession()).isNull();
+        assertThat(waitingPayment.getTerminationCutoffSession()).isEqualTo(1);
         verify(notifications).sendAsync(eq("active@test.vn"), eq(4L), eq("Lop hoc tiep tuc"),
                 anyString(), eq("TERMINATION_UPDATED"), eq("AGREEMENT"), eq(active.getId().toString()));
+        verify(notifications, never()).sendAsync(eq("waiting@test.vn"), anyLong(), anyString(),
+                anyString(), anyString(), anyString(), anyString());
         verify(notifications, never()).sendAsync(eq("cancelled@test.vn"), anyLong(), anyString(),
                 anyString(), anyString(), anyString(), anyString());
+    }
+    @Test void wholeClassApprovalCreatesItemsOnlyForActiveAgreements() {
+        var active = agreement(4L, "active@test.vn", ContractAgreementStatus.ACTIVE);
+        var waitingPayment = agreement(6L, "waiting@test.vn", ContractAgreementStatus.WAITING_PAYMENT);
+        a.setTerminationCutoffSession(1);
+        active.setTerminationCutoffSession(1);
+        waitingPayment.setTerminationCutoffSession(1);
+        when(agreements.findByClassroomIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(a, active, waitingPayment));
+        when(agreements.lockById(active.getId())).thenReturn(Optional.of(active));
+        var c = request("REQUESTED", true);
+
+        service.act(c.getId(), "APPROVE", "Verified", user(1, "admin@test.vn", "ADMIN"));
+
+        var captor = ArgumentCaptor.forClass(TerminationItem.class);
+        verify(items, times(2)).save(captor.capture());
+        assertThat(captor.getAllValues())
+                .extracting(TerminationItem::getAgreementId)
+                .containsExactlyInAnyOrder(a.getId(), active.getId())
+                .doesNotContain(waitingPayment.getId());
     }
     @Test void studentCanAddEvidenceToPendingRequest() {
         var c = request("REQUESTED", false);

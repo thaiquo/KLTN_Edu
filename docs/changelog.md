@@ -2,6 +2,37 @@
 
 ---
 
+## 28/09/2026 — Chuẩn Hóa Khóa Nút Hủy Hợp Đồng, Tích Hợp AWS S3 Toàn Diện Cho Bài Tập & Tài Liệu Môn Học
+
+- **Chuẩn hóa Điều kiện Hủy Hợp Đồng**:
+  - Khóa chặt nút "Hủy hợp đồng": chỉ xuất hiện và cho phép bấm khi hợp đồng đang ở trạng thái `ACTIVE` (đã ký kết đầy đủ và thanh toán nạp cọc thành công).
+  - Loại bỏ hoàn toàn fallback lấy hợp đồng chưa kích hoạt ở frontend (`TutorClassManagement.tsx`) và backend (`TerminationService.java`).
+- **Kiến trúc Lưu trữ AWS S3 & CSDL Chuẩn hóa cho Learning Service**:
+  - Tích hợp AWS SDK v2 S3 và `S3Presigner` vào `learning-service` (cấu hình `StorageProperties`, hỗ trợ cả S3 và Local Storage fallback).
+  - Tạo bảng quan hệ chuẩn với khóa ngoại `ON DELETE CASCADE` (Flyway `V36__classroom_materials_and_session_files.sql`):
+    - `classroom_materials`: Lưu trữ tài liệu môn học cấp lớp (`classes/{classId}/materials/`).
+    - `session_files`: Lưu trữ file đề bài tập (`ASSIGNMENT`, tối đa 5 file/buổi) và file slide bài giảng (`MATERIAL`) theo từng buổi học (`classes/{classId}/sessions/{sessionId}/...`).
+    - Bổ sung cột `syllabus_file_key`, `syllabus_file_name`, `syllabus_file_size` trên bảng `class_rooms` để lưu trữ giáo trình/lộ trình học.
+    - Bổ sung cột `submission_s3_key`, `submission_file_name`, `submission_file_size` trên bảng `session_attendances` để lưu trữ bài nộp của học viên.
+- **Phân định Quyền Truy cập Tài liệu & Bài tập Chặt chẽ**:
+  - **Tài liệu môn học cấp lớp (`classroom_materials`)**: Học viên đã tham gia lớp (enrolled) và Gia sư có quyền xem và tải trực tiếp tài liệu về máy qua S3 presigned URL bất kỳ lúc nào mà **KHÔNG CẦN ĐIỂM DANH**.
+  - **File Lộ trình học (Syllabus)**: Gia sư có thể tải lên file lộ trình/đề cương môn học khi tạo/sửa lớp; học viên có nút tải trực tiếp.
+  - **Tài liệu & Đề bài tập theo từng buổi học (`session_files`)**: Học viên **BẮT BUỘC PHẢI ĐIỂM DANH (Check-in)** thì mới mở khóa xem nội dung đề bài và tải các file bài tập / slide bài giảng của buổi học đó (`studentChecked == true`).
+  - **Nộp bài tập của học viên**: Học viên nộp bài làm bằng **file thật (lưu trữ trên S3)**; link ngoài chỉ là ghi chú bổ sung. Gia sư và học viên có nút tải file nộp từ S3 về máy bằng presigned URL bảo mật. Gia sư chấm điểm (thang điểm 0–10, Đạt/Chưa đạt) và gửi nhận xét chi tiết.
+- **Bổ sung Mục Chuyên biệt trên Sidebar & Giao diện Quản lý Bài tập**:
+  - **Sidebar Gia sư**: Thêm mục **"Quản lý bài tập"** (`/portal/tutor/homework`): quản lý bài tập theo lớp, buổi học, đính kèm tối đa 5 file đề bài & slide S3, xem danh sách bài nộp, tải file nộp của học viên từ S3 về máy và chấm điểm trực tiếp.
+  - **Tính năng Xem lại toàn bộ Đề bài & Yêu cầu đã phân công cho Gia sư**:
+    - Nhấn vào tiêu đề bài tập hoặc nút **"Xem đề bài"** mở modal chi tiết: xem đầy đủ tên bài, buổi học, yêu cầu/hướng dẫn ghi chú chi tiết không bị cắt ngắn, danh sách file đề bài và slide S3 kèm nút tải về máy.
+    - Nút "Xem toàn bộ / Thu gọn" ngay trên thẻ bài tập.
+    - Khung xem lại đề bài & file đính kèm tích hợp ngay trong modal "Xem & Chấm bài" giúp gia sư đối chiếu bài làm học sinh khi đang chấm.
+  - **Sidebar Học viên**: Thêm mục **"Bài tập về nhà"** (`/portal/student/homework`): lọc theo lớp, hiển thị trạng thái hạn nộp, cảnh báo khóa nếu chưa điểm danh, modal nộp bài hỗ trợ chọn file S3 và tải về xem lại.
+  - **Chi tiết lớp học**: Tích hợp component `ClassroomMaterialsSection.jsx` cho cả Học viên và Gia sư.
+- **Kiểm thử tự động**:
+  - Bổ sung 7 test cases chuyên sâu trong `SessionSecurityAndStorageTest.java`. Toàn bộ 81 test cases của `learning-service` pass 100%.
+  - Frontend `npm run build` biên dịch thành công 100%.
+
+---
+
 ## 22/09/2026 — Hoàn tất Chấm dứt hợp đồng, Xác thực EIP-712 và Hoàn tiền Escrow Sepolia Thành công
 
 - **Nghiệp vụ Chấm dứt & Hủy lớp**:
