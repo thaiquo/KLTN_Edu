@@ -14,6 +14,15 @@ public final class TeachingCatalogDtos {
     public record CategoryOption(Long id, String code, String name, Option programType, Option educationLevel) {}
     public record SubjectOption(Long id, String code, String name, String description, CategoryOption category) {}
     public record LevelOption(Long id, String code, String name, LevelType type, String description) {}
+    public record GroundingSubjectOption(
+            Long id,
+            String code,
+            String name,
+            String description,
+            CategoryOption category,
+            List<LevelOption> levels
+    ) {}
+    public record GroundingCatalogSnapshot(List<GroundingSubjectOption> subjects) {}
 
     public record EvidenceRequest(
             @NotNull iuh.fit.learning_service.enums.EvidenceType evidenceType,

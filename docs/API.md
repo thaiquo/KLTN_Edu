@@ -30,7 +30,7 @@ from confirmed financial data. See [runtime semantics](ESCROW_HARDENING_2026-09-
 | Contract/Escrow/Settlement | `contract-service` | Contract agreement, signing, document, payment submission, transaction, settlement, dispute, expiry, cancellation/refund, and blockchain workflow APIs. Funding/session/lifecycle state transitions require confirmed blockchain events where Solidity emits authoritative events. Deployment/runtime hardening remains partial end-to-end. |
 | Notification | `notification-service` | Persistent user notifications, unread count, mark one read, mark all read, and limited realtime notification delivery for the authenticated recipient account. |
 | Chat | `notification-service` | Conversation/message persistence, participant-scoped REST APIs and raw WebSocket delivery. Web Portal integration is still partial. |
-| AI Matching | `ai-service` skeleton | Only `/api/ai/health` is implemented; recommendation/ranking/RAG/vector APIs do not exist yet. |
+| AI Matching | `ai-service` | `GET /api/ai/health`, Student-only `POST /api/ai/matching/analyze`, `POST /api/ai/matching/ground`, and `POST /api/ai/matching/tutors` are implemented for deterministic Matching V1; semantic/RAG/vector APIs do not exist yet. |
 
 ## 3. Current API Groups
 

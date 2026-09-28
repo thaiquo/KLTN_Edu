@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowLeft,
@@ -40,8 +40,11 @@ const DAY_LABELS = {
 
 export function PublicTutorProfilePage() {
   const { id } = useParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const subjectContextId = Number(searchParams.get('subjectId')) || null;
+  const marketplaceReturnTo = marketplaceReturnLocation(location.state?.marketplaceReturnTo);
 
   const [tutor, setTutor] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -142,12 +145,13 @@ export function PublicTutorProfilePage() {
       <HomeHeader />
 
       <main className="container-app pt-[calc(80px+42px)] pb-20">
-        <Link
-          to="/tutors"
+        <button
+          type="button"
+          onClick={() => navigate(marketplaceReturnTo)}
           className="inline-flex items-center gap-2 text-sm font-extrabold text-slate-500 transition-colors hover:text-primary"
         >
           <ArrowLeft size={17} /> Quay lại 
-        </Link>
+        </button>
 
         {loading ? (
           <ProfileSkeleton />
@@ -606,6 +610,12 @@ function ProfileSkeleton() {
       </div>
     </div>
   );
+}
+
+function marketplaceReturnLocation(value) {
+  if (typeof value !== 'string') return '/tutors';
+  if (value === '/tutors' || value.startsWith('/tutors?')) return value;
+  return '/tutors';
 }
 
 function groupAvailability(slots) {

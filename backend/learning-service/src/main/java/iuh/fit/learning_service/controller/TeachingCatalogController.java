@@ -29,4 +29,7 @@ public class TeachingCatalogController {
 
     @GetMapping("/levels")
     public List<TeachingCatalogDtos.LevelOption> levels(@RequestParam Long subjectId) { return service.levels(subjectId); }
+
+    @GetMapping("/grounding-snapshot")
+    public TeachingCatalogDtos.GroundingCatalogSnapshot groundingSnapshot() { return service.groundingSnapshot(); }
 }

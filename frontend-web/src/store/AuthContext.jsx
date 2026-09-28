@@ -2,6 +2,7 @@ import { createContext, useCallback, useEffect, useMemo, useState } from 'react'
 import { authApi } from '../api/auth';
 import { ApiError, isUnauthorized } from '../api/client';
 import { userApi } from '../api/user';
+import { marketplaceSearchSessionStore } from './marketplaceSearchSessionStore';
 
 export const AuthContext = createContext(null);
 
@@ -62,6 +63,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     function handleUnauthorized() {
+      marketplaceSearchSessionStore.clearAllSessions();
       setUser(null);
     }
 
@@ -97,6 +99,7 @@ export function AuthProvider({ children }) {
 
   async function logout() {
     await authApi.logout().catch(() => {});
+    marketplaceSearchSessionStore.clearAllSessions();
     setUser(null);
     window.dispatchEvent(new Event('auth:logout'));
   }

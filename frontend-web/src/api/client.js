@@ -1,15 +1,21 @@
 const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
-const API_URL = (configuredApiUrl || (import.meta.env.DEV ? '' : 'http://localhost:8080')).replace(/\/$/, '');
+const configuredGatewayUrl = import.meta.env.VITE_API_GATEWAY_URL?.trim();
+const API_URL = (
+  import.meta.env.DEV
+    ? ''
+    : (configuredApiUrl || configuredGatewayUrl || 'http://localhost:8080')
+).replace(/\/$/, '');
 
 export class ApiError extends Error {
-  constructor({ status, message, code, validationErrors, path, raw }) {
-    super(message || 'Yêu cầu không thành công.');
+  constructor({ status, message, code, validationErrors, path, raw, cause }) {
+    super(message || 'Yêu cầu không thành công.', { cause });
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
     this.validationErrors = validationErrors || [];
     this.path = path;
     this.raw = raw;
+    this.cause = cause;
   }
 }
 
@@ -175,10 +181,15 @@ export async function apiRequest(path, options = {}) {
       credentials: 'include',
       headers: buildHeaders(requestOptions, needsCsrf, isFormData)
     });
-  } catch {
+  } catch (error) {
+    logNetworkFailure(path, method, error);
     throw new ApiError({
       status: 0,
-      message: 'Không thể kết nối máy chủ. Vui lòng thử lại.'
+      code: 'NETWORK_ERROR',
+      message: 'Không thể kết nối đến hệ thống. Vui lòng kiểm tra kết nối hoặc thử lại.',
+      path,
+      raw: networkFailurePayload(error),
+      cause: error
     });
   }
 
@@ -221,8 +232,16 @@ export async function apiBlobRequest(path, options = {}) {
       credentials: 'include',
       headers: buildHeaders(options, isMutation(method), options.body instanceof FormData)
     });
-  } catch {
-    throw new ApiError({ status: 0, message: 'Không thể kết nối máy chủ. Vui lòng thử lại.' });
+  } catch (error) {
+    logNetworkFailure(path, method, error);
+    throw new ApiError({
+      status: 0,
+      code: 'NETWORK_ERROR',
+      message: 'Không thể kết nối đến hệ thống. Vui lòng kiểm tra kết nối hoặc thử lại.',
+      path,
+      raw: networkFailurePayload(error),
+      cause: error
+    });
   }
   if (!response.ok) {
     const data = await parseResponseBody(response);
@@ -246,4 +265,22 @@ export function isConflict(error) {
 
 export function isRateLimited(error) {
   return error?.status === 429;
+}
+
+function networkFailurePayload(error) {
+  return {
+    name: error?.name || 'Error',
+    message: error?.message || 'Network request failed'
+  };
+}
+
+function logNetworkFailure(path, method, error) {
+  if (!import.meta.env.DEV) return;
+  console.error('[apiRequest] Network request failed', {
+    path,
+    url: buildUrl(path),
+    method,
+    errorName: error?.name || 'Error',
+    errorMessage: error?.message || 'Network request failed'
+  });
 }

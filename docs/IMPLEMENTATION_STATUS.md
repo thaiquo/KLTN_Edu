@@ -21,7 +21,7 @@
 | `learning-service` | IMPLEMENTED | Catalog, Tutor registration/availability, classroom, enrollment, rolling session, attendance, meeting-link gate, homework và settlement delivery. |
 | `contract-service` | IMPLEMENTED + LIMITED | Agreement/signing/document/funding/settlement/refund/dispute/evidence/transaction recovery chạy thật trên Sepolia; event polling có đối soát receipt để phục hồi event bị lỡ; V1 dispute chỉ cho `BOTH_PRESENT`, legacy rows bị cách ly và ops còn giới hạn. |
 | `notification-service` | IMPLEMENTED/PARTIAL | Notification persistence, REST, Rabbit consumer, WebSocket hoạt động cho event đã nối. Chat backend có persistence/API/WebSocket nhưng Web Messages chưa nối. |
-| `ai-service` | SKELETON | Có Spring Boot module và `GET /api/ai/health`; chưa có matching/RAG/model/vector. |
+| `ai-service` | PARTIAL | Có health, Student-only Deterministic Matching V1, Gemini Natural Language Requirement Analyzer, Catalog Grounding qua Learning catalog, Offline Location Grounding qua Account administrative reference data và Tutor Marketplace frontend integration; chưa có semantic matching/RAG/vector. |
 | `frontend-web` | IMPLEMENTED/PARTIAL | Flow chính Account/Learning/Contract/Dispute/Wallet/Notification có dữ liệu thật; một số Portal dashboard/message vẫn chứa mock state. |
 | `mobile-app` | PARTIAL | Login/register/home cơ bản; không có parity với Web. |
 
@@ -114,8 +114,13 @@
 
 ### AI
 
-- SKELETON: module Maven/Spring Boot port 8085, Gateway route và health endpoint.
-- NOT_IMPLEMENTED: hard-filter orchestration, scoring/ranking, embeddings, Qdrant, RAG, LLM/chatbot, eval/monitoring.
+- PARTIAL: module Maven/Spring Boot port 8085, Gateway route, health endpoint, Student-only Deterministic Matching V1, Gemini Natural Language Requirement Analyzer, Catalog Grounding và Offline Location Grounding.
+- IMPLEMENTED trong phạm vi Phase 4.3.1: Gemini chỉ trích xuất nhu cầu học tập có cấu trúc từ tiếng Việt; không matching, không ranking, không sinh catalog IDs.
+- IMPLEMENTED trong phạm vi Phase 4.3.2: Java + Learning catalog resolve `subjectHint`/`levelHint` sang IDs thật, trả clarification khi thiếu/mơ hồ/not-found/invalid relationship; không tự gọi Matching V1.
+- IMPLEMENTED trong phạm vi Phase 4.3.2.1: Java + Account administrative reference data resolve OFFLINE `locationHint` sang `provinceCode`/`communeCode` khi có match duy nhất; location là tiêu chí mềm nên thiếu/mơ hồ/not-found không làm mất `coreMatchingReady` nếu subject/level/teachingMode đã sẵn sàng.
+- IMPLEMENTED trong phạm vi Phase 4.3.3: Tutor Marketplace large modal gọi Analyze -> Ground -> Matching V1 sau khi Student xác nhận, render ranked Tutor cards bằng `matchPercentage` và `matchingReasons` thật; không có standalone AI Matching page/header item.
+- IMPLEMENTED trong phạm vi Web V1 Phase 4.3.3.3B: Tutor Marketplace lưu search session bằng frontend abstraction trên `sessionStorage` có version/TTL/account scope; Manual Search và AI Matching được restore tách biệt khi quay lại từ Tutor Detail hoặc F5, không dùng Redis và không biến AI requirement thành manual filters.
+- NOT_IMPLEMENTED: semantic matching/ranking, embeddings, Qdrant, RAG, chatbot, eval/monitoring.
 
 ## 5. Bằng chứng Sepolia hiện tại
 
@@ -144,7 +149,7 @@
 ## 7. Việc còn lại ưu tiên
 
 1. Nối Portal Messages vào chat API/WebSocket, bỏ mock conversation/reply.
-2. Triển khai AI Matching thật hoặc giữ UI ở trạng thái “chưa sẵn sàng”, không quảng bá như đã dùng AI.
+2. Nâng AI Matching sang semantic/ranking Phase 4.4 khi có thiết kế embedding/vector/eval rõ ràng; không để Gemini tự chọn Tutor hoặc sinh điểm giả.
 3. Hoàn thiện mobile theo các flow Web cần thiết.
 4. Bổ sung violation/support ticket và reporting tổng hợp.
 5. Tăng cường production ops: multi-RPC/failover, operator HA an toàn, metrics/alerting, backup/restore drill.

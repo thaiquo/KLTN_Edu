@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowRight,
@@ -26,7 +26,9 @@ import { tutorApi } from '../../api/tutors';
 import { teachingCatalogApi } from '../../api/teachingRegistrations';
 import { referenceApi } from '../../api/reference';
 import { HomeHeader } from '../../components/home/HomeHeader';
-import { StudentMatchingInputForm } from '../../components/matching/StudentMatchingInputForm';
+import { AiTutorMatchingModal } from '../../components/matching/AiTutorMatchingModal';
+import { useAuth } from '../../hooks/useAuth';
+import { marketplaceSearchSessionStore } from '../../store/marketplaceSearchSessionStore';
 
 const DEFAULT_PAGE_SIZE = 9;
 const DAY_OPTIONS = [
@@ -67,18 +69,61 @@ const INITIAL_FILTERS = {
 };
 
 export function TutorMarketplacePage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { authenticated, user, loading: authLoading } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState(() => readFilters(searchParams));
   const [keywordDraft, setKeywordDraft] = useState(searchParams.get('keyword') || '');
   const [page, setPage] = useState(toPositiveInt(searchParams.get('page'), 0));
   const [sort, setSort] = useState(searchParams.get('sort') || 'name,asc');
+  const [activeMode, setActiveMode] = useState('MANUAL');
+  const [sessionRestored, setSessionRestored] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [matchingModalOpen, setMatchingModalOpen] = useState(false);
   const [catalog, setCatalog] = useState({ programTypes: [], educationLevels: [], categories: [], subjects: [], levels: [] });
   const [locations, setLocations] = useState({ provinces: [], communes: [] });
   const [result, setResult] = useState(emptyPage());
+  const [aiMatchResult, setAiMatchResult] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const marketplaceReturnTo = `${location.pathname}${location.search}`;
+
+  useEffect(() => {
+    if (authLoading || sessionRestored) return;
+
+    const session = marketplaceSearchSessionStore.loadSession(user);
+    if (session?.manual) {
+      const restoredFilters = { ...INITIAL_FILTERS, ...(session.manual.filters || {}) };
+      setFilters(restoredFilters);
+      setKeywordDraft(session.manual.keywordDraft ?? restoredFilters.keyword ?? '');
+      setPage(toPositiveInt(session.manual.page, 0));
+      setSort(session.manual.sort || 'name,asc');
+    }
+
+    if (session?.activeMode === 'AI' && session.ai?.matchingResult) {
+      setAiMatchResult(session.ai.matchingResult);
+      setActiveMode('AI');
+    } else {
+      setActiveMode('MANUAL');
+      setAiMatchResult(null);
+    }
+
+    setSessionRestored(true);
+  }, [authLoading, sessionRestored, user]);
+
+  useEffect(() => {
+    function clearPersistedMarketplaceSession() {
+      marketplaceSearchSessionStore.clearAllSessions();
+    }
+
+    window.addEventListener('auth:logout', clearPersistedMarketplaceSession);
+    window.addEventListener('auth:unauthorized', clearPersistedMarketplaceSession);
+    return () => {
+      window.removeEventListener('auth:logout', clearPersistedMarketplaceSession);
+      window.removeEventListener('auth:unauthorized', clearPersistedMarketplaceSession);
+    };
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -144,6 +189,22 @@ export function TutorMarketplacePage() {
   }, [filters, page, sort, setSearchParams]);
 
   useEffect(() => {
+    if (authLoading || !sessionRestored) return;
+    marketplaceSearchSessionStore.saveManualState(user, {
+      filters,
+      sort,
+      page,
+      keywordDraft
+    }, { activeMode });
+  }, [activeMode, authLoading, filters, keywordDraft, page, sessionRestored, sort, user]);
+
+  useEffect(() => {
+    if (activeMode === 'AI' && aiMatchResult) {
+      setLoading(false);
+      setError('');
+      return;
+    }
+
     let active = true;
     setLoading(true);
     setError('');
@@ -184,7 +245,7 @@ export function TutorMarketplacePage() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [filters, page, sort]);
+  }, [activeMode, aiMatchResult, filters, page, sort]);
 
   const activeChips = useMemo(() => buildActiveChips(filters, catalog, locations), [filters, catalog, locations]);
   const hasActiveFilters = activeChips.length > 0;
@@ -192,6 +253,8 @@ export function TutorMarketplacePage() {
   const selectedLevelId = filters.levelId ? Number(filters.levelId) : null;
 
   function updateFilter(name, value) {
+    setActiveMode('MANUAL');
+    setAiMatchResult(null);
     setFilters((current) => {
       const next = { ...current, [name]: value };
       if (name === 'programTypeId') {
@@ -225,9 +288,37 @@ export function TutorMarketplacePage() {
   }
 
   function clearFilters() {
+    setActiveMode('MANUAL');
+    setAiMatchResult(null);
     setFilters(INITIAL_FILTERS);
     setKeywordDraft('');
     setPage(0);
+  }
+
+  function openMatchingModal() {
+    if (!authenticated) {
+      navigate('/login', { state: { from: { pathname: '/tutors' } } });
+      return;
+    }
+    if (user?.activeRole !== 'STUDENT') {
+      setError('Tính năng tìm gia sư bằng AI chỉ dành cho học viên.');
+      return;
+    }
+    setError('');
+    setMatchingModalOpen(true);
+  }
+
+  function handleAiMatched(response, context = {}) {
+    setAiMatchResult(response || null);
+    setActiveMode('AI');
+    setMatchingModalOpen(false);
+    setPage(0);
+    marketplaceSearchSessionStore.saveAiState(user, {
+      originalMessage: context.originalMessage,
+      analyzedRequirement: context.analyzedRequirement,
+      groundedRequirement: context.requirement,
+      matchingResult: response
+    });
   }
 
   return (
@@ -284,12 +375,11 @@ export function TutorMarketplacePage() {
                 </span>
                 <h2 className="font-display text-2xl font-extrabold text-slate-950">Chưa biết nên chọn ai?</h2>
                 <p className="text-sm font-semibold leading-7 text-slate-600">
-                  Nhập nhu cầu học tập để EduConnect kiểm tra dữ liệu Matching trước khi bước sang luồng gợi ý ở Phase 4.
-                  Marketplace hiện vẫn giữ tìm kiếm thủ công và không tạo xếp hạng giả.
+                  Mô tả nhu cầu học tập bằng tiếng Việt, EduConnect sẽ phân tích, kiểm tra dữ liệu thật và gợi ý gia sư phù hợp.
                 </p>
                 <button
                   type="button"
-                  onClick={() => setMatchingModalOpen(true)}
+                  onClick={openMatchingModal}
                   className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-slate-900 px-5 text-sm font-black text-white transition-colors hover:bg-primary"
                 >
                   <Sparkles size={17} /> Tìm gia sư phù hợp
@@ -313,27 +403,42 @@ export function TutorMarketplacePage() {
           <section className="min-w-0 space-y-5">
             <div className="flex flex-col gap-3 rounded-[8px] border border-slate-200 bg-white p-4 shadow-[0_14px_36px_rgba(15,23,42,.05)] md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-[11px] font-extrabold uppercase tracking-wider text-primary">Kết quả tìm kiếm</p>
+                <p className="text-[11px] font-extrabold uppercase tracking-wider text-primary">
+                  {aiMatchResult ? 'Gợi ý gia sư phù hợp' : 'Kết quả tìm kiếm'}
+                </p>
                 <h2 className="mt-1 font-display text-2xl font-extrabold text-slate-950">
-                  {loading ? 'Đang tìm gia sư phù hợp...' : hasActiveFilters ? `${result.totalElements} gia sư phù hợp với tiêu chí của bạn` : `${result.totalElements} gia sư phù hợp`}
+                  {aiMatchResult
+                    ? `${aiMatchResult.results?.length || 0} gia sư phù hợp với nhu cầu của bạn`
+                    : loading ? 'Đang tìm gia sư phù hợp...' : hasActiveFilters ? `${result.totalElements} gia sư phù hợp với tiêu chí của bạn` : `${result.totalElements} gia sư phù hợp`}
                 </h2>
+                {aiMatchResult && <p className="mt-1 text-sm font-semibold text-slate-500">Được sắp xếp theo mức độ phù hợp từ Matching V1.</p>}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" onClick={() => setMobileFiltersOpen(true)} className="inline-flex min-h-10 items-center gap-2 rounded-[8px] border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 lg:hidden">
                   <SlidersHorizontal size={15} /> Bộ lọc
                 </button>
-                <label className="inline-flex min-h-10 items-center gap-2 rounded-[8px] border border-slate-200 bg-slate-50 px-3 text-xs font-black text-slate-700">
+                {!aiMatchResult && <label className="inline-flex min-h-10 items-center gap-2 rounded-[8px] border border-slate-200 bg-slate-50 px-3 text-xs font-black text-slate-700">
                   Sắp xếp
-                  <select value={sort} onChange={(event) => { setSort(event.target.value); setPage(0); }} className="border-0 bg-transparent text-xs font-black text-slate-900 outline-none">
+                  <select value={sort} onChange={(event) => { setActiveMode('MANUAL'); setAiMatchResult(null); setSort(event.target.value); setPage(0); }} className="border-0 bg-transparent text-xs font-black text-slate-900 outline-none">
                     {SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
-                </label>
+                </label>}
               </div>
             </div>
 
-            {activeChips.length > 0 && <ActiveFilterChips chips={activeChips} onRemove={(key) => updateFilter(key, '')} onClear={clearFilters} />}
+            {!aiMatchResult && activeChips.length > 0 && <ActiveFilterChips chips={activeChips} onRemove={(key) => updateFilter(key, '')} onClear={clearFilters} />}
 
-            {error ? (
+            {aiMatchResult ? (
+              aiMatchResult.results?.length ? (
+                <div className="grid gap-4 xl:grid-cols-2">
+                  {aiMatchResult.results.map((tutor) => (
+                    <TutorMarketplaceCard key={tutor.tutorId} tutor={tutor} isAiResult marketplaceReturnTo={marketplaceReturnTo} />
+                  ))}
+                </div>
+              ) : (
+                <EmptyAiMatches onRetry={openMatchingModal} onShowAll={() => { setActiveMode('MANUAL'); setAiMatchResult(null); }} />
+              )
+            ) : error ? (
               <ErrorState message={error} onRetry={() => setFilters((current) => ({ ...current }))} />
             ) : loading ? (
               <TutorGridSkeleton />
@@ -343,10 +448,10 @@ export function TutorMarketplacePage() {
               <>
                 <div className="grid gap-4 xl:grid-cols-2">
                   {result.content.map((tutor) => (
-                    <TutorMarketplaceCard key={tutor.tutorId} tutor={tutor} selectedSubjectId={selectedSubjectId} selectedLevelId={selectedLevelId} />
+                    <TutorMarketplaceCard key={tutor.tutorId} tutor={tutor} selectedSubjectId={selectedSubjectId} selectedLevelId={selectedLevelId} marketplaceReturnTo={marketplaceReturnTo} />
                   ))}
                 </div>
-                <Pagination page={result.page} totalPages={result.totalPages} last={result.last} onPageChange={setPage} />
+                <Pagination page={result.page} totalPages={result.totalPages} last={result.last} onPageChange={(nextPage) => { setActiveMode('MANUAL'); setAiMatchResult(null); setPage(nextPage); }} />
               </>
             )}
           </section>
@@ -372,33 +477,7 @@ export function TutorMarketplacePage() {
         </div>
       )}
 
-      {matchingModalOpen && <MatchingModal onClose={() => setMatchingModalOpen(false)} />}
-    </div>
-  );
-}
-
-function MatchingModal({ onClose }) {
-  return (
-    <div className="fixed inset-0 z-[60] bg-slate-950/60 p-3 backdrop-blur-sm sm:p-5" role="dialog" aria-modal="true" aria-labelledby="matching-modal-title">
-      <div className="mx-auto flex max-h-full w-full max-w-6xl flex-col overflow-hidden rounded-[8px] bg-slate-50 shadow-2xl">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 sm:px-6">
-          <div>
-            <p className="text-[11px] font-extrabold uppercase tracking-wider text-primary">Matching Input</p>
-            <h2 id="matching-modal-title" className="font-display text-xl font-extrabold text-slate-950 sm:text-2xl">
-              Tìm gia sư phù hợp với nhu cầu học tập
-            </h2>
-            <p className="mt-1 text-sm font-semibold leading-6 text-slate-500">
-              Nhập nhu cầu học tập để kiểm tra dữ liệu đầu vào. Phase này chưa sinh danh sách xếp hạng.
-            </p>
-          </div>
-          <button type="button" onClick={onClose} className="grid h-10 w-10 shrink-0 place-items-center rounded-[8px] bg-slate-100 text-slate-600 hover:bg-slate-200" aria-label="Đóng Matching Input">
-            <X size={18} />
-          </button>
-        </div>
-        <div className="overflow-y-auto p-4 sm:p-6">
-          <StudentMatchingInputForm variant="modal" onCancel={onClose} submitLabel="Kiểm tra nhu cầu học tập" />
-        </div>
-      </div>
+      {matchingModalOpen && <AiTutorMatchingModal onClose={() => setMatchingModalOpen(false)} onMatched={handleAiMatched} />}
     </div>
   );
 }
@@ -503,9 +582,9 @@ function FilterPanel({ filters, catalog, locations, updateFilter, clearFilters, 
   );
 }
 
-function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId }) {
-  const capability = getDisplayCapability(tutor, selectedSubjectId);
-  const hasSubjectFilter = Boolean(selectedSubjectId && capability);
+function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiResult = false, marketplaceReturnTo = '/tutors' }) {
+  const capability = isAiResult ? capabilityFromMatch(tutor.matchedSubject) : getDisplayCapability(tutor, selectedSubjectId);
+  const hasSubjectFilter = Boolean((selectedSubjectId || isAiResult) && capability);
   const location = formatLocation(tutor.location);
   const modes = Array.from(tutor.teachingModes || []);
   const subjects = tutor.subjects || [];
@@ -513,6 +592,9 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId }) {
   const extraSubjects = Math.max(subjects.length - subjectPreview.length, 0);
   const title = hasSubjectFilter ? capability.subjectName : subjectPreview.join(' • ') || 'Gia sư EduConnect';
   const description = hasSubjectFilter ? capability.description : tutor.bio;
+  const matchPercentage = Number(tutor.matchPercentage);
+  const hasMatchPercentage = isAiResult && Number.isFinite(matchPercentage);
+  const matchingReasons = Array.isArray(tutor.matchingReasons) ? tutor.matchingReasons.filter(Boolean) : [];
 
   return (
     <article className="group flex min-h-[360px] flex-col rounded-[8px] border border-slate-200 bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,.06)] transition-all duration-200 hover:-translate-y-1 hover:border-primary/40 hover:shadow-[0_22px_50px_rgba(15,23,42,.10)]">
@@ -525,15 +607,21 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId }) {
           </div>
           <RatingBadge averageRating={tutor.averageRating} reviewCount={tutor.reviewCount} />
         </div>
+        {hasMatchPercentage && (
+          <div className="shrink-0 rounded-[8px] border border-blue-100 bg-blue-50 px-3 py-2 text-center">
+            <strong className="block font-display text-2xl font-extrabold text-primary">{Math.round(matchPercentage)}%</strong>
+            <span className="text-[10px] font-black uppercase tracking-wider text-blue-700">Phù hợp</span>
+          </div>
+        )}
       </div>
       <div className="mt-5 flex-1 space-y-4">
         <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="text-[10px] font-extrabold uppercase tracking-wider text-primary">{hasSubjectFilter ? 'Môn phù hợp' : 'Môn nhận dạy'}</p>
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-primary">{isAiResult ? 'Môn được ghép' : hasSubjectFilter ? 'Môn phù hợp' : 'Môn nhận dạy'}</p>
               <h4 className="mt-1 font-display text-lg font-extrabold text-slate-950 line-clamp-2">{title}</h4>
             </div>
-            {hasSubjectFilter && <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-black text-primary ring-1 ring-blue-100">Đúng môn lọc</span>}
+            {hasSubjectFilter && <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-black text-primary ring-1 ring-blue-100">{isAiResult ? 'Theo nhu cầu' : 'Đúng môn lọc'}</span>}
           </div>
           {hasSubjectFilter ? (
             <CapabilityDetails capability={capability} selectedLevelId={selectedLevelId} />
@@ -558,13 +646,26 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId }) {
           )) : <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-extrabold text-slate-500">Chưa công bố hình thức học</span>}
         </div>
         <p className="line-clamp-3 text-sm font-semibold leading-7 text-slate-600">{description || 'Gia sư đã được xét duyệt trên EduConnect. Xem hồ sơ để biết thêm thông tin giảng dạy và các lớp đang mở.'}</p>
+        {isAiResult && matchingReasons.length > 0 && (
+          <ul className="space-y-2 rounded-[8px] border border-emerald-100 bg-emerald-50 p-3">
+            {matchingReasons.slice(0, 4).map((reason) => (
+              <li key={reason} className="flex items-start gap-2 text-xs font-extrabold leading-5 text-emerald-800">
+                <ShieldCheck size={14} className="mt-0.5 shrink-0" /> {reason}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Mức nhận dạy / buổi</p>
           <strong className="mt-1 block font-display text-xl font-extrabold text-slate-950">{hasSubjectFilter ? formatTuitionRange(capability.tuitionMin, capability.tuitionMax) : startingTuitionLabel(tutor.startingTuition)}</strong>
         </div>
-        <Link to={`/tutors/${tutor.tutorId}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-slate-900 px-5 text-sm font-black text-white transition-colors hover:bg-primary">
+        <Link
+          to={`/tutors/${tutor.tutorId}`}
+          state={{ marketplaceReturnTo }}
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-slate-900 px-5 text-sm font-black text-white transition-colors hover:bg-primary"
+        >
           Xem hồ sơ <ArrowRight size={16} />
         </Link>
       </div>
@@ -607,6 +708,26 @@ function TutorGridSkeleton() {
 
 function EmptyTutors({ hasActiveFilters, onReset }) {
   return <div className="grid place-items-center rounded-[8px] border border-dashed border-slate-300 bg-white px-6 py-14 text-center shadow-[0_14px_36px_rgba(15,23,42,.04)]"><span className="grid h-14 w-14 place-items-center rounded-[8px] bg-blue-50 text-primary"><UsersRound size={25} /></span><h3 className="mt-4 font-display text-2xl font-extrabold text-slate-950">{hasActiveFilters ? 'Chưa tìm thấy gia sư phù hợp' : 'Chưa có gia sư công khai'}</h3><p className="mt-2 max-w-md text-sm font-semibold leading-7 text-slate-500">{hasActiveFilters ? 'Chưa tìm thấy gia sư phù hợp với các tiêu chí đã chọn. Bạn có thể nới lỏng bộ lọc để xem thêm hồ sơ.' : 'Khi hồ sơ gia sư được xét duyệt và công khai, danh sách sẽ hiển thị tại đây.'}</p>{hasActiveFilters && <button type="button" onClick={onReset} className="mt-5 inline-flex items-center gap-2 rounded-[8px] bg-primary px-5 py-3 text-sm font-black text-white hover:bg-primary-dark"><RotateCcw size={16} /> Xóa bộ lọc</button>}</div>;
+}
+
+function EmptyAiMatches({ onRetry, onShowAll }) {
+  return (
+    <div className="grid place-items-center rounded-[8px] border border-dashed border-slate-300 bg-white px-6 py-14 text-center shadow-[0_14px_36px_rgba(15,23,42,.04)]">
+      <span className="grid h-14 w-14 place-items-center rounded-[8px] bg-blue-50 text-primary"><Sparkles size={25} /></span>
+      <h3 className="mt-4 font-display text-2xl font-extrabold text-slate-950">Chưa tìm thấy gia sư đáp ứng các tiêu chí cốt lõi của bạn.</h3>
+      <p className="mt-2 max-w-md text-sm font-semibold leading-7 text-slate-500">
+        Bạn có thể thử mô tả nhu cầu khác hoặc xem toàn bộ gia sư đang công khai trên Marketplace.
+      </p>
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+        <button type="button" onClick={onRetry} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-slate-900 px-5 text-sm font-black text-white hover:bg-primary">
+          <Sparkles size={16} /> Thử mô tả nhu cầu khác
+        </button>
+        <button type="button" onClick={onShowAll} className="inline-flex min-h-11 items-center justify-center rounded-[8px] border border-slate-200 bg-white px-5 text-sm font-black text-slate-700 hover:bg-slate-50">
+          Xem tất cả gia sư
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function ErrorState({ message, onRetry }) {
@@ -692,6 +813,21 @@ function getDisplayCapability(tutor, selectedSubjectId) {
   const subjects = tutor.subjects || [];
   if (!selectedSubjectId) return subjects[0] || null;
   return subjects.find((item) => Number(item.subjectId) === Number(selectedSubjectId)) || subjects[0] || null;
+}
+
+function capabilityFromMatch(matchedSubject) {
+  if (!matchedSubject) return null;
+  return {
+    subjectId: matchedSubject.subjectId,
+    subjectName: matchedSubject.subjectName,
+    categoryId: matchedSubject.categoryId,
+    categoryName: matchedSubject.categoryName,
+    levels: matchedSubject.levelId ? [{ levelId: matchedSubject.levelId, levelName: matchedSubject.levelName }] : [],
+    experienceYears: matchedSubject.experienceYears,
+    tuitionMin: matchedSubject.tuitionMin,
+    tuitionMax: matchedSubject.tuitionMax,
+    description: matchedSubject.description
+  };
 }
 
 function buildPageItems(page, totalPages) {

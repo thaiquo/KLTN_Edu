@@ -5,7 +5,10 @@ import iuh.fit.learning_service.entity.*;
 import iuh.fit.learning_service.repository.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class TeachingCatalogService {
@@ -51,6 +54,37 @@ public class TeachingCatalogService {
     @Transactional(readOnly = true)
     public List<TeachingCatalogDtos.LevelOption> levels(Long subjectId) {
         return levels.findBySubjectIdAndActiveTrueOrderByOrderIndexAscNameAsc(subjectId).stream().map(this::level).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public TeachingCatalogDtos.GroundingCatalogSnapshot groundingSnapshot() {
+        List<CatalogSubject> activeSubjects = subjects.findActiveGroundingSubjects();
+        if (activeSubjects.isEmpty()) {
+            return new TeachingCatalogDtos.GroundingCatalogSnapshot(List.of());
+        }
+        List<Long> subjectIds = activeSubjects.stream().map(CatalogSubject::getId).toList();
+        Map<Long, List<TeachingCatalogDtos.LevelOption>> levelsBySubject = levels
+                .findBySubject_IdInAndActiveTrueOrderByOrderIndexAscNameAsc(subjectIds)
+                .stream()
+                .collect(Collectors.groupingBy(
+                        value -> value.getSubject().getId(),
+                        Collectors.collectingAndThen(Collectors.toList(), values -> values.stream()
+                                .sorted(Comparator
+                                        .comparing((CatalogLevel value) -> value.getOrderIndex() == null ? 0 : value.getOrderIndex())
+                                        .thenComparing(CatalogLevel::getName))
+                                .map(this::level)
+                                .toList())
+                ));
+        return new TeachingCatalogDtos.GroundingCatalogSnapshot(activeSubjects.stream()
+                .map(subject -> new TeachingCatalogDtos.GroundingSubjectOption(
+                        subject.getId(),
+                        subject.getCode(),
+                        subject.getName(),
+                        subject.getDescription(),
+                        category(subject.getCategory()),
+                        levelsBySubject.getOrDefault(subject.getId(), List.of())
+                ))
+                .toList());
     }
 
     TeachingCatalogDtos.Option option(ProgramType value) { return new TeachingCatalogDtos.Option(value.getId(), value.getCode(), value.getName(), value.getDescription()); }

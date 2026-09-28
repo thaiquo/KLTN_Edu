@@ -8,5 +8,6 @@ import java.util.Optional;
 public interface CatalogLevelRepository extends JpaRepository<CatalogLevel, Long> {
     List<CatalogLevel> findBySubjectIdAndActiveTrueOrderByOrderIndexAscNameAsc(Long subjectId);
     List<CatalogLevel> findBySubjectIdOrderByOrderIndexAscNameAsc(Long subjectId);
+    List<CatalogLevel> findBySubject_IdInAndActiveTrueOrderByOrderIndexAscNameAsc(List<Long> subjectIds);
     Optional<CatalogLevel> findByIdAndActiveTrue(Long id);
 }

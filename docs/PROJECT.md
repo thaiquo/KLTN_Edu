@@ -10,7 +10,7 @@ EduConnect là nền tảng kết nối Học viên và Gia sư, hỗ trợ tìm
 Hai năng lực kỹ thuật nổi bật:
 
 - Blockchain/Smart Contract bảo toàn tiền ký quỹ và thực hiện payout/refund minh bạch trên Sepolia.
-- AI Matching là hướng phát triển hỗ trợ tìm kiếm/xếp hạng; hiện mới có `ai-service` skeleton và health endpoint, chưa có mô hình, embedding, RAG hoặc vector search.
+- AI Matching hỗ trợ tìm kiếm/xếp hạng; hiện có Deterministic Matching V1, Gemini requirement analyzer, catalog/location grounding và Tutor Marketplace integration, chưa có embedding, RAG hoặc vector search.
 
 ## 2. Kiến trúc được xác nhận
 
@@ -23,7 +23,7 @@ EduConnect dùng **Service-Based Architecture**, không gọi là Microservices 
 | `learning-service` | 8082 | Danh mục, chuyên môn/lịch rảnh, lớp, enrollment, lịch học, buổi học, điểm danh, bài tập. |
 | `contract-service` | 8083 | Hợp đồng, EIP-712, DOCX/PDF, escrow, transaction pipeline, settlement, dispute, evidence, chấm dứt hợp đồng đơn phương & đề xuất hủy lớp. |
 | `notification-service` | 8084 | Notification lưu bền, Bell REST/WebSocket; chat persistence/API/WebSocket. |
-| `ai-service` | 8085 | Service skeleton và `GET /api/ai/health`; AI nghiệp vụ chưa triển khai. |
+| `ai-service` | 8085 | Health, Student-only Matching V1, Gemini natural-language analyzer, catalog/location grounding và Tutor Marketplace integration; semantic/vector chưa triển khai. |
 | `frontend-web` | 5173 | React/Vite cho Guest, Student, Tutor, Staff, Admin. |
 | `mobile-app` | Expo | Đăng ký/đăng nhập/home cơ bản; chưa tương đương Web. |
 
@@ -94,7 +94,7 @@ Tỷ lệ được tính theo base unit của USDC; Tutor và Platform được 
 - Đã có luồng chính Web cho Account, Tutor approval, catalog/class/enrollment, session/attendance/homework, contract/escrow/settlement/dispute và notification.
 - Sepolia đã có bằng chứng funding, payout 85/15, refund 100% và refund hoàn cọc thanh lý hợp đồng 4.80 USDC thực tế; chi tiết transaction nằm trong [BLOCKCHAIN.md](BLOCKCHAIN.md).
 - Chat backend có persistence/API/WebSocket nhưng Portal message hiện vẫn dùng mock state, nên luồng người dùng chưa hoàn chỉnh.
-- AI Matching chưa triển khai nghiệp vụ; `ai-service` mới là skeleton.
+- AI Matching đã có flow Student trong Tutor Marketplace dựa trên Analyze -> Ground -> Matching V1; semantic/vector/RAG chưa triển khai.
 - Student post, violation/support ticket, báo cáo quản trị đầy đủ và mobile feature parity chưa có.
 - Bốn agreement legacy nạp sai bằng raw ERC-20 transfer đã được `legacy_excluded`; không tham gia KPI hoặc tự quyết toán.
 

@@ -1,5 +1,6 @@
 package iuh.fit.account_service.controller;
 
+import iuh.fit.account_service.dto.reference.AdministrativeLocationSnapshotResponse;
 import iuh.fit.account_service.dto.reference.AdministrativeUnitResponse;
 import iuh.fit.account_service.service.ReferenceDataService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -27,5 +28,10 @@ public class ReferenceDataController {
     @GetMapping("/provinces/{provinceCode}/communes")
     public List<AdministrativeUnitResponse> communes(@PathVariable String provinceCode) {
         return referenceDataService.communes(provinceCode);
+    }
+
+    @GetMapping("/locations/snapshot")
+    public AdministrativeLocationSnapshotResponse locationSnapshot() {
+        return referenceDataService.locationSnapshot();
     }
 }

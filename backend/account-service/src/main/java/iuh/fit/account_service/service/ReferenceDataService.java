@@ -1,5 +1,8 @@
 package iuh.fit.account_service.service;
 
+import iuh.fit.account_service.dto.reference.AdministrativeLocationSnapshotResponse;
+import iuh.fit.account_service.dto.reference.AdministrativeLocationSnapshotResponse.CommuneLocation;
+import iuh.fit.account_service.dto.reference.AdministrativeLocationSnapshotResponse.ProvinceLocation;
 import iuh.fit.account_service.dto.reference.AdministrativeUnitResponse;
 import iuh.fit.account_service.entity.AdministrativeCommune;
 import iuh.fit.account_service.entity.AdministrativeProvince;
@@ -10,6 +13,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class ReferenceDataService {
@@ -41,6 +46,34 @@ public class ReferenceDataService {
                 .stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public AdministrativeLocationSnapshotResponse locationSnapshot() {
+        Map<String, List<AdministrativeCommune>> communesByProvince = communeRepository.findActiveSnapshotCommunes()
+                .stream()
+                .collect(Collectors.groupingBy(
+                        commune -> commune.getProvince().getCode(),
+                        java.util.LinkedHashMap::new,
+                        Collectors.toList()
+                ));
+        List<ProvinceLocation> provinces = provinceRepository.findByActiveTrueOrderBySortOrderAscNameAsc()
+                .stream()
+                .map(province -> new ProvinceLocation(
+                        province.getCode(),
+                        province.getName(),
+                        communesByProvince.getOrDefault(province.getCode(), List.of())
+                                .stream()
+                                .map(commune -> new CommuneLocation(
+                                        commune.getCode(),
+                                        commune.getName(),
+                                        province.getCode(),
+                                        province.getName()
+                                ))
+                                .toList()
+                ))
+                .toList();
+        return new AdministrativeLocationSnapshotResponse(provinces);
     }
 
     private AdministrativeUnitResponse toResponse(AdministrativeProvince province) {

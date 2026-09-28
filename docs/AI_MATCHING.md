@@ -8,29 +8,35 @@ AI Matching là năng lực hỗ trợ tìm kiếm, gợi ý và xếp hạng Tu
 
 ## 2. Trạng thái hiện tại
 
-Trạng thái: **SKELETON**, chưa phải AI implementation.
+Trạng thái: **PARTIAL**. `ai-service` hiện có Deterministic Matching V1, Gemini Natural Language Requirement Analyzer, Catalog Grounding, Offline Location Grounding và Tutor Marketplace frontend integration; chưa phải semantic matching/ranking AI hoàn chỉnh.
 
 Đã có:
 
 - Maven module `backend/ai-service` dùng Java 21 và Spring Boot 3.4.1;
 - port mặc định 8085;
 - Gateway route `/api/ai/**`;
-- `GET /api/ai/health` trả trạng thái service skeleton;
-- Web route `/matching` và các khối UI giới thiệu matching.
+- `GET /api/ai/health`;
+- Tutor Marketplace large modal cho Student nhập nhu cầu tự nhiên, xem lại grounded requirement, trả lời clarification và xác nhận trước khi gọi Matching V1;
+- Web V1 Marketplace search-session persistence qua abstraction frontend dùng `sessionStorage`: lưu tách biệt `MANUAL` filters/sort/page và `AI` result snapshot để Detail -> Back/F5 không gọi lại Gemini Analyze, Ground hoặc Matching V1 chỉ vì remount;
+- Gemini provider/client thực tế cho requirement extraction;
+- `POST /api/ai/matching/tutors` cho Deterministic Matching V1;
+- `POST /api/ai/matching/analyze` cho Student-only natural language requirement extraction;
+- `POST /api/ai/matching/ground` cho Student-only deterministic grounding từ `subjectHint`/`levelHint` sang Learning catalog IDs thật và từ `locationHint` OFFLINE sang Account administrative `provinceCode`/`communeCode` khi dữ liệu tham chiếu cho phép;
+- `GET /api/reference/locations/snapshot` trong Account Service cho dữ liệu tỉnh/thành và phường/xã tham chiếu dùng bởi AI location grounding;
+- structured output schema cho subject/level hints, teaching mode, budget, schedules, learning goal, weak topics và tutor preferences;
+- authorization/privacy guardrails cho AI endpoints;
 
 Chưa có:
 
-- model provider/client thực tế;
 - Spring AI dependency;
 - Qdrant container/client/collection;
 - embedding/chunking/indexing;
 - semantic search;
-- recommendation/scoring/ranking service;
+- semantic recommendation/scoring/ranking service;
 - RAG/chatbot persistence;
-- API matching ngoài health;
 - evaluation, feedback loop, metrics hoặc safety monitoring.
 
-Search/filter đang có trong Account/Learning là deterministic search, không được ghi là AI.
+Search/filter đang có trong Account/Learning là deterministic search. Matching V1 trong `ai-service` là deterministic ranking foundation. Gemini analyzer chỉ trích xuất nhu cầu học tập, không thực hiện matching và không sinh catalog IDs hoặc mã địa giới. Catalog grounding dùng Learning catalog thật để resolve subject/level IDs. Location grounding dùng Account administrative reference data thật để resolve `provinceCode`/`communeCode` cho OFFLINE, không query DB chéo service và không gọi Gemini lần hai. Frontend gọi Analyze -> Ground -> Matching theo thao tác xác nhận của Student trong Tutor Marketplace, hiển thị `matchPercentage` và `matchingReasons` thật từ Matching V1. Web hiện lưu Marketplace search session bằng `sessionStorage` adapter có version/TTL/account scope; đây là persistence phía client cho Phase 4.3, không phải Redis hay cross-device backend session.
 
 ## 3. Kiến trúc đề xuất khi triển khai
 
