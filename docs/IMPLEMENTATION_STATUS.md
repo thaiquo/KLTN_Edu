@@ -1,6 +1,6 @@
 # EduConnect — Trạng thái triển khai
 
-> Audit theo source, migration, test và bằng chứng runtime đến **2026-09-14**.  
+> Audit theo source, migration, test và bằng chứng runtime đến **2026-09-29**.  
 > `IMPLEMENTED` chỉ dùng khi flow chính có đủ backend/persistence/security/client evidence; không đồng nghĩa production-ready tuyệt đối.
 
 ## 1. Định nghĩa
@@ -38,14 +38,14 @@
 | UC007 | Bài đăng tìm gia sư | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | Chưa có domain/controller. |
 | UC008 | Tin nhắn Student–Tutor | IMPLEMENTED | PARTIAL | NOT_IMPLEMENTED | Backend persistence/API/WebSocket có; Portal vẫn dùng mock/in-memory. |
 | UC009 | Xem thông tin lớp | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Marketplace/list/detail và lớp đã tham gia. |
-| UC010 | Student quản lý bài tập | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Trang riêng /my-homework trên Sidebar; xem trạng thái bài nộp (Đã khóa nếu chưa điểm danh, Cần làm, Đã nộp, Đã chấm, Quá hạn); tải file đề bài S3 sau điểm danh; nộp file bài làm S3 và tải về xem lại. |
+| UC010 | Student quản lý bài tập | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Trang riêng /my-homework trên Sidebar; xem trạng thái bài nộp (Đã khóa nếu chưa điểm danh, Cần làm, Đã nộp, Đã chấm, Quá hạn); tải file đề bài S3 sau điểm danh; nộp file bài làm S3 và tải về xem lại; cho phép gỡ bỏ/thay thế file khi còn hạn nộp kèm cơ chế tự động xóa file cũ trên S3; loại bỏ thuật ngữ kỹ thuật hạ tầng khỏi UI. |
 | UC011 | Student thanh toán/ký quỹ | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | `approve` + `fundAgreement`; ACTIVE chỉ sau confirmed event. |
 | UC012 | Tutor quản lý hồ sơ | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | DRAFT/PENDING/REJECTED/APPROVED và document flow. |
 | UC013 | Tutor quản lý yêu cầu tham gia | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Accept/reject; ENROLLED sau funding confirm. |
 | UC014 | Tutor quản lý lịch rảnh | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | API/UI hiện có. |
 | UC015 | Tutor quản lý lớp | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Create/update/visibility/schedule/chapter/student capacity, upload/quản lý tài liệu môn học S3 (học viên tải không cần điểm danh), upload file lộ trình S3. |
 | UC016 | Buổi học và điểm danh | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Rolling sessions, điểm danh độc lập, auto-finalize, link gate, gated assignment files (khóa tải file bài tập/slide trước khi điểm danh). |
-| UC017 | Tutor quản lý bài tập | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Trang riêng /tutor/homework trên Sidebar; đính kèm tối đa 5 file đề bài & slide S3; xem lại toàn bộ đề bài/yêu cầu/ghi chú đã giao; tải bài nộp S3 của học viên và chấm điểm/nhận xét. |
+| UC017 | Tutor quản lý bài tập | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Trang riêng /tutor/homework trên Sidebar; đính kèm tối đa 5 file đề bài & slide S3; xem lại toàn bộ đề bài/yêu cầu/ghi chú đã giao; tải bài nộp S3 của học viên và chấm điểm/nhận xét; chuẩn hóa thống kê và bộ lọc chỉ tính các buổi thực tế có bài tập; hỗ trợ 2 chế độ chấm (Split View có mẫu nhận xét nhanh và lưu chuyển học viên tiếp theo; Table View xem bảng điểm toàn bộ sĩ số lớp); cảnh báo học viên chưa làm bài. |
 | UC018 | Tutor theo dõi thu nhập | IMPLEMENTED/PARTIAL | IMPLEMENTED/PARTIAL | NOT_IMPLEMENTED | Wallet/settlement có số confirmed; chưa có báo cáo kế toán chuyên sâu. |
 | UC019 | Staff kiểm duyệt nội dung | IMPLEMENTED/PARTIAL | IMPLEMENTED/PARTIAL | NOT_IMPLEMENTED | Tutor, teaching registration, catalog suggestion và class review; không có post moderation vì UC007 chưa có. |
 | UC020 | Quản lý vi phạm | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | Chưa có violation module. |
@@ -75,9 +75,9 @@
 - IMPLEMENTED: rolling session generation, startup/periodic catch-up, một attendance row trên mỗi Student đã enrol.
 - IMPLEMENTED: Student/Tutor tự điểm danh; Tutor chỉ xem ai có/không có mặt và không thể đánh dấu hộ Student.
 - IMPLEMENTED: meeting link nằm cấp classroom; Tutor cập nhật được và các buổi dùng giá trị mới. Student chỉ đọc được sau check-in.
-- IMPLEMENTED: homework description/file S3 bị ẩn và khóa tải trước check-in; submission dùng attendance-owned record với file thật lưu trữ trên S3.
+- IMPLEMENTED: homework description/file S3 bị ẩn và khóa tải trước check-in; submission dùng attendance-owned record với file thật lưu trữ trên S3; học viên được quyền gỡ bỏ hoặc thay thế file bài làm trong hạn nộp, backend tự động xóa file cũ trên S3 để tối ưu dung lượng.
 - IMPLEMENTED: quản lý tài liệu môn học cấp lớp (classroom_materials) trên AWS S3, học viên tham gia lớp tải trực tiếp không cần điểm danh; file lộ trình (syllabus) lưu trên S3.
-- IMPLEMENTED: giao diện Quản lý bài tập phía Gia sư (/portal/tutor/homework) và Bài tập về nhà phía Học viên (/portal/student/homework) trên Sidebar.
+- IMPLEMENTED: giao diện Quản lý bài tập phía Gia sư (/portal/tutor/homework) và Bài tập về nhà phía Học viên (/portal/student/homework) trên Sidebar; phân hệ Gia sư hỗ trợ thống kê chuẩn xác theo buổi có bài tập, giao diện chấm kép (Split View + Table View), mẫu nhận xét nhanh, lưu tự chuyển học viên tiếp theo và cảnh báo học viên chưa nộp.
 - IMPLEMENTED: delivery worker retry các session `COMPLETED` có `settlementDispatched=false`.
 
 ### Contract, document và escrow

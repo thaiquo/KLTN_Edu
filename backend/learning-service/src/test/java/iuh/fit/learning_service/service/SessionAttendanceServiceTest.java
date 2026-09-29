@@ -9,6 +9,7 @@ import iuh.fit.learning_service.enums.AttendanceOutcome;
 import iuh.fit.learning_service.enums.ClassSessionStatus;
 import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 import iuh.fit.learning_service.exception.ForbiddenException;
+import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.ClassSessionRepository;
 import iuh.fit.learning_service.repository.SessionAttendanceRepository;
@@ -70,6 +71,9 @@ class SessionAttendanceServiceTest {
 
     @Mock
     private LearningStorageCleanupService learningStorageCleanupService;
+
+    @Mock
+    private LearningEventPublisher learningEventPublisher;
 
     @InjectMocks
     private SessionAttendanceService sessionAttendanceService;

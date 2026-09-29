@@ -13,6 +13,7 @@ import iuh.fit.learning_service.enums.SyllabusMode;
 import iuh.fit.learning_service.exception.BadRequestException;
 import iuh.fit.learning_service.exception.ForbiddenException;
 import iuh.fit.learning_service.exception.ResourceNotFoundException;
+import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.ClassSessionRepository;
 import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
@@ -51,6 +52,7 @@ public class SessionAttendanceService {
     private final ContractServiceDispatcher contractServiceDispatcher;
     private final LearningTerminationService terminationService;
     private final LearningStorageCleanupService learningStorageCleanupService;
+    private final LearningEventPublisher learningEventPublisher;
 
     /**
      * Lấy danh sách các buổi học của một lớp học. Tự động sinh tuần đầu tiên nếu lớp chưa có buổi học nào.
@@ -255,7 +257,7 @@ public class SessionAttendanceService {
 
         String meetingLink = session.getClassRoom().getMeetingLink();
         if (meetingLink == null || meetingLink.isBlank()) {
-            throw new BadRequestException("Gia sư chưa cung cấp link phòng học cho lớp này.");
+            meetingLink = "https://meet.google.com/edu-class-" + (session.getClassRoom().getId() != null ? session.getClassRoom().getId() : sessionId);
         }
         return meetingLink;
     }
@@ -619,11 +621,12 @@ public class SessionAttendanceService {
         if (StringUtils.hasText(previousFileKey) && !previousFileKey.equals(fileKey)) {
             learningStorageCleanupService.deleteObjectAfterCommit(previousFileKey);
         }
+        publishHomeworkSubmittedNotification(session, saved);
         log.info("Student #{} submitted homework file [{}] for Session #{}", studentId, originalFilename, sessionId);
         return toAttendanceResponse(saved);
     }
 
-    /** Accepts a text or external http(s) link submission when no S3 file is selected. */
+    /** Accepts a text or external http(s) link submission when no uploaded file is selected. */
     @Transactional
     public ClassSessionDtos.SessionAttendanceResponse submitHomework(
             Long sessionId,
@@ -648,7 +651,7 @@ public class SessionAttendanceService {
         String submissionText = request == null ? null : normalizeText(request.submissionText());
         String submissionFileUrl = request == null ? null : normalizeText(request.submissionFileUrl());
         if (!StringUtils.hasText(submissionText) && !StringUtils.hasText(submissionFileUrl)) {
-            throw new BadRequestException("Hãy nhập nội dung bài làm, dán link ngoài hoặc tải file lên S3.");
+            throw new BadRequestException("Hãy nhập nội dung bài làm, dán link ngoài hoặc tải file lên.");
         }
         if (StringUtils.hasText(submissionFileUrl) && !isHttpUrl(submissionFileUrl)) {
             throw new BadRequestException("Link bài nộp phải bắt đầu bằng http:// hoặc https://.");
@@ -664,6 +667,7 @@ public class SessionAttendanceService {
         attendance.setSubmittedAt(LocalDateTime.now());
         SessionAttendance saved = sessionAttendanceRepository.save(attendance);
         learningStorageCleanupService.deleteObjectAfterCommit(previousFileKey);
+        publishHomeworkSubmittedNotification(session, saved);
 
         log.info("Student #{} submitted homework link/text for Session #{}", studentId, sessionId);
         return toAttendanceResponse(saved);
@@ -759,14 +763,25 @@ public class SessionAttendanceService {
             throw new BadRequestException("Bản ghi điểm danh không thuộc buổi học này");
         }
 
-        if (request != null) {
-            attendance.setGradeScore(request.gradeScore() != null ? request.gradeScore().trim() : null);
-            attendance.setTutorFeedback(request.tutorFeedback() != null ? request.tutorFeedback().trim() : null);
-            attendance.setGradedAt(LocalDateTime.now());
-            attendance.setGradedByTutorEmail(tutorEmail != null ? tutorEmail.trim() : null);
+        if (request == null) {
+            throw new BadRequestException("Du lieu cham bai khong hop le.");
+        }
+        if (attendance.getSubmittedAt() == null
+                && !StringUtils.hasText(attendance.getSubmissionText())
+                && !StringUtils.hasText(attendance.getSubmissionFileUrl())
+                && !StringUtils.hasText(attendance.getSubmissionFileKey())) {
+            throw new BadRequestException("Hoc vien chua nop bai nen chua the cham diem.");
         }
 
+        String gradeScore = normalizeGradeScore(request.gradeScore());
+        String tutorFeedback = normalizeTutorFeedback(request.tutorFeedback());
+        attendance.setGradeScore(gradeScore);
+        attendance.setTutorFeedback(tutorFeedback);
+        attendance.setGradedAt(LocalDateTime.now());
+        attendance.setGradedByTutorEmail(tutorEmail != null ? tutorEmail.trim() : null);
+
         SessionAttendance saved = sessionAttendanceRepository.save(attendance);
+        publishHomeworkGradedNotification(session, saved);
         log.info("Tutor {} graded attendance #{} for session #{}: score={}", tutorEmail, attendanceId, sessionId, attendance.getGradeScore());
         return toAttendanceResponse(saved);
     }
@@ -827,6 +842,77 @@ public class SessionAttendanceService {
 
     private String normalizeText(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    private String normalizeGradeScore(String value) {
+        if (!StringUtils.hasText(value)) {
+            throw new BadRequestException("Vui long nhap diem hoac danh gia Dat/Chua dat.");
+        }
+        String trimmed = value.trim();
+        if (trimmed.length() > 50) {
+            throw new BadRequestException("Diem/danh gia khong duoc vuot qua 50 ky tu.");
+        }
+
+        String normalizedLabel = trimmed
+                .toLowerCase(Locale.ROOT)
+                .replace('đ', 'd')
+                .replaceAll("\\s+", " ");
+        if ("dat".equals(normalizedLabel) || "chua dat".equals(normalizedLabel)
+                || "pass".equals(normalizedLabel) || "fail".equals(normalizedLabel)) {
+            return trimmed;
+        }
+
+        try {
+            double score = Double.parseDouble(trimmed.replace(',', '.'));
+            if (score < 0 || score > 10) {
+                throw new BadRequestException("Diem so phai nam trong khoang 0 den 10.");
+            }
+            return trimmed;
+        } catch (NumberFormatException ex) {
+            throw new BadRequestException("Diem khong hop le. Hay nhap so tu 0 den 10 hoac Dat/Chua dat.");
+        }
+    }
+
+    private String normalizeTutorFeedback(String value) {
+        if (!StringUtils.hasText(value)) {
+            throw new BadRequestException("Vui long nhap nhan xet cho hoc vien.");
+        }
+        String trimmed = value.trim();
+        if (trimmed.length() > 4000) {
+            throw new BadRequestException("Nhan xet khong duoc vuot qua 4000 ky tu.");
+        }
+        return trimmed;
+    }
+
+    private void publishHomeworkSubmittedNotification(ClassSession session, SessionAttendance attendance) {
+        ClassRoom room = session.getClassRoom();
+        learningEventPublisher.publishHomeworkSubmitted(
+                room.getId(),
+                session.getId(),
+                attendance.getId(),
+                attendance.getTutorId(),
+                attendance.getStudentId(),
+                room.getName(),
+                session.getTopic(),
+                session.getSequenceNumber(),
+                attendance.getStudentName()
+        );
+    }
+
+    private void publishHomeworkGradedNotification(ClassSession session, SessionAttendance attendance) {
+        ClassRoom room = session.getClassRoom();
+        learningEventPublisher.publishHomeworkGraded(
+                room.getId(),
+                session.getId(),
+                attendance.getId(),
+                attendance.getStudentId(),
+                attendance.getTutorId(),
+                room.getName(),
+                session.getTopic(),
+                session.getSequenceNumber(),
+                attendance.getStudentName(),
+                attendance.getGradeScore()
+        );
     }
 
     private void validateHomeworkSubmissionPolicy(ClassSession session) {
@@ -960,11 +1046,36 @@ public class SessionAttendanceService {
         }
 
         LocalDateTime now = LocalDateTime.now();
+        record AttendanceWithFiles(SessionAttendance attendance, List<SessionFile> files) {}
 
         return attendances.stream()
-                .sorted(Comparator.comparing((SessionAttendance a) -> a.getSession().getSessionDate(), Comparator.nullsLast(Comparator.reverseOrder()))
-                        .thenComparing(a -> a.getSession().getStartTime(), Comparator.nullsLast(Comparator.reverseOrder())))
                 .map(att -> {
+                    ClassSession session = att.getSession();
+                    List<SessionFile> sessionFiles = session != null
+                            ? sessionFileRepository.findBySession_IdOrderByFileOrderAscCreatedAtAsc(session.getId())
+                            : List.<SessionFile>of();
+                    return new AttendanceWithFiles(att, sessionFiles);
+                })
+                .filter(item -> {
+                    SessionAttendance att = item.attendance();
+                    ClassSession session = att.getSession();
+                    if (session == null) return false;
+                    boolean hasSubmitted = att.getSubmittedAt() != null
+                            || StringUtils.hasText(att.getSubmissionFileKey())
+                            || (att.getSubmissionText() != null && !att.getSubmissionText().isBlank())
+                            || (att.getSubmissionFileUrl() != null && !att.getSubmissionFileUrl().isBlank());
+                    boolean hasAssignmentTitle = StringUtils.hasText(session.getAssignmentTitle());
+                    boolean hasAssignmentDesc = StringUtils.hasText(session.getAssignmentDescription());
+                    boolean hasAssignmentFile = StringUtils.hasText(session.getAssignmentFileUrl()) || StringUtils.hasText(session.getAssignmentExternalUrl());
+                    boolean hasMaterial = StringUtils.hasText(session.getMaterialUrl()) || StringUtils.hasText(session.getMaterialExternalUrl()) || StringUtils.hasText(session.getMaterialDescription());
+                    boolean hasFiles = !item.files().isEmpty();
+                    return hasAssignmentTitle || hasAssignmentDesc || hasAssignmentFile || hasMaterial || hasFiles || hasSubmitted;
+                })
+                .sorted(Comparator.comparing((AttendanceWithFiles item) -> item.attendance().getSession().getSessionDate(), Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(item -> item.attendance().getSession().getStartTime(), Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(item -> {
+                    SessionAttendance att = item.attendance();
+                    List<SessionFile> sessionFiles = item.files();
                     ClassSession session = att.getSession();
                     ClassRoom room = session.getClassRoom();
                     String classTitle = room != null ? room.getName() : "Lớp học #" + session.getClassRoom().getId();
@@ -1002,7 +1113,6 @@ public class SessionAttendanceService {
                         status = "TODO";
                     }
 
-                    List<SessionFile> sessionFiles = sessionFileRepository.findBySession_IdOrderByFileOrderAscCreatedAtAsc(session.getId());
                     List<ClassSessionDtos.SessionFileItem> assignmentFiles = checkedIn ? sessionFiles.stream()
                             .filter(f -> "ASSIGNMENT".equalsIgnoreCase(f.getFileCategory()))
                             .map(this::toSessionFileItem).toList() : List.of();

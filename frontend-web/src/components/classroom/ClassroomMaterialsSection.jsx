@@ -94,7 +94,7 @@ export function ClassroomMaterialsSection({ classRoomId, currentUserRole = 'STUD
   const handleUploadSubmit = async (e) => {
     e.preventDefault();
     if (!selectedFile) {
-      alert('Vui lòng chọn 1 file tài liệu để tải lên S3.');
+      alert('Vui lòng chọn 1 file tài liệu để tải lên.');
       return;
     }
     setUploading(true);
@@ -113,7 +113,7 @@ export function ClassroomMaterialsSection({ classRoomId, currentUserRole = 'STUD
       setUploadExternalUrl('');
       setSelectedFile(null);
     } catch (err) {
-      alert(err?.message || 'Không thể tải tài liệu lên S3.');
+      alert(err?.message || 'Không thể tải tài liệu lên.');
     } finally {
       setUploading(false);
     }
@@ -144,7 +144,7 @@ export function ClassroomMaterialsSection({ classRoomId, currentUserRole = 'STUD
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Tài nguyên chung của khóa học lưu trữ trên AWS S3. Học viên có thể tải về nghiên cứu bất cứ lúc nào.
+              Tài nguyên chung của khóa học. Học viên có thể tải về nghiên cứu bất cứ lúc nào.
             </p>
           </div>
         </div>
@@ -171,7 +171,7 @@ export function ClassroomMaterialsSection({ classRoomId, currentUserRole = 'STUD
               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black bg-slate-900 hover:bg-indigo-600 text-white transition shadow-sm"
             >
               <Plus size={15} />
-              <span>Đẩy tài liệu lên S3</span>
+              <span>Tải tài liệu lên</span>
             </button>
           )}
         </div>
@@ -243,7 +243,7 @@ export function ClassroomMaterialsSection({ classRoomId, currentUserRole = 'STUD
                     <ExternalLink size={12} />
                   </a>
                 ) : (
-                  <span className="text-[10px] text-slate-400 font-semibold">Lưu trữ Amazon S3</span>
+                  <span className="text-[10px] text-slate-400 font-semibold">Tài liệu lớp học</span>
                 )}
 
                 <button
@@ -284,7 +284,7 @@ export function ClassroomMaterialsSection({ classRoomId, currentUserRole = 'STUD
                 <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
                   Tài liệu môn học
                 </span>
-                <h3 className="text-base font-black mt-0.5">Tải Tài Liệu Lên AWS S3</h3>
+                <h3 className="text-base font-black mt-0.5">Tải Tài Liệu Lên</h3>
               </div>
               <button
                 type="button"
@@ -383,7 +383,7 @@ export function ClassroomMaterialsSection({ classRoomId, currentUserRole = 'STUD
                   className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-indigo-600 text-white text-xs font-black transition flex items-center gap-2 shadow-sm disabled:opacity-50"
                 >
                   {uploading ? <Loader2 size={14} className="animate-spin" /> : <UploadCloud size={14} />}
-                  <span>Đẩy Lên AWS S3</span>
+                  <span>Tải Lên</span>
                 </button>
               </div>
             </form>

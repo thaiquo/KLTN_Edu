@@ -4,6 +4,7 @@ import iuh.fit.notification_service.messaging.event.SubjectRequestApprovedEvent;
 import iuh.fit.notification_service.messaging.event.SubjectRequestRejectedEvent;
 import iuh.fit.notification_service.messaging.event.ClassReviewedNotificationEvent;
 import iuh.fit.notification_service.messaging.event.EnrollmentNotificationEvent;
+import iuh.fit.notification_service.messaging.event.HomeworkNotificationEvent;
 import iuh.fit.notification_service.messaging.event.TeachingRegistrationReviewedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApplicationSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApprovedEvent;
@@ -231,6 +232,42 @@ public class NotificationEventConsumer {
         ));
     }
 
+    @RabbitListener(queues = NotificationRabbitConfig.HOMEWORK_SUBMITTED_QUEUE)
+    public void onHomeworkSubmitted(HomeworkNotificationEvent event) {
+        if (!isValidHomeworkEvent(event, "HOMEWORK_SUBMITTED")) {
+            return;
+        }
+
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                "HOMEWORK_SUBMITTED",
+                "Học viên đã nộp bài tập",
+                homeworkSubmittedMessage(event),
+                "TUTOR",
+                "HOMEWORK_SUBMISSION",
+                event.referenceId() == null ? String.valueOf(event.attendanceId()) : event.referenceId()
+        ));
+    }
+
+    @RabbitListener(queues = NotificationRabbitConfig.HOMEWORK_GRADED_QUEUE)
+    public void onHomeworkGraded(HomeworkNotificationEvent event) {
+        if (!isValidHomeworkEvent(event, "HOMEWORK_GRADED")) {
+            return;
+        }
+
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                "HOMEWORK_GRADED",
+                "Bài tập đã được chấm",
+                homeworkGradedMessage(event),
+                "STUDENT",
+                "HOMEWORK",
+                event.referenceId() == null ? String.valueOf(event.sessionId()) : event.referenceId()
+        ));
+    }
+
     private String safeReason(String reason) {
         if (!StringUtils.hasText(reason)) {
             return null;
@@ -303,12 +340,55 @@ public class NotificationEventConsumer {
         return classMessage("Có học viên vừa gửi yêu cầu tham gia lớp của bạn", event, ".");
     }
 
+    private boolean isValidHomeworkEvent(HomeworkNotificationEvent event, String expectedType) {
+        if (event == null
+                || !StringUtils.hasText(event.eventId())
+                || event.recipientUserId() == null
+                || event.sessionId() == null
+                || event.attendanceId() == null
+                || !expectedType.equals(event.eventType())) {
+            log.warn("Skipping invalid homework notification event type={}", expectedType);
+            return false;
+        }
+        return true;
+    }
+
     private String classMessage(String prefix, EnrollmentNotificationEvent event, String suffix) {
         String classTitle = safeReason(event.classTitle());
         if (StringUtils.hasText(classTitle)) {
             return prefix + " \"" + classTitle + "\"" + suffix;
         }
         return prefix + suffix;
+    }
+
+    private String homeworkSubmittedMessage(HomeworkNotificationEvent event) {
+        String studentName = safeReason(event.studentName());
+        String subject = StringUtils.hasText(studentName) ? studentName : "Học viên";
+        return subject + " đã nộp bài tập" + homeworkContext(event) + ".";
+    }
+
+    private String homeworkGradedMessage(HomeworkNotificationEvent event) {
+        String score = safeReason(event.gradeScore());
+        String suffix = StringUtils.hasText(score)
+                ? ". Điểm/đánh giá: " + score + "."
+                : ".";
+        return "Bài tập của bạn" + homeworkContext(event) + " đã được gia sư chấm" + suffix;
+    }
+
+    private String homeworkContext(HomeworkNotificationEvent event) {
+        String classTitle = safeReason(event.classTitle());
+        String topic = safeReason(event.sessionTopic());
+        StringBuilder builder = new StringBuilder();
+        if (StringUtils.hasText(classTitle)) {
+            builder.append(" lớp \"").append(classTitle).append("\"");
+        }
+        if (event.sequenceNumber() != null) {
+            builder.append(", buổi #").append(event.sequenceNumber());
+        }
+        if (StringUtils.hasText(topic)) {
+            builder.append(" - ").append(topic);
+        }
+        return builder.toString();
     }
 
     private String teachingRegistrationReviewedMessage(TeachingRegistrationReviewedEvent event, boolean approved) {

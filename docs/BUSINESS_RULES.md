@@ -137,11 +137,16 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
 - **Nộp bài tập của học viên & Chấm điểm của gia sư**:
   - Học viên nộp bài làm bằng **file thật (lưu trữ trên S3)**: `classes/{classId}/sessions/{sessionId}/submissions/{studentId}/...`. Đường link ngoài (Google Drive, GitHub...) chỉ là tùy chọn ghi chú bổ sung.
   - Học viên nộp bài theo hạn nộp (deadline) gia sư đã đặt. Nộp muộn sau deadline sẽ được hệ thống gắn nhãn `NỘP MUỘN`.
+  - Trong thời gian còn hạn nộp, học viên có quyền gỡ bỏ hoặc tải lên file bài làm mới thay thế. Khi thay thế hoặc gỡ bỏ, hệ thống tự động xóa file cũ trên AWS S3 (`s3Client.deleteObject`) để tránh rác và tiết kiệm dung lượng lưu trữ.
+  - Giao diện người dùng sử dụng thuật ngữ nghiệp vụ thân thiện ("Đã nộp bài thành công", "Tải bài nộp"...), loại bỏ hoàn toàn thuật ngữ kỹ thuật hạ tầng (như S3 bucket, S3 key).
   - Gia sư và chính học viên đó có nút tải file bài nộp từ S3 về máy bằng Presigned URL bảo mật.
   - Gia sư chấm điểm (dạng điểm 0-10, hoặc Đạt/Chưa đạt) và gửi nhận xét chi tiết cho từng học viên.
 - **Màn hình Quản lý bài tập trên Sidebar**:
-  - Phía Gia sư có mục **Quản lý bài tập** (`/portal/tutor/homework`): quản lý bài tập theo lớp, buổi học, xem lại toàn bộ đề bài/yêu cầu/ghi chú đã giao (qua modal chi tiết hoặc bung ra tại chỗ), tải file bài làm của học viên từ S3 về máy và chấm điểm trực tiếp.
-  - Phía Học viên có mục **Bài tập về nhà** (`/portal/student/homework`): lọc theo lớp, hiển thị trạng thái nộp bài, cảnh báo khóa nếu chưa điểm danh, modal nộp bài hỗ trợ chọn file S3 và tải về xem lại.
+  - Phía Gia sư có mục **Quản lý bài tập** (`/portal/tutor/homework`): 
+    - Thống kê chuẩn xác 4 chỉ số nghiệp vụ: `Buổi đã giao bài tập`, `Tổng bài học viên đã nộp`, `Bài đang chờ chấm điểm`, `Bài đã chấm điểm xong` (chỉ tính toán trên các buổi thực tế có bài tập, không đếm sai các buổi không giao bài).
+    - Mặc định chỉ hiển thị các buổi học có bài tập, có tùy chọn xem tất cả buổi để giao bài mới khi cần.
+    - Hỗ trợ 2 chế độ xem khi chấm: **Chế độ Chấm chi tiết (Split View)** với tìm kiếm/lọc học viên, mẫu nhận xét nhanh và nút "Lưu & Sang học viên tiếp theo"; **Chế độ Bảng điểm cả lớp (Classroom Table View)** hiển thị dạng bảng tổng hợp toàn bộ sĩ số, điểm danh, nộp bài, điểm số và nhận xét.
+  - Phía Học viên có mục **Bài tập về nhà** (`/portal/student/homework`): lọc theo lớp, hiển thị trạng thái nộp bài, cảnh báo khóa nếu chưa điểm danh, modal nộp bài hỗ trợ chọn file, gỡ bỏ, thay thế file và tải về xem lại.
 - Link phòng học thuộc classroom. Tutor có thể cập nhật khi link hỏng; lần đọc tiếp theo và các buổi kế tiếp dùng link mới, nhưng Student vẫn phải điểm danh từng buổi để mở khóa.
 - Nếu service tắt qua deadline, scheduler không thể chuyển tiền trong lúc tắt. Khi Learning/Contract được mở lại, các session/settlement lưu bền được quét bù theo chu kỳ; dispute đang mở không bao giờ tự finalize.
 - Staff moderation: Staff kiểm duyệt nội dung, giám sát lớp, quản lý vi phạm, hỗ trợ người dùng.

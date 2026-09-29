@@ -116,11 +116,11 @@ export function TutorClassManagement() {
       const formData = new FormData();
       formData.append("file", file);
       const updated = await classApi.uploadSyllabusFile(detailModalClass.id, formData);
-      feedback.success("Đã tải lên file lộ trình (Syllabus) thành công lên S3!");
+      feedback.success("Đã tải lên file lộ trình (Syllabus) thành công!");
       setDetailModalClass(updated);
       setClasses((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
     } catch (err: any) {
-      feedback.error(err?.message || "Không thể tải file lộ trình lên S3.");
+      feedback.error(err?.message || "Không thể tải file lộ trình lên.");
     } finally {
       setSyllabusUploading(false);
     }
@@ -1177,7 +1177,7 @@ export function TutorClassManagement() {
                       className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition flex items-center gap-1 shrink-0"
                     >
                       {syllabusDownloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <UploadCloud className="w-3 h-3 rotate-180" />}
-                      Tải file S3
+                      Tải file
                     </button>
                   </div>
                 )}
@@ -1370,11 +1370,11 @@ export function TutorClassManagement() {
                   </div>
                 </div>
 
-                {/* S3 Syllabus File Upload Option */}
+                {/* Syllabus file upload option */}
                 <div className="pt-3 border-t border-slate-200 space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-slate-700">
-                      Tải file lộ trình (Syllabus) thay thế hoặc đính kèm lên S3:
+                      Tải file lộ trình (Syllabus) thay thế hoặc đính kèm:
                     </label>
                     {detailModalClass.syllabusFileName && (
                       <button
@@ -1402,7 +1402,7 @@ export function TutorClassManagement() {
                     {syllabusUploading && (
                       <div className="flex items-center gap-1 text-xs font-bold text-indigo-600 shrink-0">
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Đang tải lên S3...</span>
+                        <span>Đang tải lên...</span>
                       </div>
                     )}
                   </div>

@@ -1,6 +1,6 @@
 # EduConnect — Tổng quan dự án
 
-> Cập nhật theo source và dữ liệu kiểm chứng ngày **2026-09-28**.  
+> Cập nhật theo source và dữ liệu kiểm chứng ngày **2026-09-29**.  
 > Đây là trang bắt đầu để đọc dự án. Trạng thái chi tiết nằm ở [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 ## 1. Mục tiêu
@@ -70,7 +70,7 @@ Tỷ lệ được tính theo base unit của USDC; Tutor và Platform được 
 
 - Tutor và từng Student điểm danh độc lập trong đúng ngày và khung giờ buổi học; Tutor không được điểm danh hộ Student.
 - Student chỉ thấy link phòng học và nội dung/file bài tập của buổi học sau khi tự điểm danh thành công (`studentChecked = true`). Tài liệu môn học cấp lớp (Classroom Materials) và file lộ trình học (Syllabus) được phép xem/tải trực tiếp không cần điểm danh.
-- Học viên nộp bài tập bằng file thật (lưu trữ S3); Gia sư tải bài nộp S3 về máy để chấm điểm và nhận xét chi tiết.
+- Học viên nộp bài tập bằng file thật (lưu trữ S3), có quyền gỡ bỏ hoặc thay thế file bài làm khi còn trong hạn nộp (hệ thống tự động xóa file cũ trên S3 để tối ưu dung lượng). Gia sư quản lý bài tập theo các buổi thực tế có giao bài, hỗ trợ 2 chế độ (chấm chi tiết có mẫu nhận xét/tự chuyển học viên và bảng điểm cả lớp), cảnh báo và phân định rõ học viên đã nộp vs chưa làm bài.
 - Link nằm ở cấp lớp. Tutor có thể cập nhật khi link hỏng; các buổi sau dùng link mới.
 - Hết giờ, scheduler chốt `BOTH_PRESENT`, `STUDENT_ABSENT_TUTOR_PRESENT` hoặc `TUTOR_ABSENT`.
 - Cửa sổ khiếu nại 24 giờ bắt đầu từ lúc đề xuất settlement được xác nhận on-chain, không bắt đầu trực tiếp từ giờ tan học.

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Calendar,
   Clock,
@@ -186,8 +187,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   const effectiveLearningMode = (learningMode || classDetail?.learningMode || "ONLINE").toUpperCase();
   const isOffline = effectiveLearningMode === "OFFLINE";
   const effectiveAddress = address || classDetail?.address || "";
-  const baseClassMeetingLink = currentMeetingLink || configuredMeetingLink || classDetail?.meetingLink || "";
-  const meetingLink = isOffline ? "" : (unlockedMeetingLink || baseClassMeetingLink);
+  const baseClassMeetingLink = currentMeetingLink || configuredMeetingLink || classDetail?.meetingLink || (!isOffline && classRoomId ? `https://meet.google.com/edu-class-${classRoomId}` : "");
+  const navigate = useNavigate();
+  const meetingLink = isOffline ? "" : (unlockedMeetingLink || baseClassMeetingLink || `https://meet.google.com/edu-class-${classRoomId}`);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState('');
   const [activeTab, setActiveTab] = useState<"FOCUSED" | "ALL" | "UPCOMING" | "COMPLETED">("FOCUSED");
@@ -349,9 +351,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
   useEffect(() => {
     if (currentUserRole !== 'STUDENT' || isOffline) return;
-    const checkedSession = sessions.find((session) => session.myCheckedIn && (isStrictSessionActive(session) || session.status === 'IN_PROGRESS'))
-      || sessions.find((session) => session.myCheckedIn);
+    const checkedSession = sessions.find((session) => session.myCheckedIn && (isStrictSessionActive(session) || session.status === 'IN_PROGRESS'));
     if (!checkedSession) {
+      setUnlockedMeetingLink('');
       return;
     }
     let cancelled = false;
@@ -483,6 +485,8 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
   const handleSaveSessionDetails = async () => {
     if (!editingSession) return;
+    const normalizedAssignmentDueAt = assignmentDueAt ? (assignmentDueAt.length === 16 ? `${assignmentDueAt}:00` : assignmentDueAt) : undefined;
+    const submissionRequired = Boolean(normalizedAssignmentDueAt);
     setActionLoading(true);
     try {
       await apiRequest(`/api/learning/sessions/${editingSession.id}/details`, {
@@ -492,7 +496,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
           assignmentTitle: assignmentTitle,
           assignmentDescription: assignmentDesc,
           assignmentFileUrl: assignmentFileUrl,
-          assignmentDueAt: assignmentDueAt ? (assignmentDueAt.length === 16 ? `${assignmentDueAt}:00` : assignmentDueAt) : undefined,
+          assignmentDueAt: normalizedAssignmentDueAt,
+          submissionRequired,
+          lateSubmissionAllowed: true,
           materialUrl: assignmentMaterialUrl,
           materialDescription: assignmentMaterialDesc
         })
@@ -532,7 +538,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       return;
     }
     if (!studentSubmissionFile && !studentSubmissionFileUrl.trim() && !studentSubmissionText.trim()) {
-      showToast("Vui lòng chọn file S3, dán link GitHub/Google Drive hoặc nhập nội dung bài làm.", "error");
+      showToast("Vui lòng chọn file, dán link GitHub/Google Drive hoặc nhập nội dung bài làm.", "error");
       return;
     }
     setActionLoading(true);
@@ -566,13 +572,13 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       showToast("Bài đã được chấm hoặc đã đóng hạn nên không thể gỡ bài nộp.", "error");
       return;
     }
-    if (!window.confirm("Gỡ bài nộp hiện tại? Nếu có file lưu trên S3, hệ thống sẽ xóa file đó sau khi cập nhật thành công.")) {
+    if (!window.confirm("Gỡ bài nộp hiện tại? File đã nộp sẽ được xóa khỏi hệ thống sau khi cập nhật thành công.")) {
       return;
     }
     setActionLoading(true);
     try {
       await classApi.deleteHomeworkSubmission(submittingSession.id);
-      showToast("Đã gỡ bài nộp. File S3 cũ sẽ được dọn sau khi cập nhật thành công.", "success");
+      showToast("Đã gỡ bài nộp. File cũ sẽ được dọn sau khi cập nhật thành công.", "success");
       setStudentSubmissionText("");
       setStudentSubmissionFileUrl("");
       setStudentSubmissionFile(null);
@@ -633,7 +639,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
         assignmentFiles: [...(s.assignmentFiles || []), ...uploaded]
       } : s));
       setSelectedAssignmentFiles([]);
-      showToast("Đã tải lên các file bài tập lên S3!", "success");
+      showToast("Đã tải lên các file bài tập!", "success");
     } catch (err: any) {
       showToast(err?.message || "Không thể tải lên file bài tập.", "error");
     } finally {
@@ -657,7 +663,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
         materialFiles: [...(s.materialFiles || []), ...uploaded]
       } : s));
       setSelectedMaterialFiles([]);
-      showToast("Đã tải lên slide / bài giảng lên S3!", "success");
+      showToast("Đã tải lên slide / bài giảng!", "success");
     } catch (err: any) {
       showToast(err?.message || "Không thể tải lên file slide.", "error");
     } finally {
@@ -855,7 +861,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                         )}
                       </span>
                     ) : (
-                      meetingLink || "Chưa thiết lập"
+                      <span className="text-white text-xs font-semibold break-all">
+                        {meetingLink || (effectiveLearningMode === "ONLINE" ? `https://meet.google.com/edu-class-${classRoomId}` : "Chưa thiết lập")}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -1029,12 +1037,12 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                         <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                         Đã Điểm Danh Có Mặt
                       </span>
-                      {!isOffline && meetingLink && (
+                      {!isOffline && (
                         <a
-                          href={meetingLink.startsWith("http") ? meetingLink : `https://${meetingLink}`}
+                          href={(meetingLink || `https://meet.google.com/edu-class-${classRoomId}`).startsWith("http") ? (meetingLink || `https://meet.google.com/edu-class-${classRoomId}`) : `https://${meetingLink || `meet.google.com/edu-class-${classRoomId}`}`}
                           target="_blank"
                           rel="noreferrer"
-                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md active:scale-95"
+                          className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md active:scale-95 animate-pulse"
                         >
                           <Video className="w-4 h-4" />
                           <span>Vào Phòng Học</span>
@@ -1392,6 +1400,20 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               const isStudentUnlocked = session.myCheckedIn === true;
               const canAccessAssignment = isTutorOrAdmin || isStudentUnlocked;
               const hasSubmittedHomework = !!(session.mySubmissionText || session.mySubmissionFileUrl || session.mySubmissionFileName);
+              const hasAssignmentContent = Boolean(
+                session.assignmentTitle ||
+                session.assignmentDescription ||
+                session.assignmentFiles?.length ||
+                session.assignmentExternalUrl ||
+                session.assignmentFileUrl ||
+                session.assignmentDueAt
+              );
+              const hasMaterialContent = Boolean(
+                session.materialFiles?.length ||
+                session.materialUrl ||
+                session.materialExternalUrl ||
+                session.materialDescription
+              );
               const mySettlement = mySettlementBySession[session.sequenceNumber];
               const tutorWasPresent = session.tutorCheckedIn === true;
               const finalizedOutcomeCount = (session.bothPresentCount || 0)
@@ -1572,166 +1594,230 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                           </div>
                         )}
 
-                        {/* Assignment Section */}
-                        {session.assignmentTitle ? (
+                        {/* Assignment & Lecture Materials Section */}
+                        {Boolean(hasAssignmentContent || hasMaterialContent) ? (
                           canAccessAssignment ? (
-                            <div className="mt-3 p-3.5 rounded-xl bg-emerald-50/80 border border-emerald-200 flex flex-col gap-2.5">
+                            <div className="mt-3.5 p-4 rounded-2xl bg-gradient-to-b from-emerald-50/90 to-teal-50/40 border border-emerald-200/90 shadow-xs flex flex-col gap-3.5">
+                              {/* 1. Phần Đề Bài & Yêu Cầu Bài Tập */}
+                              {hasAssignmentContent && (
                               <div className="flex items-start gap-3">
-                                <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700 shrink-0 mt-0.5">
+                                <div className="p-2.5 rounded-xl bg-emerald-600 text-white shrink-0 mt-0.5 shadow-xs">
                                   <Unlock className="w-4 h-4" />
                                 </div>
-                                <div className="text-xs flex-1">
-                                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                                    <span className="font-bold text-emerald-950 text-sm">
-                                      Bài tập: {session.assignmentTitle}
+                                <div className="text-xs flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+                                    <span className="font-black text-emerald-950 text-sm font-display flex items-center gap-1.5">
+                                      <FileText className="w-4 h-4 text-emerald-700" />
+                                      Bài tập: {session.assignmentTitle || "Yêu cầu bài tập buổi học"}
                                     </span>
                                     {currentUserRole === "STUDENT" && (
-                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-200 text-emerald-900 flex items-center gap-1">
+                                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-200/90 text-emerald-900 flex items-center gap-1 border border-emerald-300">
                                         <CheckCircle2 className="w-3 h-3 text-emerald-700" />
                                         ĐÃ MỞ KHÓA BÀI TẬP
                                       </span>
                                     )}
                                   </div>
 
+                                  {/* Nội dung đề bài & hướng dẫn chi tiết */}
                                   {session.assignmentDescription && (
-                                    <p className="text-emerald-900/90 mt-1 leading-relaxed">
-                                      {session.assignmentDescription}
-                                    </p>
-                                  )}
-
-                                  {/* S3 Assignment files */}
-                                  {session.assignmentFiles && session.assignmentFiles.length > 0 && (
-                                    <div className="mt-2 pt-2 border-t border-emerald-200/60 flex flex-wrap items-center gap-2">
-                                      {session.assignmentFiles.map((file) => (
-                                        <button
-                                          key={file.id}
-                                          type="button"
-                                          onClick={() => handleDownloadSessionFile(session.id, file.id)}
-                                          disabled={downloadingSessionFileId === file.id}
-                                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white text-emerald-800 font-bold hover:bg-emerald-100 border border-emerald-300 rounded-lg shadow-2xs transition-all text-xs"
-                                        >
-                                          {downloadingSessionFileId === file.id ? (
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                          ) : (
-                                            <FileText className="w-3.5 h-3.5 text-emerald-600" />
-                                          )}
-                                          <span>{file.fileName}</span>
-                                          <span className="text-[10px] text-emerald-600/80 font-normal">({formatFileSize(file.fileSize)})</span>
-                                        </button>
-                                      ))}
+                                    <div className="mt-2 p-3 bg-white/95 rounded-xl border border-emerald-200/80 shadow-2xs">
+                                      <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                        <FileText className="w-3 h-3 text-emerald-600" />
+                                        Nội dung đề bài & hướng dẫn:
+                                      </div>
+                                      <p className="text-slate-800 text-xs leading-relaxed whitespace-pre-wrap font-medium">
+                                        {session.assignmentDescription}
+                                      </p>
                                     </div>
                                   )}
 
+                                  {/* File đề bài đính kèm */}
+                                  {session.assignmentFiles && session.assignmentFiles.length > 0 && (
+                                    <div className="mt-2.5">
+                                      <div className="text-[11px] font-bold text-slate-600 mb-1.5 flex items-center gap-1">
+                                        <Download className="w-3 h-3 text-blue-600" />
+                                        <span>File đề bài đính kèm ({session.assignmentFiles.length} file):</span>
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        {session.assignmentFiles.map((file) => (
+                                          <div
+                                            key={file.id}
+                                            className="inline-flex items-center justify-between gap-2.5 px-3 py-1.5 bg-white text-slate-800 font-bold border border-blue-200 rounded-xl shadow-2xs hover:border-blue-300 text-xs transition-all"
+                                          >
+                                            <div className="flex items-center gap-1.5 truncate max-w-[220px]">
+                                              <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                              <span className="truncate">{file.fileName}</span>
+                                              <span className="text-[10px] text-slate-400 font-normal">({formatFileSize(file.fileSize)})</span>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDownloadSessionFile(session.id, file.id)}
+                                              disabled={downloadingSessionFileId === file.id}
+                                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-black flex items-center gap-1 shadow-xs active:scale-95 cursor-pointer shrink-0"
+                                            >
+                                              {downloadingSessionFileId === file.id ? (
+                                                <Loader2 className="w-3 h-3 animate-spin" />
+                                              ) : (
+                                                <Download className="w-3 h-3" />
+                                              )}
+                                              <span>Tải về xem</span>
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Link đề bài ngoài bổ sung */}
                                   {(session.assignmentExternalUrl || (!session.assignmentFiles?.length && session.assignmentFileUrl)) && (
-                                    <div className="mt-2 pt-2 border-t border-emerald-200/60">
+                                    <div className="mt-2">
                                       <a
                                         href={session.assignmentExternalUrl || session.assignmentFileUrl}
                                         target="_blank"
                                         rel="noreferrer"
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-emerald-800 font-bold hover:bg-emerald-100 border border-emerald-300 rounded-lg shadow-2xs transition-all"
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-blue-700 font-bold hover:bg-blue-50 border border-blue-200 rounded-xl shadow-2xs transition-all text-xs"
                                       >
-                                        <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                                        <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
                                         <span>Đề bài link ngoài / bổ sung</span>
-                                        <ExternalLink className="w-3 h-3 ml-0.5 text-emerald-500" />
                                       </a>
                                     </div>
                                   )}
 
-                                  {/* S3 Material files (Slides) */}
-                                  {session.materialFiles && session.materialFiles.length > 0 && (
-                                    <div className="mt-2 pt-2 border-t border-emerald-200/60 flex flex-wrap items-center gap-2">
-                                      {session.materialFiles.map((file) => (
-                                        <button
-                                          key={file.id}
-                                          type="button"
-                                          onClick={() => handleDownloadSessionFile(session.id, file.id)}
-                                          disabled={downloadingSessionFileId === file.id}
-                                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-600 text-white font-bold hover:bg-emerald-700 rounded-lg shadow-2xs transition-all text-xs"
-                                        >
-                                          {downloadingSessionFileId === file.id ? (
-                                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                          ) : (
-                                            <BookOpen className="w-3.5 h-3.5 text-white" />
-                                          )}
-                                          <span>{file.fileName}</span>
-                                          <span className="text-[10px] text-emerald-100 font-normal">({formatFileSize(file.fileSize)})</span>
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-
-                                  {(session.materialExternalUrl || (!session.materialFiles?.length && session.materialUrl)) && (
-                                    <div className="mt-2 pt-2 border-t border-emerald-200/60">
-                                      <a
-                                        href={session.materialExternalUrl || session.materialUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white font-bold hover:bg-emerald-700 rounded-lg shadow-2xs transition-all text-xs"
-                                      >
-                                        <BookOpen className="w-3.5 h-3.5 text-white" />
-                                        <span>Slide link ngoài / bổ sung</span>
-                                        <ExternalLink className="w-3 h-3 ml-0.5" />
-                                      </a>
-                                      {session.materialDescription && (
-                                        <p className="text-[11px] text-emerald-900 mt-1 italic">
-                                          Ghi chú tài liệu: {session.materialDescription}
-                                        </p>
-                                      )}
-                                    </div>
-                                  )}
-
+                                  {/* Hạn nộp bài tập */}
                                   {session.assignmentDueAt && (
-                                    <div className="mt-2 flex items-center gap-1 text-[11px] font-bold text-slate-600">
-                                      <Clock className="w-3.5 h-3.5 text-slate-500" />
+                                    <div className="mt-2.5 flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-emerald-100/60 px-3 py-1.5 rounded-xl border border-emerald-200/70 inline-flex">
+                                      <Clock className="w-3.5 h-3.5 text-emerald-700" />
                                       <span>
-                                        Hạn nộp bài: {new Date(session.assignmentDueAt).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}
+                                        Hạn nộp bài: <strong className="text-emerald-950 font-black">{new Date(session.assignmentDueAt).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}</strong>
                                       </span>
                                     </div>
                                   )}
                                 </div>
                               </div>
+                              )}
 
-                              {/* Student Homework Submission Status & Action */}
+                              {/* 2. Phần Slide Bài Giảng & Tài Liệu Buổi Học */}
+                              {hasMaterialContent ? (
+                                <div className={hasAssignmentContent ? "pt-3 border-t border-emerald-200/70" : ""}>
+                                  <div className="p-3 bg-white/90 rounded-xl border border-emerald-200/80 shadow-2xs space-y-2">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                      <div className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                                        <BookOpen className="w-4 h-4 text-emerald-700" />
+                                        <span>Slide bài giảng & Tài liệu buổi học</span>
+                                      </div>
+                                      {session.materialFiles && session.materialFiles.length > 0 && (
+                                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">
+                                          {session.materialFiles.length} file
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Danh sách file slide */}
+                                    {session.materialFiles && session.materialFiles.length > 0 && (
+                                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                                        {session.materialFiles.map((file) => (
+                                          <div
+                                            key={file.id}
+                                            className="inline-flex items-center justify-between gap-2.5 px-3 py-1.5 bg-emerald-50/70 text-slate-800 font-bold border border-emerald-200 rounded-xl shadow-2xs hover:border-emerald-300 text-xs transition-all"
+                                          >
+                                            <div className="flex items-center gap-1.5 truncate max-w-[220px]">
+                                              <BookOpen className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                              <span className="truncate">{file.fileName}</span>
+                                              <span className="text-[10px] text-slate-400 font-normal">({formatFileSize(file.fileSize)})</span>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDownloadSessionFile(session.id, file.id)}
+                                              disabled={downloadingSessionFileId === file.id}
+                                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-black flex items-center gap-1 shadow-xs active:scale-95 cursor-pointer shrink-0"
+                                            >
+                                              {downloadingSessionFileId === file.id ? (
+                                                <Loader2 className="w-3 h-3 animate-spin" />
+                                              ) : (
+                                                <Download className="w-3 h-3" />
+                                              )}
+                                              <span>Tải về xem</span>
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+
+                                    {/* Link slide ngoài */}
+                                    {(session.materialExternalUrl || (!session.materialFiles?.length && session.materialUrl)) && (
+                                      <div className="pt-1">
+                                        <a
+                                          href={session.materialExternalUrl || session.materialUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white font-bold hover:bg-emerald-700 rounded-xl shadow-xs transition-all text-xs"
+                                        >
+                                          <BookOpen className="w-3.5 h-3.5 text-white" />
+                                          <span>Mở Slide / Tài liệu link ngoài</span>
+                                          <ExternalLink className="w-3 h-3 ml-0.5" />
+                                        </a>
+                                      </div>
+                                    )}
+
+                                    {/* Ghi chú slide & dặn dò từ gia sư */}
+                                    {session.materialDescription && (
+                                      <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200 text-xs flex items-start gap-2">
+                                        <MessageSquare className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                                        <div>
+                                          <span className="font-black text-amber-900 block text-[11px] uppercase tracking-wider">
+                                            Ghi chú bài giảng từ gia sư:
+                                          </span>
+                                          <p className="text-amber-950 font-semibold mt-0.5 leading-relaxed italic">
+                                            "{session.materialDescription}"
+                                          </p>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {/* 3. Phần Nộp Bài Tập & Đánh Giá Của Gia Sư (Dành cho Học Viên) */}
                               {currentUserRole === "STUDENT" && (
-                                <div className="mt-2 pt-2.5 border-t border-emerald-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/70 p-3 rounded-lg">
-                                  <div className="text-xs">
+                                <div className="pt-3 border-t border-emerald-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white/90 p-3.5 rounded-xl border border-emerald-100 shadow-2xs">
+                                  <div className="text-xs flex-1">
                                     {hasSubmittedHomework ? (
-                                      <div>
-                                        <div className="flex items-center gap-1.5 font-bold text-emerald-800">
-                                          <FileCheck className="w-4 h-4 text-emerald-600" />
-                                          <span>Đã nộp bài tập</span>
+                                      <div className="space-y-1.5">
+                                        <div className="flex items-center gap-1.5 font-black text-emerald-800 text-xs">
+                                          <FileCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                                          <span>Bạn đã hoàn thành nộp bài tập</span>
                                           {session.mySubmittedAt && (
-                                            <span className="font-normal text-slate-500 text-[11px]">
-                                              (lúc {new Date(session.mySubmittedAt).toLocaleString('vi-VN')})
+                                            <span className="font-semibold text-slate-500 text-[11px]">
+                                              (Lúc {new Date(session.mySubmittedAt).toLocaleString('vi-VN')})
                                             </span>
                                           )}
                                         </div>
                                         {session.mySubmissionText && (
-                                          <p className="text-slate-700 mt-1 text-xs italic bg-slate-50 p-2 rounded border border-slate-200">
+                                          <p className="text-slate-800 text-xs italic bg-slate-50 p-2.5 rounded-xl border border-slate-200 font-medium">
                                             "{session.mySubmissionText}"
                                           </p>
                                         )}
                                         {session.mySubmissionFileName && (
-                                          <div className="mt-1.5">
+                                          <div>
                                             <button
                                               type="button"
                                               onClick={() => handleDownloadSubmission(session.id)}
                                               disabled={downloadingSubmissionSessionId === session.id}
-                                              className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 font-bold hover:bg-blue-100 border border-blue-200 rounded-lg text-xs transition"
+                                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-800 font-bold hover:bg-blue-100 border border-blue-200 rounded-xl text-xs transition"
                                             >
                                               {downloadingSubmissionSessionId === session.id ? (
                                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                               ) : (
-                                                <FileText className="w-3.5 h-3.5 text-blue-600" />
+                                                <Download className="w-3.5 h-3.5 text-blue-600" />
                                               )}
-                                              <span>Bài nộp S3: {session.mySubmissionFileName}</span>
+                                              <span>File bài làm đã nộp: {session.mySubmissionFileName}</span>
                                               {session.mySubmissionFileSize ? <span className="text-[10px] text-blue-500 font-normal">({formatFileSize(session.mySubmissionFileSize)})</span> : null}
                                             </button>
                                           </div>
                                         )}
 
                                         {session.mySubmissionFileUrl && (
-                                          <div className="mt-1">
+                                          <div>
                                             <a
                                               href={session.mySubmissionFileUrl}
                                               target="_blank"
@@ -1739,59 +1825,59 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                               className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 font-semibold underline text-xs"
                                             >
                                               <ExternalLink className="w-3 h-3" />
-                                              Xem bài làm / hình ảnh đã nộp
+                                              Xem link bài làm / hình ảnh đã nộp
                                             </a>
                                           </div>
                                         )}
 
                                         {session.myGradeScore && (
-                                          <div className="mt-2 p-2.5 rounded-lg bg-emerald-100/90 border border-emerald-300 text-xs">
+                                          <div className="mt-2 p-3 rounded-xl bg-gradient-to-r from-emerald-100 via-teal-50 to-emerald-100 border border-emerald-300 text-xs shadow-2xs">
                                             <div className="flex items-center justify-between">
-                                              <span className="font-black text-emerald-950 flex items-center gap-1">
-                                                <Award className="w-3.5 h-3.5 text-emerald-700" />
-                                                Điểm gia sư chấm:
+                                              <span className="font-black text-emerald-950 flex items-center gap-1.5 text-xs">
+                                                <Award className="w-4 h-4 text-emerald-700" />
+                                                Kết quả chấm bài từ Gia Sư:
                                               </span>
-                                              <span className="px-2.5 py-0.5 rounded bg-emerald-700 text-white font-black text-xs">
-                                                {session.myGradeScore}
+                                              <span className="px-3 py-1 rounded-lg bg-emerald-700 text-white font-black text-xs shadow-xs">
+                                                Điểm: {session.myGradeScore}
                                               </span>
                                             </div>
                                             {session.myTutorFeedback && (
-                                              <p className="mt-1 text-slate-800 italic">
-                                                "{session.myTutorFeedback}"
-                                              </p>
+                                              <div className="mt-1.5 pt-1.5 border-t border-emerald-200/60 text-slate-800 font-medium italic">
+                                                Lời nhận xét: "{session.myTutorFeedback}"
+                                              </div>
                                             )}
                                           </div>
                                         )}
                                       </div>
                                     ) : (
-                                      <div className="flex items-center gap-1.5 text-amber-800 font-semibold">
-                                        <AlertCircle className="w-4 h-4 text-amber-600" />
+                                      <div className="flex items-center gap-2 text-amber-800 font-bold">
+                                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                                         <span>Chưa nộp bài tập cho buổi học này</span>
                                       </div>
                                     )}
                                   </div>
 
                                   {isCancelled ? (
-                                    <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-500">
+                                    <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-500">
                                       <Lock className="h-3.5 w-3.5" />
                                       Buổi học đã hủy
                                     </span>
                                   ) : historyMode ? (
-                                    <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">
+                                    <span className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">
                                       <Lock className="h-3.5 w-3.5" />
                                       Chỉ xem lịch sử
                                     </span>
                                   ) : (
                                     <button
-                                      onClick={() => handleOpenHomeworkSubmission(session)}
-                                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs shrink-0 ${
+                                      onClick={() => navigate(`/my-homework?classId=${classRoomId}&sessionId=${session.id}`)}
+                                      className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md shrink-0 active:scale-95 ${
                                         hasSubmittedHomework
                                           ? "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
-                                          : "bg-indigo-600 hover:bg-indigo-700 text-white"
+                                          : "bg-indigo-600 hover:bg-indigo-700 text-white ring-2 ring-indigo-300"
                                       }`}
                                     >
-                                      <UploadCloud className="w-3.5 h-3.5" />
-                                      <span>{hasSubmittedHomework ? "Sửa / Nộp Lại" : "Nộp Bài Tập"}</span>
+                                      <UploadCloud className="w-4 h-4" />
+                                      <span>{hasSubmittedHomework ? "Sửa / Nộp Lại Bài Tập" : "Nộp Bài Tập"}</span>
                                     </button>
                                   )}
                                 </div>
@@ -1799,24 +1885,24 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                             </div>
                           ) : (
                             /* Locked State for Student who hasn't checked in yet */
-                            <div className="mt-3 p-3.5 rounded-xl bg-slate-100/90 border border-slate-300/80 flex items-start gap-3">
-                              <div className="p-2 rounded-lg bg-slate-200 text-slate-600 shrink-0 mt-0.5">
+                            <div className="mt-3.5 p-4 rounded-2xl bg-slate-100/90 border border-slate-300/80 flex items-start gap-3 shadow-2xs">
+                              <div className="p-2.5 rounded-xl bg-slate-200 text-slate-600 shrink-0 mt-0.5">
                                 <Lock className="w-4 h-4" />
                               </div>
                               <div className="text-xs flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-bold text-slate-700">
-                                    Bài tập Buổi #{session.sequenceNumber}: {session.assignmentTitle}
+                                  <span className="font-bold text-slate-800 text-sm">
+                                    Bài tập & Tài liệu Buổi #{session.sequenceNumber}: {session.assignmentTitle || "Bài tập về nhà"}
                                   </span>
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 flex items-center gap-1 border border-amber-200">
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 flex items-center gap-1 border border-amber-200">
                                     <Lock className="w-3 h-3 text-amber-700" />
-                                    KHÓA ĐỀ BÀI
+                                    KHÓA ĐỀ BÀI & TÀI LIỆU
                                   </span>
                                 </div>
-                                <p className="text-slate-500 mt-1 leading-relaxed">
+                                <p className="text-slate-600 mt-1 leading-relaxed">
                                   🔒 <i>{historyMode
                                     ? "Buổi này không thuộc phần lịch sử đã tham gia hoặc trước đây bạn chưa điểm danh để mở khóa nội dung."
-                                    : <>Bạn cần bấm <b>"Điểm Danh Vào Học"</b> trong khung giờ ({session.startTime} - {session.endTime}) để mở khóa hướng dẫn làm bài và nộp bài tập cho gia sư.</>}</i>
+                                    : <>Bạn cần bấm <b>"Điểm Danh Vào Học"</b> trong khung giờ ({session.startTime} - {session.endTime}) để mở khóa hướng dẫn làm bài, tài liệu slide và nộp bài tập cho gia sư.</>}</i>
                                 </p>
                               </div>
                             </div>
@@ -1824,7 +1910,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                         ) : (
                           currentUserRole === "TUTOR" && (
                             <div className="mt-2 text-xs text-slate-400 italic">
-                              Chưa có bài tập cho buổi học này. Bấm "Giao Bài" để soạn đề bài.
+                              Chưa có bài tập cho buổi học này. Bấm "Giao Bài" để soạn đề bài và đính kèm tài liệu slide.
                             </div>
                           )
                         )}
@@ -2064,11 +2150,11 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                 />
               </div>
 
-              {/* S3 Assignment Files (up to 5 files) */}
+              {/* Assignment files (up to 5 files) */}
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-800">
-                    File bài tập đính kèm (Tối đa 5 file - Lưu S3):
+                    File bài tập đính kèm (Tối đa 5 file):
                   </label>
                   <span className="text-[11px] font-bold text-slate-500">
                     {(editingSession.assignmentFiles?.length || 0)}/5 file
@@ -2149,11 +2235,11 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                 />
               </div>
 
-              {/* S3 Lecture Slides / Materials */}
+              {/* Lecture slides / materials */}
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-bold text-slate-800">
-                    Slide / Bài giảng buổi học (Lưu S3):
+                    Slide / Bài giảng buổi học:
                   </label>
                   <span className="text-[11px] font-bold text-slate-500">
                     {editingSession.materialFiles?.length || 0} file
@@ -2263,7 +2349,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                 <p className="leading-relaxed">{submittingSession.assignmentDescription}</p>
                 {submittingSession.assignmentFiles && submittingSession.assignmentFiles.length > 0 && (
                   <div className="mt-2 space-y-1">
-                    <span className="text-[11px] font-bold text-slate-700 block">File đề bài từ gia sư (S3):</span>
+                    <span className="text-[11px] font-bold text-slate-700 block">File đề bài từ gia sư:</span>
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {submittingSession.assignmentFiles.map((file) => (
                         <button
@@ -2334,10 +2420,10 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
             )}
 
             <div className="space-y-3.5">
-              {/* S3 File Upload Input */}
+              {/* File Upload Input */}
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
                 <label className="block text-xs font-bold text-slate-800">
-                  File bài làm đính kèm (Lưu trữ AWS S3) <span className="text-rose-500">*</span>:
+                  File bài làm đính kèm <span className="text-rose-500">*</span>:
                 </label>
                 <input
                   type="file"
@@ -2558,7 +2644,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                   className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold border border-emerald-200 rounded-lg transition-all"
                                 >
                                   {downloadingSubmissionSessionId === activeSession.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                                  <span>Tải file bài nộp S3: {att.submissionFileName}</span>
+                                  <span>Tải file bài nộp: {att.submissionFileName}</span>
                                   {att.submissionFileSize && (
                                     <span className="text-[10px] text-emerald-600 font-normal">({formatFileSize(att.submissionFileSize)})</span>
                                   )}

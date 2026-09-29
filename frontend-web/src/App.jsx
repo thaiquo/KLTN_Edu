@@ -164,6 +164,11 @@ function ProtectedStudentPage({ children }) {
   );
 }
 
+function RedirectPreserveSearch({ to }) {
+  const location = useLocation();
+  return <Navigate to={`${to}${location.search || ''}`} replace />;
+}
+
 function ProtectedBecomeTutor() {
   return (
     <Gate>
@@ -268,8 +273,8 @@ export default function App() {
             />
 
             {/* Backward-compatible Student aliases */}
-            <Route path="/student/homework" element={<Navigate to="/my-homework" replace />} />
-            <Route path="/student/my-homework" element={<Navigate to="/my-homework" replace />} />
+            <Route path="/student/homework" element={<RedirectPreserveSearch to="/my-homework" />} />
+            <Route path="/student/my-homework" element={<RedirectPreserveSearch to="/my-homework" />} />
             <Route path="/student/schedule" element={<Navigate to="/my-schedule" replace />} />
             <Route path="/student/my-schedule" element={<Navigate to="/my-schedule" replace />} />
             <Route path="/student/contracts" element={<Navigate to="/contracts" replace />} />

@@ -1,4 +1,4 @@
-import{C as e,H as t,M as n,U as r,V as i,b as a,j as o,l as s,r as c,t as l,v as u,w as d,y as f}from"./ModalController-DLyGHbfk.js";import{_ as p,c as m,l as h,o as g,s as _,x as v,y}from"./wui-text-BTwUa-zK.js";import{t as b}from"./ConstantsUtil-C1qdKpER.js";import{C as x,S,b as C,j as w,v as T}from"./index-D4pcAIGc.js";var E=p`
+import{C as e,H as t,M as n,U as r,V as i,b as a,j as o,l as s,r as c,t as l,v as u,w as d,y as f}from"./ModalController-DLyGHbfk.js";import{_ as p,c as m,l as h,o as g,s as _,x as v,y}from"./wui-text-BTwUa-zK.js";import{t as b}from"./ConstantsUtil-C1qdKpER.js";import{C as x,M as S,w as C,x as w,y as T}from"./index-Bt-ZFelQ.js";var E=p`
   :host {
     margin-top: ${({spacing:e})=>e[1]};
   }
@@ -15,7 +15,7 @@ import{C as e,H as t,M as n,U as r,V as i,b as a,j as o,l as s,r as c,t as l,v a
             logo=${e}
             ?disabled=${this.isPwaLoading}
           ></wui-list-social>`)}
-    </wui-flex>`)}async onSocialClick(e){if(this.hasExceededUsageLimit){a.push(`UsageExceeded`);return}e&&await C(e)}async handlePwaFrameLoad(){if(i.isPWA()){this.isPwaLoading=!0;try{this.authConnector?.provider instanceof w&&await this.authConnector.provider.init()}catch(e){x.open({displayMessage:`Error loading embedded wallet in PWA`,debugMessage:e.message},`error`)}finally{this.isPwaLoading=!1}}}};O.styles=E,D([m()],O.prototype,`tabIdx`,void 0),D([_()],O.prototype,`connectors`,void 0),D([_()],O.prototype,`authConnector`,void 0),D([_()],O.prototype,`remoteFeatures`,void 0),D([_()],O.prototype,`isPwaLoading`,void 0),D([_()],O.prototype,`hasExceededUsageLimit`,void 0),O=D([h(`w3m-social-login-list`)],O);var k=p`
+    </wui-flex>`)}async onSocialClick(e){if(this.hasExceededUsageLimit){a.push(`UsageExceeded`);return}e&&await w(e)}async handlePwaFrameLoad(){if(i.isPWA()){this.isPwaLoading=!0;try{this.authConnector?.provider instanceof S&&await this.authConnector.provider.init()}catch(e){C.open({displayMessage:`Error loading embedded wallet in PWA`,debugMessage:e.message},`error`)}finally{this.isPwaLoading=!1}}}};O.styles=E,D([m()],O.prototype,`tabIdx`,void 0),D([_()],O.prototype,`connectors`,void 0),D([_()],O.prototype,`authConnector`,void 0),D([_()],O.prototype,`remoteFeatures`,void 0),D([_()],O.prototype,`isPwaLoading`,void 0),D([_()],O.prototype,`hasExceededUsageLimit`,void 0),O=D([h(`w3m-social-login-list`)],O);var k=p`
   wui-flex {
     max-height: clamp(360px, 540px, 80vh);
     overflow: scroll;
@@ -34,7 +34,7 @@ import{C as e,H as t,M as n,U as r,V as i,b as a,j as o,l as s,r as c,t as l,v a
     pointer-events: none;
     user-select: none;
   }
-`,A=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},j=class extends y{constructor(){super(),this.unsubscribe=[],this.checked=S.state.isLegalCheckboxChecked,this.unsubscribe.push(S.subscribeKey(`isLegalCheckboxChecked`,e=>{this.checked=e}))}disconnectedCallback(){this.unsubscribe.forEach(e=>e())}render(){let{termsConditionsUrl:e,privacyPolicyUrl:t}=n.state,r=n.state.features?.legalCheckbox,i=!!(e||t)&&!!r&&!this.checked,a=i?-1:void 0;return v`
+`,A=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},j=class extends y{constructor(){super(),this.unsubscribe=[],this.checked=x.state.isLegalCheckboxChecked,this.unsubscribe.push(x.subscribeKey(`isLegalCheckboxChecked`,e=>{this.checked=e}))}disconnectedCallback(){this.unsubscribe.forEach(e=>e())}render(){let{termsConditionsUrl:e,privacyPolicyUrl:t}=n.state,r=n.state.features?.legalCheckbox,i=!!(e||t)&&!!r&&!this.checked,a=i?-1:void 0;return v`
       <w3m-legal-checkbox></w3m-legal-checkbox>
       <wui-flex
         flexDirection="column"
