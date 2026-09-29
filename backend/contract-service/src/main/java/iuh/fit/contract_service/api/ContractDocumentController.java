@@ -84,7 +84,7 @@ public class ContractDocumentController {
             @PathVariable UUID id,
             @RequestParam(defaultValue = "pdf") String format) {
         requireCanViewAgreement(id);
-        if (!"pdf".equalsIgnoreCase(format) && !"docx".equalsIgnoreCase(format)) {
+        if (!"pdf".equalsIgnoreCase(format)) {
             return ResponseEntity.badRequest().build();
         }
         return fileResponse(id, format.toLowerCase(), true);
@@ -94,9 +94,7 @@ public class ContractDocumentController {
         try {
             byte[] bytes = artifactService.read(id, format);
             String filename = "educonnect-contract-" + id + "." + format;
-            MediaType contentType = "docx".equals(format)
-                    ? MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-                    : MediaType.APPLICATION_PDF;
+            MediaType contentType = MediaType.APPLICATION_PDF;
             String disposition = (attachment ? "attachment" : "inline") + "; filename=\"" + filename + "\"";
             return ResponseEntity.ok()
                     .contentType(contentType)

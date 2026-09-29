@@ -130,7 +130,23 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
 - Khi gia sư chủ động khiếu nại, nội dung, bằng chứng và kết quả xử lý là báo cáo riêng cho Staff/Admin; học viên liên quan không được xem hồ sơ khiếu nại này.
 - Admin hoặc Staff phụ trách lớp là bên phân xử. Với Smart Contract V1 hiện tại, luồng phân xử on-chain chỉ áp dụng an toàn cho đề xuất `BOTH_PRESENT`; các loại kết quả điểm danh khác cần phiên bản hợp đồng mới trước khi mở rộng khiếu nại on-chain.
 - Lý do khiếu nại dạng text là bắt buộc. File evidence là tùy chọn và hỗ trợ ảnh, video, audio, PDF, TXT, Word và Excel tối đa 50 MB; object lưu trên storage/S3, metadata và SHA-256 lưu trong PostgreSQL.
-- Khóa link phòng học trực tuyến trước khi điểm danh: Student chỉ được đọc link Google Meet/Zoom/Teams sau khi đã tự điểm danh trong khung giờ. Đây là ràng buộc giảm trường hợp vào học nhưng không ghi nhận attendance; không coi nó là bằng chứng tuyệt đối rằng người dùng thực sự học trọn buổi.
+- Khóa link phòng học trực tuyến và bài tập buổi học trước khi điểm danh: Student chỉ được đọc link Google Meet/Zoom/Teams và nội dung/file bài tập sau khi đã tự điểm danh thành công (`studentChecked = true`) trong khung giờ học. Đây là ràng buộc giảm trường hợp vào học nhưng không ghi nhận attendance.
+- **Tài liệu môn học cấp lớp (Classroom Materials)**: Gia sư có thể tải lên nhiều tài liệu học tập cấp lớp (PDF, slide, giáo trình, bài tập lớn...). Lưu trữ trên AWS S3 (`classroom_materials`). Học viên đã tham gia lớp (enrolled) và Gia sư có quyền xem danh sách và tải trực tiếp tài liệu về máy bất kỳ lúc nào **mà không cần phải điểm danh**.
+- **Lộ trình học (Syllabus)**: Gia sư có thể tải lên 1 file tài liệu lộ trình / đề cương môn học khi tạo hoặc cập nhật lớp. Lưu trên S3 (`class_rooms.syllabus_file_key`). Học viên có nút tải trực tiếp về máy.
+- **Tài liệu & Đề bài tập theo từng buổi học (Session Files - Gated by Check-in)**: Gia sư tải lên tối đa 5 file bài tập (`ASSIGNMENT`) và các file slide bài giảng (`MATERIAL`) theo từng buổi học. Lưu trên S3 (`session_files`). Học viên **bắt buộc phải điểm danh vào học thành công** thì mới mở khóa xem đề bài và tải các file tài liệu / bài tập của buổi học đó.
+- **Nộp bài tập của học viên & Chấm điểm của gia sư**:
+  - Học viên nộp bài làm bằng **file thật (lưu trữ trên S3)**: `classes/{classId}/sessions/{sessionId}/submissions/{studentId}/...`. Đường link ngoài (Google Drive, GitHub...) chỉ là tùy chọn ghi chú bổ sung.
+  - Học viên nộp bài theo hạn nộp (deadline) gia sư đã đặt. Nộp muộn sau deadline sẽ được hệ thống gắn nhãn `NỘP MUỘN`.
+  - Trong thời gian còn hạn nộp, học viên có quyền gỡ bỏ hoặc tải lên file bài làm mới thay thế. Khi thay thế hoặc gỡ bỏ, hệ thống tự động xóa file cũ trên AWS S3 (`s3Client.deleteObject`) để tránh rác và tiết kiệm dung lượng lưu trữ.
+  - Giao diện người dùng sử dụng thuật ngữ nghiệp vụ thân thiện ("Đã nộp bài thành công", "Tải bài nộp"...), loại bỏ hoàn toàn thuật ngữ kỹ thuật hạ tầng (như S3 bucket, S3 key).
+  - Gia sư và chính học viên đó có nút tải file bài nộp từ S3 về máy bằng Presigned URL bảo mật.
+  - Gia sư chấm điểm (dạng điểm 0-10, hoặc Đạt/Chưa đạt) và gửi nhận xét chi tiết cho từng học viên.
+- **Màn hình Quản lý bài tập trên Sidebar**:
+  - Phía Gia sư có mục **Quản lý bài tập** (`/portal/tutor/homework`): 
+    - Thống kê chuẩn xác 4 chỉ số nghiệp vụ: `Buổi đã giao bài tập`, `Tổng bài học viên đã nộp`, `Bài đang chờ chấm điểm`, `Bài đã chấm điểm xong` (chỉ tính toán trên các buổi thực tế có bài tập, không đếm sai các buổi không giao bài).
+    - Mặc định chỉ hiển thị các buổi học có bài tập, có tùy chọn xem tất cả buổi để giao bài mới khi cần.
+    - Hỗ trợ 2 chế độ xem khi chấm: **Chế độ Chấm chi tiết (Split View)** với tìm kiếm/lọc học viên, mẫu nhận xét nhanh và nút "Lưu & Sang học viên tiếp theo"; **Chế độ Bảng điểm cả lớp (Classroom Table View)** hiển thị dạng bảng tổng hợp toàn bộ sĩ số, điểm danh, nộp bài, điểm số và nhận xét.
+  - Phía Học viên có mục **Bài tập về nhà** (`/portal/student/homework`): lọc theo lớp, hiển thị trạng thái nộp bài, cảnh báo khóa nếu chưa điểm danh, modal nộp bài hỗ trợ chọn file, gỡ bỏ, thay thế file và tải về xem lại.
 - Link phòng học thuộc classroom. Tutor có thể cập nhật khi link hỏng; lần đọc tiếp theo và các buổi kế tiếp dùng link mới, nhưng Student vẫn phải điểm danh từng buổi để mở khóa.
 - Nếu service tắt qua deadline, scheduler không thể chuyển tiền trong lúc tắt. Khi Learning/Contract được mở lại, các session/settlement lưu bền được quét bù theo chu kỳ; dispute đang mở không bao giờ tự finalize.
 - Staff moderation: Staff kiểm duyệt nội dung, giám sát lớp, quản lý vi phạm, hỗ trợ người dùng.
@@ -138,6 +154,9 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
 
 ### Quy tắc chấm dứt hợp đồng và hủy lớp học trước thời hạn
 
+- **Điều kiện kích hoạt nút Hủy hợp đồng:**
+  - Nút **"Hủy hợp đồng"** trong văn bản hợp đồng chỉ hiển thị và có hiệu lực khi hợp đồng đã ở trạng thái **`ACTIVE`** (cả hai bên đã ký số EIP-712 và học viên đã thanh toán nạp cọc Smart Contract Escrow thành công).
+  - Khi hợp đồng chưa được kích hoạt (`DRAFT`, `PENDING_SIGNATURE`, `SIGNED`, `AWAITING_PAYMENT`), các bên chưa nạp cọc tài chính nên nút hủy hợp đồng bị ẩn / vô hiệu hóa; không cho phép kích hoạt quy trình giải ngân/hoàn cọc khi chưa có tài sản ký quỹ on-chain.
 - **Phân định trách nhiệm và phạm vi theo Actor:**
   - **Phía Học viên (Student):** Mỗi học viên chỉ có **1 hợp đồng duy nhất** ở 1 lớp học. Vì vậy, khi gia sư vi phạm cam kết hoặc học viên gặp sự cố bất khả kháng, học viên có quyền gửi **yêu cầu đơn phương chấm dứt hợp đồng** của chính mình (`wholeClass = false`). Thao tác được thực hiện trực tiếp trong văn bản hợp đồng cá nhân.
   - **Phía Gia sư (Tutor):** Gia sư quản lý **toàn bộ lớp học** gồm nhiều học viên (nhiều hợp đồng). Gia sư **không được phép tự ý chấm dứt riêng lẻ từng hợp đồng** của từng học viên vì lý do cá nhân không thể tiếp tục giảng dạy. Nếu gia sư gặp sự cố bất khả kháng (sức khỏe, tai nạn, bận đột xuất...), gia sư phải vào mục **"Lớp học của tôi"** để gửi **"Đề xuất dừng giảng dạy & Hủy lớp học"** cho toàn bộ lớp (`wholeClass = true`).

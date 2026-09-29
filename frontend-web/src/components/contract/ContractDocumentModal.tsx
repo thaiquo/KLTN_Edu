@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Copy,
   FileSignature,
-  FileText,
   GraduationCap,
   Printer,
   RefreshCw,
@@ -207,8 +206,9 @@ export function ContractDocumentModal({
     }
   };
 
-  const handleDownload = async (format: "pdf" | "docx") => {
+  const handleDownload = async () => {
     if (!document) return;
+    const format = "pdf" as const;
     setDownloading(true);
     try {
       if (document.tutorSignature.signed && document.studentSignature.signed) {
@@ -223,13 +223,12 @@ export function ContractDocumentModal({
             if (!artifact) throw finalizeError;
           }
         }
-        const canDownloadDocx = format === "docx" && artifact?.docxAvailable;
-        if (artifact?.status === "READY" || canDownloadDocx) {
-          const blob = await contractsApi.getContractDocumentFile(agreementId, format);
+        if (artifact?.status === "READY") {
+          const blob = await contractsApi.getContractDocumentFile(agreementId, "pdf");
           const url = URL.createObjectURL(blob);
           const a = window.document.createElement("a");
           a.href = url;
-          a.download = `educonnect-contract-${agreementId.slice(0, 8)}.${format}`;
+          a.download = `educonnect-contract-${agreementId.slice(0, 8)}.pdf`;
           a.click();
           window.setTimeout(() => URL.revokeObjectURL(url), 1000);
           return;
@@ -295,7 +294,7 @@ export function ContractDocumentModal({
     && tutorSigned
     && !studentSigned;
 
-  const canStudentRequestTermination = isStudentUser && !activeTermination && (isActive || isWaitingPayment) && !isExpired && !isCancelled && !isCompleted;
+  const canStudentRequestTermination = isStudentUser && !activeTermination && isActive && !isExpired && !isCancelled && !isCompleted;
 
   const terminationTarget: TerminationAgreementTarget | null = document ? {
     id: document.agreementId,
@@ -559,9 +558,9 @@ export function ContractDocumentModal({
           {/* Download Word */}
           <button
             type="button"
-            onClick={() => void handleDownload("docx")}
+            onClick={() => void handleDownload()}
             disabled={!document || downloading}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 hover:text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border border-slate-700"
+            className="hidden"
             title="Tải tệp Microsoft Word (.docx) được render từ poi-tl"
           >
             <FileText className="w-3.5 h-3.5 text-blue-400" />
@@ -571,7 +570,7 @@ export function ContractDocumentModal({
           {/* Download PDF / Print */}
           <button
             type="button"
-            onClick={() => void handleDownload("pdf")}
+            onClick={() => void handleDownload()}
             disabled={!document || downloading}
             className="px-3 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-slate-200 hover:text-white text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 border border-slate-700"
             title="Tải tệp PDF từ Gotenberg hoặc in văn bản"
@@ -876,7 +875,7 @@ export function ContractDocumentModal({
               )}
 
               {/* HƯỚNG DẪN DÀNH CHO GIA SƯ (KHÔNG KẾT THÚC RIÊNG LẺ TỪNG HỢP ĐỒNG) */}
-              {isTutorUser && (isActive || isWaitingPayment) && (
+              {isTutorUser && isActive && (
                 <div className="mt-8 p-5 rounded-2xl border-2 border-sky-200/80 bg-gradient-to-br from-sky-50/70 via-white to-indigo-50/50 space-y-3 print:hidden shadow-xs">
                   <div className="flex items-start gap-3">
                     <div className="w-10 h-10 rounded-2xl bg-sky-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-sky-600/20 mt-0.5">

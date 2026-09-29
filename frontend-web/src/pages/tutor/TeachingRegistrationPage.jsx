@@ -426,7 +426,7 @@ export function TeachingRegistrationPage({ embedded = false }) {
     const title = metadata.title?.trim() || file.name.replace(/\.[^/.]+$/, '');
     setStagedDocuments((current) => [...current, { id, file, documentType, title, originalFilename: file.name, verificationStatus: 'LOCAL', metadata: { ...metadata, title, issuer: '' } }]);
     setForm((current) => ({ ...current, evidenceIds: [...current.evidenceIds, id] }));
-    setMessage('File đã chọn thành công, chưa tải lên S3. File sẽ được gửi khi bạn bấm Gửi quyền dạy.');
+    setMessage('File đã chọn thành công. File sẽ được gửi khi bạn bấm Gửi quyền dạy.');
   }
 
   function upsertStagedDocument(document) {

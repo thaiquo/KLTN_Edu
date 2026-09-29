@@ -52,6 +52,7 @@ import { useFeedback } from "../components/feedback/useFeedback";
 import { useTutorApplication } from "../hooks/useTutorApplication";
 import { StudentRequestsView } from "./components/StudentRequestsView";
 import { TutorSessionManagement } from "./components/TutorSessionManagement";
+import { TutorHomeworkManagement } from "./components/TutorHomeworkManagement";
 import { StudentClassManagement } from "./components/StudentClassManagement";
 import { AdminFinanceMonitoring } from "./components/AdminFinanceMonitoring";
 
@@ -258,6 +259,7 @@ const FULL_TUTOR_PAGE_IDS = new Set([
   "dashboard",
   "subjects",
   "my-classes",
+  "homework",
   "class-management",
   "contracts",
   "wallet",
@@ -520,6 +522,9 @@ export default function App({ user, onLogout }: AppProps) {
 
       case "my-classes":
         return activeRole === "student" ? <StudentClassManagement onNavigate={handleNavigate} /> : <TutorClassManagement />;
+
+      case "homework":
+        return <TutorHomeworkManagement onNavigate={handleNavigate} />;
 
       case "sessions":
         return <TutorSessionManagement />;

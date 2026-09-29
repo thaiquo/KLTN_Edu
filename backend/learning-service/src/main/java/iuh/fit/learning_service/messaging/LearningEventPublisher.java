@@ -4,6 +4,7 @@ import iuh.fit.learning_service.messaging.event.SubjectRequestApprovedEvent;
 import iuh.fit.learning_service.messaging.event.SubjectRequestRejectedEvent;
 import iuh.fit.learning_service.messaging.event.ClassReviewedNotificationEvent;
 import iuh.fit.learning_service.messaging.event.EnrollmentNotificationEvent;
+import iuh.fit.learning_service.messaging.event.HomeworkNotificationEvent;
 import iuh.fit.learning_service.messaging.event.TeachingRegistrationReviewedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -202,6 +203,65 @@ public class LearningEventPublisher {
         );
     }
 
+    public void publishHomeworkSubmitted(
+            Long classId,
+            Long sessionId,
+            Long attendanceId,
+            Long recipientUserId,
+            Long actorUserId,
+            String classTitle,
+            String sessionTopic,
+            Integer sequenceNumber,
+            String studentName
+    ) {
+        publishHomework(
+                LearningRabbitConfig.HOMEWORK_SUBMITTED_ROUTING_KEY,
+                "HOMEWORK_SUBMITTED",
+                classId,
+                sessionId,
+                attendanceId,
+                recipientUserId,
+                actorUserId,
+                classTitle,
+                sessionTopic,
+                sequenceNumber,
+                studentName,
+                null,
+                "HOMEWORK_SUBMISSION",
+                attendanceId == null ? null : String.valueOf(attendanceId)
+        );
+    }
+
+    public void publishHomeworkGraded(
+            Long classId,
+            Long sessionId,
+            Long attendanceId,
+            Long recipientUserId,
+            Long actorUserId,
+            String classTitle,
+            String sessionTopic,
+            Integer sequenceNumber,
+            String studentName,
+            String gradeScore
+    ) {
+        publishHomework(
+                LearningRabbitConfig.HOMEWORK_GRADED_ROUTING_KEY,
+                "HOMEWORK_GRADED",
+                classId,
+                sessionId,
+                attendanceId,
+                recipientUserId,
+                actorUserId,
+                classTitle,
+                sessionTopic,
+                sequenceNumber,
+                studentName,
+                gradeScore,
+                "HOMEWORK",
+                sessionId == null ? null : String.valueOf(sessionId)
+        );
+    }
+
     private void publishEnrollment(
             String routingKey,
             String eventType,
@@ -233,6 +293,58 @@ public class LearningEventPublisher {
                         reviewStatus,
                         rejectReason,
                         studentName
+                )
+        );
+    }
+
+    private void publishHomework(
+            String routingKey,
+            String eventType,
+            Long classId,
+            Long sessionId,
+            Long attendanceId,
+            Long recipientUserId,
+            Long actorUserId,
+            String classTitle,
+            String sessionTopic,
+            Integer sequenceNumber,
+            String studentName,
+            String gradeScore,
+            String referenceType,
+            String referenceId
+    ) {
+        if (recipientUserId == null || sessionId == null || attendanceId == null
+                || (actorUserId != null && actorUserId.equals(recipientUserId))) {
+            log.warn(
+                    "Skipping homework notification event type={} classId={} sessionId={} attendanceId={} recipientUserId={}",
+                    eventType,
+                    classId,
+                    sessionId,
+                    attendanceId,
+                    recipientUserId);
+            return;
+        }
+
+        publishAfterCommit(
+                LearningRabbitConfig.EXCHANGE,
+                routingKey,
+                new HomeworkNotificationEvent(
+                        UUID.randomUUID().toString(),
+                        eventType,
+                        LocalDateTime.now(),
+                        "learning-service",
+                        classId,
+                        sessionId,
+                        attendanceId,
+                        recipientUserId,
+                        actorUserId,
+                        classTitle,
+                        sessionTopic,
+                        sequenceNumber,
+                        studentName,
+                        gradeScore,
+                        referenceType,
+                        referenceId
                 )
         );
     }

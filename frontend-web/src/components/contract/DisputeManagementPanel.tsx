@@ -1823,7 +1823,7 @@ export function DisputeManagementPanel({
                   value={evidenceTextInput}
                   onChange={(e) => setEvidenceTextInput(e.target.value)}
                   disabled={!!evidenceFile}
-                  placeholder="Link Google Drive, S3 hình ảnh hoặc file log..."
+                  placeholder="Link Google Drive, hình ảnh hoặc file log..."
                   className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-rose-500 disabled:bg-slate-100"
                 />
               </div>

@@ -24,6 +24,7 @@ import { StudentMessagesPage } from './pages/student/StudentMessagesPage';
 import { StudentMyClassesPage } from './pages/student/StudentMyClassesPage';
 import { StudentSchedulePage } from './pages/student/StudentSchedulePage';
 import { StudentWalletPage } from './pages/student/StudentWalletPage';
+import { StudentHomeworkPage } from './pages/student/StudentHomeworkPage';
 import { useTutorApplication } from './hooks/useTutorApplication';
 
 const DashboardPage = lazy(() =>
@@ -163,6 +164,11 @@ function ProtectedStudentPage({ children }) {
   );
 }
 
+function RedirectPreserveSearch({ to }) {
+  const location = useLocation();
+  return <Navigate to={`${to}${location.search || ''}`} replace />;
+}
+
 function ProtectedBecomeTutor() {
   return (
     <Gate>
@@ -216,6 +222,14 @@ export default function App() {
               }
             />
             <Route
+              path="/my-homework"
+              element={
+                <ProtectedStudentPage>
+                  <StudentHomeworkPage />
+                </ProtectedStudentPage>
+              }
+            />
+            <Route
               path="/my-schedule"
               element={
                 <ProtectedStudentPage>
@@ -259,6 +273,8 @@ export default function App() {
             />
 
             {/* Backward-compatible Student aliases */}
+            <Route path="/student/homework" element={<RedirectPreserveSearch to="/my-homework" />} />
+            <Route path="/student/my-homework" element={<RedirectPreserveSearch to="/my-homework" />} />
             <Route path="/student/schedule" element={<Navigate to="/my-schedule" replace />} />
             <Route path="/student/my-schedule" element={<Navigate to="/my-schedule" replace />} />
             <Route path="/student/contracts" element={<Navigate to="/contracts" replace />} />

@@ -32,6 +32,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Set;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -50,6 +51,7 @@ public class ClassRoomService {
     private final TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
     private final LearningEventPublisher eventPublisher;
     private final RealtimeEventHub realtimeEventHub;
+    private final LearningStorageCleanupService learningStorageCleanupService;
 
     public ClassRoomService(
             ClassRoomRepository classRoomRepository,
@@ -59,7 +61,8 @@ public class ClassRoomService {
             EnrollmentRequestRepository enrollmentRequestRepository,
             TutorAuthorizationStateRepository tutorAuthorizationStateRepository,
             LearningEventPublisher eventPublisher,
-            RealtimeEventHub realtimeEventHub
+            RealtimeEventHub realtimeEventHub,
+            LearningStorageCleanupService learningStorageCleanupService
     ) {
         this.classRoomRepository = classRoomRepository;
         this.registrationRepository = registrationRepository;
@@ -69,6 +72,7 @@ public class ClassRoomService {
         this.tutorAuthorizationStateRepository = tutorAuthorizationStateRepository;
         this.eventPublisher = eventPublisher;
         this.realtimeEventHub = realtimeEventHub;
+        this.learningStorageCleanupService = learningStorageCleanupService;
     }
 
     @Transactional(readOnly = true)
@@ -366,7 +370,10 @@ public class ClassRoomService {
                 && classRoom.getStatus() != ClassRoomStatus.PENDING_APPROVAL) {
             throw new ConflictException("Only DRAFT, REJECTED or PENDING_APPROVAL classrooms can be deleted");
         }
+        Set<String> storageKeys = learningStorageCleanupService.collectClassroomObjectKeys(classRoom);
         classRoomRepository.delete(classRoom);
+        classRoomRepository.flush();
+        learningStorageCleanupService.deleteObjectsAfterCommit(storageKeys);
     }
 
     // ==========================================

@@ -1,6 +1,6 @@
 # EduConnect — Tổng quan dự án
 
-> Cập nhật theo source và dữ liệu kiểm chứng ngày **2026-09-14**.  
+> Cập nhật theo source và dữ liệu kiểm chứng ngày **2026-09-29**.  
 > Đây là trang bắt đầu để đọc dự án. Trạng thái chi tiết nằm ở [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 ## 1. Mục tiêu
@@ -20,7 +20,7 @@ EduConnect dùng **Service-Based Architecture**, không gọi là Microservices 
 | --- | ---: | --- |
 | `api-gateway` | 8080 | Spring Cloud Gateway, CORS, REST/WebSocket routing. |
 | `account-service` | 8081 | JWT/OTP/session, user/role, hồ sơ Student/Tutor, hồ sơ xét duyệt Tutor, S3. |
-| `learning-service` | 8082 | Danh mục, chuyên môn/lịch rảnh, lớp, enrollment, lịch học, buổi học, điểm danh, bài tập. |
+| `learning-service` | 8082 | Danh mục, chuyên môn/lịch rảnh, lớp, enrollment, lịch học, buổi học, điểm danh, bài tập, lưu trữ S3 (tài liệu lớp, file buổi học, bài nộp học viên, giáo trình). |
 | `contract-service` | 8083 | Hợp đồng, EIP-712, DOCX/PDF, escrow, transaction pipeline, settlement, dispute, evidence, chấm dứt hợp đồng đơn phương & đề xuất hủy lớp. |
 | `notification-service` | 8084 | Notification lưu bền, Bell REST/WebSocket; chat persistence/API/WebSocket. |
 | `ai-service` | 8085 | Service skeleton và `GET /api/ai/health`; AI nghiệp vụ chưa triển khai. |
@@ -69,7 +69,8 @@ Tỷ lệ được tính theo base unit của USDC; Tutor và Platform được 
 ## 6. Quy tắc buổi học và khiếu nại
 
 - Tutor và từng Student điểm danh độc lập trong đúng ngày và khung giờ buổi học; Tutor không được điểm danh hộ Student.
-- Student chỉ thấy link phòng học và nội dung/file bài tập sau khi tự điểm danh.
+- Student chỉ thấy link phòng học và nội dung/file bài tập của buổi học sau khi tự điểm danh thành công (`studentChecked = true`). Tài liệu môn học cấp lớp (Classroom Materials) và file lộ trình học (Syllabus) được phép xem/tải trực tiếp không cần điểm danh.
+- Học viên nộp bài tập bằng file thật (lưu trữ S3), có quyền gỡ bỏ hoặc thay thế file bài làm khi còn trong hạn nộp (hệ thống tự động xóa file cũ trên S3 để tối ưu dung lượng). Gia sư quản lý bài tập theo các buổi thực tế có giao bài, hỗ trợ 2 chế độ (chấm chi tiết có mẫu nhận xét/tự chuyển học viên và bảng điểm cả lớp), cảnh báo và phân định rõ học viên đã nộp vs chưa làm bài.
 - Link nằm ở cấp lớp. Tutor có thể cập nhật khi link hỏng; các buổi sau dùng link mới.
 - Hết giờ, scheduler chốt `BOTH_PRESENT`, `STUDENT_ABSENT_TUTOR_PRESENT` hoặc `TUTOR_ABSENT`.
 - Cửa sổ khiếu nại 24 giờ bắt đầu từ lúc đề xuất settlement được xác nhận on-chain, không bắt đầu trực tiếp từ giờ tan học.
@@ -85,7 +86,7 @@ Tỷ lệ được tính theo base unit của USDC; Tutor và Platform được 
 - Web: React 19, Vite, TypeScript/JavaScript, React Router, TanStack Query, Tailwind CSS, Recharts.
 - Mobile: Expo 53, React Native 0.79.
 - Data/messaging: PostgreSQL 16, RabbitMQ 3.13.
-- Storage/document: AWS SDK S3, poi-tl, Gotenberg/LibreOffice.
+- Storage/document: AWS SDK S3 (Account, Contract, Learning), poi-tl, Gotenberg/LibreOffice.
 - Blockchain: Solidity 0.8.36, OpenZeppelin, Foundry, Web3j, ethers.js, MetaMask/Reown AppKit.
 - Infra local: Docker Compose cho PostgreSQL, RabbitMQ và Gotenberg.
 

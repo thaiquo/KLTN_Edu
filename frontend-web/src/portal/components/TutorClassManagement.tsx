@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import { 
   GraduationCap, Plus, Calendar, Clock, DollarSign, Users, 
   Video, MapPin, AlertCircle, AlertTriangle, CheckCircle2, XCircle, Search, 
-  ChevronRight, Trash2, Eye, FileText, Sparkles, Key, Lock, Settings2, Globe, EyeOff, Copy, Check, Info, Layers, RefreshCw
+  ChevronRight, Trash2, Eye, FileText, Sparkles, Key, Lock, Settings2, Globe, EyeOff, Copy, Check, Info, Layers, RefreshCw,
+  UploadCloud, BookOpen, Loader2
 } from "lucide-react";
 import { classApi } from "../../api/classes";
 import { contractsApi } from "../../api/contractsApi";
@@ -12,6 +13,7 @@ import { CreateClassWizard } from "./CreateClassWizard";
 import { useFeedback } from "../../components/feedback/useFeedback";
 import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
 import { useTutorApplication } from "../../hooks/useTutorApplication";
+import { ClassroomMaterialsSection } from "../../components/classroom/ClassroomMaterialsSection";
 
 const terminationStatusLabel: Record<string, string> = {
   HOLD_PENDING: 'Đang đồng bộ tạm dừng',
@@ -22,7 +24,7 @@ const terminationStatusLabel: Record<string, string> = {
 };
 
 const isActiveTerminationAgreement = (agreement: any) =>
-  !agreement.legacyUnreconciled && !['COMPLETED', 'CANCELLED', 'EXPIRED'].includes(agreement.status);
+  !agreement.legacyUnreconciled && agreement.status === 'ACTIVE';
 
 interface ChapterItem {
   id?: number | string;
@@ -63,6 +65,8 @@ interface ClassRoomItem {
   totalSessions: number;
   syllabusMode: "FORM" | "FILE" | "BOTH";
   syllabusFileUrl?: string;
+  syllabusFileName?: string;
+  syllabusFileSize?: number;
   joinMode?: "OPEN_REQUEST" | "INVITE_KEY";
   joinKey?: string;
   status: "DRAFT" | "PENDING_APPROVAL" | "ACTIVE" | "PRIVATE" | "PUBLISHED" | "LOCKED" | "REJECTED" | "CLOSED" | "CANCELLED";
@@ -92,7 +96,7 @@ export function TutorClassManagement() {
 
   // Unified Class Detail & Settings Modal State
   const [detailModalClass, setDetailModalClass] = useState<ClassRoomItem | null>(null);
-  const [modalTab, setModalTab] = useState<"OVERVIEW" | "EDIT" | "SETTINGS" | "REQUESTS" | "MEMBERS">("OVERVIEW");
+  const [modalTab, setModalTab] = useState<"OVERVIEW" | "EDIT" | "SETTINGS" | "REQUESTS" | "MEMBERS" | "MATERIALS">("OVERVIEW");
 
   // Edit details form state
   const [editDescription, setEditDescription] = useState("");
@@ -102,6 +106,40 @@ export function TutorClassManagement() {
   const [editSyllabusFileUrl, setEditSyllabusFileUrl] = useState("");
   const [editChapters, setEditChapters] = useState<ChapterItem[]>([]);
   const [detailsSubmitting, setDetailsSubmitting] = useState(false);
+  const [syllabusUploading, setSyllabusUploading] = useState(false);
+  const [syllabusDownloading, setSyllabusDownloading] = useState(false);
+
+  const handleUploadSyllabus = async (file: File) => {
+    if (!detailModalClass) return;
+    setSyllabusUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const updated = await classApi.uploadSyllabusFile(detailModalClass.id, formData);
+      feedback.success("Đã tải lên file lộ trình (Syllabus) thành công!");
+      setDetailModalClass(updated);
+      setClasses((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    } catch (err: any) {
+      feedback.error(err?.message || "Không thể tải file lộ trình lên.");
+    } finally {
+      setSyllabusUploading(false);
+    }
+  };
+
+  const handleDownloadSyllabus = async () => {
+    if (!detailModalClass) return;
+    setSyllabusDownloading(true);
+    try {
+      const res = await classApi.getSyllabusDownloadUrl(detailModalClass.id);
+      if (res && res.downloadUrl) {
+        window.open(res.downloadUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (err: any) {
+      feedback.error(err?.message || "Không thể lấy link tải file lộ trình.");
+    } finally {
+      setSyllabusDownloading(false);
+    }
+  };
 
   // Visibility / JoinMode settings state
   const [targetStatus, setTargetStatus] = useState<"PRIVATE" | "PUBLISHED">("PUBLISHED");
@@ -868,6 +906,19 @@ export function TutorClassManagement() {
                 <span>👥 3. Thành viên lớp học</span>
               </button>
 
+              <button
+                type="button"
+                onClick={() => setModalTab("MATERIALS")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+                  modalTab === "MATERIALS"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>📚 4. Tài liệu môn học</span>
+              </button>
+
               {(detailModalClass.status === "PRIVATE" || detailModalClass.status === "PUBLISHED" || detailModalClass.status === "PENDING_APPROVAL") && (
                 <button
                   type="button"
@@ -1111,6 +1162,26 @@ export function TutorClassManagement() {
                   )}
                 </div>
 
+                {detailModalClass.syllabusFileName && (
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-indigo-50 border border-indigo-200">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileText className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <span className="text-xs font-bold text-indigo-950 truncate">
+                        File lộ trình: {detailModalClass.syllabusFileName}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDownloadSyllabus}
+                      disabled={syllabusDownloading}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 transition flex items-center gap-1 shrink-0"
+                    >
+                      {syllabusDownloading ? <Loader2 className="w-3 h-3 animate-spin" /> : <UploadCloud className="w-3 h-3 rotate-180" />}
+                      Tải file
+                    </button>
+                  </div>
+                )}
+
                 {/* Proposal to terminate / cancel whole class if agreements exist */}
                 {(() => {
                   const currentPendingTerm = terminationCases.find(
@@ -1184,6 +1255,16 @@ export function TutorClassManagement() {
             {/* ========================================================= */}
             {/* TAB 2: EDIT DESCRIPTION & SYLLABUS                        */}
             {/* ========================================================= */}
+            {modalTab === "MATERIALS" && (
+              <div className="space-y-4">
+                <ClassroomMaterialsSection
+                  classRoomId={detailModalClass.id}
+                  currentUserRole="TUTOR"
+                  classRoomDetails={detailModalClass}
+                />
+              </div>
+            )}
+
             {modalTab === "EDIT" && (
               <div className="space-y-4">
                 {/* Readonly Banner for Approved Immutable Fields */}
@@ -1287,6 +1368,47 @@ export function TutorClassManagement() {
                       ))}
                     </div>
                   </div>
+                </div>
+
+                {/* Syllabus file upload option */}
+                <div className="pt-3 border-t border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-700">
+                      Tải file lộ trình (Syllabus) thay thế hoặc đính kèm:
+                    </label>
+                    {detailModalClass.syllabusFileName && (
+                      <button
+                        type="button"
+                        onClick={handleDownloadSyllabus}
+                        className="text-xs font-bold text-indigo-600 hover:underline flex items-center gap-1"
+                      >
+                        <FileText className="w-3.5 h-3.5" />
+                        Xem file: {detailModalClass.syllabusFileName}
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.xls,.xlsx"
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) {
+                          handleUploadSyllabus(e.target.files[0]);
+                        }
+                      }}
+                      disabled={syllabusUploading}
+                      className="flex-1 text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-700 hover:file:bg-slate-300 cursor-pointer"
+                    />
+                    {syllabusUploading && (
+                      <div className="flex items-center gap-1 text-xs font-bold text-indigo-600 shrink-0">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Đang tải lên...</span>
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Hỗ trợ PDF, Word (.docx), Excel. File này học viên có thể tải về ngay khi vào lớp mà không cần điểm danh.
+                  </p>
                 </div>
 
                 <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
@@ -1704,7 +1826,7 @@ export function TutorClassManagement() {
       {/* Whole-Class Termination Request Modal (Tutor) */}
       {isTerminationModalOpen && selectedClassForTermination && (() => {
         const activeAgreements = classAgreements.filter(isActiveTerminationAgreement);
-        const anchorAgreement = activeAgreements[0] || classAgreements[0];
+        const anchorAgreement = activeAgreements[0];
         if (!anchorAgreement) return null;
 
         const totalUsdcAllAgreements = activeAgreements.reduce(

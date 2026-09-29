@@ -28,6 +28,8 @@ public class NotificationRabbitConfig {
     public static final String ENROLLMENT_CANCELLED_QUEUE = "notification.enrollment-cancelled";
     public static final String CLASS_REVIEWED_QUEUE = "notification.class-reviewed";
     public static final String TEACHING_REGISTRATION_REVIEWED_QUEUE = "notification.teaching-registration-reviewed";
+    public static final String HOMEWORK_SUBMITTED_QUEUE = "notification.homework-submitted";
+    public static final String HOMEWORK_GRADED_QUEUE = "notification.homework-graded";
 
     public static final String TUTOR_APPLICATION_SUBMITTED_ROUTING_KEY = "account.tutor-application.submitted";
     public static final String TUTOR_APPROVED_ROUTING_KEY = "account.tutor.approved";
@@ -40,6 +42,8 @@ public class NotificationRabbitConfig {
     public static final String ENROLLMENT_CANCELLED_ROUTING_KEY = "learning.enrollment.cancelled";
     public static final String CLASS_REVIEWED_ROUTING_KEY = "learning.class.reviewed";
     public static final String TEACHING_REGISTRATION_REVIEWED_ROUTING_KEY = "learning.teaching-registration.reviewed";
+    public static final String HOMEWORK_SUBMITTED_ROUTING_KEY = "learning.homework.submitted";
+    public static final String HOMEWORK_GRADED_ROUTING_KEY = "learning.homework.graded";
 
     @Bean
     DirectExchange eduEventsExchange() {
@@ -102,6 +106,16 @@ public class NotificationRabbitConfig {
     }
 
     @Bean
+    Queue notificationHomeworkSubmittedQueue() {
+        return new Queue(HOMEWORK_SUBMITTED_QUEUE, true);
+    }
+
+    @Bean
+    Queue notificationHomeworkGradedQueue() {
+        return new Queue(HOMEWORK_GRADED_QUEUE, true);
+    }
+
+    @Bean
     Binding notificationTutorApplicationSubmittedBinding(Queue notificationTutorApplicationSubmittedQueue, DirectExchange eduEventsExchange) {
         return BindingBuilder.bind(notificationTutorApplicationSubmittedQueue).to(eduEventsExchange).with(TUTOR_APPLICATION_SUBMITTED_ROUTING_KEY);
     }
@@ -154,6 +168,16 @@ public class NotificationRabbitConfig {
     @Bean
     Binding notificationTeachingRegistrationReviewedBinding(Queue notificationTeachingRegistrationReviewedQueue, DirectExchange eduEventsExchange) {
         return BindingBuilder.bind(notificationTeachingRegistrationReviewedQueue).to(eduEventsExchange).with(TEACHING_REGISTRATION_REVIEWED_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding notificationHomeworkSubmittedBinding(Queue notificationHomeworkSubmittedQueue, DirectExchange eduEventsExchange) {
+        return BindingBuilder.bind(notificationHomeworkSubmittedQueue).to(eduEventsExchange).with(HOMEWORK_SUBMITTED_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding notificationHomeworkGradedBinding(Queue notificationHomeworkGradedQueue, DirectExchange eduEventsExchange) {
+        return BindingBuilder.bind(notificationHomeworkGradedQueue).to(eduEventsExchange).with(HOMEWORK_GRADED_ROUTING_KEY);
     }
 
     @Bean

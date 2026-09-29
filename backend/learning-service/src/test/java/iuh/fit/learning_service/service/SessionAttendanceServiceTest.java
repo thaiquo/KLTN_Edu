@@ -9,10 +9,13 @@ import iuh.fit.learning_service.enums.AttendanceOutcome;
 import iuh.fit.learning_service.enums.ClassSessionStatus;
 import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 import iuh.fit.learning_service.exception.ForbiddenException;
+import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.ClassSessionRepository;
 import iuh.fit.learning_service.repository.SessionAttendanceRepository;
 import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
+import iuh.fit.learning_service.repository.SessionFileRepository;
+import iuh.fit.learning_service.service.storage.FileStorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -59,6 +62,18 @@ class SessionAttendanceServiceTest {
     private ContractServiceDispatcher contractServiceDispatcher;
     @Mock
     private LearningTerminationService terminationService;
+
+    @Mock
+    private SessionFileRepository sessionFileRepository;
+
+    @Mock
+    private FileStorageService fileStorageService;
+
+    @Mock
+    private LearningStorageCleanupService learningStorageCleanupService;
+
+    @Mock
+    private LearningEventPublisher learningEventPublisher;
 
     @InjectMocks
     private SessionAttendanceService sessionAttendanceService;
@@ -202,6 +217,44 @@ class SessionAttendanceServiceTest {
         assertThatThrownBy(() -> sessionAttendanceService.submitHomework(
                 1L, 201L, new ClassSessionDtos.SubmitHomeworkRequest("solution", null)))
                 .isInstanceOf(ForbiddenException.class);
+        verify(sessionAttendanceRepository, never()).save(any(SessionAttendance.class));
+    }
+
+    @Test
+    @DisplayName("submitHomework rejects when tutor marked the assignment as practice-only")
+    void submitHomeworkRejectsWhenSubmissionIsNotRequired() {
+        session.setSubmissionRequired(false);
+        SessionAttendance attendance = new SessionAttendance();
+        attendance.setSession(session);
+        attendance.setStudentId(201L);
+        attendance.setStudentChecked(true);
+        when(classSessionRepository.findById(1L)).thenReturn(Optional.of(session));
+        when(sessionAttendanceRepository.findBySessionIdAndStudentId(1L, 201L)).thenReturn(Optional.of(attendance));
+
+        assertThatThrownBy(() -> sessionAttendanceService.submitHomework(
+                1L, 201L, new ClassSessionDtos.SubmitHomeworkRequest("solution", null)))
+                .isInstanceOf(iuh.fit.learning_service.exception.BadRequestException.class)
+                .hasMessageContaining("khong yeu cau nop bai");
+        verify(sessionAttendanceRepository, never()).save(any(SessionAttendance.class));
+    }
+
+    @Test
+    @DisplayName("submitHomework rejects after due time when late submissions are disabled")
+    void submitHomeworkRejectsLateSubmissionWhenDisabled() {
+        session.setSubmissionRequired(true);
+        session.setLateSubmissionAllowed(false);
+        session.setAssignmentDueAt(LocalDateTime.now().minusMinutes(1));
+        SessionAttendance attendance = new SessionAttendance();
+        attendance.setSession(session);
+        attendance.setStudentId(201L);
+        attendance.setStudentChecked(true);
+        when(classSessionRepository.findById(1L)).thenReturn(Optional.of(session));
+        when(sessionAttendanceRepository.findBySessionIdAndStudentId(1L, 201L)).thenReturn(Optional.of(attendance));
+
+        assertThatThrownBy(() -> sessionAttendanceService.submitHomework(
+                1L, 201L, new ClassSessionDtos.SubmitHomeworkRequest("solution", null)))
+                .isInstanceOf(iuh.fit.learning_service.exception.BadRequestException.class)
+                .hasMessageContaining("khong cho phep nop tre");
         verify(sessionAttendanceRepository, never()).save(any(SessionAttendance.class));
     }
 

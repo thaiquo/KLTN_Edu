@@ -11,6 +11,7 @@ export const studentNavLinks = [
   { label: 'Tìm lớp', href: '/classes', icon: 'book' },
   { label: 'Lịch học', href: '/my-schedule', icon: 'calendar' },
   { label: 'Lớp học của tôi', href: '/my-classes', icon: 'book' },
+  { label: 'Bài tập của tôi', href: '/my-homework', icon: 'file' },
   { label: 'AI Matching', href: '/matching', icon: 'sparkles' },
   { label: 'Tin nhắn', href: '/messages', icon: 'message' },
 ];
