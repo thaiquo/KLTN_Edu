@@ -83,6 +83,10 @@ function timeToMinutes(timeStr) {
  * @param {Object} options
  * @param {Array} [options.schedules] - recurring weekly schedules [{ dayOfWeek, startTime, endTime }]
  * @param {Array} [options.sessions] - concrete session list [{ sessionDate, startTime, endTime, status }]
+ * @param {string} [options.classStatus]
+ * @param {number} [options.terminationCutoffSession]
+ * @param {string} [options.startDate]
+ * @param {string} [options.endDate]
  * @param {Date} [options.currentDate] - default new Date()
  * @param {number} [options.earlyBufferMinutes] - allow entering X minutes early, default 15
  * @param {number} [options.lateBufferMinutes] - allow staying X minutes after end, default 10
@@ -90,16 +94,24 @@ function timeToMinutes(timeStr) {
  */
 export function isClassLiveNow({
   schedules = [],
-  sessions = [],
+  sessions = null,
+  classStatus = null,
+  terminationCutoffSession = null,
+  startDate = null,
+  endDate = null,
   currentDate = new Date(),
   earlyBufferMinutes = 15,
   lateBufferMinutes = 10
 } = {}) {
   const now = currentDate instanceof Date ? currentDate : new Date(currentDate);
+  const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  const normalizedStatus = String(classStatus || '').toUpperCase();
+  if (['CANCELLED', 'CLOSED', 'DRAFT', 'REJECTED', 'PENDING_APPROVAL'].includes(normalizedStatus)) return { isLive: false };
+  if ((startDate && today < startDate) || (endDate && today > endDate)) return { isLive: false };
   const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
   // 1. Check actual concrete sessions if available
-  if (Array.isArray(sessions) && sessions.length > 0) {
+  if (Array.isArray(sessions)) {
     const todayY = now.getFullYear();
     const todayM = String(now.getMonth() + 1).padStart(2, '0');
     const todayD = String(now.getDate()).padStart(2, '0');
@@ -107,10 +119,7 @@ export function isClassLiveNow({
 
     for (const session of sessions) {
       const status = String(session.status || '').toUpperCase();
-      if (status === 'IN_PROGRESS') {
-        return { isLive: true, reason: 'Buổi học đang diễn ra', currentSession: session };
-      }
-      if (status === 'COMPLETED' || status === 'CANCELLED') {
+      if (session.attendanceStopped || (terminationCutoffSession != null && session.sequenceNumber > terminationCutoffSession) || !['SCHEDULED', 'IN_PROGRESS'].includes(status)) {
         continue;
       }
       if (session.sessionDate === todayStr && session.startTime && session.endTime) {
@@ -129,6 +138,8 @@ export function isClassLiveNow({
       }
     }
   }
+
+  if (Array.isArray(sessions) || terminationCutoffSession != null) return { isLive: false };
 
   // 2. Check weekly recurring schedules
   if (Array.isArray(schedules) && schedules.length > 0) {

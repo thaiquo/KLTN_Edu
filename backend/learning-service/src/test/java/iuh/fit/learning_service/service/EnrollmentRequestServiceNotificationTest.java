@@ -236,7 +236,8 @@ class EnrollmentRequestServiceNotificationTest {
                 classSessionRepository,
                 tutorAuthorizationStateRepository,
                 eventPublisher,
-                rollingSessionService);
+                rollingSessionService,
+                org.mockito.Mockito.mock(iuh.fit.learning_service.repository.LearningTerminationStopRepository.class));
     }
 
     private ClassRoom classRoom() {

@@ -45,7 +45,7 @@ class TerminationProcessorTest {
     void freeze(int cutoff, Long... sessions) {
         when(cases.findById(c.getId())).thenReturn(Optional.of(c));
         when(learning.send(1L, 2L, a.getId(), false, "FREEZE"))
-                .thenReturn(new TerminationLearningClient.Snapshot(cutoff, List.of(sessions)));
+                .thenReturn(new TerminationLearningClient.Snapshot(cutoff, List.of(sessions), null));
     }
     @Test void waitsForPastSessionNotYetDeliveredEvenWithoutOpenDbRows() {
         freeze(2, 1L, 2L);
@@ -99,7 +99,7 @@ class TerminationProcessorTest {
         assertThat(item.getStatus()).isEqualTo("COMPLETED");
         assertThat(item.getRefundedUnits()).isEqualTo(new BigInteger("12345678"));
         verify(learning).send(1L, 2L, a.getId(), false, "CLOSE");
-        verify(notifications, times(2)).sendAsync(any(), any(), any(), any(), eq("TERMINATION_COMPLETED"), eq("AGREEMENT"), eq(a.getId().toString()));
+        verify(notifications, times(3)).sendAsync(any(), any(), any(), any(), eq("TERMINATION_COMPLETED"), eq("AGREEMENT"), eq(a.getId().toString()));
     }
     @Test void completedItemIsIdempotent() {
         item.setStatus("COMPLETED");

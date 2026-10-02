@@ -82,7 +82,7 @@ export function StudentSchedulePage() {
     loadSchedule();
   }, []);
 
-  useRealtimeRefresh(['ENROLLMENT_ACCEPTED', 'CLASS_MUTATED', 'ATTENDANCE_MARKED'], loadSchedule);
+  useRealtimeRefresh(['TERMINATION_UPDATED', 'TERMINATION_COMPLETED', 'ENROLLMENT_ACCEPTED', 'CLASS_MUTATED', 'ATTENDANCE_MARKED'], loadSchedule);
 
   const currentWeekStart = useMemo(() => {
     const today = new Date();
@@ -319,14 +319,21 @@ export function StudentSchedulePage() {
                   <div className="space-y-2 flex-1">
                     {daySessions.length > 0 ? (
                       daySessions.map((session) => {
-                        const statusMeta = STATUS_SESSION_META[session.status] || STATUS_SESSION_META.SCHEDULED;
+                        const isCancelled = session.status === 'CANCELLED' || Boolean(session.attendanceStopped);
+                        const statusMeta = isCancelled
+                          ? { label: Boolean(session.attendanceStopped) ? 'Đã dừng học' : 'Đã hủy', className: 'bg-rose-50 text-rose-700 border-rose-200' }
+                          : (STATUS_SESSION_META[session.status] || STATUS_SESSION_META.SCHEDULED);
                         return (
                           <div
                             key={session.id}
-                            className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-2xs hover:border-brand-primary/60 transition-all space-y-1.5"
+                            className={`rounded-xl border p-2.5 shadow-2xs transition-all space-y-1.5 ${
+                              isCancelled
+                                ? 'border-rose-200 bg-rose-50/30'
+                                : 'border-slate-200 bg-white hover:border-brand-primary/60'
+                            }`}
                           >
                             <div className="flex items-center justify-between gap-1">
-                              <span className="text-[11px] font-black text-slate-900 line-clamp-1">
+                              <span className={`text-[11px] font-black line-clamp-1 ${isCancelled ? 'text-slate-500 line-through' : 'text-slate-900'}`}>
                                 {session.classRoomTitle || 'Buổi học'}
                               </span>
                               <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border ${statusMeta.className}`}>
@@ -350,7 +357,11 @@ export function StudentSchedulePage() {
                               </p>
                             )}
 
-                            {session.status !== 'COMPLETED' && (
+                            {isCancelled ? (
+                              <span className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-rose-50 border border-rose-200 px-2 py-1 text-[10px] font-bold text-rose-700 mt-1">
+                                Buổi học đã dừng/hủy
+                              </span>
+                            ) : session.status !== 'COMPLETED' ? (
                               <Link
                                 to={session.classRoomId ? `/my-classes?classId=${session.classRoomId}` : '/my-classes'}
                                 className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-indigo-600 px-2 py-1 text-[10px] font-black text-white hover:bg-indigo-700 transition-colors mt-1 shadow-2xs"
@@ -358,6 +369,10 @@ export function StudentSchedulePage() {
                               >
                                 <Video size={11} /> Vào lớp & Điểm danh
                               </Link>
+                            ) : (
+                              <span className="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500 mt-1">
+                                Đã kết thúc
+                              </span>
                             )}
                           </div>
                         );
@@ -473,7 +488,10 @@ export function StudentSchedulePage() {
           ) : (
             <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white shadow-2xs overflow-hidden">
               {scheduleData.upcomingSessions.map((session) => {
-                const statusMeta = STATUS_SESSION_META[session.status] || STATUS_SESSION_META.SCHEDULED;
+                const isCancelled = session.status === 'CANCELLED' || Boolean(session.attendanceStopped);
+                const statusMeta = isCancelled
+                  ? { label: Boolean(session.attendanceStopped) ? 'Đã dừng học' : 'Đã hủy', className: 'bg-rose-50 text-rose-700 border-rose-200' }
+                  : (STATUS_SESSION_META[session.status] || STATUS_SESSION_META.SCHEDULED);
                 return (
                   <div
                     key={session.id}
@@ -481,7 +499,7 @@ export function StudentSchedulePage() {
                   >
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-display text-sm font-black text-slate-900">
+                        <span className={`font-display text-sm font-black ${isCancelled ? 'text-slate-500 line-through' : 'text-slate-900'}`}>
                           {session.classRoomTitle || 'Buổi học'}
                         </span>
                         <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${statusMeta.className}`}>
@@ -513,7 +531,11 @@ export function StudentSchedulePage() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {session.status !== 'COMPLETED' ? (
+                      {isCancelled ? (
+                        <span className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-rose-50 border border-rose-200 px-3.5 py-1.5 text-xs font-bold text-rose-700">
+                          Buổi học đã dừng/hủy
+                        </span>
+                      ) : session.status !== 'COMPLETED' ? (
                         <Link
                           to={session.classRoomId ? `/my-classes?classId=${session.classRoomId}` : '/my-classes'}
                           className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-xs font-black text-white hover:bg-indigo-700 transition-colors shadow-2xs"
@@ -523,7 +545,7 @@ export function StudentSchedulePage() {
                         </Link>
                       ) : (
                         <span className="text-[11px] font-bold text-slate-400 italic">
-                          Chưa có link phòng
+                          Đã kết thúc
                         </span>
                       )}
                     </div>

@@ -1,6 +1,6 @@
 # EduConnect — Trạng thái triển khai
 
-> Audit theo source, migration, test và bằng chứng runtime đến **2026-09-29**.  
+> Audit baseline: **2026-09-29**. Termination and notification source/runtime rechecked 2026-10-02.
 > `IMPLEMENTED` chỉ dùng khi flow chính có đủ backend/persistence/security/client evidence; không đồng nghĩa production-ready tuyệt đối.
 
 ## 1. Định nghĩa
@@ -86,10 +86,12 @@
 - IMPLEMENTED: poi-tl sinh DOCX, Gotenberg chuyển PDF, local/S3 storage abstraction và artifact hash/status.
 - IMPLEMENTED: durable backend blockchain pipeline, idempotency, locking, preflight, dispatch, receipt watch, event cursor/processed-event.
 - IMPLEMENTED: funding confirmation, per-session proposal/finalization, cancellation/refund unused và expiration.
-- IMPLEMENTED: luồng Chấm dứt hợp đồng & Đề xuất Hủy lớp học: Contract Flyway v12-v14, Learning v32; API `/api/contracts/terminations`; EIP-712 backend verification có freshness/replay guard; Student chỉ gửi cho hợp đồng mình, Tutor chỉ đề xuất cả lớp; hold/release Learning có retry, cutoff giữ từ lúc tiếp nhận; Staff xác minh (giới hạn theo các lớp được phân công) và Admin duyệt (`APPROVE` trực tiếp từ `REQUESTED` hoặc `RECOMMENDED`) thanh lý Escrow V1 theo từng agreement. Approval whole-class đặt lớp `LOCKED`, dừng session/enrollment tương lai; từng item đóng sẽ cập nhật enrollment/attendance tương lai sang `CANCELLED`, và lớp chỉ `CANCELLED` sau item cuối.
-- IMPLEMENTED: frontend termination có đúng hai điểm gửi nghiệp vụ: Student trong văn bản hợp đồng và Tutor trong quản lý lớp; tab hồ sơ chỉ theo dõi/xét duyệt. Giao diện nộp minh chứng hỗ trợ khu vực đệm (staging) cho phép thêm/xóa file/ghi chú trước khi gửi; sau khi gửi dữ liệu được lưu bất biến vào S3/PostgreSQL và ghi vết theo từng đợt (LẦN 1, LẦN 2...).
+- IMPLEMENTED: luồng Chấm dứt hợp đồng & Đề xuất Hủy lớp học: Contract Flyway v12-v19, Learning v32; API `/api/contracts/terminations`; EIP-712 backend verification có freshness/replay guard; Student chỉ gửi cho hợp đồng mình, Tutor chỉ đề xuất cả lớp; hold/release Learning có retry, cutoff giữ từ lúc tiếp nhận; Staff xác minh (giới hạn theo các lớp được phân công) và Admin duyệt (`APPROVE` trực tiếp từ `REQUESTED` hoặc `RECOMMENDED`) thanh lý Escrow V1 theo từng agreement. Approval whole-class đặt lớp `LOCKED`, dừng session/enrollment tương lai; từng item đóng sẽ cập nhật enrollment/attendance tương lai sang `CANCELLED`, và lớp chỉ `CANCELLED` sau item cuối.
+- IMPLEMENTED: frontend termination có điểm gửi Student trong văn bản hợp đồng; Tutor gửi từ quản lý lớp, thẻ hợp đồng theo lớp hoặc bộ chọn lớp trong tab hồ sơ. Admin có form dừng/hủy riêng. Giao diện nộp minh chứng hỗ trợ khu vực đệm (staging) cho phép thêm/xóa file/ghi chú trước khi gửi; sau khi gửi dữ liệu được lưu bất biến vào S3/PostgreSQL và ghi vết theo từng đợt (LẦN 1, LẦN 2...).
 - IMPLEMENTED: Bảng “Hoàn tiền hủy hợp đồng / hủy lớp” tại Admin → Tài chính (theo dõi tiến độ từng hợp đồng, mã lỗi, số tiền hoàn, tx hash) và Học viên/Gia sư → Ví (theo dõi hồ sơ thuộc quyền, hiển thị rõ số tiền hoàn về ví học viên), tự động cập nhật mỗi 15 giây với 4 trạng thái: Chờ duyệt (`WAITING_APPROVAL`), Chờ quyết toán (`WAITING_SETTLEMENT`), Chờ blockchain (`BLOCKCHAIN_PENDING`), Hoàn tất (`COMPLETED`).
 - IMPLEMENTED: Quy tắc quyết toán khi chấm dứt: Cửa sổ 24 giờ là thời hạn khiếu nại của từng buổi học đã diễn ra trước cutoff, không áp đặt 24 giờ vô cớ sau khi Admin duyệt. Worker tự động chờ các buổi liên quan quyết toán xong rồi lập tức kích hoạt hoàn cọc còn dư (`remainingDeposit`) về ví học viên.
+- IMPLEMENTED: quản trị cảnh cáo Gia sư vắng 3 buổi liên tiếp: bộ quét dùng ba session `TUTOR_ABSENT` liên tiếp ngay khi Contract đã nhận outcome, tạo hồ sơ `AUTO_TUTOR_ABSENCE`, hold lịch toàn lớp và tính hạn giải trình theo buổi kế tiếp (tối đa 24 giờ, buffer 2 giờ; buổi quá gần tiếp tục bị giữ). Gia sư gửi text/file được ghi nhận thời điểm phản hồi; Staff chỉ kiến nghị sau phản hồi/hết hạn; Admin có quyền quyết định khẩn cấp có audit.
+- IMPLEMENTED: Admin chủ động dừng/hủy toàn lớp hoặc một agreement qua `/terminations/admin`; có thể tạo hold để xem xét hoặc phê duyệt ngay. Dừng lịch có hiệu lực trước, còn hoàn USDC vẫn chờ settlement/dispute và event blockchain xác nhận theo Escrow V1.
 - IMPLEMENTED: settlement distribution amounts lưu từ event, wallet/audit timeline dùng thời điểm/hash confirmed.
 - IMPLEMENTED: catch-up sau restart và bounded auto-retry cho lỗi chắc chắn trước broadcast.
 - LIMITED: chỉ một operator instance và một RPC primary; unknown receipt/confirmed revert không tự retry mù.
@@ -155,3 +157,11 @@
 ## 8. Nguyên tắc cập nhật
 
 Khi source thay đổi, cập nhật file này dựa trên đủ bằng chứng: entity/migration + service + controller/security + client + test/runtime phù hợp. Không dùng UI mock, comment hoặc tên file làm bằng chứng duy nhất cho `IMPLEMENTED`.
+
+## Rà soát hủy lớp 02/10/2026
+
+Follow-up audit: Account's reviewer lookup and Notification Service's internal send endpoint now require distinct short-lived service JWT scopes. Contract's outbox and direct dispatcher attach the `notification-send` token. The local database shows 14 delivered and 0 pending termination notification outbox rows, which verifies delivery into Notification Service, not browser receipt for every recipient. The running Account process still returned HTTP 500 for a missing reviewer token during the audit; the source fix and MockMvc test return 401 after that process loads the new build. Local ports 8080–8084 were open; 8085 (AI) and 5173 (web dev server) were closed. Source status for AI and Web does not imply those processes were running.
+
+Maven test report inventory after the focused security rerun: Learning 90/90 passed, Account 140/140 passed, Notification 41/41 passed, Contract 200 passed with 7 Anvil integration tests skipped (207 total). Contract's full suite ran before the final notification-token tests, which passed in a subsequent focused run. Frontend TypeScript, utility tests and a temporary production build passed. Portal chat still uses simulated replies; AI matching and mobile contract/session flows remain incomplete. Running processes must be restarted in the order recorded in `docs/ENV_SETUP.md` before runtime behavior reflects the latest source.
+
+Thông báo hủy lớp dùng transactional outbox V18, tra Staff/Admin qua Account bằng service JWT và chống trùng khi retry. V19 phân loại hồ sơ tự động cũ, đồng bộ hold trước khi đặt deadline mới. Chi tiết và giới hạn kiểm chứng: [báo cáo rà soát](contract/TERMINATION_REVIEW_2026_10_02.md).

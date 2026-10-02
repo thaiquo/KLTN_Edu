@@ -336,7 +336,7 @@ export const TutorHomeworkManagement: React.FC<Props> = ({ onNavigate }) => {
       alert("Vui lòng nhập điểm hoặc đánh giá Đạt/Chưa đạt.");
       return;
     }
-    const normalizedGrade = gradeValue.toLowerCase().replaceAll("đ", "d").replace(/\s+/g, " ");
+    const normalizedGrade = gradeValue.toLowerCase().replace(/đ/g, "d").replace(/\s+/g, " ");
     const isPassFailGrade = ["dat", "chua dat", "pass", "fail"].includes(normalizedGrade);
     const numericGrade = Number.parseFloat(gradeValue.replace(",", "."));
     if (!isPassFailGrade && (Number.isNaN(numericGrade) || numericGrade < 0 || numericGrade > 10)) {
@@ -1155,9 +1155,9 @@ export const TutorHomeworkManagement: React.FC<Props> = ({ onNavigate }) => {
                 <div className="text-xs text-slate-400 flex items-center gap-2 mt-0.5">
                   <Calendar className="w-3.5 h-3.5 text-slate-400" />
                   <span>Ngày học: {gradingSession.sessionDate}</span>
-                  {gradingSession.assignmentDeadline && (
+                  {gradingSession.assignmentDueAt && (
                     <span className="text-amber-300 font-semibold">
-                      • Hạn nộp: {new Date(gradingSession.assignmentDeadline).toLocaleString("vi-VN")}
+                      • Hạn nộp: {new Date(gradingSession.assignmentDueAt).toLocaleString("vi-VN")}
                     </span>
                   )}
                 </div>

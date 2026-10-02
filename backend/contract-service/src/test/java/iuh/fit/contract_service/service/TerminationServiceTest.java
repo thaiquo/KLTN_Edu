@@ -43,7 +43,7 @@ class TerminationServiceTest {
         lenient().when(verificationService.verifyTerminationSignature(any(), any(), any(), any(), anyBoolean(), anyLong(), anyLong(), any()))
                 .thenReturn(true);
         lenient().when(learning.send(anyLong(), anyLong(), any(), anyBoolean(), eq("HOLD")))
-                .thenReturn(new TerminationLearningClient.Snapshot(1, List.of(1L)));
+                .thenReturn(new TerminationLearningClient.Snapshot(1, List.of(1L), OffsetDateTime.now().plusHours(10)));
     }
     ContractUserPrincipal user(long id, String email, String role) {
         return new ContractUserPrincipal(id, email, role, List.of(role));
@@ -135,6 +135,16 @@ class TerminationServiceTest {
         assertThatThrownBy(() -> service.act(c.getId(), "RECOMMEND", "Verified", user(4, "other@test.vn", "STAFF")))
                 .hasMessageContaining("404");
     }
+    @Test void assignedStaffCannotRejectAnyTerminationOrigin() {
+        for (String origin : List.of("PARTY_REQUEST", "ADMIN_DIRECT", "AUTO_TUTOR_ABSENCE", "SYSTEM_REVIEW")) {
+            var c = request("REQUESTED", true);
+            c.setOrigin(origin);
+            assertThatThrownBy(() -> service.act(c.getId(), "REJECT", "Restore class",
+                    user(4, "staff@test.vn", "STAFF"))).hasMessageContaining("403");
+            assertThat(c.getStatus()).isEqualTo("REQUESTED");
+        }
+        verifyNoInteractions(learning);
+    }
     @Test void adminApprovalCreatesOnlySelectedAgreementItem() {
         var c = request("RECOMMENDED", false);
         a.setTerminationCutoffSession(1);
@@ -152,6 +162,104 @@ class TerminationServiceTest {
         service.act(c.getId(), "APPROVE", "Verified directly by Admin", user(1, "admin@test.vn", "ADMIN"));
         assertThat(c.getStatus()).isEqualTo("APPROVED");
         verify(items).save(any(TerminationItem.class));
+    }
+    @Test void adminCanCreateAuditedWholeClassHoldWithoutPartySignature() {
+        var view = service.adminRequest(a.getId(), true, "Vi phạm nghiêm trọng cần xác minh",
+                false, user(1, "admin@test.vn", "ADMIN"));
+
+        assertThat(view.request().getOrigin()).isEqualTo("ADMIN_DIRECT");
+        assertThat(view.request().getStatus()).isEqualTo("REQUESTED");
+        assertThat(view.request().getSignature()).isNull();
+        assertThat(a.getTerminationCutoffSession()).isEqualTo(1);
+        verify(learning).send(1L, 2L, a.getId(), true, "HOLD");
+        verify(items, never()).save(any());
+    }
+    @Test void automaticAbsenceWarningWaitsForTutorOrDeadline() {
+        var c = request("REQUESTED", true);
+        c.setOrigin("AUTO_TUTOR_ABSENCE");
+        c.setResponseDeadline(OffsetDateTime.now().plusHours(5));
+        a.setTerminationCutoffSession(1);
+
+        assertThatThrownBy(() -> service.act(c.getId(), "APPROVE", "No response yet",
+                user(1, "admin@test.vn", "ADMIN")))
+                .hasMessageContaining("thời hạn phản hồi chưa hết");
+        verify(items, never()).save(any());
+    }
+    @Test void emergencyRequestRetainsRetryableCaseWhenLearningIsUnavailable() {
+        when(learning.send(anyLong(),anyLong(),any(),anyBoolean(),eq("HOLD")))
+                .thenThrow(new IllegalStateException("Learning unavailable"));
+        var result = service.adminRequest(a.getId(),true,"Urgent stop",true,user(1,"admin@test.vn","ADMIN"));
+        assertThat(result.request().getStatus()).isEqualTo("HOLD_PENDING");
+        assertThat(result.request().getLastError()).contains("Learning unavailable");
+        verify(items,never()).save(any());
+    }
+    @Test void automaticAbsenceSignalCreatesImmediateHoldAndResponseDeadline() {
+        service.requestSystemReview(a.getId(), "TUTOR_ABSENT:1:3", "Three consecutive absences");
+
+        var captor = ArgumentCaptor.forClass(TerminationCase.class);
+        verify(cases, atLeastOnce()).saveAndFlush(captor.capture());
+        var created = captor.getValue();
+        assertThat(created.getOrigin()).isEqualTo("AUTO_TUTOR_ABSENCE");
+        assertThat(created.getStatus()).isEqualTo("REQUESTED");
+        assertThat(created.getResponseDeadline()).isNotNull();
+        verify(learning).send(1L, 2L, a.getId(), true, "HOLD");
+    }
+    @Test void legacySystemReviewKeepsExistingNoHoldBehavior() {
+        service.requestSystemReview(a.getId(), "UPHELD_COMPLAINT:1:3", "Three upheld complaints");
+
+        var captor = ArgumentCaptor.forClass(TerminationCase.class);
+        verify(cases, atLeastOnce()).saveAndFlush(captor.capture());
+        var created = captor.getValue();
+        assertThat(created.getOrigin()).isEqualTo("SYSTEM_REVIEW");
+        assertThat(created.getStatus()).isEqualTo("REQUESTED");
+        assertThat(created.getResponseDeadline()).isNull();
+        verifyNoInteractions(learning);
+    }
+    @Test void adminCanForceApproveAutomaticWarningWithAuditReason() {
+        var c = request("REQUESTED", true);
+        c.setOrigin("AUTO_TUTOR_ABSENCE");
+        c.setResponseDeadline(OffsetDateTime.now().plusHours(5));
+        a.setTerminationCutoffSession(1);
+
+        service.act(c.getId(), "FORCE_APPROVE", "Rủi ro nghiêm trọng, dừng ngay",
+                user(1, "admin@test.vn", "ADMIN"));
+
+        assertThat(c.getStatus()).isEqualTo("APPROVED");
+        verify(items).save(any(TerminationItem.class));
+    }
+    @Test void emergencyAdminDecisionBypassesDisputePreconditionAndLeavesSettlementToWorker() {
+        var c = request("REQUESTED", true);
+        c.setOrigin("AUTO_TUTOR_ABSENCE");
+        c.setResponseDeadline(OffsetDateTime.now().plusHours(5));
+        a.setTerminationCutoffSession(1);
+
+        service.act(c.getId(), "FORCE_APPROVE", "Immediate safety decision",
+                user(1, "admin@test.vn", "ADMIN"));
+
+        assertThat(c.getStatus()).isEqualTo("APPROVED");
+        verify(items).save(any(TerminationItem.class));
+        verifyNoInteractions(disputes);
+    }
+    @Test void tutorExplanationUnlocksNormalReviewOfAutomaticWarning() {
+        var c = request("REQUESTED", true);
+        c.setOrigin("AUTO_TUTOR_ABSENCE");
+        c.setResponseDeadline(OffsetDateTime.now().plusHours(5));
+
+        service.act(c.getId(), "RESPOND", "Tôi gửi lịch dạy bù và minh chứng",
+                user(3, "t@test.vn", "TUTOR"));
+
+        assertThat(c.getTutorRespondedAt()).isNotNull();
+    }
+    @Test void responseDeadlineUsesNextSessionUnlessNoticeIsTooShort() {
+        var now = OffsetDateTime.parse("2026-10-02T08:00:00+07:00");
+        assertThat(TerminationService.calculateResponseDeadline(now, now.plusHours(10)))
+                .isEqualTo(now.plusHours(8));
+        assertThat(TerminationService.calculateResponseDeadline(now, now.plusHours(6)))
+                .isEqualTo(now.plusHours(4));
+        assertThat(TerminationService.calculateResponseDeadline(now, now.plusHours(4)))
+                .isEqualTo(now.plusHours(24));
+        assertThat(TerminationService.calculateResponseDeadline(now, now.plusHours(40)))
+                .isEqualTo(now.plusHours(24));
     }
     @Test void adminCannotApproveWhileAffectedSessionDisputeIsPending() {
         var c = request("REQUESTED", false);
@@ -176,6 +284,23 @@ class TerminationServiceTest {
         assertThat(c.getStatus()).isEqualTo("APPROVED");
         verify(items).save(any(TerminationItem.class));
     }
+    @Test void studentCanTrackPendingClassWarningWithoutSeeingOtherStudentsOrEvidence() {
+        var c = request("REQUESTED", true);
+        c.setCreatedAt(OffsetDateTime.now());
+        c.setOrigin("AUTO_TUTOR_ABSENCE");
+        c.setReason("Private tutor explanation");
+        var other = agreement(4L, "other@test.vn", ContractAgreementStatus.ACTIVE);
+        when(cases.findAll()).thenReturn(List.of(c));
+        when(agreements.findByClassroomIdOrderByCreatedAtAsc(c.getClassroomId())).thenReturn(List.of(a, other));
+        var result = service.listRefunds(user(2L, "s@test.vn", "STUDENT"));
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).items()).extracting(TerminationService.ItemView::agreementId).containsExactly(a.getId());
+        assertThat(result.get(0).items().get(0).status()).isEqualTo("WAITING_APPROVAL");
+        assertThat(result.get(0).request().getReason()).doesNotContain("Private");
+        assertThat(result.get(0).evidence()).isEmpty();
+        verify(items, never()).save(any());
+    }
+
     @Test void studentSeesOnlyOwnFinancialItemFromTutorWholeClassCancellation() {
         var other = agreement(4L, "other@test.vn", ContractAgreementStatus.CANCELLED);
         var c = request("COMPLETED", true);
@@ -316,6 +441,10 @@ class TerminationServiceTest {
                 "doc.pdf", "application/pdf", 1024L, "0xhash");
         var view = service.addEvidence(c.getId(), user(2, "s@test.vn", "STUDENT"), stored);
         verify(evidence).save(any(TerminationEvidence.class));
+        var ordered = inOrder(cases, evidence);
+        ordered.verify(cases).lockById(c.getId());
+        ordered.verify(evidence).countByTerminationCaseIdAndSubmittedByUserId(c.getId(), 2L);
+        ordered.verify(evidence).save(any(TerminationEvidence.class));
     }
     @Test void partyCannotAddMoreThanFiveEvidenceFiles() {
         var c = request("REQUESTED", false);

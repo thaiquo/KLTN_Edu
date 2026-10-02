@@ -1,3 +1,4 @@
+import { selectTerminationCase } from "../../utils/terminationState";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   BookOpen,
@@ -21,6 +22,8 @@ import {
 import { useAuth } from "../../hooks/useAuth";
 import { classApi } from "../../api/classes";
 import { contractsApi } from "../../api/contractsApi";
+import { terminationsApi, TerminationView } from "../../api/terminationsApi";
+import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
 import { ClassSessionsTimeline } from "../../components/classroom/ClassSessionsTimeline";
 
 interface StudentClassManagementProps {
@@ -53,6 +56,7 @@ const formatUpcomingLabel = (startsAt: Date) => {
 };
 
 const fallbackNextSession = (cls: any) => {
+  if (isHistoricalClass(cls)) return null;
   const schedules = Array.isArray(cls?.schedules) ? cls.schedules : [];
   if (schedules.length === 0) return null;
   const now = new Date();
@@ -104,7 +108,8 @@ const isHistoricalClass = (cls: any) => {
     || enrollmentStatus === "COMPLETED"
     || enrollmentStatus === "CANCELLED"
     || classStatus === "COMPLETED"
-    || classStatus === "CANCELLED";
+    || classStatus === "CANCELLED"
+    || classStatus === "CLOSED";
 };
 
 export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ onNavigate }) => {
@@ -130,12 +135,14 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
 
       // Hợp đồng đã hủy vẫn được giữ để học viên tra cứu lịch sử đã trả phí.
       try {
-        const contractsData = await contractsApi.listAgreements({
-          size: 50
-        });
+        const [contractsData, refundsData] = await Promise.all([
+          contractsApi.listAgreements({ size: 50 }),
+          terminationsApi.listRefunds().catch(() => [] as TerminationView[])
+        ]);
         const agreements = Array.isArray(contractsData)
           ? contractsData
           : contractsData?.content || [];
+        const refundsList = Array.isArray(refundsData) ? refundsData : [];
 
         // Lọc nghiêm ngặt hợp đồng của học viên này
         const myAgreements = agreements.filter((agr: any) => {
@@ -153,6 +160,7 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
           }
 
           if ((agr.status === 'ACTIVE' || agr.status === 'COMPLETED' || agr.status === 'CANCELLED') && agr.classroomId) {
+            const matchingRefund = selectTerminationCase(refundsList, { classroomId: agr.classroomId, agreementId: agr.id });
             try {
               const cls = await classApi.getPublicClassById(agr.classroomId);
               if (cls && cls.id) {
@@ -160,7 +168,8 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
                   ...cls,
                   agreementId: agr.id,
                   agreementStatus: agr.status,
-                  escrowDeposit: agr.totalAmountUsdc
+                  escrowDeposit: agr.totalAmountUsdc,
+                  terminationCase: matchingRefund
                 });
               }
             } catch {
@@ -172,7 +181,8 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
                 status: agr.status,
                 agreementId: agr.id,
                 agreementStatus: agr.status,
-                escrowDeposit: agr.totalAmountUsdc
+                escrowDeposit: agr.totalAmountUsdc,
+                terminationCase: matchingRefund
               });
             }
           }
@@ -198,7 +208,8 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
             } else if ((req.status === "ENROLLED" || req.status === "COMPLETED" || req.status === "CANCELLED") && req.classRoomId) {
               const existingClass = classMap.get(req.classRoomId);
               if (existingClass) {
-                classMap.set(req.classRoomId, { ...existingClass, enrollmentStatus: req.status });
+                classMap.set(req.classRoomId, { ...existingClass, enrollmentStatus: req.status,
+                  terminationCutoffSession: req.terminationCutoffSession ?? existingClass.terminationCutoffSession });
               } else {
                 try {
                   const cls = await classApi.getPublicClassById(req.classRoomId);
@@ -232,7 +243,10 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
         const now = new Date();
         const sessions = Array.isArray(scheduleData?.sessions) ? scheduleData.sessions : [];
         sessions
-          .filter((session: any) => String(session.status || "").toUpperCase() !== "COMPLETED")
+          .filter((session: any) => {
+            const st = String(session.status || "").toUpperCase();
+            return st !== "COMPLETED" && st !== "CANCELLED" && !session.attendanceStopped;
+          })
           .map((session: any) => ({
             ...session,
             startsAt: sessionDateTime(session.sessionDate, session.startTime)
@@ -279,6 +293,24 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
       setLoading(false);
     }
   }, [user]);
+
+  useRealtimeRefresh(
+    [
+      'CLASS_REVIEWED',
+      'CLASS_MUTATED',
+      'CLASS_STATUS_CHANGED',
+      'CLASSROOM_STATUS_CHANGED',
+      'ENROLLMENT_REQUESTED',
+      'ENROLLMENT_CANCELLED',
+      'AGREEMENT_UPDATED',
+      'AGREEMENT_ACTIVATED',
+      'TERMINATION_UPDATED',
+      'TERMINATION_COMPLETED',
+      'TERMINATION_REQUESTED',
+      'TERMINATION_APPROVED'
+    ],
+    loadMyClasses
+  );
 
   useEffect(() => {
     if (user?.email) {
@@ -522,18 +554,36 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
                 </div>
               ) : filteredClasses.map((cls) => {
                 const isSelected = selectedClass?.id === cls.id;
+                const isApprovedTerm = cls.terminationCase?.request?.status === "APPROVED";
+                const isCancelled = cls.status === "CANCELLED";
                 return (
                   <button
                     key={cls.id}
                     onClick={() => setSelectedClassId(cls.id)}
                     className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shrink-0 ${
                       isSelected
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                        ? isApprovedTerm || isCancelled
+                          ? "bg-rose-700 text-white shadow-md shadow-rose-700/20"
+                          : "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                        : isApprovedTerm || isCancelled
+                        ? "bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200"
                         : "bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200"
                     }`}
                   >
                     <span className="truncate max-w-[190px]">{cls.name || `Lớp học #${cls.id}`}</span>
-                    {cls.nextSession?.timeLabel && (
+                    {isApprovedTerm ? (
+                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black ${
+                        isSelected ? "bg-white/20 text-white" : "bg-rose-200 text-rose-900"
+                      }`}>
+                        ĐÃ DUYỆT HỦY
+                      </span>
+                    ) : isCancelled ? (
+                      <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black ${
+                        isSelected ? "bg-white/20 text-white" : "bg-rose-200 text-rose-900"
+                      }`}>
+                        ĐÃ HỦY
+                      </span>
+                    ) : cls.nextSession?.timeLabel && (
                       <span className={`hidden sm:inline-flex px-2 py-0.5 rounded-lg text-[10px] font-black ${
                         isSelected ? "bg-white/20 text-white" : "bg-emerald-50 text-emerald-700"
                       }`}>
@@ -549,15 +599,29 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
           {/* Selected Class Info Header Card */}
           {selectedClass && (
             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
-              {isHistoricalClass(selectedClass) && (
+              {selectedClass.terminationCase?.request?.status === "APPROVED" ? (
+                <div className="mb-4 flex items-start gap-3 rounded-xl border border-rose-300 bg-rose-50 p-3.5 text-sm text-rose-900">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                  <div>
+                    <strong className="block text-rose-950 font-black">
+                      {selectedClass.terminationCase.request.wholeClass ? 'Admin đã phê duyệt dừng lớp học' : 'Admin đã duyệt chấm dứt hợp đồng của bạn'} · Đang xử lý hoàn cọc
+                    </strong>
+                    <span className="text-xs text-rose-800">
+                      Các buổi học tương lai thuộc hợp đồng của bạn đã dừng. Hệ thống đang xử lý quyết toán và hoàn phần cọc còn lại; xem trạng thái xác nhận tại Ví.
+                    </span>
+                  </div>
+                </div>
+              ) : isHistoricalClass(selectedClass) ? (
                 <div className="mb-4 flex items-start gap-3 rounded-xl border border-slate-300 bg-slate-50 p-3.5 text-sm text-slate-700">
                   <History className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" />
                   <div>
-                    <strong className="block text-slate-900">Lớp học đã kết thúc hoặc hợp đồng đã chấm dứt</strong>
+                    <strong className="block text-slate-900 font-bold">
+                      {selectedClass.status === "CANCELLED" ? "Lớp học đã bị hủy theo quyết định Admin (Thanh lý xong)" : "Lớp học đã kết thúc hoặc hợp đồng đã chấm dứt"}
+                    </strong>
                     <span className="text-xs">Bạn vẫn xem được các buổi đã tham gia, điểm danh, kết quả và bài tập đã nộp. Lịch tương lai và thao tác học mới đã được khóa.</span>
                   </div>
                 </div>
-              )}
+              ) : null}
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
                 <div>
                   <div className="flex items-center gap-2 mb-1">

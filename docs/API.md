@@ -244,16 +244,32 @@ Luồng Chấm dứt hợp đồng & Đề xuất Hủy lớp học tích hợp 
 
 Controller: `TerminationController` in `contract-service` (prefix `/api/contracts/terminations`).
 
+Internal notification security (2026-10-02): `POST /api/notifications/internal/send` requires an `X-Service-Token` JWT signed by the shared server secret, subject `contract-service`, scope `notification-send`, and a valid expiration. `GET /api/internal/notification-reviewers` uses the separate scope `notification-recipients`. Missing or invalid tokens return HTTP 401. The student refund list exposes a read-only `WAITING_APPROVAL` item for their own agreement while a whole-class request is still under review; it does not create a refund work item or reveal another student's financial data.
+
 | Method | Endpoint | Purpose | Scope / Authorization |
 | --- | --- | --- | --- |
 | `GET` | `/api/contracts/terminations` | List termination requests & cancellation cases. | Role-scoped: Student sees own cases, Tutor sees own classroom cases, Staff/Admin sees all manageable cases. |
 | `GET` | `/api/contracts/terminations/refunds` | List financial progress per affected agreement, including deposited USDC, confirmed Tutor payout, platform fee, session refunds, unused-deposit refund and escrow remainder. | Student sees only their own agreement item in a Tutor whole-class cancellation; Tutor reason, audit, signature and evidence are omitted. Tutor/Staff/Admin retain their normal case scope. |
 | `POST` | `/api/contracts/terminations` | Submit termination request with cryptographic EIP-712 verification and create a retryable Learning hold. | Student: own agreement only (`wholeClass=false`). Tutor: whole class only (`wholeClass=true`). Signed timestamp must be within five minutes and a signature cannot be reused. |
-| `POST` | `/api/contracts/terminations/{id}/actions` | Respond, recommend, approve or reject a termination case. | Parties may `RESPOND`; assigned Staff may `RECOMMEND`/`REJECT` (scoped to assigned classrooms); Admin has supreme authority to `APPROVE` (directly from `REQUESTED` or `RECOMMENDED`) or `REJECT`. Reject releases hold and restores class; approve preserves cutoff and initiates session settlement / escrow refund processing. |
+| `POST` | `/api/contracts/terminations/admin` | Admin creates an operational stop for one agreement or the whole class, optionally approving cancellation immediately. | Admin only. No party signature is forged; reason and `ADMIN_DIRECT` origin are audited. An urgent decision may proceed while a dispute is open, but the worker still waits for dispute/session settlement and on-chain confirmation before refunding. |
+| `POST` | `/api/contracts/terminations/{id}/actions` | Respond, recommend, approve or reject a termination case. | Parties may `RESPOND`; assigned Staff may `RECOMMEND` (scoped to assigned classrooms); only Admin may reject and restore learning; Admin has supreme authority to `APPROVE` (directly from `REQUESTED` or `RECOMMENDED`) or `REJECT`. Reject releases hold and restores class; approve preserves cutoff and initiates session settlement / escrow refund processing. |
 | `POST` | `/api/contracts/terminations/{id}/evidence` | Upload termination evidence file (image, video, audio, PDF, Word, Excel, text). | Parties (`STUDENT`, `TUTOR`) for active cases (`HOLD_PENDING`, `REQUESTED`, `RECOMMENDED`). Max 5 files per party, max 50 MB per file. Whitelist MIME check, SHA-256 integrity, stored on S3. |
 | `GET` | `/api/contracts/terminations/{id}/evidence/{evidenceId}/content` | Stream/download stored termination evidence file. | Parties on the agreement/class, assigned Staff reviewer, and Admin. Streams with original filename and nosniff header. |
 
+Automatic absence cases expose `origin=AUTO_TUTOR_ABSENCE`, `responseDeadline` and `tutorRespondedAt`. Normal `APPROVE`/`RECOMMEND` waits for the Tutor response or deadline; Admin may use `FORCE_APPROVE` with a mandatory audited reason for an urgent decision. The response deadline is calculated from the next scheduled session, with a maximum 24-hour window and a two-hour pre-session buffer.
+
 ## 4. API Status Principle
+
+Termination notifications use a transactional outbox (Contract V18). Account owns recipient lookup:
+`GET /api/internal/notification-reviewers?reviewerEmail=...` requires a signed, expiring
+`X-Service-Token` with subject `contract-service` and scope `notification-recipients`.
+It returns active Admins plus the active assigned Staff, deduplicated by account id.
+No browser token can substitute for the service scope. Configure `ACCOUNT_SERVICE_URL` on Contract.
+
+If an immediate Admin stop cannot synchronize with Learning, `/terminations/admin` returns
+the persisted `HOLD_PENDING` case for retry. The UI must show pending synchronization;
+Admin explicitly approves after it reaches `REQUESTED`. V19 classifies historical automatic
+cases and moves open absence warnings through this same retryable hold before assigning a new deadline.
 
 Treat API status carefully:
 

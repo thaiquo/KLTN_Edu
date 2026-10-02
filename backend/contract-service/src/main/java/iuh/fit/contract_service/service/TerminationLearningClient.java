@@ -18,7 +18,7 @@ public class TerminationLearningClient {
     private final String url;
     private final SecretKey key;
     private final ObjectMapper mapper;
-    public record Snapshot(int cutoffSession, List<Long> requiredSessions) {}
+    public record Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart) {}
     public TerminationLearningClient(@Value("${LEARNING_SERVICE_URL:http://localhost:8082}") String url,
                                     @Value("${jwt.secret}") String secret, ObjectMapper mapper) {
         this.url = url;

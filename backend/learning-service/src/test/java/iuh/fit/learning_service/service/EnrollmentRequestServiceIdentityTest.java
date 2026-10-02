@@ -36,7 +36,8 @@ class EnrollmentRequestServiceIdentityTest {
             classSessionRepository,
             tutorAuthorizationStateRepository,
             eventPublisher,
-            rollingSessionService);
+            rollingSessionService,
+                mock(iuh.fit.learning_service.repository.LearningTerminationStopRepository.class));
 
     @Test
     void rejectsEnrollmentWhenJwtDoesNotContainStudentId() {

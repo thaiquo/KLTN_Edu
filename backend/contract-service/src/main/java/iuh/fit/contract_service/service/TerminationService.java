@@ -34,6 +34,13 @@ public class TerminationService {
     private final TerminationLearningClient learning;
 
     private static final long SIGNATURE_CLOCK_SKEW_SECONDS = 300;
+    private static final long RESPONSE_WINDOW_HOURS = 24;
+    private static final long NEXT_SESSION_BUFFER_HOURS = 2;
+    private static final long MIN_SHORT_NOTICE_HOURS = 6;
+    private static final String ORIGIN_PARTY = "PARTY_REQUEST";
+    private static final String ORIGIN_AUTO_ABSENCE = "AUTO_TUTOR_ABSENCE";
+    private static final String ORIGIN_SYSTEM_REVIEW = "SYSTEM_REVIEW";
+    private static final String ORIGIN_ADMIN = "ADMIN_DIRECT";
 
     public record ItemView(UUID agreementId, String status, String lastError, String transactionHash,
                            String refundedUnits, String studentName, int tokenDecimals, Long chainId,
@@ -99,6 +106,19 @@ public class TerminationService {
                 .map(item -> new AbstractMap.SimpleImmutableEntry<>(item, agreements.findById(item.getAgreementId()).orElse(null)))
                 .filter(entry -> entry.getValue() != null && access.canViewAgreement(entry.getValue(), user))
                 .map(entry -> itemView(entry.getKey(), entry.getValue())).toList();
+        // Before approval there are no refund work items. Expose only the student's own
+        // affected agreement as a read-only preview; never create settlement work here.
+        if (ownItems.isEmpty() && Set.of("HOLD_PENDING", "REQUESTED", "RECOMMENDED", "RELEASE_PENDING").contains(c.getStatus())) {
+            ownItems = agreements.findByClassroomIdOrderByCreatedAtAsc(c.getClassroomId()).stream()
+                    .filter(TerminationService::activeTerminationAgreement)
+                    .filter(agreement -> access.canViewAgreement(agreement, user))
+                    .map(agreement -> {
+                        var preview = new TerminationItem();
+                        preview.setAgreementId(agreement.getId());
+                        preview.setStatus("WAITING_APPROVAL");
+                        return itemView(preview, agreement);
+                    }).toList();
+        }
         if (ownItems.isEmpty()) return null;
 
         var summary = new TerminationCase();
@@ -106,9 +126,15 @@ public class TerminationService {
         summary.setAnchorAgreementId(ownItems.get(0).agreementId());
         summary.setClassroomId(c.getClassroomId());
         summary.setWholeClass(true);
-        summary.setReason("Gia sư đề xuất hủy lớp");
-        summary.setRequestedBy("TUTOR");
+        summary.setReason(ORIGIN_ADMIN.equals(c.getOrigin()) ? "Admin quyết định dừng/hủy lớp"
+                : ORIGIN_AUTO_ABSENCE.equals(c.getOrigin()) ? "Lớp được xem xét do cảnh cáo vắng học"
+                : ORIGIN_SYSTEM_REVIEW.equals(c.getOrigin()) ? "Hệ thống đề nghị xem xét lớp"
+                : "Gia sư đề xuất hủy lớp");
+        summary.setRequestedBy(ORIGIN_ADMIN.equals(c.getOrigin()) ? "ADMIN"
+                : ORIGIN_PARTY.equals(c.getOrigin()) ? "TUTOR" : "SYSTEM");
         summary.setStatus(c.getStatus());
+        summary.setOrigin(c.getOrigin());
+        summary.setResponseDeadline(c.getResponseDeadline());
         summary.setCreatedAt(c.getCreatedAt());
         summary.setUpdatedAt(c.getUpdatedAt());
         summary.setAuditJson("[]");
@@ -122,6 +148,12 @@ public class TerminationService {
 
     @Transactional
     public View request(UUID agreementId, boolean wholeClass, String reason, String signature, String signerWallet, Long requestedAtTimestamp, ContractUserPrincipal user) {
+        return requestInternal(agreementId, wholeClass, reason, signature, signerWallet, requestedAtTimestamp, user, null);
+    }
+
+    private View requestInternal(UUID agreementId, boolean wholeClass, String reason, String signature,
+                                 String signerWallet, Long requestedAtTimestamp, ContractUserPrincipal user,
+                                 String systemOrigin) {
         var source = agreements.findById(agreementId).orElseThrow();
         lockClass(source.getClassroomId());
         var anchor = agreements.lockById(agreementId).orElseThrow();
@@ -198,21 +230,65 @@ public class TerminationService {
         c.setSignerWallet(signerWallet);
         c.setSignature(signature);
         c.setRequestedAtTimestamp(requestedAtTimestamp);
-        c.setStatus("HOLD_PENDING"); c.setCreatedAt(OffsetDateTime.now()); c.setAuditJson("[]");
+        String origin = systemRequest ? Objects.requireNonNullElse(systemOrigin, ORIGIN_SYSTEM_REVIEW) : ORIGIN_PARTY;
+        c.setStatus("HOLD_PENDING"); c.setOrigin(origin);
+        c.setCreatedAt(OffsetDateTime.now()); c.setAuditJson("[]");
         audit(c, user, "REQUESTED", reason);
         cases.saveAndFlush(c);
-        if (systemRequest) {
+        if (ORIGIN_AUTO_ABSENCE.equals(origin)) {
+            synchronizeHold(c, anchor);
+        } else if (systemRequest) {
             c.setStatus("REQUESTED");
             c.setLastError(null);
         } else {
             synchronizeHold(c, anchor);
         }
         cases.saveAndFlush(c);
-        notifyParties(anchor, c, "Yêu cầu dừng lớp học đã được gửi và đang chờ thẩm định.");
-        notifications.sendAsync(anchor.getClassroomReviewerEmail(), null, "Yeu cau cham dut hop dong",
-                "Lop #" + anchor.getClassroomId() + " co ho so cham dut can xem xet.",
-                "TERMINATION_UPDATED", "AGREEMENT", anchor.getId().toString());
+        String receivedMessage = ORIGIN_AUTO_ABSENCE.equals(origin)
+                ? "Hệ thống ghi nhận Gia sư vắng 3 buổi liên tiếp. Lịch tương lai đã được tạm giữ; Gia sư cần gửi giải trình và minh chứng trước hạn hiển thị trong hồ sơ."
+                : "Yêu cầu dừng lớp học đã được gửi và đang chờ thẩm định.";
+        notifyParties(anchor, c, receivedMessage);
         return view(c);
+    }
+
+    @Transactional
+    public View adminRequest(UUID agreementId, boolean wholeClass, String reason,
+                             boolean approveImmediately, ContractUserPrincipal user) {
+        if (!user.hasActiveAuthority("ADMIN")) fail(HttpStatus.FORBIDDEN, "Only Admin can create an administrative termination");
+        requireText(reason);
+        var source = agreements.findById(agreementId).orElseThrow();
+        lockClass(source.getClassroomId());
+        var anchor = agreements.lockById(agreementId).orElseThrow();
+        access.requireCanViewAgreement(anchor, user);
+        if (anchor.getStatus() != ContractAgreementStatus.ACTIVE || anchor.isLegacyExcluded()) {
+            fail(HttpStatus.CONFLICT, "Chỉ có thể dừng hợp đồng ACTIVE có Escrow hợp lệ.");
+        }
+        ensureNoOverlappingRequest(anchor, agreementId, wholeClass);
+
+        var c = new TerminationCase();
+        c.setId(UUID.randomUUID());
+        c.setAnchorAgreementId(agreementId); c.setClassroomId(anchor.getClassroomId());
+        c.setWholeClass(wholeClass); c.setReason(reason.trim()); c.setRequestedBy(user.email());
+        c.setOrigin(ORIGIN_ADMIN); c.setStatus("HOLD_PENDING");
+        c.setCreatedAt(OffsetDateTime.now()); c.setAuditJson("[]");
+        audit(c, user, "ADMIN_REQUESTED", reason);
+        cases.saveAndFlush(c);
+        synchronizeHold(c, anchor);
+        cases.saveAndFlush(c);
+        notifyParties(anchor, c, wholeClass
+                ? "Admin đã tạm dừng lớp để xử lý hủy lớp. Các buổi tương lai đang được giữ."
+                : "Admin đã tạm dừng hợp đồng của học viên để xử lý. Các buổi tương lai của học viên đang được giữ.");
+        return approveImmediately && "REQUESTED".equals(c.getStatus())
+                ? act(c.getId(), "FORCE_APPROVE", reason, user) : view(c);
+    }
+
+    private void ensureNoOverlappingRequest(ContractAgreement anchor, UUID agreementId, boolean wholeClass) {
+        for (var existing : cases.findByClassroomIdOrderByCreatedAtDesc(anchor.getClassroomId())) {
+            if (!Set.of("REJECTED", "COMPLETED").contains(existing.getStatus())
+                    && (wholeClass || existing.isWholeClass() || existing.getAnchorAgreementId().equals(agreementId))) {
+                fail(HttpStatus.CONFLICT, "An overlapping termination request already exists");
+            }
+        }
     }
 
     @Transactional
@@ -227,24 +303,32 @@ public class TerminationService {
             case "RESPOND" -> {
                 requireStatus(c, "HOLD_PENDING", "REQUESTED", "RECOMMENDED");
                 if (manager) fail(HttpStatus.FORBIDDEN, "Use review actions for Staff/Admin");
+                if (ORIGIN_AUTO_ABSENCE.equals(c.getOrigin()) && !user.hasActiveAuthority("TUTOR")) {
+                    fail(HttpStatus.FORBIDDEN, "Only the Tutor can explain an automatic absence warning");
+                }
+                if (user.hasActiveAuthority("TUTOR")) c.setTutorRespondedAt(OffsetDateTime.now());
             }
             case "RECOMMEND" -> {
                 if (!user.hasActiveAuthority("STAFF")) fail(HttpStatus.FORBIDDEN, "Only assigned Staff can recommend termination");
                 requireStatus(c, "REQUESTED");
+                requireAutomaticWarningReady(c);
                 requireNoPendingDisputes(c);
                 c.setStatus("RECOMMENDED");
             }
             case "REJECT" -> {
-                if (!manager) fail(HttpStatus.FORBIDDEN, "Assigned Staff/Admin required");
+                if (!user.hasActiveAuthority("ADMIN")) fail(HttpStatus.FORBIDDEN, "Only Admin can reject termination and restore learning");
                 requireStatus(c, "REQUESTED", "RECOMMENDED");
                 requireNoPendingDisputes(c);
                 c.setStatus("RELEASE_PENDING");
                 synchronizeRelease(c, anchor);
             }
-            case "APPROVE" -> {
+            case "APPROVE", "FORCE_APPROVE" -> {
                 if (!user.hasActiveAuthority("ADMIN")) fail(HttpStatus.FORBIDDEN, "Only Admin can approve termination");
                 requireStatus(c, "REQUESTED", "RECOMMENDED");
-                requireNoPendingDisputes(c);
+                if ("APPROVE".equals(action)) {
+                    requireAutomaticWarningReady(c);
+                    requireNoPendingDisputes(c);
+                }
                 if (anchor.getTerminationCutoffSession() == null) synchronizeHold(c, anchor);
                 if (anchor.getTerminationCutoffSession() == null) {
                     fail(HttpStatus.CONFLICT, "Learning hold is not ready; retry after synchronization");
@@ -272,13 +356,16 @@ public class TerminationService {
         audit(c, user, action, reason);
         cases.saveAndFlush(c);
         String statusMessage = switch (c.getStatus()) {
-            case "APPROVED" -> "Admin đã phê duyệt dừng lớp học. Các buổi học tương lai đã dừng và tiền cọc còn lại đang được hoàn trả.";
+            case "APPROVED" -> c.isWholeClass()
+                    ? "Admin đã phê duyệt hủy cả lớp. Hệ thống đang xử lý quyết toán và hoàn phần cọc còn lại."
+                    : "Admin đã phê duyệt chấm dứt hợp đồng của học viên. Lớp vẫn tiếp tục với các học viên khác; phần cọc còn lại của hợp đồng đang được xử lý hoàn trả.";
             case "RECOMMENDED" -> "Hồ sơ dừng lớp học đã được Staff thẩm định và đề xuất xử lý.";
             case "REJECTED" -> "Yêu cầu dừng lớp học đã bị từ chối.";
             default -> "Cập nhật hồ sơ dừng hợp đồng: " + c.getStatus();
         };
+        if ("RESPOND".equals(action)) statusMessage = "Hồ sơ dừng/hủy đã có phản hồi mới. Staff/Admin có thể mở hồ sơ để thẩm định.";
         notifyParties(anchor, c, statusMessage);
-        if ("APPROVE".equals(action) && c.isWholeClass()) {
+        if (Set.of("APPROVE", "FORCE_APPROVE").contains(action) && c.isWholeClass()) {
             for (var item : items.findByCaseIdOrderByAgreementId(c.getId())) {
                 if (item.getAgreementId().equals(anchor.getId())) continue;
                 var affected = agreements.findById(item.getAgreementId()).orElseThrow();
@@ -288,6 +375,13 @@ public class TerminationService {
             }
         }
         return view(c);
+    }
+
+    private void requireAutomaticWarningReady(TerminationCase c) {
+        if (!ORIGIN_AUTO_ABSENCE.equals(c.getOrigin()) || c.getTutorRespondedAt() != null) return;
+        if (c.getResponseDeadline() != null && !OffsetDateTime.now().isBefore(c.getResponseDeadline())) return;
+        fail(HttpStatus.CONFLICT,
+                "Gia sư chưa giải trình và thời hạn phản hồi chưa hết. Admin có thể dùng quyết định khẩn cấp nếu cần dừng lớp ngay.");
     }
 
     private void requireNoPendingDisputes(TerminationCase termination) {
@@ -339,8 +433,9 @@ public class TerminationService {
             UUID id,
             ContractUserPrincipal user,
             DisputeEvidenceStorageService.StoredEvidence stored) {
-        requireCanAddEvidence(id, user);
         var termination = cases.lockById(id).orElseThrow();
+        requireCanAddEvidence(id, user);
+        requireStatus(termination, "HOLD_PENDING", "REQUESTED", "RECOMMENDED");
         evidence.save(TerminationEvidence.builder()
                 .id(UUID.randomUUID())
                 .terminationCase(termination)
@@ -352,6 +447,16 @@ public class TerminationService {
                 .sizeBytes(stored.size())
                 .sha256(stored.sha256())
                 .build());
+        if (ORIGIN_AUTO_ABSENCE.equals(termination.getOrigin()) && user.hasActiveAuthority("TUTOR")) {
+            termination.setTutorRespondedAt(OffsetDateTime.now());
+            termination.setUpdatedAt(OffsetDateTime.now());
+            audit(termination, user, "EVIDENCE_SUBMITTED", "Gia sư đã gửi minh chứng cho cảnh cáo vắng học");
+            cases.save(termination);
+        }
+        var anchor = agreements.findById(termination.getAnchorAgreementId()).orElseThrow();
+        notifications.sendAsync(anchor.getClassroomReviewerEmail(), null, "Hồ sơ hủy lớp có minh chứng mới",
+                "Một bên đã bổ sung minh chứng. Mở hồ sơ để xem tài liệu theo quyền được cấp.",
+                "TERMINATION_EVIDENCE_SUBMITTED", "AGREEMENT", anchor.getId().toString());
         return view(termination);
     }
 
@@ -371,6 +476,10 @@ public class TerminationService {
         if ("HOLD_PENDING".equals(c.getStatus())) synchronizeHold(c, anchor);
         else if ("RELEASE_PENDING".equals(c.getStatus())) synchronizeRelease(c, anchor);
         cases.save(c);
+        if (Set.of("REQUESTED", "REJECTED").contains(c.getStatus()))
+            notifyParties(anchor, c, "REJECTED".equals(c.getStatus())
+                    ? "Admin đã cho phép tiếp tục học. Lịch học đã được khôi phục."
+                    : "Lịch học tương lai đã được tạm dừng để chờ Admin xem xét hồ sơ.");
     }
 
     private void synchronizeHold(TerminationCase c, ContractAgreement anchor) {
@@ -384,6 +493,9 @@ public class TerminationService {
                 if (activeTerminationAgreement(target)) target.setTerminationCutoffSession(snapshot.cutoffSession());
             }
             if ("HOLD_PENDING".equals(c.getStatus())) c.setStatus("REQUESTED");
+            if (ORIGIN_AUTO_ABSENCE.equals(c.getOrigin()) && c.getResponseDeadline() == null) {
+                c.setResponseDeadline(calculateResponseDeadline(OffsetDateTime.now(), snapshot.nextSessionStart()));
+            }
             c.setLastError(null);
             c.setUpdatedAt(OffsetDateTime.now());
             if (c.isWholeClass()) {
@@ -391,7 +503,7 @@ public class TerminationService {
                     if (target.getId().equals(anchor.getId()) || !activeTerminationAgreement(target)) continue;
                     notifications.sendAsync(target.getStudentEmail(), target.getStudentId(),
                             "Lop hoc tam dung cho xu ly",
-                            "Gia su da gui de xuat dung giang day. Cac buoi tuong lai dang tam dung trong khi Admin xem xet.",
+                            "Lớp có hồ sơ dừng/hủy đang được xem xét. Các buổi tương lai đã tạm dừng để chờ quyết định của Admin.",
                             "TERMINATION_UPDATED", "AGREEMENT", target.getId().toString());
                 }
             }
@@ -400,6 +512,13 @@ public class TerminationService {
             c.setLastError(shortError(error, "Learning hold pending"));
             c.setUpdatedAt(OffsetDateTime.now());
         }
+    }
+
+    static OffsetDateTime calculateResponseDeadline(OffsetDateTime now, OffsetDateTime nextSessionStart) {
+        OffsetDateTime maximum = now.plusHours(RESPONSE_WINDOW_HOURS);
+        if (nextSessionStart == null || nextSessionStart.isBefore(now.plusHours(MIN_SHORT_NOTICE_HOURS))) return maximum;
+        OffsetDateTime beforeNextSession = nextSessionStart.minusHours(NEXT_SESSION_BUFFER_HOURS);
+        return beforeNextSession.isBefore(maximum) ? beforeNextSession : maximum;
     }
 
     private void synchronizeRelease(TerminationCase c, ContractAgreement anchor) {
@@ -446,7 +565,8 @@ public class TerminationService {
         if (existing.stream().anyMatch(c -> detectionKey.equals(c.getDetectionKey())
                 || !Set.of("REJECTED", "COMPLETED").contains(c.getStatus()))) return;
         var system = new ContractUserPrincipal(0L, "system@educonnect.invalid", "ADMIN", List.of("ADMIN"));
-        var view = request(agreementId, true, reason, system);
+        String origin = detectionKey.startsWith("TUTOR_ABSENT:") ? ORIGIN_AUTO_ABSENCE : ORIGIN_SYSTEM_REVIEW;
+        var view = requestInternal(agreementId, true, reason, null, null, null, system, origin);
         view.request().setDetectionKey(detectionKey);
     }
     private void audit(TerminationCase c, ContractUserPrincipal user, String action, String reason) {
@@ -456,10 +576,17 @@ public class TerminationService {
         c.setAuditJson(mapper.writeValueAsString(array)); c.setUpdatedAt(OffsetDateTime.now());
     }
     private void notifyParties(ContractAgreement a, TerminationCase c, String message) {
+        if ("HOLD_PENDING".equals(c.getStatus())) message = "Đã tiếp nhận hồ sơ dừng/hủy. Hệ thống đang đồng bộ tạm dừng lịch; vui lòng theo dõi trạng thái hồ sơ.";
+        if ("RELEASE_PENDING".equals(c.getStatus())) message = "Admin đã cho phép tiếp tục học. Hệ thống đang đồng bộ khôi phục lịch.";
+        if (c.getResponseDeadline() != null && "REQUESTED".equals(c.getStatus()))
+            message += " Hạn giải trình: " + c.getResponseDeadline().atZoneSameInstant(java.time.ZoneId.of("Asia/Bangkok"))
+                    .format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm 'UTC+7'")) + ".";
         notifications.sendAsync(a.getStudentEmail(), a.getStudentId(), "Chấm dứt hợp đồng lớp học", message,
                 "TERMINATION_UPDATED", "AGREEMENT", a.getId().toString());
         notifications.sendAsync(a.getTutorEmail(), a.getTutorId(), "Chấm dứt hợp đồng lớp học", message,
                 "TERMINATION_UPDATED", "AGREEMENT", a.getId().toString());
+        notifications.sendAsync(a.getClassroomReviewerEmail(), null, "Cập nhật hồ sơ dừng/hủy lớp #" + c.getClassroomId(),
+                message, "TERMINATION_UPDATED", "AGREEMENT", a.getId().toString());
     }
     public static boolean terminal(ContractAgreement a) {
         return Set.of(ContractAgreementStatus.CANCELLED, ContractAgreementStatus.EXPIRED, ContractAgreementStatus.COMPLETED).contains(a.getStatus());

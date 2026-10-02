@@ -54,6 +54,11 @@ export function Header({
   };
 
   function handleNotificationNavigate(target: unknown) {
+    const contextualRoute = getNotificationRoute(target);
+    if (contextualRoute?.includes('subtab=terminations')) {
+      navigate(contextualRoute);
+      return;
+    }
     const portalPage = getNotificationPortalPage(target);
     if (portalPage && onNavigate) {
       onNavigate(portalPage);

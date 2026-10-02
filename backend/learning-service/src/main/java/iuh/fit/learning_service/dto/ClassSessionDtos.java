@@ -61,7 +61,8 @@ public class ClassSessionDtos {
             String assignmentExternalUrl,
             String materialExternalUrl,
             String mySubmissionFileName,
-            Long mySubmissionFileSize
+            Long mySubmissionFileSize,
+            Boolean attendanceStopped
     ) {}
 
     public record UpdateSessionDetailsRequest(

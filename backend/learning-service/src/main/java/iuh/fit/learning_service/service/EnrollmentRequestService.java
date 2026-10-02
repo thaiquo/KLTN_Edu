@@ -35,6 +35,7 @@ public class EnrollmentRequestService {
     private final TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
     private final LearningEventPublisher eventPublisher;
     private final RollingSessionService rollingSessionService;
+    private final iuh.fit.learning_service.repository.LearningTerminationStopRepository terminationStops;
 
     public EnrollmentRequestService(
             ClassRoomRepository classRoomRepository,
@@ -42,7 +43,8 @@ public class EnrollmentRequestService {
             ClassSessionRepository classSessionRepository,
             TutorAuthorizationStateRepository tutorAuthorizationStateRepository,
             LearningEventPublisher eventPublisher,
-            RollingSessionService rollingSessionService
+            RollingSessionService rollingSessionService,
+            iuh.fit.learning_service.repository.LearningTerminationStopRepository terminationStops
     ) {
         this.classRoomRepository = classRoomRepository;
         this.enrollmentRequestRepository = enrollmentRequestRepository;
@@ -50,6 +52,7 @@ public class EnrollmentRequestService {
         this.tutorAuthorizationStateRepository = tutorAuthorizationStateRepository;
         this.eventPublisher = eventPublisher;
         this.rollingSessionService = rollingSessionService;
+        this.terminationStops = terminationStops;
     }
 
     /**
@@ -441,6 +444,7 @@ public class EnrollmentRequestService {
         List<EnrollmentRequest> activeRequests = enrollmentRequestRepository.findByStudentEmailWithDetails(studentEmail);
         List<ClassRoom> activeClasses = activeRequests.stream()
                 .filter(r -> r.getStatus() == EnrollmentRequestStatus.ACCEPTED || r.getStatus() == EnrollmentRequestStatus.ENROLLED)
+                .filter(r -> participationCutoff(r) == null)
                 .map(EnrollmentRequest::getClassRoom)
                 .filter(c -> c != null && c.getStatus() != ClassRoomStatus.CLOSED && c.getStatus() != ClassRoomStatus.CANCELLED
                         && c.getTerminationCutoffSession() == null)
@@ -509,6 +513,7 @@ public class EnrollmentRequestService {
         List<EnrollmentRequest> activeRequests = enrollmentRequestRepository.findByStudentEmailWithDetails(studentEmail);
         List<ClassRoom> activeClasses = activeRequests.stream()
                 .filter(r -> r.getStatus() == EnrollmentRequestStatus.ACCEPTED || r.getStatus() == EnrollmentRequestStatus.ENROLLED)
+                .filter(r -> participationCutoff(r) == null)
                 .map(EnrollmentRequest::getClassRoom)
                 .filter(c -> c != null && c.getStatus() != ClassRoomStatus.CLOSED && c.getStatus() != ClassRoomStatus.CANCELLED
                         && c.getTerminationCutoffSession() == null)
@@ -582,6 +587,15 @@ public class EnrollmentRequestService {
         return dayOfWeek == 8 ? "Chủ nhật" : "Thứ " + dayOfWeek;
     }
 
+    private Integer participationCutoff(EnrollmentRequest r) {
+        Integer classCutoff = r.getClassRoom().getTerminationCutoffSession();
+        Integer individualCutoff = terminationStops.findByClassroomIdAndStudentId(r.getClassRoom().getId(), r.getStudentId())
+                .stream().map(iuh.fit.learning_service.entity.LearningTerminationStop::getCutoffSession)
+                .min(Integer::compareTo).orElse(null);
+        if (classCutoff == null) return individualCutoff;
+        return individualCutoff == null ? classCutoff : Math.min(classCutoff, individualCutoff);
+    }
+
     private EnrollmentRequestResponse toResponse(EnrollmentRequest r) {
         ClassRoom c = r.getClassRoom();
         return new EnrollmentRequestResponse(
@@ -600,7 +614,7 @@ public class EnrollmentRequestService {
                 r.getAgreementId(),
                 r.getStatus(),
                 c.getStatus().name(),
-                c.getTerminationCutoffSession(),
+                participationCutoff(r),
                 r.getJoinKey(),
                 r.getNote(),
                 r.getRejectReason(),

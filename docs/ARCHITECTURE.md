@@ -55,7 +55,7 @@ Không tạo thêm service hoặc chuyển domain owner nếu chưa có quyết 
 - Learning gửi kết quả buổi học sang internal endpoint của Contract bằng JWT service token có scope `contract-settlement`.
 - Contract gọi internal Learning activation/expiration endpoint khi event blockchain xác nhận trạng thái agreement.
 - Contract gọi internal Learning termination cutoff endpoint khi phê duyệt chấm dứt hợp đồng hoặc hủy lớp để đóng băng lịch học.
-- Contract gửi notification trực tiếp qua internal Notification API cho các sự kiện contract/settlement/dispute.
+- Contract gửi notification trực tiếp qua internal Notification API cho các sự kiện contract/settlement/dispute; thông báo hồ sơ chấm dứt dùng outbox bền vững trong Contract.
 
 REST failure không được biến thành trạng thái tài chính giả. Các worker giữ cờ chưa giao thành công và thử lại với các flow có durable state tương ứng.
 
@@ -80,13 +80,15 @@ REST/database vẫn là nguồn dữ liệu authoritative; WebSocket dùng để
 
 ## 5. Data architecture
 
+October 2026 notification update: Contract Service now signs short-lived service JWTs for `POST /api/notifications/internal/send` with scope `notification-send`. Termination notices use a transactional outbox; other Contract notices still use direct asynchronous HTTP delivery. Contract resolves active Admin and assigned Staff recipients through Account's `notification-recipients` scoped endpoint. These two internal scopes are distinct. Database migration inventory: Account 13 files through V15, Learning 37 through V37, Contract 19 through V19, Notification 2 through V2; all corresponding installed Flyway rows succeeded in the local database checked on 2026-10-02.
+
 Các service hiện dùng chung một PostgreSQL database vật lý `kltn_db`, nhưng mỗi service có entity/migration và bảng Flyway history riêng. Ownership logic vẫn phải theo service; không thêm truy cập chéo bảng của service khác khi có thể dùng API/event.
 
 | Service | Số migration hiện thấy | Nhóm bảng tiêu biểu |
 | --- | ---: | --- |
-| Account | 13 | users, roles, refresh_sessions, OTP, students, tutors, tutor applications/documents. |
+| Account | 13 (đến V15) | users, roles, refresh_sessions, OTP, students, tutors, tutor applications/documents. |
 | Learning | 37 | catalog, registrations, class_rooms, schedules/chapters, enrollment_requests, class_sessions, session_attendances, learning_termination_stops, classroom_materials, session_files. |
-| Contract | 16 | contract_agreement/acceptance/artifact, escrow_payment, session_settlement, dispute/evidence, blockchain_transaction, processed_event/outbox/cursor, termination_cases/items. |
+| Contract | 19 (đến V19) | contract_agreement/acceptance/artifact, escrow_payment, session_settlement, dispute/evidence, blockchain_transaction, processed_event/outbox/cursor, termination_case/item/evidence/notification_outbox. |
 | Notification | 2 | notifications, conversations, chat_messages. |
 
 ## 6. Storage và document

@@ -18,6 +18,15 @@ export function getNotificationTarget(notification, activeRole) {
   const referenceType = normalizeValue(notification?.referenceType);
   const role = normalizeRole(activeRole);
 
+  if (type.startsWith('TERMINATION_')) {
+    if (role === 'STUDENT') return target('/student/wallet', 'wallet');
+    const ref = notification?.referenceId;
+    const filter = ref && referenceType === 'AGREEMENT'
+      ? `&agreementId=${encodeURIComponent(ref)}`
+      : ref && referenceType === 'CLASSROOM' ? `&classroomId=${encodeURIComponent(ref)}` : '';
+    return target(`/dashboard?tab=contracts&subtab=terminations${filter}`, 'contracts');
+  }
+
   if (type === 'TUTOR_APPLICATION_REVIEWED' || referenceType === 'TUTOR_APPLICATION') {
     return role === 'TUTOR'
       ? target('/dashboard', 'dashboard')

@@ -259,7 +259,7 @@ export function TutorClassManagement() {
   };
 
   useRealtimeRefresh(
-    ["CLASS_REVIEWED", "CLASS_MUTATED"],
+    ["CLASS_REVIEWED", "CLASS_MUTATED", "CLASS_STATUS_CHANGED", "CLASSROOM_STATUS_CHANGED"],
     loadClasses
   );
 
@@ -275,7 +275,15 @@ export function TutorClassManagement() {
   );
 
   useRealtimeRefresh(
-    ["TERMINATION_REQUESTED", "TERMINATION_PROCESSED", "TERMINATION_APPROVED", "TERMINATION_REJECTED"],
+    [
+      "TERMINATION_UPDATED",
+      "TERMINATION_COMPLETED",
+      "TERMINATION_EVIDENCE_SUBMITTED",
+      "TERMINATION_REQUESTED",
+      "TERMINATION_APPROVED",
+      "TERMINATION_REJECTED",
+      "TERMINATION_PROCESSED"
+    ],
     () => {
       loadClasses();
       loadTerminations();
@@ -466,6 +474,7 @@ export function TutorClassManagement() {
     pending: classes.filter(c => c.status === "PENDING_APPROVAL").length,
     locked: classes.filter(c => c.status === "LOCKED").length,
     closed: classes.filter(c => c.status === "CLOSED").length,
+    cancelled: classes.filter(c => c.status === "CANCELLED").length,
     rejected: classes.filter(c => c.status === "REJECTED").length
   };
 
@@ -482,7 +491,7 @@ export function TutorClassManagement() {
     );
   }
 
-  const renderStatusBadge = (status: string, joinMode?: string, joinKey?: string) => {
+  const renderStatusBadge = (status: string, joinMode?: string, joinKey?: string, activeTermCase?: TerminationView) => {
     switch (status) {
       case "PUBLISHED":
         return (
@@ -508,6 +517,13 @@ export function TutorClassManagement() {
           </span>
         );
       case "LOCKED":
+        if (activeTermCase?.request.status === "APPROVED") {
+          return (
+            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-1">
+              <Lock className="w-3 h-3 text-rose-600" /> Đã Khóa Để Thanh Lý
+            </span>
+          );
+        }
         return (
           <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1">
             <Lock className="w-3 h-3 text-purple-600" /> Đã Khóa Lớp (Tự động)
@@ -517,6 +533,12 @@ export function TutorClassManagement() {
         return (
           <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-zinc-100 text-zinc-600 border border-zinc-300 flex items-center gap-1">
             <XCircle className="w-3 h-3 text-zinc-500" /> Đã Đóng Lớp (Tự động)
+          </span>
+        );
+      case "CANCELLED":
+        return (
+          <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-1">
+            <XCircle className="w-3 h-3 text-rose-600" /> Đã Hủy Lớp
           </span>
         );
       case "PENDING_APPROVAL":
@@ -650,6 +672,7 @@ export function TutorClassManagement() {
             { id: "PRIVATE", label: `Tạm ngưng (${stats.privateCount})` },
             { id: "LOCKED", label: `Đã khóa (${stats.locked})` },
             { id: "CLOSED", label: `Đã đóng (${stats.closed})` },
+            { id: "CANCELLED", label: `Đã hủy (${stats.cancelled})` },
             { id: "PENDING_APPROVAL", label: `Chờ duyệt (${stats.pending})` },
             { id: "REJECTED", label: `Từ chối (${stats.rejected})` }
           ].map(tab => (
@@ -711,19 +734,48 @@ export function TutorClassManagement() {
                   </span>
                   <div className="flex items-center gap-1.5 flex-wrap justify-end">
                     {(() => {
-                      const pendingCase = terminationCases.find(
+                      const activeCase = terminationCases.find(
                         t => t.request.classroomId === cls.id && t.request.wholeClass && !["REJECTED", "COMPLETED"].includes(t.request.status)
                       );
-                      if (pendingCase) {
+                      const completedCase = terminationCases.find(
+                        t => t.request.classroomId === cls.id && t.request.wholeClass && t.request.status === "COMPLETED"
+                      );
+                      if (activeCase) {
+                        if (activeCase.request.status === "APPROVED") {
+                          return (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-50 text-rose-800 border border-rose-300 flex items-center gap-1 shadow-2xs">
+                              <CheckCircle2 className="w-3 h-3 text-rose-600 shrink-0" /> Admin đã duyệt hủy (Đang hoàn cọc)
+                            </span>
+                          );
+                        }
+                        if (activeCase.request.status === "RECOMMENDED") {
+                          return (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-800 border border-indigo-300 flex items-center gap-1 shadow-2xs">
+                              <Clock className="w-3 h-3 text-indigo-600 shrink-0" /> Staff đã đề xuất · Chờ Admin duyệt
+                            </span>
+                          );
+                        }
                         return (
                           <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-50 text-amber-800 border border-amber-300 flex items-center gap-1 shadow-2xs animate-pulse">
                             <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" /> Chờ duyệt hủy lớp
                           </span>
                         );
                       }
+                      if (cls.status === "CANCELLED" && completedCase) {
+                        return (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1 shadow-2xs">
+                            <CheckCircle2 className="w-3 h-3 text-rose-600 shrink-0" /> Đã thanh lý hoàn tất
+                          </span>
+                        );
+                      }
                       return null;
                     })()}
-                    {renderStatusBadge(cls.status, cls.joinMode, cls.joinKey)}
+                    {renderStatusBadge(
+                      cls.status,
+                      cls.joinMode,
+                      cls.joinKey,
+                      terminationCases.find(t => t.request.classroomId === cls.id && t.request.wholeClass && !["REJECTED", "COMPLETED"].includes(t.request.status))
+                    )}
                   </div>
                 </div>
 
@@ -922,7 +974,7 @@ export function TutorClassManagement() {
               {(detailModalClass.status === "PRIVATE" || detailModalClass.status === "PUBLISHED" || detailModalClass.status === "PENDING_APPROVAL") && (
                 <button
                   type="button"
-                  onClick={() => setModalTab("EDIT")}
+                  disabled={["CANCELLED", "CLOSED"].includes(detailModalClass.status)} onClick={() => setModalTab("EDIT")}
                   className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
                     modalTab === "EDIT"
                       ? "bg-brand-primary text-white shadow-sm"
@@ -1012,19 +1064,32 @@ export function TutorClassManagement() {
                   </div>
                 )}
 
-                {detailModalClass.status === "LOCKED" && (
-                  <div className="p-3 bg-purple-50 border border-purple-200 rounded-2xl text-purple-900 space-y-1">
-                    <span className="font-black text-xs flex items-center gap-1.5 text-purple-800">
-                      <Lock className="w-4 h-4 text-purple-600 shrink-0" />
-                      Lớp đã Khóa (LOCKED - Hệ thống tự động)
-                    </span>
-                    <p className="text-[11px] font-semibold text-purple-700">
-                      {terminationCases.some(t => t.request.classroomId === detailModalClass.id && t.request.wholeClass && t.request.status === 'APPROVED')
-                        ? 'Admin đã khóa lớp để thanh lý hợp đồng. Gia sư không thể nhận thêm học viên, mở bán hoặc tự thay đổi trạng thái lớp trong thời gian này.'
-                        : `Lớp học đã tự động khóa không nhận thêm đăng ký do đã đủ sĩ số tối đa (${detailModalClass.maxStudents} học viên) hoặc đã đến ngày bắt đầu (${detailModalClass.startDate}).`}
-                    </p>
-                  </div>
-                )}
+                {detailModalClass.status === "LOCKED" && (() => {
+                  const isApprovedTermination = terminationCases.some(
+                    t => t.request.classroomId === detailModalClass.id && t.request.wholeClass && t.request.status === "APPROVED"
+                  );
+                  return (
+                    <div className={`p-3 rounded-2xl space-y-1 ${
+                      isApprovedTermination
+                        ? "bg-rose-50 border border-rose-200 text-rose-900"
+                        : "bg-purple-50 border border-purple-200 text-purple-900"
+                    }`}>
+                      <span className={`font-black text-xs flex items-center gap-1.5 ${
+                        isApprovedTermination ? "text-rose-800" : "text-purple-800"
+                      }`}>
+                        <Lock className={`w-4 h-4 shrink-0 ${isApprovedTermination ? "text-rose-600" : "text-purple-600"}`} />
+                        {isApprovedTermination
+                          ? "Lớp đã khóa để thanh lý hợp đồng (Quyết định của Admin)"
+                          : "Lớp đã Khóa (LOCKED - Hệ thống tự động)"}
+                      </span>
+                      <p className={`text-[11px] font-semibold ${isApprovedTermination ? "text-rose-700" : "text-purple-700"}`}>
+                        {isApprovedTermination
+                          ? "Admin đã phê duyệt dừng lớp học. Hệ thống đang tiến hành đối soát số buổi đã học và hoàn tiền cọc còn lại cho học viên qua Smart Contract. Lớp không thể mở bán hoặc nhận thêm học viên."
+                          : `Lớp học đã tự động khóa không nhận thêm đăng ký do đã đủ sĩ số tối đa (${detailModalClass.maxStudents} học viên) hoặc đã đến ngày bắt đầu (${detailModalClass.startDate}).`}
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 {detailModalClass.status === "CANCELLED" && (
                   <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-900 space-y-1">
@@ -1129,7 +1194,7 @@ export function TutorClassManagement() {
                   </label>
                   <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
                     {detailModalClass.learningMode === "ONLINE" ? (
-                      detailModalClass.meetingLink ? (
+                      detailModalClass.meetingLink && !["CANCELLED", "CLOSED"].includes(detailModalClass.status) ? (
                         <a href={detailModalClass.meetingLink} target="_blank" rel="noreferrer" className="text-brand-primary hover:underline flex items-center gap-1">
                           <Video className="w-3.5 h-3.5" /> {detailModalClass.meetingLink}
                         </a>
@@ -1229,14 +1294,16 @@ export function TutorClassManagement() {
                     Đóng
                   </button>
                   <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setModalTab("EDIT")}
-                      className="px-4 py-2 rounded-xl border border-slate-300 bg-slate-50 text-slate-800 text-xs font-bold hover:bg-slate-100 flex items-center gap-1"
-                    >
-                      <FileText className="w-3.5 h-3.5 text-slate-500" />
-                      <span>Sửa mô tả & lộ trình</span>
-                    </button>
+                    {!["CANCELLED", "CLOSED"].includes(detailModalClass.status) && (
+                      <button
+                        type="button"
+                        onClick={() => setModalTab("EDIT")}
+                        className="px-4 py-2 rounded-xl border border-slate-300 bg-slate-50 text-slate-800 text-xs font-bold hover:bg-slate-100 flex items-center gap-1"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-slate-500" />
+                        <span>Sửa mô tả & lộ trình</span>
+                      </button>
+                    )}
                     {(detailModalClass.status === "PRIVATE" || detailModalClass.status === "PUBLISHED") && (
                       <button
                         type="button"

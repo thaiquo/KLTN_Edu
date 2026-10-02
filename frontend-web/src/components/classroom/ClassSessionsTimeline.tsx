@@ -1,3 +1,4 @@
+import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -28,6 +29,7 @@ import {
   Award,
   MapPin,
   Download,
+  Ban,
   Trash2
 } from "lucide-react";
 import { apiRequest } from "../../api/client";
@@ -46,6 +48,7 @@ export interface SessionFileItem {
 }
 
 export interface ClassSessionItem {
+  attendanceStopped?: boolean;
   id: number;
   classRoomId: number;
   sequenceNumber: number;
@@ -187,9 +190,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   const effectiveLearningMode = (learningMode || classDetail?.learningMode || "ONLINE").toUpperCase();
   const isOffline = effectiveLearningMode === "OFFLINE";
   const effectiveAddress = address || classDetail?.address || "";
-  const baseClassMeetingLink = currentMeetingLink || configuredMeetingLink || classDetail?.meetingLink || (!isOffline && classRoomId ? `https://meet.google.com/edu-class-${classRoomId}` : "");
+  const baseClassMeetingLink = currentMeetingLink || configuredMeetingLink || classDetail?.meetingLink || "";
   const navigate = useNavigate();
-  const meetingLink = isOffline ? "" : (unlockedMeetingLink || baseClassMeetingLink || `https://meet.google.com/edu-class-${classRoomId}`);
+  const meetingLink = isOffline ? "" : (unlockedMeetingLink || baseClassMeetingLink);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState('');
   const [activeTab, setActiveTab] = useState<"FOCUSED" | "ALL" | "UPCOMING" | "COMPLETED">("FOCUSED");
@@ -252,6 +255,10 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
   useEffect(() => {
     fetchSessions();
+    const refresh = () => { if (!document.hidden) fetchSessions(); };
+    const timer = setInterval(refresh, 60000);
+    window.addEventListener('focus', refresh);
+    return () => { clearInterval(timer); window.removeEventListener('focus', refresh); };
   }, [classRoomId]);
 
   useEffect(() => {
@@ -312,6 +319,8 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
     }
   };
 
+  useRealtimeRefresh(['TERMINATION_UPDATED', 'TERMINATION_COMPLETED', 'CLASS_MUTATED'], fetchSessions);
+
   const handleGenerateInitialSessions = async () => {
     setActionLoading(true);
     try {
@@ -332,8 +341,11 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
     }
   };
 
+  const isSessionAvailable = (session: ClassSessionItem) => !historyMode && !session.attendanceStopped
+    && (session.status === 'SCHEDULED' || session.status === 'IN_PROGRESS');
+
   const isStrictSessionActive = (session: ClassSessionItem): boolean => {
-    if (session.status !== 'SCHEDULED' && session.status !== 'IN_PROGRESS') return false;
+    if (!isSessionAvailable(session)) return false;
     const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     if (session.sessionDate !== today) return false;
 
@@ -351,7 +363,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
   useEffect(() => {
     if (currentUserRole !== 'STUDENT' || isOffline) return;
-    const checkedSession = sessions.find((session) => session.myCheckedIn && (isStrictSessionActive(session) || session.status === 'IN_PROGRESS'));
+    const checkedSession = sessions.find((session) => session.myCheckedIn && isStrictSessionActive(session));
     if (!checkedSession) {
       setUnlockedMeetingLink('');
       return;
@@ -728,11 +740,11 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
   // Filtered sessions & Statistics
   const completedSessions = useMemo(
-    () => sessions.filter((s) => s.status === "COMPLETED" || s.status === "CANCELLED"),
+    () => sessions.filter((s) => s.status === "COMPLETED"),
     [sessions]
   );
   const upcomingSessions = useMemo(
-    () => sessions.filter((s) => s.status === "SCHEDULED" || s.status === "IN_PROGRESS"),
+    () => sessions.filter(isSessionAvailable),
     [sessions]
   );
 
@@ -785,19 +797,15 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
         const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const activeSessionForStudent = sessions.find((s) => isStrictSessionActive(s));
         const todaySessionForStudent = sessions.find(
-          (s) => s.sessionDate === todayStr && (s.status === 'SCHEDULED' || s.status === 'IN_PROGRESS')
+          (s) => s.sessionDate === todayStr && isSessionAvailable(s)
         );
         const nextUpcomingForStudent = sessions
-          .filter((s) => s.status !== 'COMPLETED' && s.sessionDate >= todayStr)
+          .filter((s) => isSessionAvailable(s) && s.sessionDate >= todayStr)
           .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate) || a.sequenceNumber - b.sequenceNumber)[0]
-          || sessions.find((s) => s.status !== 'COMPLETED');
-        const isStudentCheckedInForCurrent = Boolean(
-          activeSessionForStudent?.myCheckedIn ||
-          todaySessionForStudent?.myCheckedIn ||
-          sessions.some((s) => s.status === 'IN_PROGRESS' && s.myCheckedIn)
-        );
+         ;
+        const isStudentCheckedInForCurrent = Boolean(activeSessionForStudent?.myCheckedIn);
         const isSessionActiveNow = Boolean(activeSessionForStudent);
-        const canAccessMeetingLink = currentUserRole !== 'STUDENT' || isStudentCheckedInForCurrent;
+        const canAccessMeetingLink = !historyMode && Boolean(activeSessionForStudent) && (currentUserRole === 'TUTOR' || (currentUserRole === 'STUDENT' && isStudentCheckedInForCurrent));
 
         return (
           <div className="p-6 bg-gradient-to-r from-indigo-950 via-slate-900 to-blue-950 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -814,13 +822,13 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
             </div>
 
             {/* Meeting Link Action Card (Online) or Address Card (Offline) */}
-            {historyMode && currentUserRole === "STUDENT" ? (
-              <div className="flex items-center gap-3 bg-white/10 p-3 rounded-xl border border-white/20">
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-slate-700 text-slate-200">
+            {historyMode ? (
+              <div className="flex items-center gap-3 bg-white/10 p-3.5 rounded-2xl border border-white/20">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-slate-800 text-slate-300">
                   <History className="w-5 h-5" />
                 </div>
                 <div className="max-w-[280px]">
-                  <div className="text-xs text-indigo-200 font-medium">Chế Độ Xem Lịch Sử</div>
+                  <div className="text-xs text-indigo-200 font-bold uppercase tracking-wider">Chế Độ Xem Lịch Sử</div>
                   <div className="text-xs font-semibold text-white">Phòng học và điểm danh mới đã khóa</div>
                 </div>
               </div>
@@ -903,7 +911,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                     </div>
                   )
                 )}
-                {currentUserRole === "TUTOR" && (
+                {currentUserRole === "TUTOR" && !historyMode && sessions.some(isSessionAvailable) && (
                   <button
                     onClick={() => {
                       setNewMeetingLink(currentMeetingLink || "");
@@ -922,16 +930,16 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       })()}
 
       {/* 1. Hero Spotlight Card: Buổi Học Hôm Nay / Buổi Học Kế Tiếp */}
-      {sessions.length > 0 && (() => {
+      {sessions.length > 0 && !historyMode && (() => {
         const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const activeSession = sessions.find((s) => isStrictSessionActive(s));
         const todaySession = sessions.find(
-          (s) => s.sessionDate === todayStr && (s.status === 'SCHEDULED' || s.status === 'IN_PROGRESS')
+          (s) => s.sessionDate === todayStr && isSessionAvailable(s)
         );
         const upcomingSessionsList = sessions
-          .filter((s) => s.status !== 'COMPLETED' && s.sessionDate >= todayStr)
+          .filter((s) => isSessionAvailable(s) && s.sessionDate >= todayStr)
           .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate) || a.sequenceNumber - b.sequenceNumber);
-        const nextUpcomingSession = upcomingSessionsList[0] || sessions.find((s) => s.status !== 'COMPLETED');
+        const nextUpcomingSession = upcomingSessionsList[0];
         const spotlight = activeSession || todaySession || nextUpcomingSession;
 
         if (!spotlight && completedSessions.length === sessions.length && sessions.length > 0) {
@@ -1037,9 +1045,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                         <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                         Đã Điểm Danh Có Mặt
                       </span>
-                      {!isOffline && (
+                      {!isOffline && meetingLink && isActiveNow && (
                         <a
-                          href={(meetingLink || `https://meet.google.com/edu-class-${classRoomId}`).startsWith("http") ? (meetingLink || `https://meet.google.com/edu-class-${classRoomId}`) : `https://${meetingLink || `meet.google.com/edu-class-${classRoomId}`}`}
+                          href={(meetingLink).startsWith("http") ? (meetingLink) : `https://${meetingLink}`}
                           target="_blank"
                           rel="noreferrer"
                           className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md active:scale-95 animate-pulse"
@@ -1090,7 +1098,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                       </span>
                     ) : (
                       <button
-                        disabled={!isActiveNow || actionLoading}
+                        disabled={currentUserRole !== 'TUTOR' || !isActiveNow || actionLoading}
                         onClick={() => handleTutorDirectCheckin(spotlight.id)}
                         className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-xs ${
                           isActiveNow ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-slate-200 text-slate-400 cursor-not-allowed"
@@ -1100,7 +1108,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                         <span>{isActiveNow ? "Điểm Danh Vào Dạy" : "Chưa Đến Giờ Dạy"}</span>
                       </button>
                     )}
-                    {!isOffline && meetingLink && (
+                    {!isOffline && meetingLink && isActiveNow && currentUserRole === 'TUTOR' && (
                       <a
                         href={meetingLink.startsWith("http") ? meetingLink : `https://${meetingLink}`}
                         target="_blank"
@@ -1125,14 +1133,16 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
         const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
         const activeSession = sessions.find((s) => isStrictSessionActive(s));
         const todaySession = sessions.find(
-          (s) => s.sessionDate === todayStr && (s.status === 'SCHEDULED' || s.status === 'IN_PROGRESS')
+          (s) => s.sessionDate === todayStr && isSessionAvailable(s)
         );
         const nextSession = sessions
-          .filter((s) => s.status !== 'COMPLETED' && s.sessionDate >= todayStr)
+          .filter((s) => isSessionAvailable(s) && s.sessionDate >= todayStr)
           .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate) || a.sequenceNumber - b.sequenceNumber)[0]
-          || sessions.find((s) => s.status !== 'COMPLETED');
-        const currentStep = (activeSession || todaySession || nextSession)?.sequenceNumber || sessions.length;
-        const remainingCount = Math.max(0, sessions.length - completedSessions.length);
+         ;
+        const currentStep = (activeSession || todaySession || nextSession)?.sequenceNumber || 0;
+        const remainingCount = upcomingSessions.length;
+        const cancelledCount = sessions.filter((s) => s.status === 'CANCELLED').length;
+        const heldCount = sessions.filter((s) => s.status !== 'COMPLETED' && s.status !== 'CANCELLED' && s.attendanceStopped).length;
 
         return (
           <div className="p-4 sm:p-5 bg-white border-b border-slate-200">
@@ -1150,8 +1160,19 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                     Tổng số: <strong className="text-slate-900 font-black">{sessions.length} buổi</strong>
                     <span className="mx-1.5 text-slate-300">•</span>
                     Đã hoàn thành: <strong className="text-emerald-700 font-black">{completedSessions.length} buổi</strong>
-                    <span className="mx-1.5 text-slate-300">•</span>
-                    Đang học: <strong className="text-indigo-700 font-black">Buổi {currentStep}</strong>
+                    {cancelledCount > 0 && (
+                      <>
+                        <span className="mx-1.5 text-slate-300">•</span>
+                        Đã hủy: <strong className="text-rose-700 font-black">{cancelledCount} buổi</strong>
+                      </>
+                    )}
+                    {heldCount > 0 && <span> • Đang dừng tham gia: {heldCount} buổi</span>}
+                    {currentStep > 0 && !historyMode && (
+                      <>
+                        <span className="mx-1.5 text-slate-300">•</span>
+                        {activeSession ? 'Đang học' : 'Buổi tiếp theo'}: <strong className="text-indigo-700 font-black">Buổi {currentStep}</strong>
+                      </>
+                    )}
                     <span className="mx-1.5 text-slate-300">•</span>
                     Còn lại: <strong className="text-amber-700 font-black">{remainingCount} buổi</strong>
                   </p>
@@ -1160,8 +1181,14 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
               {/* Status pill badge */}
               <div className="flex items-center gap-2 shrink-0">
-                <span className="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-800 text-xs font-black border border-indigo-200">
-                  Buổi hiện tại: Buổi {currentStep}/{sessions.length}
+                <span className={`px-3 py-1.5 rounded-xl text-xs font-black border ${
+                  historyMode
+                    ? "bg-rose-50 text-rose-800 border-rose-200"
+                    : currentStep > 0
+                    ? "bg-indigo-50 text-indigo-800 border-indigo-200"
+                    : "bg-slate-100 text-slate-700 border-slate-200"
+                }`}>
+                  {historyMode ? "Lớp đã dừng (Chế độ xem lịch sử)" : currentStep > 0 ? `Buổi hiện tại: Buổi ${currentStep}/${sessions.length}` : "Lớp chưa có buổi kế tiếp"}
                 </span>
               </div>
             </div>
@@ -1170,7 +1197,8 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
             <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1 scrollbar-thin">
               {sessions.map((s) => {
                 const isPassed = s.status === 'COMPLETED';
-                const isCurrent = s.sequenceNumber === currentStep;
+                const isCancelled = s.status === 'CANCELLED' || (!isPassed && Boolean(s.attendanceStopped));
+                const isCurrent = !isPassed && !isCancelled && s.sequenceNumber === currentStep;
                 const dayName = getDayOfWeekName(s.sessionDate);
                 return (
                   <button
@@ -1183,21 +1211,23 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                       }, 50);
                     }}
-                    title={`Buổi ${s.sequenceNumber}: ${dayName ? `${dayName}, ` : ""}${s.sessionDate} (${s.startTime} - ${s.endTime})`}
+                    title={`Buổi ${s.sequenceNumber}: ${dayName ? `${dayName}, ` : ""}${s.sessionDate} (${s.startTime} - ${s.endTime})${isCancelled ? " [ĐÃ HỦY / DỪNG]" : ""}`}
                     className="flex flex-col items-center min-w-[78px] text-center group cursor-pointer transition-all shrink-0"
                   >
                     <div
                       className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs transition-all shadow-2xs ${
                         isPassed
                           ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                          : isCancelled
+                          ? "bg-rose-100 text-rose-700 border border-rose-300"
                           : isCurrent
                           ? "bg-indigo-600 text-white ring-4 ring-indigo-200 scale-105 shadow-md"
                           : "bg-slate-50 text-slate-600 border border-slate-200 group-hover:border-indigo-300 group-hover:bg-indigo-50/50"
                       }`}
                     >
-                      {isPassed ? <CheckCircle2 className="w-4 h-4" /> : s.sequenceNumber}
+                      {isPassed ? <CheckCircle2 className="w-4 h-4" /> : isCancelled ? <Ban className="w-4 h-4" /> : s.sequenceNumber}
                     </div>
-                    <span className={`text-[11px] font-bold mt-1 truncate max-w-[80px] ${isCurrent ? "text-indigo-700 font-black" : "text-slate-700"}`}>
+                    <span className={`text-[11px] font-bold mt-1 truncate max-w-[80px] ${isCancelled ? "text-rose-700 line-through" : isCurrent ? "text-indigo-700 font-black" : "text-slate-700"}`}>
                       Buổi {s.sequenceNumber}
                     </span>
                     <span className="text-[10px] text-slate-500 font-semibold">
@@ -1207,12 +1237,14 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                       className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-md mt-0.5 ${
                         isPassed
                           ? "bg-emerald-100 text-emerald-800"
+                          : isCancelled
+                          ? "bg-rose-100 text-rose-800"
                           : isCurrent
                           ? "bg-indigo-100 text-indigo-800 font-black"
                           : "bg-slate-100 text-slate-500"
                       }`}
                     >
-                      {isPassed ? "Đã xong" : isCurrent ? "Đang học" : "Sắp tới"}
+                      {isPassed ? "Đã xong" : isCancelled ? "Đã dừng" : isCurrent ? "Đang học" : "Sắp tới"}
                     </span>
                   </button>
                 );
@@ -1393,7 +1425,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
           <div className="space-y-4" id="sessions-timeline-list">
             {filteredSessions.map((session) => {
               const active = isStrictSessionActive(session);
-              const isCancelled = session.status === "CANCELLED";
+              const isCancelled = session.status === "CANCELLED" || (session.status !== "COMPLETED" && Boolean(session.attendanceStopped));
               const isCompleted = session.status === "COMPLETED";
               const isPassedOrDone = isCompleted || isCancelled;
               const isTutorOrAdmin = currentUserRole === "TUTOR" || currentUserRole === "ADMIN" || currentUserRole === "STAFF";
@@ -1922,26 +1954,33 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                       {/* Tutor Actions */}
                       {currentUserRole === "TUTOR" && (
                         <>
-                          <button
-                            onClick={() => {
-                              setEditingSession(session);
-                              setAssignmentTopic(session.topic || "");
-                              setAssignmentTitle(session.assignmentTitle || "");
-                              setAssignmentDesc(session.assignmentDescription || "");
-                              setAssignmentFileUrl(session.assignmentFileUrl || "");
-                              setAssignmentDueAt(session.assignmentDueAt ? session.assignmentDueAt.slice(0, 16) : "");
-                              setAssignmentMaterialUrl(session.materialUrl || "");
-                              setAssignmentMaterialDesc(session.materialDescription || "");
-                              setShowAssignmentModal(true);
-                            }}
-                            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all"
-                          >
-                            <FileText className="w-3.5 h-3.5" />
-                            <span>Giao Bài / Sửa</span>
-                          </button>
+                          {!historyMode && !isCancelled && (
+                            <button
+                              onClick={() => {
+                                setEditingSession(session);
+                                setAssignmentTopic(session.topic || "");
+                                setAssignmentTitle(session.assignmentTitle || "");
+                                setAssignmentDesc(session.assignmentDescription || "");
+                                setAssignmentFileUrl(session.assignmentFileUrl || "");
+                                setAssignmentDueAt(session.assignmentDueAt ? session.assignmentDueAt.slice(0, 16) : "");
+                                setAssignmentMaterialUrl(session.materialUrl || "");
+                                setAssignmentMaterialDesc(session.materialDescription || "");
+                                setShowAssignmentModal(true);
+                              }}
+                              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>Giao Bài / Sửa</span>
+                            </button>
+                          )}
 
                           {!isCompleted && (
-                            session.myCheckedIn ? (
+                            (historyMode || isCancelled) ? (
+                              <span className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1">
+                                <Ban className="w-3.5 h-3.5" />
+                                Buổi học đã dừng/hủy
+                              </span>
+                            ) : session.myCheckedIn ? (
                               <button
                                 disabled={actionLoading}
                                 onClick={() => handleTutorDirectCheckin(session.id)}
@@ -1984,54 +2023,65 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                       )}
 
                       {/* Student Actions */}
-                      {currentUserRole === "STUDENT" && !historyMode && !isCancelled && (
+                      {currentUserRole === "STUDENT" && (
                         <>
-                          {!isPassedOrDone && !session.myCheckedIn && (
-                            <div className="flex flex-col items-end gap-1.5">
-                              <button
-                                disabled={!active || actionLoading}
-                                onClick={() => handleStudentCheckin(session.id)}
-                                className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
-                                  active
-                                    ? "bg-emerald-600 hover:bg-emerald-700 text-white animate-bounce ring-2 ring-emerald-400 ring-offset-1"
-                                    : "bg-slate-200 text-slate-400 cursor-not-allowed"
-                                }`}
-                                title={
-                                  active
-                                    ? "Bấm để điểm danh vào học và nhận link phòng học"
-                                    : "Chỉ mở điểm danh trong khung giờ học " + session.startTime + " - " + session.endTime
-                                }
-                              >
-                                <CheckCircle2 className="w-4 h-4" />
-                                <span>{active ? "Điểm Danh Vào Học" : "Chưa Đến Giờ Điểm Danh"}</span>
-                              </button>
-                              <span className="text-[11px] text-amber-600 font-semibold flex items-center gap-1">
-                                <Lock className="w-3 h-3" />
-                                Điểm danh có mặt để lấy link vào phòng học
-                              </span>
-                            </div>
-                          )}
-
-                          {!isCompleted && session.myCheckedIn && (
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="px-3 py-2 bg-emerald-100 text-emerald-800 rounded-lg text-xs font-bold flex items-center gap-1.5 border border-emerald-300 shadow-2xs">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                                <span>Đã Điểm Danh Có Mặt</span>
-                              </span>
-                              {meetingLink && (
-                                <a
-                                  href={meetingLink.startsWith("http") ? meetingLink : `https://${meetingLink}`}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-md animate-pulse"
-                                  title="Mở link Google Meet / Zoom để vào phòng học"
-                                >
-                                  <Video className="w-4 h-4" />
-                                  <span>Vào Phòng Học</span>
-                                  <ExternalLink className="w-3.5 h-3.5" />
-                                </a>
+                          {(historyMode || isCancelled) ? (
+                            <span className="px-3 py-1.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold flex items-center gap-1">
+                              <Ban className="w-3.5 h-3.5" />
+                              {Boolean(session.attendanceStopped)
+                                ? "Đã dừng học theo thỏa thuận/quyết định"
+                                : "Buổi học đã dừng/hủy"}
+                            </span>
+                          ) : (
+                            <>
+                              {!isPassedOrDone && !session.myCheckedIn && (
+                                <div className="flex flex-col items-end gap-1.5">
+                                  <button
+                                    disabled={!active || actionLoading}
+                                    onClick={() => handleStudentCheckin(session.id)}
+                                    className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
+                                      active
+                                        ? "bg-emerald-600 hover:bg-emerald-700 text-white animate-bounce ring-2 ring-emerald-400 ring-offset-1"
+                                        : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                                    }`}
+                                    title={
+                                      active
+                                        ? "Bấm để điểm danh vào học và nhận link phòng học"
+                                        : "Chỉ mở điểm danh trong khung giờ học " + session.startTime + " - " + session.endTime
+                                    }
+                                  >
+                                    <CheckCircle2 className="w-4 h-4" />
+                                    <span>{active ? "Điểm Danh Vào Học" : "Chưa Đến Giờ Điểm Danh"}</span>
+                                  </button>
+                                  <span className="text-[11px] text-amber-600 font-semibold flex items-center gap-1">
+                                    <Lock className="w-3 h-3" />
+                                    Điểm danh có mặt để lấy link vào phòng học
+                                  </span>
+                                </div>
                               )}
-                            </div>
+
+                              {!isCompleted && session.myCheckedIn && (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="px-3 py-2 bg-emerald-100 text-emerald-800 rounded-lg text-xs font-bold flex items-center gap-1.5 border border-emerald-300 shadow-2xs">
+                                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                    <span>Đã Điểm Danh Có Mặt</span>
+                                  </span>
+                                  {meetingLink && (
+                                    <a
+                                      href={meetingLink.startsWith("http") ? meetingLink : `https://${meetingLink}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-md animate-pulse"
+                                      title="Mở link Google Meet / Zoom để vào phòng học"
+                                    >
+                                      <Video className="w-4 h-4" />
+                                      <span>Vào Phòng Học</span>
+                                      <ExternalLink className="w-3.5 h-3.5" />
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+                            </>
                           )}
 
                           {isCompleted && onDisputeClick && (
@@ -2045,6 +2095,18 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                             </button>
                           )}
                         </>
+                      )}
+
+                      {/* Admin / Staff Actions */}
+                      {(currentUserRole === "ADMIN" || currentUserRole === "STAFF") && (
+                        <button
+                          onClick={() => openAttendancePanel(session)}
+                          className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all"
+                          title="Xem danh sách điểm danh & bài tập học viên"
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          <span>Xem Điểm Danh & Bài Tập</span>
+                        </button>
                       )}
                     </div>
                   </div>
@@ -2721,7 +2783,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-5 pt-4 border-t border-slate-100">
                 <div className="text-xs text-slate-500">
                   <span>Có mặt: <b className="text-emerald-700">{checkedInCount}</b>/{attendanceList.length} học viên</span>
-                  {activeSession.status !== "COMPLETED" && activeSession.status !== "CANCELLED" && (
+                  {isSessionAvailable(activeSession) && currentUserRole === "TUTOR" && (
                     <span className="block text-[11px] text-amber-700 mt-0.5">
                       ⏳ Hệ thống sẽ tự động chốt kết quả và giải ngân sau buổi học
                     </span>
@@ -2735,7 +2797,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                   >
                     Đóng
                   </button>
-                  {activeSession.status !== "COMPLETED" && activeSession.status !== "CANCELLED" && (
+                  {isSessionAvailable(activeSession) && currentUserRole === "TUTOR" && (
                     <button
                       disabled={actionLoading}
                       onClick={handleTutorFinalizeAttendance}

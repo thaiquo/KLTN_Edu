@@ -1,3 +1,4 @@
+import { selectTerminationCase } from "../../utils/terminationState";
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import {
@@ -29,6 +30,7 @@ import {
 } from 'lucide-react';
 import { classApi } from '../../api/classes';
 import { contractsApi } from '../../api/contractsApi';
+import { terminationsApi } from '../../api/terminationsApi';
 import { useFeedback } from '../../components/feedback/useFeedback';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import { StudentEmptyState, StudentPageScaffold } from './StudentPageScaffold';
@@ -87,10 +89,9 @@ function isHistoricalEnrollment(request, agreement) {
     || enrollmentStatus === 'COMPLETED'
     || agreementStatus === 'CANCELLED'
     || agreementStatus === 'COMPLETED'
-    || request?.terminationCutoffSession != null
     || classRoomStatus === 'CANCELLED'
     || classRoomStatus === 'CLOSED'
-    || (classRoomStatus === 'LOCKED' && request?.terminationCutoffSession != null);
+;
 }
 
 export function StudentMyClassesPage() {
@@ -106,6 +107,7 @@ export function StudentMyClassesPage() {
   const selectedClassId = searchParams.get('classId');
 
   const [agreementsMap, setAgreementsMap] = useState({});
+  const [refunds, setRefunds] = useState([]);
   const [scheduleData, setScheduleData] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -118,13 +120,15 @@ export function StudentMyClassesPage() {
     setLoading(true);
     setError('');
     try {
-      const [data, agreementsData, sched] = await Promise.all([
+      const [data, agreementsData, sched, refundsData] = await Promise.all([
         classApi.getMyEnrollmentRequests(),
         contractsApi.listAgreements({ size: 100 }).catch(() => []),
-        classApi.getStudentSchedule().catch(() => null)
+        classApi.getStudentSchedule().catch(() => null),
+        terminationsApi.listRefunds().catch(() => [])
       ]);
       setRequests(normalizeRequests(data));
       setScheduleData(sched);
+      setRefunds(Array.isArray(refundsData) ? refundsData : []);
       const agrContent = Array.isArray(agreementsData) ? agreementsData : (agreementsData?.content || []);
       const map = {};
       agrContent.forEach((agr) => {
@@ -140,11 +144,29 @@ export function StudentMyClassesPage() {
     }
   }
 
+  useRealtimeRefresh(
+    [
+      'CLASS_REVIEWED',
+      'CLASS_MUTATED',
+      'CLASS_STATUS_CHANGED',
+      'CLASSROOM_STATUS_CHANGED',
+      'ENROLLMENT_REQUESTED',
+      'ENROLLMENT_CANCELLED',
+      'AGREEMENT_UPDATED',
+      'AGREEMENT_ACTIVATED',
+      'TERMINATION_UPDATED',
+      'TERMINATION_COMPLETED',
+      'TERMINATION_REQUESTED',
+      'TERMINATION_APPROVED'
+    ],
+    loadRequests
+  );
+
   useEffect(() => {
     loadRequests();
   }, []);
 
-  useRealtimeRefresh(['ENROLLMENT_ACCEPTED', 'ENROLLMENT_REJECTED', 'ENROLLMENT_CANCELLED', 'AGREEMENT_FUNDED', 'AGREEMENT_EXPIRED', 'TERMINATION_COMPLETED'], loadRequests);
+  useRealtimeRefresh(['TERMINATION_UPDATED', 'TERMINATION_COMPLETED', 'ENROLLMENT_ACCEPTED', 'ENROLLMENT_REJECTED', 'ENROLLMENT_CANCELLED', 'AGREEMENT_FUNDED', 'AGREEMENT_EXPIRED'], loadRequests);
 
   // Calculate counts
   const enrolledClasses = useMemo(() => {
@@ -188,6 +210,7 @@ export function StudentMyClassesPage() {
       const classSchedules = schedulesByClassId.get(cid) || [];
       const liveCheck = isClassLiveNow({
         schedules: classSchedules,
+        classStatus: req.classRoomStatus, terminationCutoffSession: req.terminationCutoffSession,
         sessions: classSessions,
         currentDate: currentTime
       });
@@ -447,6 +470,7 @@ export function StudentMyClassesPage() {
           classRoomId={Number(selectedClassId)}
           request={selectedClass}
           agreement={agreementsMap[selectedClassId]}
+          refunds={refunds}
           onBack={handleBackToList}
         />
       ) : (
@@ -594,6 +618,7 @@ export function StudentMyClassesPage() {
                   key={request.id}
                   request={request}
                   agreement={agreementsMap[request.classRoomId]}
+                  refunds={refunds}
                   liveCheckFromParent={isLiveMap.get(Number(request.classRoomId))}
                   sessions={sessionsByClassId.get(Number(request.classRoomId))}
                   recurringSchedules={schedulesByClassId.get(Number(request.classRoomId))}
@@ -623,6 +648,7 @@ export function StudentMyClassesPage() {
 function ClassSummaryCard({
   request,
   agreement,
+  refunds = [],
   onSelectClass,
   liveCheckFromParent,
   sessions,
@@ -631,21 +657,56 @@ function ClassSummaryCard({
 }) {
   const [classroomDetails, setClassroomDetails] = useState(null);
 
-  const isTerminatedClass = request?.terminationCutoffSession != null ||
-    classroomDetails?.terminationCutoffSession != null ||
+  const activeRefundCase = useMemo(() => {
+    return selectTerminationCase(refunds, { classroomId: request?.classRoomId, agreementId: agreement?.id || request?.agreementId });
+  }, [refunds, request?.classRoomId, request?.agreementId, agreement?.id]);
+
+  const isParticipationHeld = request?.terminationCutoffSession != null || classroomDetails?.terminationCutoffSession != null;
+  const isTerminatedClass =
     classroomDetails?.status === 'CANCELLED' ||
-    classroomDetails?.status === 'CLOSED' ||
-    (classroomDetails?.status === 'LOCKED' && classroomDetails?.terminationCutoffSession != null);
+    classroomDetails?.status === 'CLOSED';
 
   const historical = isHistoricalEnrollment(request, agreement) || isTerminatedClass;
   const status = isTerminatedClass ? 'TERMINATED' : (historical ? 'CANCELLED' : normalizeStatus(request.status));
-  const meta = isTerminatedClass ? {
-    label: 'Đã dừng giảng dạy (Xem lịch sử)',
-    className: 'bg-amber-50 text-amber-800 border-amber-300'
-  } : (STATUS_META[status] || {
-    label: status,
-    className: 'bg-slate-100 text-slate-600 border-slate-200'
-  });
+
+  const meta = useMemo(() => {
+    if (activeRefundCase?.request?.status === 'RELEASE_PENDING') {
+      return { label: 'Admin đã cho tiếp tục học · Đang khôi phục lịch', className: 'bg-amber-50 text-amber-800 border-amber-300' };
+    }
+    if (activeRefundCase?.request?.status === 'HOLD_PENDING') {
+      return { label: 'Đã tiếp nhận đề xuất · Đang đồng bộ dừng lịch', className: 'bg-amber-50 text-amber-800 border-amber-300' };
+    }
+    if (activeRefundCase?.request?.status === 'APPROVED') {
+      return {
+        label: 'Admin đã duyệt hủy · Đang hoàn cọc về ví',
+        className: 'bg-rose-50 text-rose-800 border-rose-300'
+      };
+    }
+    if (activeRefundCase?.request?.status === 'RECOMMENDED') {
+      return {
+        label: 'Staff đã đề xuất chấm dứt · Chờ Admin duyệt',
+        className: 'bg-indigo-50 text-indigo-800 border-indigo-300'
+      };
+    }
+    if (isTerminatedClass || activeRefundCase?.request?.status === 'COMPLETED') {
+      return {
+        label: activeRefundCase && !activeRefundCase.request.wholeClass
+          ? 'Hợp đồng của bạn đã chấm dứt (Xem lịch sử)'
+          : classroomDetails?.status === 'CLOSED' ? 'Lớp đã kết thúc (Xem lịch sử)' : 'Lớp đã hủy theo quyết định Admin (Xem lịch sử)',
+        className: 'bg-rose-50 text-rose-800 border-rose-200'
+      };
+    }
+    if (isParticipationHeld) {
+      return {
+        label: 'Dừng các buổi tương lai · Chờ xử lý chấm dứt',
+        className: 'bg-amber-50 text-amber-800 border-amber-300'
+      };
+    }
+    return STATUS_META[status] || {
+      label: status,
+      className: 'bg-slate-100 text-slate-600 border-slate-200'
+    };
+  }, [activeRefundCase, isTerminatedClass, isParticipationHeld, status, classroomDetails?.status]);
 
   useEffect(() => {
     if (!request.classRoomId) return;
@@ -671,6 +732,7 @@ function ClassSummaryCard({
     const classSessions = sessions || [];
     return isClassLiveNow({
       schedules: classSchedules,
+      classStatus: classroomDetails?.status, terminationCutoffSession: request.terminationCutoffSession ?? classroomDetails?.terminationCutoffSession,
       sessions: classSessions,
       currentDate: currentTime || new Date()
     });
@@ -899,7 +961,7 @@ function ClassSummaryCard({
 /**
  * Dedicated Class Workspace View for Selected Class
  */
-function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) {
+function StudentClassWorkspaceView({ classRoomId, request, agreement, refunds = [], onBack }) {
   const [classroomDetails, setClassroomDetails] = useState(null);
   const [loadingDetails, setLoadingDetails] = useState(false);
 
@@ -952,11 +1014,10 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) 
     (request?.tutorEmail ? request.tutorEmail.split('@')[0] : 'Gia sư');
 
   const meetingLink = classroomDetails?.meetingLink || request?.meetingLink || '';
-  const isTerminatedClass = request?.terminationCutoffSession != null ||
-    classroomDetails?.terminationCutoffSession != null ||
+  const isParticipationHeld = request?.terminationCutoffSession != null || classroomDetails?.terminationCutoffSession != null;
+  const isTerminatedClass =
     classroomDetails?.status === 'CANCELLED' ||
-    classroomDetails?.status === 'CLOSED' ||
-    (classroomDetails?.status === 'LOCKED' && classroomDetails?.terminationCutoffSession != null);
+    classroomDetails?.status === 'CLOSED';
   const historyMode = isHistoricalEnrollment(request, agreement) || isTerminatedClass;
 
   return (
@@ -987,20 +1048,53 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, onBack }) 
 
       {/* Class Overview Header Card */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-xs">
-        {historyMode && (
-          <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50/70 p-3.5 text-amber-900">
-            <History size={17} className="mt-0.5 shrink-0 text-amber-700" />
-            <div>
-              <strong className="block text-sm font-black text-amber-950">
-                Lớp học đã dừng giảng dạy · Chế độ xem lịch sử
-                {classroomDetails?.terminationCutoffSession != null && ` (Điểm cắt từ Buổi #${classroomDetails.terminationCutoffSession})`}
-              </strong>
-              <p className="mt-0.5 text-xs text-amber-800">
-                Hợp đồng đã có quyết định chấm dứt. Các buổi học tương lai, phòng học và điểm danh mới đã được khóa. Toàn bộ các buổi đã học, kết quả điểm danh và bài tập bạn đã nộp vẫn được lưu trữ đầy đủ để bạn tra cứu.
-              </p>
-            </div>
-          </div>
-        )}
+        {(() => {
+          const activeRefund = selectTerminationCase(refunds, { classroomId: classRoomId, agreementId: agreement?.id || request?.agreementId });
+
+          if (activeRefund?.request?.status === 'APPROVED') {
+            return (
+              <div className="mb-4 flex items-start gap-3 rounded-xl border border-rose-300 bg-rose-50 p-3.5 text-rose-900">
+                <AlertTriangle size={17} className="mt-0.5 shrink-0 text-rose-600" />
+                <div className="flex-1">
+                  <strong className="block text-sm font-black text-rose-950">
+                    {activeRefund.request.wholeClass ? 'Admin đã phê duyệt dừng lớp học' : 'Admin đã duyệt chấm dứt hợp đồng của bạn'} · Đang xử lý hoàn cọc
+                  </strong>
+                  <p className="mt-0.5 text-xs text-rose-800">
+                    Các buổi học tương lai thuộc hợp đồng của bạn đã dừng. Hệ thống đang xử lý quyết toán và hoàn phần cọc còn lại; xem trạng thái xác nhận tại Ví.
+                  </p>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Link
+                      to="/student/wallet"
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-rose-600 text-white font-bold text-xs hover:bg-rose-700 transition"
+                    >
+                      <Wallet size={13} />
+                      <span>Xem tiến độ hoàn tiền tại Ví</span>
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          if (historyMode) {
+            return (
+              <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50/70 p-3.5 text-amber-900">
+                <History size={17} className="mt-0.5 shrink-0 text-amber-700" />
+                <div>
+                  <strong className="block text-sm font-black text-amber-950">
+                    Phần học của bạn đã kết thúc · Chế độ xem lịch sử
+                    {classroomDetails?.terminationCutoffSession != null && ` (Điểm cắt từ Buổi #${classroomDetails.terminationCutoffSession})`}
+                  </strong>
+                  <p className="mt-0.5 text-xs text-amber-800">
+                    Hợp đồng đã có quyết định chấm dứt. Các buổi học tương lai, phòng học và điểm danh mới đã được khóa. Toàn bộ các buổi đã học, kết quả điểm danh và bài tập bạn đã nộp vẫn được lưu trữ đầy đủ để bạn tra cứu.
+                  </p>
+                </div>
+              </div>
+            );
+          }
+
+          return null;
+        })()}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap mb-2">

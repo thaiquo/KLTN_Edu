@@ -138,6 +138,9 @@ public class ClassRoomService {
             throw new ForbiddenException("You do not have access to this classroom");
         }
 
+        if (classRoom.getStatus() == ClassRoomStatus.CANCELLED || classRoom.getStatus() == ClassRoomStatus.CLOSED) {
+            throw new BadRequestException("Lớp đã kết thúc; không thể sửa nội dung và phòng học");
+        }
         validateSyllabus(request.syllabusMode(), request.syllabusFileUrl(), request.chapters());
 
         classRoom.setDescription(request.description().trim());
@@ -169,7 +172,8 @@ public class ClassRoomService {
     public ClassRoomDtos.ClassRoomResponse updateVisibility(String tutorEmail, Long id, ClassRoomDtos.UpdateVisibilityRequest request) {
         ClassRoom classRoom = classRoomRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + id));
-        if (classRoom.getTerminationCutoffSession() != null) throw new BadRequestException("Classroom is terminating");
+        if (classRoom.getTerminationCutoffSession() != null || classRoom.getStatus() == ClassRoomStatus.CANCELLED
+                || classRoom.getStatus() == ClassRoomStatus.CLOSED) throw new BadRequestException("Classroom is terminating or closed");
         if (!classRoom.getTutorEmail().equalsIgnoreCase(tutorEmail)) {
             throw new ForbiddenException("You do not have access to this classroom");
         }

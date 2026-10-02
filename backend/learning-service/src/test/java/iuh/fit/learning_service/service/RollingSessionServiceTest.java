@@ -97,4 +97,23 @@ class RollingSessionServiceTest {
                         && !attendance.getStudentChecked()
                         && !attendance.getTutorChecked()));
     }
+
+    @Test
+    void cancelledOrClosedClassroomNeverGeneratesInitialOrNextBatchSessions() {
+        ClassRoom r = room();
+        r.setStatus(iuh.fit.learning_service.enums.ClassRoomStatus.CANCELLED);
+        assertThat(service.generateInitialWeekSessions(1L)).isEmpty();
+        assertThat(service.generateNextBatchIfNeeded(1L)).isEmpty();
+
+        r.setStatus(iuh.fit.learning_service.enums.ClassRoomStatus.CLOSED);
+        assertThat(service.generateInitialWeekSessions(1L)).isEmpty();
+        assertThat(service.generateNextBatchIfNeeded(1L)).isEmpty();
+
+        r.setStatus(iuh.fit.learning_service.enums.ClassRoomStatus.ACTIVE);
+        r.setTerminationCutoffSession(3);
+        assertThat(service.generateInitialWeekSessions(1L)).isEmpty();
+        assertThat(service.generateNextBatchIfNeeded(1L)).isEmpty();
+
+        verify(sessions, never()).save(any());
+    }
 }

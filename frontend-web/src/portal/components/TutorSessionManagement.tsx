@@ -1,3 +1,4 @@
+import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
 import React, { useState, useEffect, useMemo } from "react";
 import {
   BookOpen,
@@ -17,7 +18,9 @@ import {
   Filter,
   GraduationCap
 } from "lucide-react";
+import { apiRequest } from "../../api/client";
 import { classApi } from "../../api/classes";
+import { terminationsApi, TerminationView } from "../../api/terminationsApi";
 import { ClassSessionsTimeline } from "../../components/classroom/ClassSessionsTimeline";
 import { isClassLiveNow } from "../../utils/scheduleUtils";
 
@@ -40,38 +43,25 @@ const formatUpcomingLabel = (startsAt: Date) => {
 };
 
 const getNextUpcomingSession = (cls: any) => {
-  const schedules = Array.isArray(cls?.schedules) ? cls.schedules : [];
-  if (schedules.length === 0) return null;
+  if (['CANCELLED', 'CLOSED'].includes(cls.status)) return null;
   const now = new Date();
   let best: any = null;
-
-  for (let offset = 0; offset < 14; offset++) {
-    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
-    const projectDay = day.getDay() === 0 ? 8 : day.getDay() + 1;
-    for (const schedule of schedules) {
-      if (Number(schedule.dayOfWeek) !== projectDay) continue;
-      const startsAt = sessionDateTime(
-        `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`,
-        schedule.startTime
-      );
-      if (!startsAt || startsAt.getTime() < now.getTime() - 30 * 60 * 1000) continue;
-      if (!best || startsAt.getTime() < best.startsAt.getTime()) {
-        best = {
-          startsAt,
-          startTime: schedule.startTime,
-          endTime: schedule.endTime,
-          label: formatUpcomingLabel(startsAt),
-          timeLabel: `${formatUpcomingLabel(startsAt)} ${schedule.startTime || ""}`.trim()
-        };
-      }
-    }
-    if (best) break;
+  for (const session of cls.sessions || []) {
+    if (session.attendanceStopped || !['SCHEDULED', 'IN_PROGRESS'].includes(session.status)) continue;
+    const startsAt = sessionDateTime(session.sessionDate, session.startTime);
+    const endsAt = sessionDateTime(session.sessionDate, session.endTime);
+    if (!startsAt || !endsAt || endsAt <= now) continue;
+    if (!best || startsAt < best.startsAt) best = {
+      startsAt, startTime: session.startTime, endTime: session.endTime,
+      label: formatUpcomingLabel(startsAt), timeLabel: formatUpcomingLabel(startsAt) + ' ' + session.startTime
+    };
   }
   return best;
 };
 
 export const TutorSessionManagement: React.FC = () => {
-  const [classes, setClasses] = useState<any[]>([]);
+  const [rawClasses, setClasses] = useState<any[]>([]);
+  const [terminationCases, setTerminationCases] = useState<TerminationView[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,19 +76,31 @@ export const TutorSessionManagement: React.FC = () => {
 
   useEffect(() => {
     loadMyClasses();
+    const refresh = () => { if (!document.hidden) loadMyClasses(); };
+    const timer = setInterval(refresh, 60000);
+    window.addEventListener('focus', refresh);
+    return () => { clearInterval(timer); window.removeEventListener('focus', refresh); };
   }, []);
 
   const loadMyClasses = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await classApi.getMyClasses();
+      const [data, termData] = await Promise.all([
+        classApi.getMyClasses(),
+        terminationsApi.list().catch(() => [])
+      ]);
       const list = Array.isArray(data) ? data : [];
+      setTerminationCases(Array.isArray(termData) ? termData : []);
       
       // Calculate live status and upcoming session for each class
-      const enrichedList = list.map((cls) => {
+      const enrichedList = await Promise.all(list.map(async (cls) => {
+        // A failed session request must never fabricate a live class from a weekly template.
+        const sessionData = await apiRequest('/api/learning/classes/' + cls.id + '/sessions').catch(() => []);
+        cls = { ...cls, sessions: Array.isArray(sessionData) ? sessionData : [] };
         const liveInfo = isClassLiveNow({
           schedules: cls.schedules,
+          sessions: cls.sessions, classStatus: cls.status, terminationCutoffSession: cls.terminationCutoffSession,
           currentDate: new Date()
         });
         const nextSession = getNextUpcomingSession(cls);
@@ -108,7 +110,7 @@ export const TutorSessionManagement: React.FC = () => {
           liveReason: liveInfo.reason,
           nextSession
         };
-      });
+      }));
 
       // Sort: Live classes first, then nearest upcoming sessions, then by name
       enrichedList.sort((a, b) => {
@@ -137,17 +139,37 @@ export const TutorSessionManagement: React.FC = () => {
     }
   };
 
+  useRealtimeRefresh([
+    'TERMINATION_UPDATED',
+    'TERMINATION_COMPLETED',
+    'TERMINATION_REQUESTED',
+    'TERMINATION_APPROVED',
+    'TERMINATION_REJECTED',
+    'CLASS_MUTATED',
+    'CLASS_REVIEWED'
+  ], loadMyClasses);
+
+  const classes = useMemo(() => rawClasses.map((cls) => ({ ...cls,
+    isLive: isClassLiveNow({ sessions: cls.sessions, classStatus: cls.status, terminationCutoffSession: cls.terminationCutoffSession, currentDate: currentTime }).isLive,
+    nextSession: getNextUpcomingSession(cls)
+  })), [rawClasses, currentTime]);
+
+  const activeTeachingClasses = useMemo(() => {
+    return classes.filter((cls) => !['CANCELLED', 'CLOSED', 'REJECTED', 'DRAFT'].includes(String(cls.status || '').toUpperCase()));
+  }, [classes]);
+
   const activeLiveClasses = useMemo(() => {
     return classes.filter((cls) => {
-      const live = isClassLiveNow({ schedules: cls.schedules, currentDate: currentTime });
+      if (['CANCELLED', 'CLOSED', 'REJECTED', 'DRAFT'].includes(String(cls.status || '').toUpperCase())) return false;
+      const live = isClassLiveNow({ sessions: cls.sessions, classStatus: cls.status, terminationCutoffSession: cls.terminationCutoffSession, currentDate: currentTime });
       return live.isLive;
     });
   }, [classes, currentTime]);
 
   const filteredClasses = useMemo(() => {
     return classes.filter((cls) => {
-      if (activeFilter === "LIVE" && !cls.isLive) return false;
-      if (activeFilter === "ACTIVE" && cls.status !== "ACTIVE" && cls.status !== "PUBLISHED") return false;
+      if (activeFilter === "LIVE" && !activeLiveClasses.some((c) => c.id === cls.id)) return false;
+      if (activeFilter === "ACTIVE" && ['CANCELLED', 'CLOSED', 'REJECTED', 'DRAFT'].includes(String(cls.status || '').toUpperCase())) return false;
       if (searchKeyword.trim()) {
         const q = searchKeyword.toLowerCase();
         const matchName = String(cls.name || "").toLowerCase().includes(q);
@@ -156,7 +178,7 @@ export const TutorSessionManagement: React.FC = () => {
       }
       return true;
     });
-  }, [classes, activeFilter, searchKeyword]);
+  }, [classes, activeFilter, searchKeyword, activeLiveClasses]);
 
   const selectedClass = classes.find((c) => c.id === selectedClassId) || classes[0];
 
@@ -185,7 +207,7 @@ export const TutorSessionManagement: React.FC = () => {
             </div>
             <div>
               <div className="text-xs text-indigo-200 font-semibold">Tổng Số Lớp Đang Dạy</div>
-              <div className="text-xl font-black text-white">{classes.length} Lớp Học</div>
+              <div className="text-xl font-black text-white">{activeTeachingClasses.length} Lớp Học</div>
             </div>
           </div>
         </div>
@@ -316,7 +338,7 @@ export const TutorSessionManagement: React.FC = () => {
                       : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                   }`}
                 >
-                  Đang hoạt động ({classes.filter((c) => c.status === "ACTIVE" || c.status === "PUBLISHED").length})
+                  Đang hoạt động ({activeTeachingClasses.length})
                 </button>
               </div>
 
@@ -345,6 +367,14 @@ export const TutorSessionManagement: React.FC = () => {
                 filteredClasses.map((cls) => {
                   const isSelected = cls.id === selectedClassId;
                   const isLive = cls.isLive;
+                  const isCancelled = cls.status === "CANCELLED";
+                  const isClosed = cls.status === "CLOSED";
+                  const termCase = terminationCases.find(
+                    t => t.request.classroomId === cls.id && t.request.wholeClass && !["REJECTED", "COMPLETED"].includes(t.request.status)
+                  );
+                  const isHold = (cls.terminationCutoffSession != null || termCase != null) && !isCancelled && !isClosed;
+                  const isApprovedTermination = termCase?.request.status === "APPROVED";
+                  const isRecommendedTermination = termCase?.request.status === "RECOMMENDED";
                   return (
                     <button
                       key={cls.id}
@@ -354,9 +384,19 @@ export const TutorSessionManagement: React.FC = () => {
                         isSelected
                           ? isLive
                             ? "bg-rose-600 text-white shadow-md ring-2 ring-rose-300"
+                            : isCancelled || isApprovedTermination
+                            ? "bg-rose-700 text-white shadow-md ring-2 ring-rose-400"
                             : "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
                           : isLive
                           ? "bg-rose-50 text-rose-800 border-2 border-rose-300 hover:bg-rose-100 animate-pulse"
+                          : isCancelled || isApprovedTermination
+                          ? "bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100"
+                          : isClosed
+                          ? "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200"
+                          : isHold
+                          ? isRecommendedTermination
+                            ? "bg-indigo-50 text-indigo-800 border border-indigo-300 hover:bg-indigo-100"
+                            : "bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100"
                           : "bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200"
                       }`}
                     >
@@ -373,6 +413,30 @@ export const TutorSessionManagement: React.FC = () => {
                           isSelected ? "bg-white/20 text-white" : "bg-rose-200 text-rose-900"
                         }`}>
                           ĐANG DẠY
+                        </span>
+                      ) : isCancelled ? (
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${
+                          isSelected ? "bg-white/20 text-white" : "bg-rose-200 text-rose-900"
+                        }`}>
+                          ĐÃ HỦY
+                        </span>
+                      ) : isClosed ? (
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                          isSelected ? "bg-white/20 text-white" : "bg-slate-200 text-slate-700"
+                        }`}>
+                          KẾT THÚC
+                        </span>
+                      ) : isHold ? (
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                          isSelected
+                            ? "bg-white/20 text-white"
+                            : isApprovedTermination
+                            ? "bg-rose-200 text-rose-900"
+                            : isRecommendedTermination
+                            ? "bg-indigo-200 text-indigo-900"
+                            : "bg-amber-200 text-amber-900"
+                        }`}>
+                          {isApprovedTermination ? "ĐÃ DUYỆT HỦY" : isRecommendedTermination ? "ĐỀ XUẤT HỦY" : "CHỜ XỬ LÝ"}
                         </span>
                       ) : cls.nextSession?.timeLabel ? (
                         <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
@@ -406,12 +470,55 @@ export const TutorSessionManagement: React.FC = () => {
                     <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold bg-slate-100 text-slate-700">
                       Hình thức: {selectedClass.learningMode === "ONLINE" ? "Trực tuyến (Online)" : "Trực tiếp (Offline)"}
                     </span>
-                    {selectedClass.isLive && (
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-600 text-white flex items-center gap-1.5 animate-pulse shadow-xs">
-                        <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-                        ĐANG TRONG KHUNG GIỜ HỌC
-                      </span>
-                    )}
+                    {(() => {
+                      const activeTerm = terminationCases.find(
+                        t => t.request.classroomId === selectedClass.id && t.request.wholeClass && !["REJECTED", "COMPLETED"].includes(t.request.status)
+                      );
+                      if (selectedClass.status === "CANCELLED") {
+                        return (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-800 border border-rose-300">
+                            LỚP ĐÃ HỦY THEO QUYẾT ĐỊNH ADMIN
+                          </span>
+                        );
+                      }
+                      if (selectedClass.status === "CLOSED") {
+                        return (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-slate-100 text-slate-700 border border-slate-300">
+                            LỚP ĐÃ KẾT THÚC
+                          </span>
+                        );
+                      }
+                      if (activeTerm?.request.status === "APPROVED") {
+                        return (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-800 border border-rose-300">
+                            ADMIN ĐÃ DUYỆT HỦY LỚP · ĐANG HOÀN TIỀN CỌC VỀ HỌC VIÊN
+                          </span>
+                        );
+                      }
+                      if (activeTerm?.request.status === "RECOMMENDED") {
+                        return (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-indigo-100 text-indigo-800 border border-indigo-300">
+                            STAFF ĐÃ ĐỀ XUẤT HỦY LỚP · CHỜ ADMIN DUYỆT
+                          </span>
+                        );
+                      }
+                      if (selectedClass.terminationCutoffSession != null || activeTerm) {
+                        return (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-800 border border-amber-300">
+                            TẠM DỪNG CÁC BUỔI TƯƠNG LAI · CHỜ XỬ LÝ CHẤM DỨT
+                          </span>
+                        );
+                      }
+                      if (selectedClass.isLive) {
+                        return (
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-600 text-white flex items-center gap-1.5 animate-pulse shadow-xs">
+                            <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                            ĐANG TRONG KHUNG GIỜ HỌC
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                   <h2 className="text-xl font-black text-slate-900 font-display">{selectedClass.name}</h2>
                   <p className="text-xs text-slate-500 mt-1 line-clamp-1">{selectedClass.description}</p>
@@ -437,8 +544,32 @@ export const TutorSessionManagement: React.FC = () => {
 
               {/* Sessions Timeline Component */}
               <div className="mt-6" id="sessions-timeline-list">
+                {["CANCELLED", "CLOSED"].includes(selectedClass.status) ? (
+                  <div role="status" className="mb-3 rounded-2xl bg-rose-50 border border-rose-200 p-4 text-sm text-rose-900 flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold">
+                        {selectedClass.status === "CANCELLED" ? "Lớp học đã bị hủy theo quyết định của Admin" : "Lớp học đã hoàn tất và đóng"}
+                      </div>
+                      <div className="text-xs text-rose-700 mt-0.5">
+                        Toàn bộ phòng học trực tuyến và thao tác điểm danh mới đã khóa. Hệ thống chỉ cho phép tra cứu lịch sử các buổi học và kết quả quyết toán đã hoàn thành.
+                      </div>
+                    </div>
+                  </div>
+                ) : selectedClass.terminationCutoffSession != null ? (
+                  <div role="status" className="mb-3 rounded-2xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900 flex items-start gap-3">
+                    <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-bold">Lớp đang tạm dừng các buổi học tương lai để xử lý chấm dứt</div>
+                      <div className="text-xs text-amber-700 mt-0.5">
+                        Các buổi học sau mốc dừng (Buổi #{selectedClass.terminationCutoffSession}) đã tạm khóa. Quyết định cuối cùng thuộc Admin theo hồ sơ thanh lý.
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
                 <ClassSessionsTimeline
                   classRoomId={selectedClass.id}
+                  historyMode={["CANCELLED", "CLOSED"].includes(selectedClass.status)}
                   classRoomName={selectedClass.name}
                   meetingLink={selectedClass.meetingLink}
                   learningMode={selectedClass.learningMode}

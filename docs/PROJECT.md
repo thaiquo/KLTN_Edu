@@ -92,6 +92,8 @@ Tỷ lệ được tính theo base unit của USDC; Tutor và Platform được 
 
 ## 8. Trạng thái ngắn gọn
 
+Audit note (2026-10-02): the local database has successful Flyway migrations through Account V15, Learning V37, Contract V19 and Notification V2. Contract termination notifications use an outbox and scoped internal service JWTs; source and tests cover the flow, while a running service must load the new code before its HTTP behavior changes. The local AI port 8085 and web dev port 5173 were closed in the latest probe, so the skeleton/UI source status below is not a runtime availability claim. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and [the termination review](contract/TERMINATION_FINAL_REVIEW_2026_10_02.md).
+
 - Đã có luồng chính Web cho Account, Tutor approval, catalog/class/enrollment, session/attendance/homework, contract/escrow/settlement/dispute và notification.
 - Sepolia đã có bằng chứng funding, payout 85/15, refund 100% và refund hoàn cọc thanh lý hợp đồng 4.80 USDC thực tế; chi tiết transaction nằm trong [BLOCKCHAIN.md](BLOCKCHAIN.md).
 - Chat backend có persistence/API/WebSocket nhưng Portal message hiện vẫn dùng mock state, nên luồng người dùng chưa hoàn chỉnh.

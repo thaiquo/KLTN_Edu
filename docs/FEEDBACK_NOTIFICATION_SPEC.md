@@ -35,6 +35,10 @@ This spec is documentation only. Current source includes persistent Notification
 
 ## 3. Core Architecture Rule
 
+Contract notification update (2026-10-02): the internal send endpoint checks a short-lived `notification-send` service JWT. Contract's termination outbox and its direct notification dispatcher both attach that token. Account's reviewer lookup checks the separate `notification-recipients` scope. This authenticates the producer before Notification Service accepts a client-supplied recipient id. The termination outbox still retries with a stable event id, and Notification Service deduplicates by event id and recipient.
+
+The local DB probe observed 14 delivered and 0 pending termination outbox rows. This is backend delivery evidence. Per-user browser Bell receipt and unread navigation were not exercised with four authenticated accounts in this audit.
+
 | Layer | Responsibility |
 | --- | --- |
 | REST | Primary read/write business API and source of normal request responses. |
@@ -225,6 +229,7 @@ These are target events derived from current project scope and docs. They are no
 | `SESSION_SETTLED` | `IMPLEMENTED` | Learning/Contract Service | Student/Tutor | Financial progress and Important Success Modal | Partial | Partial after authoritative confirmation | Partial | `/payments` or `/contracts` | Learning delivery, proposal, 24-hour eligibility, on-chain finalization and recovery workers are implemented. |
 | `PAYMENT_CONFIRMED` | `IMPLEMENTED` | Contract Service | Student/Tutor/Admin as applicable | Financial progress and Important Success Modal | Partial | Partial after authoritative confirmation | Partial | `/payments` | Confirmed transaction history and wallet/financial views exist; notification coverage is not universal. |
 | `REFUND_PROCESSED` | `IMPLEMENTED` | Contract Service | Student/Tutor/Admin as applicable | Important Success Modal | Partial | Partial after authoritative confirmation | Partial | `/payments` or `/contracts` | Tutor-absent refund, unused-fund refund and dispute-approved refund paths exist. |
+| `TERMINATION_UPDATED` | `IMPLEMENTED` | Contract Service | Student/Tutor and assigned reviewers | Destructive confirmation plus authoritative case refresh | Transactional outbox; Account resolves assigned Staff and active Admin ids | Notification Service WebSocket for persisted party notifications; manager work queue polls REST | Implemented for affected parties and reviewers | `/contracts` or Portal contract management | Durable intents, stable event ids, retry and deadline notices; see contract/TERMINATION_REVIEW_2026_10_02.md. Runtime delivery still needs verification with services running. |
 | `DISPUTE_OPENED` | `PARTIAL` | Contract Service | Tutor | Confirm before submit, then toast | Immediate when a Student complaint is accepted locally | Notification Service WebSocket | Yes | Portal `complaints` | Tutor notification includes the persisted Student complaint reason. Submission immediately holds the per-Student settlement. Tutor-origin complaints are private Staff/Admin reports and do not notify the Student. Reviewer Bell delivery remains unavailable because agreements do not store reviewer user id. |
 | `DISPUTE_RESOLVED` | `PARTIAL` | Contract Service | Student/Tutor | Important Success Modal for resolver | Yes after confirmed on-chain resolution | Notification Service WebSocket | Yes | `/contracts` or Portal `complaints` | Both parties receive the authoritative resolution result; reviewer Bell delivery remains pending a reviewer recipient id. |
 | `MESSAGE_RECEIVED` | `PARTIAL` | Notification Service chat domain | Recipient | Sender local send state | Optional summary | Backend `/ws/chat` implemented | Bell integration not implemented | `/messages` | Message persistence/API/WebSocket exist; current Portal UI is not connected. |
@@ -287,6 +292,7 @@ These are target events derived from current project scope and docs. They are no
 | Admin | Lock/unlock user | `IMPLEMENTED` | `SECURITY_SENSITIVE` | Yes recommended | Toast | Toast | Optional if notifying affected user is required | Recommended only if user is online |
 | Admin | Catalog CRUD | `IMPLEMENTED` | `NORMAL_WRITE` | Destructive/status changes may confirm | Toast | Toast/inline | No by default | No |
 | Contract | Sign contract | `PARTIAL` | `FINANCIAL_CRITICAL` when tied to payment | Yes | Important Success Modal after authoritative state | Blocking error/toast | Yes | Required when implemented |
+| Contract | Request/review/force termination | `IMPLEMENTED` | `FINANCIAL_CRITICAL` | Yes for party request and Admin approval | Case status/progress UI | Blocking case error/toast | Durable delivery for affected parties and reviewers | Party notifications realtime; reviewer queue polls REST |
 | Payment | Fund escrow | `PARTIAL` | `FINANCIAL_CRITICAL` | Yes | Progress UI, then Important Success Modal after confirmation | Blocking error/toast | Yes after confirmation | Required after confirmation |
 | Messaging | Send message | `PARTIAL` | `NORMAL_WRITE` | No | Local send state | Inline/toast | Optional Bell summary | Backend realtime implemented; Web integration pending |
 | AI Matching | Generate matching | `PLANNED` | `IMPORTANT_WRITE` for long-running generation | Optional | Toast or result-ready state | Toast/inline | Optional | Recommended only for long-running jobs |
@@ -311,6 +317,7 @@ These are target events derived from current project scope and docs. They are no
 | `ESCROW_FUNDED` | `PARTIAL` | Contract Service | Student/Tutor | Business flow implemented; persistent coverage requires per-path audit | Partial after authoritative confirmation | `STUDENT`/`TUTOR` | `/payments` or `/contracts` |
 | `DISPUTE_OPENED` | `PARTIAL` | Contract Service | Tutor | Persistent notification implemented after confirmed opening | Implemented through Notification Service WebSocket | `TUTOR` | Portal `complaints` |
 | `DISPUTE_RESOLVED` | `PARTIAL` | Contract Service | Student/Tutor | Persistent notification implemented after confirmed resolution | Implemented through Notification Service WebSocket | `STUDENT`/`TUTOR` | `/contracts` or Portal `complaints` |
+| `TERMINATION_UPDATED` | `IMPLEMENTED` | Contract Service | Student/Tutor, Staff/Admin queue | Outbox delivery for parties, assigned Staff and active Admin recipients resolved by Account | Notification Service WebSocket for persisted party notifications; REST polling for the management queue | `STUDENT`/`TUTOR`/`STAFF`/`ADMIN` | `/contracts` or Portal contract management |
 
 ## 16. WebSocket Matrix
 
