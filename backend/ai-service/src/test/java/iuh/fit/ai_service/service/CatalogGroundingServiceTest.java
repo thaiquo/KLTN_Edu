@@ -69,6 +69,31 @@ class CatalogGroundingServiceTest {
     }
 
     @Test
+    void naturalVietnameseMathSubjectAliasesGroundToCatalogSubject() {
+        for (String subjectHint : List.of("Toán", "Toán học", "môn Toán", "toán", "TOÁN")) {
+            var response = service.ground(request(requirement(subjectHint, "Lớp 12", TeachingMode.ONLINE)));
+
+            assertThat(response.status()).as(subjectHint).isEqualTo(GroundingStatus.GROUNDED);
+            assertThat(response.requirement().subject().id()).as(subjectHint).isEqualTo(5L);
+            assertThat(response.requirement().subject().name()).as(subjectHint).isEqualTo("Toan");
+            assertThat(response.requirement().level().id()).as(subjectHint).isEqualTo(9L);
+            assertThat(response.requirement().level().name()).as(subjectHint).isEqualTo("Lop 12");
+        }
+    }
+
+    @Test
+    void naturalSubjectAliasDoesNotFalseMatchUnrelatedCatalogSubject() {
+        var response = service.ground(request(requirement("Hóa học", "Lớp 12", TeachingMode.ONLINE)));
+
+        assertThat(response.status()).isEqualTo(GroundingStatus.NOT_FOUND);
+        assertThat(response.requirement().subject()).isNull();
+        assertThat(response.clarifications()).anySatisfy(clarification -> {
+            assertThat(clarification.field()).isEqualTo(ClarificationField.SUBJECT);
+            assertThat(clarification.reason()).isEqualTo(ClarificationReason.NOT_FOUND);
+        });
+    }
+
+    @Test
     void missingSubjectNeedsClarification() {
         var response = service.ground(request(requirement(null, "Lop 12", TeachingMode.ONLINE)));
 

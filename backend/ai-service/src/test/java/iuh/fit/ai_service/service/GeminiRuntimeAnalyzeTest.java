@@ -31,8 +31,6 @@ class GeminiRuntimeAnalyzeTest {
                 để ôn thi tốt nghiệp.
                 """));
 
-        System.out.println("completeRequirement=" + response);
-
         assertThat(response.status()).isEqualTo(ExtractionStatus.EXTRACTED);
         assertThat(response.requirement().subjectHint()).isNotBlank();
         assertThat(response.requirement().levelHint()).isNotBlank();
@@ -48,8 +46,6 @@ class GeminiRuntimeAnalyzeTest {
                 "Em muốn tìm gia sư Toán để cải thiện điểm."
         ));
 
-        System.out.println("missingInformation=" + response);
-
         assertThat(response.status()).isEqualTo(ExtractionStatus.NEEDS_CLARIFICATION);
         assertThat(response.requirement().subjectHint()).isNotBlank();
         assertThat(response.missingRequiredFields()).contains("level", "teachingMode");
@@ -60,8 +56,6 @@ class GeminiRuntimeAnalyzeTest {
         AnalyzeRequirementResponse response = analyzer.analyze(new AnalyzeRequirementRequest(
                 "Viết cho tôi một bài thơ về mùa hè."
         ));
-
-        System.out.println("irrelevantInput=" + response);
 
         assertThat(response.status()).isEqualTo(ExtractionStatus.INVALID);
     }

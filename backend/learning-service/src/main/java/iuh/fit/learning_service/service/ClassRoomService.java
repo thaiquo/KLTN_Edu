@@ -34,10 +34,14 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -548,27 +552,205 @@ public class ClassRoomService {
             BigDecimal minPrice,
             BigDecimal maxPrice
     ) {
+        return filterPublicClasses(
+                programTypeId,
+                educationLevelId,
+                categoryId,
+                subjectId,
+                levelId,
+                null,
+                keyword,
+                mode,
+                tutorEmail,
+                tutorProfileId,
+                minPrice,
+                maxPrice,
+                null,
+                null,
+                null,
+                null,
+                false
+        ).stream().map(c -> toResponse(c, false)).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public ClassRoomDtos.PublicClassSearchResponse searchPublicClasses(
+            Long programTypeId,
+            Long educationLevelId,
+            Long categoryId,
+            Long subjectId,
+            Long levelId,
+            List<Long> levelIds,
+            String keyword,
+            String mode,
+            String tutorEmail,
+            Long tutorProfileId,
+            BigDecimal minPrice,
+            BigDecimal maxPrice,
+            Integer weekday,
+            List<Integer> weekdays,
+            String startTime,
+            String endTime,
+            Boolean availableOnly,
+            int page,
+            int size,
+            String sort
+    ) {
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(Math.max(size, 1), 50);
+        String safeSort = normalizeSort(sort);
+
+        List<ClassRoom> filtered = filterPublicClasses(
+                programTypeId,
+                educationLevelId,
+                categoryId,
+                subjectId,
+                levelId,
+                levelIds,
+                keyword,
+                mode,
+                tutorEmail,
+                tutorProfileId,
+                minPrice,
+                maxPrice,
+                weekday,
+                weekdays,
+                startTime,
+                endTime,
+                Boolean.TRUE.equals(availableOnly)
+        ).stream().sorted(publicClassComparator(safeSort)).toList();
+
+        long total = filtered.size();
+        int fromIndex = safePage * safeSize;
+        List<ClassRoomDtos.PublicClassCardResponse> content = fromIndex >= filtered.size()
+                ? List.of()
+                : filtered.subList(fromIndex, Math.min(filtered.size(), fromIndex + safeSize))
+                        .stream()
+                        .map(this::toPublicCardResponse)
+                        .toList();
+        int totalPages = total == 0 ? 0 : (int) Math.ceil(total / (double) safeSize);
+        return new ClassRoomDtos.PublicClassSearchResponse(content, safePage, safeSize, total, totalPages, safeSort);
+    }
+
+    @Transactional(readOnly = true)
+    public ClassRoomDtos.PublicClassSemanticSourceResponse getPublicClassSemanticSources(
+            List<Long> ids,
+            Long subjectId,
+            Long levelId,
+            String mode,
+            Boolean availableOnly,
+            Integer max
+    ) {
+        List<ClassRoom> filtered = filterPublicClasses(
+                null,
+                null,
+                null,
+                subjectId,
+                levelId,
+                null,
+                null,
+                mode,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                Boolean.TRUE.equals(availableOnly)
+        );
+        Set<Long> requestedIds = ids == null ? Set.of() : ids.stream()
+                .filter(id -> id != null && id > 0)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        int limit = max == null || max <= 0 ? Integer.MAX_VALUE : Math.min(max, 500);
+        List<ClassRoomDtos.PublicClassSemanticSourceItem> content = filtered.stream()
+                .filter(c -> requestedIds.isEmpty() || requestedIds.contains(c.getId()))
+                .sorted(Comparator.comparing(ClassRoom::getId))
+                .limit(limit)
+                .map(this::toPublicSemanticSourceItem)
+                .toList();
+        return new ClassRoomDtos.PublicClassSemanticSourceResponse(content);
+    }
+
+    private List<ClassRoom> filterPublicClasses(
+            Long programTypeId,
+            Long educationLevelId,
+            Long categoryId,
+            Long subjectId,
+            Long levelId,
+            List<Long> levelIds,
+            String keyword,
+            String mode,
+            String tutorEmail,
+            Long tutorProfileId,
+            BigDecimal minPrice,
+            BigDecimal maxPrice,
+            Integer weekday,
+            List<Integer> weekdays,
+            String startTime,
+            String endTime,
+            boolean availableOnly
+    ) {
+        LearningMode requestedMode = parseLearningMode(mode);
+        boolean invalidMode = mode != null && !mode.isBlank() && requestedMode == null && !"ALL".equalsIgnoreCase(mode.trim());
+        if (invalidMode) {
+            return List.of();
+        }
+        LocalTime requestedStart = parseOptionalTime(startTime);
+        LocalTime requestedEnd = parseOptionalTime(endTime);
+        boolean invalidTimeRange = requestedStart != null && requestedEnd != null && !requestedStart.isBefore(requestedEnd);
+        if (invalidTimeRange) {
+            return List.of();
+        }
+        Set<Long> requestedLevelIds = normalizeLevelIds(levelId, levelIds);
+        Set<Integer> requestedWeekdays = normalizeWeekdays(weekday, weekdays);
+
         List<ClassRoom> list = classRoomRepository.findAllWithDetails();
         return list.stream()
                 .filter(c -> c.getStatus() == ClassRoomStatus.PUBLISHED || c.getStatus() == ClassRoomStatus.ACTIVE)
                 .filter(c -> matchesTutorFilter(c, tutorEmail, tutorProfileId))
                 .filter(c -> matchesRegistrationBranch(c, programTypeId, educationLevelId, categoryId, subjectId))
-                .filter(c -> {
-                    if (levelId == null) return true;
-                    return c.getLevel() != null && c.getLevel().getId().equals(levelId);
-                })
-                .filter(c -> {
-                    if (mode == null || mode.isBlank()) return true;
-                    return c.getLearningMode().name().equalsIgnoreCase(mode.trim());
-                })
+                .filter(c -> requestedLevelIds.isEmpty() || (c.getLevel() != null && requestedLevelIds.contains(c.getLevel().getId())))
+                .filter(c -> requestedMode == null || c.getLearningMode() == requestedMode)
                 .filter(c -> minPrice == null || c.getPricePerSession().compareTo(minPrice) >= 0)
                 .filter(c -> maxPrice == null || c.getPricePerSession().compareTo(maxPrice) <= 0)
-                .filter(c -> {
-                    if (keyword == null || keyword.isBlank()) return true;
-                    return matchesPublicClassKeyword(c, keyword);
-                })
-                .map(c -> toResponse(c, false))
+                .filter(c -> keyword == null || keyword.isBlank() || matchesPublicClassKeyword(c, keyword))
+                .filter(c -> matchesScheduleFilter(c, requestedWeekdays, requestedStart, requestedEnd))
+                .filter(c -> !availableOnly || hasAvailableSlot(c))
                 .toList();
+    }
+
+    private Set<Long> normalizeLevelIds(Long levelId, List<Long> levelIds) {
+        LinkedHashSet<Long> result = new LinkedHashSet<>();
+        if (levelId != null) {
+            result.add(levelId);
+        }
+        if (levelIds != null) {
+            levelIds.stream()
+                    .filter(value -> value != null && value > 0)
+                    .forEach(result::add);
+        }
+        return result;
+    }
+
+    private Set<Integer> normalizeWeekdays(Integer weekday, List<Integer> weekdays) {
+        LinkedHashSet<Integer> result = new LinkedHashSet<>();
+        if (weekday != null) {
+            addValidPublicWeekday(result, weekday);
+        }
+        if (weekdays != null) {
+            weekdays.forEach(value -> addValidPublicWeekday(result, value));
+        }
+        return result;
+    }
+
+    private void addValidPublicWeekday(Set<Integer> result, Integer value) {
+        if (value == null) return;
+        int normalized = value == 1 ? 8 : value;
+        if (normalized >= 2 && normalized <= 8) {
+            result.add(normalized);
+        }
     }
 
     private boolean matchesRegistrationBranch(
@@ -618,6 +800,102 @@ public class ClassRoomService {
 
     private boolean contains(String value, String keyword) {
         return value != null && value.toLowerCase(Locale.ROOT).contains(keyword);
+    }
+
+    private boolean matchesScheduleFilter(ClassRoom c, Set<Integer> availableWeekdays, LocalTime startTime, LocalTime endTime) {
+        if (availableWeekdays.isEmpty() && startTime == null && endTime == null) {
+            return true;
+        }
+        if (c.getSchedules() == null || c.getSchedules().isEmpty()) {
+            return false;
+        }
+        return c.getSchedules().stream().allMatch(schedule -> {
+            if (!availableWeekdays.isEmpty() && !availableWeekdays.contains(normalizePublicWeekday(schedule.getDayOfWeek()))) {
+                return false;
+            }
+            LocalTime scheduleStart = parseOptionalTime(schedule.getStartTime());
+            LocalTime scheduleEnd = parseOptionalTime(schedule.getEndTime());
+            if (scheduleStart == null || scheduleEnd == null) {
+                return false;
+            }
+            if (startTime != null && scheduleStart.isBefore(startTime)) {
+                return false;
+            }
+            return endTime == null || !scheduleEnd.isAfter(endTime);
+        });
+    }
+
+    private Integer normalizePublicWeekday(Integer day) {
+        if (day == null) return null;
+        return day == 1 ? 8 : day;
+    }
+
+    private boolean hasAvailableSlot(ClassRoom c) {
+        if (c.getId() == null || c.getMaxStudents() == null) return false;
+        long acceptedCount = enrollmentRequestRepository.countByClassRoomIdAndStatusIn(
+                c.getId(),
+                List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED)
+        );
+        long pendingCount = enrollmentRequestRepository.countByClassRoomIdAndStatus(c.getId(), EnrollmentRequestStatus.PENDING);
+        int maxPending = c.getMaxPendingRequests() != null ? c.getMaxPendingRequests() : (int) Math.ceil(c.getMaxStudents() * 1.5);
+        return acceptedCount < c.getMaxStudents() && (pendingCount + acceptedCount) < maxPending;
+    }
+
+    private Comparator<ClassRoom> publicClassComparator(String sort) {
+        Comparator<ClassRoom> byIdDesc = Comparator.comparing(
+                (ClassRoom c) -> c.getId() == null ? 0L : c.getId(),
+                Comparator.reverseOrder()
+        );
+        return switch (sort) {
+            case "price_asc" -> Comparator
+                    .comparing((ClassRoom c) -> c.getPricePerSession() == null ? BigDecimal.ZERO : c.getPricePerSession())
+                    .thenComparing(byIdDesc);
+            case "price_desc" -> Comparator
+                    .comparing((ClassRoom c) -> c.getPricePerSession() == null ? BigDecimal.ZERO : c.getPricePerSession(), Comparator.reverseOrder())
+                    .thenComparing(byIdDesc);
+            case "soonest" -> Comparator
+                    .comparing((ClassRoom c) -> c.getStartDate() == null ? LocalDate.MAX : c.getStartDate())
+                    .thenComparing(byIdDesc);
+            case "rating_desc" -> Comparator
+                    .comparing(this::publicClassAverageRating, Comparator.reverseOrder())
+                    .thenComparing(byIdDesc);
+            default -> Comparator
+                    .comparing((ClassRoom c) -> c.getCreatedAt() == null ? LocalDateTime.MIN : c.getCreatedAt(), Comparator.reverseOrder())
+                    .thenComparing(byIdDesc);
+        };
+    }
+
+    private String normalizeSort(String sort) {
+        if (sort == null || sort.isBlank()) return "newest";
+        return switch (sort.trim()) {
+            case "newest", "price_asc", "price_desc", "soonest", "rating_desc" -> sort.trim();
+            default -> "newest";
+        };
+    }
+
+    private LearningMode parseLearningMode(String mode) {
+        if (mode == null || mode.isBlank() || "ALL".equalsIgnoreCase(mode.trim())) {
+            return null;
+        }
+        try {
+            return LearningMode.valueOf(mode.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
+    private LocalTime parseOptionalTime(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return LocalTime.parse(value.trim());
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private Double publicClassAverageRating(ClassRoom c) {
+        Long tutorUserId = resolveTutorUserIdForRating(c);
+        return tutorUserId == null ? 0.0 : safeAverage(tutorReviewRepository.averageRatingByTutorId(tutorUserId));
     }
 
     private String normalizeOptional(String value) {
@@ -813,6 +1091,92 @@ public class ClassRoomService {
 
     private ClassRoomDtos.ClassRoomResponse toResponse(ClassRoom c) {
         return toResponse(c, true);
+    }
+
+    private ClassRoomDtos.PublicClassCardResponse toPublicCardResponse(ClassRoom c) {
+        ClassRoomDtos.ClassRoomResponse response = toResponse(c, false);
+        List<String> topicChips = c.getChapters().stream()
+                .sorted(Comparator
+                        .comparing((ClassChapter ch) -> ch.getOrderIndex() == null ? 0 : ch.getOrderIndex())
+                        .thenComparing(ch -> ch.getId() == null ? 0L : ch.getId()))
+                .map(ClassChapter::getTitle)
+                .filter(title -> title != null && !title.isBlank())
+                .limit(3)
+                .toList();
+        return new ClassRoomDtos.PublicClassCardResponse(
+                response.id(),
+                response.tutorSubjectRegistrationId(),
+                response.registration(),
+                response.level(),
+                response.tutorProfileId(),
+                response.tutorFullName(),
+                response.name(),
+                response.description(),
+                response.learningMode(),
+                response.learningMode() == LearningMode.OFFLINE ? response.address() : null,
+                response.maxStudents(),
+                response.acceptedCount(),
+                response.availableSlots(),
+                response.isBufferPoolFull(),
+                response.pricePerSession(),
+                response.totalPrice(),
+                response.sessionsPerWeek(),
+                response.durationPerSessionMinutes(),
+                response.startDate(),
+                response.endDate(),
+                response.totalSessions(),
+                response.joinMode(),
+                response.status(),
+                response.averageRating(),
+                response.reviewCount(),
+                response.schedules(),
+                topicChips,
+                response.createdAt()
+        );
+    }
+
+    private ClassRoomDtos.PublicClassSemanticSourceItem toPublicSemanticSourceItem(ClassRoom c) {
+        ClassRoomDtos.ClassRoomResponse response = toResponse(c, false);
+        List<String> topicChips = c.getChapters().stream()
+                .sorted(Comparator
+                        .comparing((ClassChapter ch) -> ch.getOrderIndex() == null ? 0 : ch.getOrderIndex())
+                        .thenComparing(ch -> ch.getId() == null ? 0L : ch.getId()))
+                .map(ClassChapter::getTitle)
+                .filter(title -> title != null && !title.isBlank())
+                .limit(3)
+                .toList();
+        return new ClassRoomDtos.PublicClassSemanticSourceItem(
+                response.id(),
+                response.tutorSubjectRegistrationId(),
+                response.registration(),
+                response.level(),
+                response.tutorProfileId(),
+                response.tutorFullName(),
+                response.name(),
+                response.description(),
+                response.learningMode(),
+                response.learningMode() == LearningMode.OFFLINE ? response.address() : null,
+                response.maxStudents(),
+                response.acceptedCount(),
+                response.availableSlots(),
+                response.isBufferPoolFull(),
+                response.pricePerSession(),
+                response.totalPrice(),
+                response.sessionsPerWeek(),
+                response.durationPerSessionMinutes(),
+                response.startDate(),
+                response.endDate(),
+                response.totalSessions(),
+                response.joinMode(),
+                response.status(),
+                response.averageRating(),
+                response.reviewCount(),
+                response.schedules(),
+                response.chapters(),
+                topicChips,
+                response.createdAt(),
+                response.updatedAt()
+        );
     }
 
     /** Public class discovery must not expose the reusable classroom meeting URL. */

@@ -7,7 +7,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 
 public interface TutorSubjectRegistrationRepository extends JpaRepository<TutorSubjectRegistration, Long> {
     List<TutorSubjectRegistration> findByTutorEmailIgnoreCaseOrderByCreatedAtDesc(String tutorEmail);
@@ -21,7 +20,6 @@ public interface TutorSubjectRegistrationRepository extends JpaRepository<TutorS
             TutorSubjectRegistrationStatus status
     );
     List<TutorSubjectRegistration> findByStatusInOrderByReviewedAtDesc(Collection<TutorSubjectRegistrationStatus> statuses);
-    Optional<TutorSubjectRegistration> findByIdAndTutorEmailIgnoreCase(Long id, String tutorEmail);
     @Query("""
             select case when count(registration) > 0 then true else false end
             from TutorSubjectRegistration registration

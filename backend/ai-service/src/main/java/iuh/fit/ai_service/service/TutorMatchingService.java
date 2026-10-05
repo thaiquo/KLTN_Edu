@@ -7,12 +7,18 @@ import iuh.fit.ai_service.dto.TutorMatchingDtos.MatchingInputEcho;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.PreferredScheduleRequest;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.ScoreBreakdown;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.ScoreComponent;
+import iuh.fit.ai_service.dto.TutorMatchingDtos.SemanticScoreComponent;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.SubjectCapability;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TeachingMode;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorCandidate;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorMatchResult;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorMatchingRequest;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorMatchingResponse;
+import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSearchRequest;
+import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSearchResult;
+import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSearchStatus;
+import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticTutorCandidate;
+import iuh.fit.ai_service.service.semantic.StudentSemanticSearchService;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -41,12 +47,26 @@ public class TutorMatchingService {
             "experience", EXPERIENCE_WEIGHT,
             "ratingConfidence", RATING_WEIGHT
     );
-    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
+    private static final SemanticScoreComponent SEMANTIC_NOT_APPLIED = new SemanticScoreComponent(
+            false,
+            false,
+            null,
+            BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP),
+            "Semantic matching was not applied; Matching V1 structured score is used."
+    );
 
     private final TutorCandidateClient candidateClient;
+    private final StudentSemanticSearchService semanticSearchService;
+    private final HybridMatchingProperties hybridProperties;
 
-    public TutorMatchingService(TutorCandidateClient candidateClient) {
+    public TutorMatchingService(
+            TutorCandidateClient candidateClient,
+            StudentSemanticSearchService semanticSearchService,
+            HybridMatchingProperties hybridProperties
+    ) {
         this.candidateClient = candidateClient;
+        this.semanticSearchService = semanticSearchService;
+        this.hybridProperties = hybridProperties;
     }
 
     public TutorMatchingResponse match(TutorMatchingRequest request) {
@@ -57,10 +77,14 @@ public class TutorMatchingService {
                 normalized.teachingMode()
         );
 
-        List<TutorMatchResult> results = candidates.stream()
+        List<ScoredTutorMatch> v1Results = candidates.stream()
                 .map(candidate -> scoreCandidate(normalized, candidate))
                 .flatMap(Optional::stream)
-                .sorted(resultComparator())
+                .sorted(v1Comparator())
+                .toList();
+        List<TutorMatchResult> results = applyHybridRanking(normalized, v1Results).stream()
+                .sorted(hybridComparator())
+                .map(ScoredTutorMatch::result)
                 .toList();
 
         return new TutorMatchingResponse(
@@ -73,7 +97,9 @@ public class TutorMatchingService {
                         normalized.provinceCode(),
                         normalized.communeCode(),
                         normalized.preferredSchedules(),
-                        normalized.learningGoal()
+                        normalized.learningGoal(),
+                        normalized.weakTopics(),
+                        normalized.tutorPreferences()
                 ),
                 candidates.size(),
                 results.size(),
@@ -82,7 +108,7 @@ public class TutorMatchingService {
         );
     }
 
-    private Optional<TutorMatchResult> scoreCandidate(TutorMatchingRequest request, TutorCandidate candidate) {
+    private Optional<ScoredTutorMatch> scoreCandidate(TutorMatchingRequest request, TutorCandidate candidate) {
         Optional<SubjectCapability> matchedCapability = findMatchedCapability(request, candidate);
         if (matchedCapability.isEmpty() || !isEligible(request, candidate)) {
             return Optional.empty();
@@ -111,11 +137,12 @@ public class TutorMatchingService {
                 location,
                 experience,
                 rating,
+                SEMANTIC_NOT_APPLIED,
                 rawScore,
                 new LinkedHashMap<>(WEIGHTS)
         );
 
-        return Optional.of(new TutorMatchResult(
+        TutorMatchResult result = new TutorMatchResult(
                 candidate.tutorId(),
                 candidate.userId(),
                 candidate.fullName(),
@@ -134,7 +161,138 @@ public class TutorMatchingService {
                 matchingReasons(request, capability, candidate, schedule, budget, location, experience, rating),
                 List.copyOf(missingData),
                 List.of()
+        );
+        return Optional.of(new ScoredTutorMatch(
+                result,
+                rawScore,
+                rawScore,
+                null,
+                BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP)
         ));
+    }
+
+    private List<ScoredTutorMatch> applyHybridRanking(TutorMatchingRequest request, List<ScoredTutorMatch> v1Results) {
+        if (v1Results.isEmpty() || !hybridProperties.semanticMatchingEnabled()) {
+            return v1Results;
+        }
+
+        SemanticSearchResult semanticResult;
+        try {
+            semanticResult = semanticSearchService.search(toSemanticRequest(request, v1Results));
+        } catch (RuntimeException exception) {
+            return v1Results;
+        }
+        if (semanticResult == null
+                || semanticResult.status() != SemanticSearchStatus.APPLICABLE
+                || semanticResult.candidates() == null
+                || semanticResult.candidates().isEmpty()) {
+            return v1Results;
+        }
+
+        Map<Long, SemanticCandidateRank> semanticByTutorId = semanticRanks(semanticResult.candidates());
+        return v1Results.stream()
+                .map(result -> applySemanticRankBoost(result, semanticByTutorId.get(result.result().tutorId())))
+                .toList();
+    }
+
+    private SemanticSearchRequest toSemanticRequest(TutorMatchingRequest request, List<ScoredTutorMatch> v1Results) {
+        MatchedSubject matchedSubject = v1Results.getFirst().result().matchedSubject();
+        return new SemanticSearchRequest(
+                request.subjectId(),
+                matchedSubject == null ? null : matchedSubject.subjectName(),
+                request.levelId(),
+                matchedSubject == null ? null : matchedSubject.levelName(),
+                request.teachingMode(),
+                request.learningGoal(),
+                request.weakTopics(),
+                request.tutorPreferences(),
+                null
+        );
+    }
+
+    private Map<Long, SemanticCandidateRank> semanticRanks(List<SemanticTutorCandidate> candidates) {
+        Map<Long, SemanticCandidateRank> ranks = new LinkedHashMap<>();
+        int count = candidates.size();
+        for (int index = 0; index < count; index++) {
+            SemanticTutorCandidate candidate = candidates.get(index);
+            if (candidate.tutorId() == null) {
+                continue;
+            }
+            double normalizedRank = count <= 1 ? 1.0 : 1.0 - (index / (double) (count - 1));
+            ranks.putIfAbsent(candidate.tutorId(), new SemanticCandidateRank(candidate, round(normalizedRank)));
+        }
+        return ranks;
+    }
+
+    private ScoredTutorMatch applySemanticRankBoost(ScoredTutorMatch scored, SemanticCandidateRank semanticRank) {
+        if (semanticRank == null) {
+            SemanticScoreComponent semantic = new SemanticScoreComponent(
+                    true,
+                    false,
+                    null,
+                    BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP),
+                    "No validated semantic candidate was available for this eligible tutor; no semantic boost applied."
+            );
+            return replaceSemantic(scored, semantic, scored.structuredScore(), BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP));
+        }
+
+        BigDecimal boost = BigDecimal.valueOf(semanticRank.normalizedSignal())
+                .multiply(BigDecimal.valueOf(hybridProperties.maxSemanticRankBoost()))
+                .setScale(4, RoundingMode.HALF_UP);
+        BigDecimal hybridScore = scored.structuredScore()
+                .add(boost)
+                .setScale(4, RoundingMode.HALF_UP);
+        SemanticScoreComponent semantic = new SemanticScoreComponent(
+                true,
+                boost.compareTo(BigDecimal.ZERO) > 0,
+                semanticRank.normalizedSignal(),
+                boost,
+                "Validated semantic candidate is used as a bounded rank-based boost; raw cosine is not converted to a percentage."
+        );
+        return replaceSemantic(scored, semantic, hybridScore, boost);
+    }
+
+    private ScoredTutorMatch replaceSemantic(
+            ScoredTutorMatch scored,
+            SemanticScoreComponent semantic,
+            BigDecimal hybridScore,
+            BigDecimal semanticBoost
+    ) {
+        TutorMatchResult current = scored.result();
+        ScoreBreakdown currentBreakdown = current.scoreBreakdown();
+        ScoreBreakdown breakdown = new ScoreBreakdown(
+                currentBreakdown.schedule(),
+                currentBreakdown.budget(),
+                currentBreakdown.location(),
+                currentBreakdown.experience(),
+                currentBreakdown.ratingConfidence(),
+                semantic,
+                currentBreakdown.rawScore(),
+                currentBreakdown.weights()
+        );
+        int matchPercentage = hybridScore.setScale(0, RoundingMode.HALF_UP).intValue();
+        matchPercentage = Math.max(0, Math.min(100, matchPercentage));
+        TutorMatchResult updated = new TutorMatchResult(
+                current.tutorId(),
+                current.userId(),
+                current.fullName(),
+                current.avatarUrl(),
+                current.bio(),
+                current.location(),
+                current.teachingModes(),
+                current.matchedSubject(),
+                current.startingTuition(),
+                current.availability(),
+                current.averageRating(),
+                current.reviewCount(),
+                current.publishedClassCount(),
+                matchPercentage,
+                breakdown,
+                current.matchingReasons(),
+                current.missingData(),
+                current.relaxedCriteria()
+        );
+        return new ScoredTutorMatch(updated, scored.structuredScore(), hybridScore, semantic.normalizedSignal(), semanticBoost);
     }
 
     private boolean isEligible(TutorMatchingRequest request, TutorCandidate candidate) {
@@ -381,17 +539,29 @@ public class TutorMatchingService {
                 trimToNull(request.provinceCode()),
                 trimToNull(request.communeCode()),
                 request.preferredSchedules() == null ? List.of() : request.preferredSchedules(),
-                trimToNull(request.learningGoal())
+                trimToNull(request.learningGoal()),
+                cleanTextList(request.weakTopics()),
+                cleanTextList(request.tutorPreferences())
         );
     }
 
-    private Comparator<TutorMatchResult> resultComparator() {
+    private Comparator<ScoredTutorMatch> v1Comparator() {
         return Comparator
-                .comparing(TutorMatchResult::matchPercentage).reversed()
-                .thenComparing(result -> result.scoreBreakdown().rawScore(), Comparator.reverseOrder())
-                .thenComparing(result -> result.averageRating() == null ? 0.0 : result.averageRating(), Comparator.reverseOrder())
-                .thenComparing(result -> result.reviewCount() == null ? 0L : result.reviewCount(), Comparator.reverseOrder())
-                .thenComparing(TutorMatchResult::tutorId, Comparator.nullsLast(Long::compareTo));
+                .comparing((ScoredTutorMatch scored) -> scored.result().matchPercentage()).reversed()
+                .thenComparing(ScoredTutorMatch::structuredScore, Comparator.reverseOrder())
+                .thenComparing(scored -> scored.result().averageRating() == null ? 0.0 : scored.result().averageRating(), Comparator.reverseOrder())
+                .thenComparing(scored -> scored.result().reviewCount() == null ? 0L : scored.result().reviewCount(), Comparator.reverseOrder())
+                .thenComparing(scored -> scored.result().tutorId(), Comparator.nullsLast(Long::compareTo));
+    }
+
+    private Comparator<ScoredTutorMatch> hybridComparator() {
+        return Comparator
+                .comparing(ScoredTutorMatch::hybridScore, Comparator.reverseOrder())
+                .thenComparing(ScoredTutorMatch::structuredScore, Comparator.reverseOrder())
+                .thenComparing(scored -> scored.semanticSignal() == null ? -1.0 : scored.semanticSignal(), Comparator.reverseOrder())
+                .thenComparing(scored -> scored.result().averageRating() == null ? 0.0 : scored.result().averageRating(), Comparator.reverseOrder())
+                .thenComparing(scored -> scored.result().reviewCount() == null ? 0L : scored.result().reviewCount(), Comparator.reverseOrder())
+                .thenComparing(scored -> scored.result().tutorId(), Comparator.nullsLast(Long::compareTo));
     }
 
     private ScoreComponent component(int weight, double normalizedScore, String policy) {
@@ -418,6 +588,17 @@ public class TutorMatchingService {
         return StringUtils.hasText(value) ? value.trim() : null;
     }
 
+    private List<String> cleanTextList(List<String> values) {
+        if (values == null || values.isEmpty()) {
+            return List.of();
+        }
+        return values.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .distinct()
+                .toList();
+    }
+
     private Double safeRating(Double value) {
         return value == null ? 0.0 : value;
     }
@@ -432,5 +613,17 @@ public class TutorMatchingService {
 
     private double round(double value) {
         return BigDecimal.valueOf(value).setScale(4, RoundingMode.HALF_UP).doubleValue();
+    }
+
+    private record ScoredTutorMatch(
+            TutorMatchResult result,
+            BigDecimal structuredScore,
+            BigDecimal hybridScore,
+            Double semanticSignal,
+            BigDecimal semanticBoost
+    ) {
+    }
+
+    private record SemanticCandidateRank(SemanticTutorCandidate candidate, double normalizedSignal) {
     }
 }

@@ -31,6 +31,7 @@ import org.springframework.util.StringUtils;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -96,8 +97,8 @@ public class CatalogGroundingService {
     }
 
     private SubjectResolution resolveSubject(String hint, String levelHint, List<LearningSubject> subjects) {
-        String normalizedHint = normalize(hint);
-        if (normalizedHint == null) {
+        List<String> normalizedHints = normalizedSubjectHints(hint);
+        if (normalizedHints.isEmpty()) {
             return new SubjectResolution(null, new Clarification(
                     ClarificationField.SUBJECT,
                     ClarificationReason.MISSING,
@@ -109,7 +110,9 @@ public class CatalogGroundingService {
         }
 
         List<LearningSubject> exact = subjects.stream()
-                .filter(subject -> normalizedHint.equals(normalize(subject.name())) || normalizedHint.equals(normalize(subject.code())))
+                .filter(subject -> normalizedHints.stream()
+                        .anyMatch(normalizedHint -> normalizedHint.equals(normalize(subject.name()))
+                                || normalizedHint.equals(normalize(subject.code()))))
                 .toList();
         SubjectResolution exactResolution = resolveSubjectCandidates(exact, levelHint);
         if (exactResolution != null) {
@@ -117,7 +120,9 @@ public class CatalogGroundingService {
         }
 
         List<LearningSubject> candidates = subjects.stream()
-                .filter(subject -> containsMatch(normalizedHint, subject.name()) || containsMatch(normalizedHint, subject.code()))
+                .filter(subject -> normalizedHints.stream()
+                        .anyMatch(normalizedHint -> containsMatch(normalizedHint, subject.name())
+                                || containsMatch(normalizedHint, subject.code())))
                 .toList();
         SubjectResolution candidateResolution = resolveSubjectCandidates(candidates, levelHint);
         if (candidateResolution != null) {
@@ -493,9 +498,40 @@ public class CatalogGroundingService {
         return text != null && fragment != null && fragment.length() >= 2 && text.contains(fragment);
     }
 
+    private List<String> normalizedSubjectHints(String hint) {
+        String normalized = normalize(hint);
+        if (normalized == null) {
+            return List.of();
+        }
+
+        LinkedHashSet<String> variants = new LinkedHashSet<>();
+        addSubjectHintVariant(variants, normalized);
+        addSubjectHintVariant(variants, canonicalSubjectHint(normalized));
+        return List.copyOf(variants);
+    }
+
+    private String canonicalSubjectHint(String normalized) {
+        if (normalized == null) {
+            return null;
+        }
+        String canonical = normalized
+                .replaceAll("^mon\\s+", "")
+                .replaceAll("\\bhoc\\b", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return canonical.isEmpty() ? null : canonical;
+    }
+
+    private void addSubjectHintVariant(LinkedHashSet<String> variants, String value) {
+        if (value != null && value.length() >= 2) {
+            variants.add(value);
+        }
+    }
+
     private boolean containsMatch(String normalizedHint, String value) {
         String normalizedValue = normalize(value);
-        return normalizedValue != null
+        return normalizedHint != null
+                && normalizedValue != null
                 && normalizedValue.contains(normalizedHint);
     }
 

@@ -3,6 +3,8 @@ package iuh.fit.ai_service.exception;
 import iuh.fit.ai_service.service.CatalogGroundingService.CatalogGroundingUnavailableException;
 import iuh.fit.ai_service.service.CatalogGroundingService.LocationGroundingUnavailableException;
 import iuh.fit.ai_service.service.GeminiService.GeminiUnavailableException;
+import iuh.fit.ai_service.service.semantic.SemanticAuthoritativeValidationException;
+import iuh.fit.ai_service.service.semantic.SemanticVectorStoreException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -54,6 +56,26 @@ public class ApiExceptionHandler {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(new ErrorResponse(
                         "Location grounding is temporarily unavailable",
+                        List.of(safeMessage(exception.getMessage()))
+                ));
+    }
+
+    @ExceptionHandler(SemanticVectorStoreException.class)
+    public ResponseEntity<ErrorResponse> handleSemanticVectorStoreUnavailable(SemanticVectorStoreException exception) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new ErrorResponse(
+                        "Semantic vector store is temporarily unavailable",
+                        List.of(safeMessage(exception.getMessage()))
+                ));
+    }
+
+    @ExceptionHandler(SemanticAuthoritativeValidationException.class)
+    public ResponseEntity<ErrorResponse> handleSemanticAuthoritativeValidationUnavailable(
+            SemanticAuthoritativeValidationException exception
+    ) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new ErrorResponse(
+                        "Semantic candidate validation is temporarily unavailable",
                         List.of(safeMessage(exception.getMessage()))
                 ));
     }

@@ -181,6 +181,83 @@ public final class ClassRoomDtos {
             Integer terminationCutoffSession
     ) {}
 
+    public record PublicClassCardResponse(
+            Long id,
+            Long tutorSubjectRegistrationId,
+            RegistrationBrief registration,
+            LevelBrief level,
+            Long tutorProfileId,
+            String tutorFullName,
+            String name,
+            String description,
+            LearningMode learningMode,
+            String address,
+            Integer maxStudents,
+            Long acceptedCount,
+            Long availableSlots,
+            Boolean isBufferPoolFull,
+            BigDecimal pricePerSession,
+            BigDecimal totalPrice,
+            Integer sessionsPerWeek,
+            Integer durationPerSessionMinutes,
+            LocalDate startDate,
+            LocalDate endDate,
+            Integer totalSessions,
+            JoinMode joinMode,
+            ClassRoomStatus status,
+            Double averageRating,
+            Long reviewCount,
+            List<ScheduleResponse> schedules,
+            List<String> topicChips,
+            LocalDateTime createdAt
+    ) {}
+
+    public record PublicClassSearchResponse(
+            List<PublicClassCardResponse> content,
+            int page,
+            int size,
+            long totalElements,
+            int totalPages,
+            String sort
+    ) {}
+
+    public record PublicClassSemanticSourceResponse(
+            List<PublicClassSemanticSourceItem> content
+    ) {}
+
+    public record PublicClassSemanticSourceItem(
+            Long id,
+            Long tutorSubjectRegistrationId,
+            RegistrationBrief registration,
+            LevelBrief level,
+            Long tutorProfileId,
+            String tutorFullName,
+            String name,
+            String description,
+            LearningMode learningMode,
+            String address,
+            Integer maxStudents,
+            Long acceptedCount,
+            Long availableSlots,
+            Boolean isBufferPoolFull,
+            BigDecimal pricePerSession,
+            BigDecimal totalPrice,
+            Integer sessionsPerWeek,
+            Integer durationPerSessionMinutes,
+            LocalDate startDate,
+            LocalDate endDate,
+            Integer totalSessions,
+            JoinMode joinMode,
+            ClassRoomStatus status,
+            Double averageRating,
+            Long reviewCount,
+            List<ScheduleResponse> schedules,
+            List<ChapterResponse> chapters,
+            List<String> topicChips,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt
+    ) {}
+
     public record RejectClassRequest(
             @NotBlank @Size(max = 1000) String reason
     ) {}

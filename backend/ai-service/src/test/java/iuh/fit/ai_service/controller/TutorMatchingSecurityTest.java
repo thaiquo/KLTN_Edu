@@ -2,7 +2,13 @@ package iuh.fit.ai_service.controller;
 
 import iuh.fit.ai_service.client.TutorCandidateClient;
 import iuh.fit.ai_service.client.AccountLocationClient;
+import iuh.fit.ai_service.client.LearningPublicClassClient;
 import iuh.fit.ai_service.client.LearningCatalogClient;
+import iuh.fit.ai_service.dto.ClassMatchingDtos.ClassSchedule;
+import iuh.fit.ai_service.dto.ClassMatchingDtos.LevelBrief;
+import iuh.fit.ai_service.dto.ClassMatchingDtos.PublicClassSource;
+import iuh.fit.ai_service.dto.ClassMatchingDtos.RegistrationBrief;
+import iuh.fit.ai_service.dto.ClassRequirementAnalysisDtos.ClassGeminiRequirementExtraction;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.Budget;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.GeminiRequirementExtraction;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.PreferredSchedule;
@@ -20,9 +26,16 @@ import iuh.fit.ai_service.dto.TutorMatchingDtos.SubjectCapability;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TeachingMode;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorCandidate;
 import iuh.fit.ai_service.service.RequirementExtractionClient;
+import iuh.fit.ai_service.service.ClassRequirementExtractionClient;
 import iuh.fit.ai_service.service.CatalogGroundingService.CatalogGroundingUnavailableException;
 import iuh.fit.ai_service.service.CatalogGroundingService.LocationGroundingUnavailableException;
 import iuh.fit.ai_service.service.GeminiService.GeminiUnavailableException;
+import iuh.fit.ai_service.service.semantic.ClassSemanticIndexService;
+import iuh.fit.ai_service.service.semantic.ClassSemanticSearchService;
+import iuh.fit.ai_service.service.semantic.ClassSemanticVectorStore;
+import iuh.fit.ai_service.service.semantic.SemanticVectorStore;
+import iuh.fit.ai_service.service.semantic.StudentSemanticSearchService;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexService;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.http.Cookie;
@@ -71,10 +84,34 @@ class TutorMatchingSecurityTest {
     private RequirementExtractionClient extractionClient;
 
     @MockBean
+    private ClassRequirementExtractionClient classExtractionClient;
+
+    @MockBean
     private LearningCatalogClient learningCatalogClient;
 
     @MockBean
+    private LearningPublicClassClient learningPublicClassClient;
+
+    @MockBean
     private AccountLocationClient accountLocationClient;
+
+    @MockBean
+    private SemanticVectorStore semanticVectorStore;
+
+    @MockBean
+    private TutorSemanticIndexService tutorSemanticIndexService;
+
+    @MockBean
+    private StudentSemanticSearchService studentSemanticSearchService;
+
+    @MockBean
+    private ClassSemanticVectorStore classSemanticVectorStore;
+
+    @MockBean
+    private ClassSemanticIndexService classSemanticIndexService;
+
+    @MockBean
+    private ClassSemanticSearchService classSemanticSearchService;
 
     @Test
     void unauthenticatedMatchingRequestReturns401() throws Exception {
@@ -406,6 +443,136 @@ class TutorMatchingSecurityTest {
                 .andExpect(jsonPath("$.message").value("Location grounding is temporarily unavailable"));
     }
 
+    @Test
+    void authenticatedStudentCannotInitializeSemanticCollection() throws Exception {
+        mockMvc.perform(post("/api/ai/semantic/collection/init")
+                        .with(csrf())
+                        .cookie(accessToken("student@gmail.com", "STUDENT", List.of("STUDENT"))))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(semanticVectorStore);
+    }
+
+    @Test
+    void authenticatedStaffCanInitializeSemanticCollection() throws Exception {
+        mockMvc.perform(post("/api/ai/semantic/collection/init")
+                        .with(csrf())
+                        .cookie(accessToken("staff@gmail.com", "STAFF", List.of("STAFF"))))
+                .andExpect(status().isOk());
+
+        verify(semanticVectorStore).initializeCollection();
+    }
+
+    @Test
+    void authenticatedAdminCanInitializeSemanticCollection() throws Exception {
+        mockMvc.perform(post("/api/ai/semantic/collection/init")
+                        .with(csrf())
+                        .cookie(accessToken("admin@gmail.com", "ADMIN", List.of("ADMIN"))))
+                .andExpect(status().isOk());
+
+        verify(semanticVectorStore).initializeCollection();
+    }
+
+    @Test
+    void unauthenticatedClassAnalyzeRequestReturns401() throws Exception {
+        mockMvc.perform(post("/api/ai/classes/analyze")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(classAnalyzeBody()))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(classExtractionClient);
+    }
+
+    @Test
+    void authenticatedStudentCanAnalyzeClassRequirement() throws Exception {
+        when(classExtractionClient.extractClassRequirement(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(classAnalysisExtraction());
+
+        mockMvc.perform(post("/api/ai/classes/analyze")
+                        .with(csrf())
+                        .cookie(accessToken("student@gmail.com", "STUDENT", List.of("STUDENT")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(classAnalyzeBody()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("EXTRACTED"))
+                .andExpect(jsonPath("$.requirement.subjectHint").value("Toán"))
+                .andExpect(jsonPath("$.requirement.teachingMode").value("ONLINE"));
+    }
+
+    @Test
+    void authenticatedTutorCannotAnalyzeClassRequirement() throws Exception {
+        mockMvc.perform(post("/api/ai/classes/analyze")
+                        .with(csrf())
+                        .cookie(accessToken("tutor@gmail.com", "TUTOR", List.of("TUTOR")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(classAnalyzeBody()))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(classExtractionClient);
+    }
+
+    @Test
+    void authenticatedStudentCanGroundClassRequirement() throws Exception {
+        when(learningCatalogClient.groundingSnapshot()).thenReturn(catalogSnapshot());
+
+        mockMvc.perform(post("/api/ai/classes/ground")
+                        .with(csrf())
+                        .cookie(accessToken("student@gmail.com", "STUDENT", List.of("STUDENT")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(classGroundBody()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("GROUNDED"))
+                .andExpect(jsonPath("$.coreSearchReady").value(true))
+                .andExpect(jsonPath("$.requirement.subject.id").value(5))
+                .andExpect(jsonPath("$.requirement.level.id").value(9));
+    }
+
+    @Test
+    void authenticatedStaffCannotGroundClassRequirement() throws Exception {
+        mockMvc.perform(post("/api/ai/classes/ground")
+                        .with(csrf())
+                        .cookie(accessToken("staff@gmail.com", "STAFF", List.of("STAFF")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(classGroundBody()))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(learningCatalogClient);
+    }
+
+    @Test
+    void authenticatedStudentCanMatchClasses() throws Exception {
+        when(learningPublicClassClient.findSemanticSources(
+                eq(null),
+                eq(SUBJECT_ID),
+                eq(LEVEL_ID),
+                eq(TeachingMode.ONLINE),
+                eq(true),
+                eq(null)
+        )).thenReturn(List.of(publicClass()));
+
+        mockMvc.perform(post("/api/ai/classes/match")
+                        .with(csrf())
+                        .cookie(accessToken("student@gmail.com", "STUDENT", List.of("STUDENT")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(classMatchBody()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.eligibleCandidates").value(1))
+                .andExpect(jsonPath("$.results[0].classId").value(7001));
+    }
+
+    @Test
+    void authenticatedTutorCannotMatchClasses() throws Exception {
+        mockMvc.perform(post("/api/ai/classes/match")
+                        .with(csrf())
+                        .cookie(accessToken("tutor@gmail.com", "TUTOR", List.of("TUTOR")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(classMatchBody()))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(learningPublicClassClient);
+    }
+
     private Cookie accessToken(String email, String activeRole, List<String> roles) {
         return accessToken(email, activeRole, roles, 900);
     }
@@ -449,6 +616,14 @@ class TutorMatchingSecurityTest {
                 """;
     }
 
+    private String classAnalyzeBody() {
+        return """
+                {
+                  "message": "Em muốn tìm lớp Toán lớp 12 online tối thứ 2, 4, 6."
+                }
+                """;
+    }
+
     private String groundBody() {
         return """
                 {
@@ -471,8 +646,8 @@ class TutorMatchingSecurityTest {
         return """
                 {
                   "requirement": {
-                    "subjectHint": "Toan",
-                    "levelHint": "Lop 12",
+                    "subjectHint": "MATH",
+                    "levelHint": "GRADE_12",
                     "teachingMode": "OFFLINE",
                     "budget": null,
                     "preferredSchedules": [],
@@ -481,6 +656,45 @@ class TutorMatchingSecurityTest {
                     "tutorPreferences": [],
                     "locationHint": "TP.HCM"
                   }
+                }
+                """;
+    }
+
+    private String classGroundBody() {
+        return """
+                {
+                  "requirement": {
+                    "subjectHint": "MATH",
+                    "levelHint": "GRADE_12",
+                    "teachingMode": "ONLINE",
+                    "budget": null,
+                    "availableSchedules": [],
+                    "learningGoal": "On thi tot nghiep",
+                    "weakTopics": ["Hinh hoc khong gian"],
+                    "classPreferences": ["Lop nho"],
+                    "locationHint": null
+                  }
+                }
+                """;
+    }
+
+    private String classMatchBody() {
+        return """
+                {
+                  "requirement": {
+                    "subject": { "id": 5, "code": "MATH", "name": "Toan", "context": null },
+                    "level": { "id": 9, "code": "GRADE_12", "name": "Lop 12", "context": null },
+                    "teachingMode": "ONLINE",
+                    "budget": { "min": 200000, "max": 350000, "target": 250000, "currency": "VND", "unit": "SESSION", "approximate": true },
+                    "availableSchedules": [
+                      { "dayOfWeek": 2, "startTime": "18:00", "endTime": "21:00", "timeOfDayHint": null }
+                    ],
+                    "learningGoal": "On thi tot nghiep",
+                    "weakTopics": ["Hinh hoc khong gian"],
+                    "classPreferences": ["Lop nho"],
+                    "locationHint": null
+                  },
+                  "topK": 5
                 }
                 """;
     }
@@ -496,6 +710,26 @@ class TutorMatchingSecurityTest {
                 "Ôn thi tốt nghiệp",
                 List.of("Tích phân"),
                 List.of("Dạy chậm"),
+                null,
+                List.of()
+        );
+    }
+
+    private ClassGeminiRequirementExtraction classAnalysisExtraction() {
+        return new ClassGeminiRequirementExtraction(
+                true,
+                "Toán",
+                "Lớp 12",
+                TeachingMode.ONLINE,
+                new Budget(null, null, BigDecimal.valueOf(250_000), "VND", "SESSION", true),
+                List.of(
+                        new PreferredSchedule(2, null, null, TimeOfDayHint.EVENING),
+                        new PreferredSchedule(4, null, null, TimeOfDayHint.EVENING),
+                        new PreferredSchedule(6, null, null, TimeOfDayHint.EVENING)
+                ),
+                "Ôn thi tốt nghiệp",
+                List.of("Hình học không gian"),
+                List.of("Lớp nhỏ"),
                 null,
                 List.of()
         );
@@ -532,6 +766,54 @@ class TutorMatchingSecurityTest {
                 4L,
                 0L,
                 null
+        );
+    }
+
+    private PublicClassSource publicClass() {
+        return new PublicClassSource(
+                7001L,
+                16L,
+                new RegistrationBrief(
+                        16L,
+                        1L,
+                        "Hoc thuat",
+                        2L,
+                        "THPT",
+                        6L,
+                        "Khoa hoc tu nhien",
+                        SUBJECT_ID,
+                        "Toan",
+                        "MATH",
+                        BigDecimal.valueOf(200_000),
+                        BigDecimal.valueOf(350_000)
+                ),
+                new LevelBrief(LEVEL_ID, "Lop 12", "GRADE_12"),
+                930001L,
+                "Nguyen Minh Anh",
+                "Lop on thi Toan 12",
+                "On thi tot nghiep mon Toan",
+                TeachingMode.ONLINE,
+                null,
+                12,
+                3L,
+                9L,
+                false,
+                BigDecimal.valueOf(250_000),
+                BigDecimal.valueOf(3_000_000),
+                3,
+                90,
+                java.time.LocalDate.now().plusDays(10),
+                java.time.LocalDate.now().plusMonths(3),
+                36,
+                "OPEN_REQUEST",
+                "PUBLISHED",
+                4.8,
+                12L,
+                List.of(new ClassSchedule(1L, 2, "18:30", "20:00")),
+                List.of(),
+                List.of("Ham so"),
+                java.time.LocalDateTime.now(),
+                java.time.LocalDateTime.now()
         );
     }
 

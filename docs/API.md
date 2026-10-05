@@ -30,7 +30,7 @@ from confirmed financial data. See [runtime semantics](ESCROW_HARDENING_2026-09-
 | Contract/Escrow/Settlement | `contract-service` | Contract agreement, signing, document, payment submission, transaction, settlement, dispute, expiry, cancellation/refund, and blockchain workflow APIs. Funding/session/lifecycle state transitions require confirmed blockchain events where Solidity emits authoritative events. Deployment/runtime hardening remains partial end-to-end. |
 | Notification | `notification-service` | Persistent user notifications, unread count, mark one read, mark all read, and limited realtime notification delivery for the authenticated recipient account. |
 | Chat | `notification-service` | Conversation/message persistence, participant-scoped REST APIs and raw WebSocket delivery. Web Portal integration is still partial. |
-| AI Matching | `ai-service` | `GET /api/ai/health`, Student-only `POST /api/ai/matching/analyze`, `POST /api/ai/matching/ground`, and `POST /api/ai/matching/tutors` are implemented for deterministic Matching V1; semantic/RAG/vector APIs do not exist yet. |
+| AI Matching | `ai-service` | `GET /api/ai/health`, Student-only Tutor AI endpoints `POST /api/ai/matching/analyze`, `POST /api/ai/matching/ground`, `POST /api/ai/matching/tutors`, and Student-only Class AI endpoints `POST /api/ai/classes/analyze`, `POST /api/ai/classes/ground`, `POST /api/ai/classes/match`. Tutor matching and backend Class matching return conservative Hybrid V2 results with deterministic fallback. Staff/Admin semantic maintenance exists under `/api/ai/semantic/**`; RAG APIs are not implemented yet. |
 
 ## 3. Current API Groups
 
@@ -64,6 +64,34 @@ Contract Service contains workflow/service logic, persistence, and REST controll
 Dispute file evidence uses multipart endpoints in `DisputeEvidenceController`. Files are stored through Contract Service's local/S3 artifact abstraction; the current root environment selects S3. The database stores object key, submitting user/role, media type, SHA-256 and creation time. File content is streamed only after dispute visibility and reviewer-scope authorization; clients never receive a public permanent S3 URL.
 
 Contract Service authentication now follows the same browser-cookie baseline as the other protected services: it reads the current account from the `access_token` JWT cookie and derives `userId`, `email`, `activeRole`, and `roles` server-side. Contract list/detail/document/sign/payment/dispute/transaction authorization must not trust frontend-supplied `role`, `userId`, `email`, `X-User-Role`, `X-User-Id`, or `X-User-Email`.
+
+## 3.0 Public Class Search V1
+
+Learning Service exposes Manual Public Class Search through the existing `GET /api/public/classes` endpoint. The endpoint returns a paged marketplace response, not an unbounded list. Public listing eligibility is authoritative in the backend: only `PUBLISHED` and `ACTIVE` classes are listed; `CLOSED`, `LOCKED`, rejected, draft, private, and invalid lifecycle states are excluded from the marketplace list.
+
+Supported V1 filters include `keyword`, `subjectId`, `levelId`, repeated `levelIds`, `mode`/`teachingMode`, `minPrice`, `maxPrice`, `programTypeId`, `educationLevelId`, `categoryId`, repeated `weekdays`, legacy single `weekday`, `startTime`, `endTime`, `availableOnly`, `page`, `size`, and `sort`. Keyword search covers class title, description, tutor public display name, subject/category names, and level names. Price uses `pricePerSession` and is displayed in the UI as `đ / buổi`.
+
+Manual Class Marketplace UI intentionally does not expose a Subject selector. `subjectId` remains supported by the backend for direct API compatibility, grounding, and future AI Class Search. Because catalog levels are stored under subjects, the UI deduplicates displayed level labels across the selected Program -> Education Level -> Category scope and sends every matching level id through `levelIds` instead of choosing one arbitrary `levelId`.
+
+Schedule availability filtering treats selected `weekdays` as the student's available days. When weekdays are provided, every recurring schedule row required by the class must be contained in that selected day set. When `startTime` and/or `endTime` are provided, every required class schedule row must fit inside that time window. If no weekdays are selected, there is no day restriction.
+
+Supported deterministic sort values are `newest`, `price_asc`, `price_desc`, `soonest`, and `rating_desc`. The public card DTO intentionally omits private fields such as meeting link, invite key, tutor email, class review reason/reviewer, and other staff-only review metadata. Public detail still hides the classroom meeting link unless the student later gains the normal protected class/session access.
+
+Backend AI Class Search now has semantic indexing/retrieval and Hybrid Class Matching V2. The Class Marketplace UI is still primarily a manual search flow with URL query state, server pagination, catalog-driven hierarchy/level selection without a Subject dropdown, advanced schedule availability filters, and public class detail modal; final AI-ranked class result rendering in the frontend remains a later integration step.
+
+## 3.0A AI Class Search Analyze/Ground
+
+Phase 4.6.3 adds Student-only AI Class Search preparation endpoints in `ai-service`:
+
+| Method | Endpoint | Purpose | Current boundary |
+| --- | --- | --- | --- |
+| `POST` | `/api/ai/classes/analyze` | Uses the configured Gemini requirement analyzer to extract class-search hints from natural Vietnamese text. | Returns human-readable hints only; no subjectId, levelId, classId, ranking, embedding, or fake class result is generated by Gemini. |
+| `POST` | `/api/ai/classes/ground` | Deterministically resolves `subjectHint` and `levelHint` against the live Learning catalog snapshot and returns clarification when needed. | Produces grounded catalog IDs and review data; it does not itself call class search, Qdrant, semantic retrieval, or Hybrid Class Matching. |
+| `POST` | `/api/ai/classes/match` | Scores grounded class requirements against public Learning class data and optionally applies semantic retrieval from `public_classes_v1`. | Requires grounded subject, level, and teaching mode. Hard eligibility comes from Learning public class data and cannot be bypassed by semantic hits. |
+
+These endpoints require active `STUDENT` authentication with the same cookie/JWT/CSRF baseline as Tutor AI Matching. Class Marketplace currently has a large modal entry point for Analyze -> Ground -> Review; final AI-ranked class result rendering remains future frontend work. Manual Class Search remains independent and continues to use `GET /api/public/classes`.
+
+Learning Service also exposes `GET /api/public/classes/semantic-source` as a public-safe source endpoint for AI indexing and authoritative validation. It returns only `PUBLISHED`/`ACTIVE` classes through the same public filter path as `GET /api/public/classes`, can require `availableOnly=true`, and omits private fields such as meeting links, invite keys, tutor email, and staff review metadata while including public chapter text for semantic documents.
 
 ## 3.1 Notification API
 
@@ -238,6 +266,14 @@ Controller: `TerminationController` in `contract-service` (prefix `/api/contract
 | `GET` | `/api/contracts/terminations/{id}/evidence/{evidenceId}/content` | Stream/download stored termination evidence file. | Parties on the agreement/class, assigned Staff reviewer, and Admin. Streams with original filename and nosniff header. |
 
 ## 4. API Status Principle
+
+## 3.9 AI Class Search Frontend Contract Status
+
+Web Class Marketplace now consumes the full Student-only AI Class Search flow: `POST /api/ai/classes/analyze` -> `POST /api/ai/classes/ground` -> `POST /api/ai/classes/match`. The final `/match` request sends the grounded requirement returned by `/ground` as `{ requirement, topK }`; it does not ask Gemini to rerun analysis and does not transform the AI requirement into manual class filters.
+
+The browser renders `/api/ai/classes/match` results through the existing public class card design with an additional EduConnect `% phù hợp` badge and backend-provided `matchingReasons`. Raw semantic internals such as vector IDs, Qdrant payload, document hashes, embedding model, raw cosine similarity, and score breakdown details are not part of the student UI contract.
+
+Class Marketplace AI and Manual Search are independent UI modes. Manual search continues to call `GET /api/learning/public/classes` with URL filters, sorting, and pagination. AI results are a session-scoped snapshot stored in browser `sessionStorage` with version, TTL, and account ownership; detail/back and page refresh restore the saved AI cards without replaying Analyze, Ground, Match, or embedding calls.
 
 Treat API status carefully:
 

@@ -12,7 +12,7 @@ MetaMask ───────┘                    │
                                     ├─ Learning :8082
                                     ├─ Contract :8083 ── Sepolia RPC / S3 / Gotenberg
                                     ├─ Notification + Chat :8084
-                                    └─ AI skeleton :8085
+                                    └─ AI :8085
 
 Account/Learning/Notification <──RabbitMQ──> kltn.edu.events
 Learning <──signed internal REST──> Contract
@@ -30,7 +30,7 @@ Các business service ──JPA/Flyway──> PostgreSQL kltn_db
 | `learning-service` | Learning marketplace | Catalog, TutorSubject/registration, availability, classroom/schedule/chapter, enrollment, rolling session, attendance, homework. | IMPLEMENTED cho flow chính Web |
 | `contract-service` | Contract/payment/escrow | Agreement, acceptance, document artifact, payment, settlement, dispute/evidence, blockchain transaction/outbox/event cursor. | IMPLEMENTED cho flow chính; có giới hạn V1/ops |
 | `notification-service` | Notification và chat | Notification persistence, Rabbit consumers, Bell REST/WebSocket, conversation/message persistence, chat REST/WebSocket. | Notification IMPLEMENTED theo event đã nối; Chat backend IMPLEMENTED, Web còn mock |
-| `ai-service` | AI future boundary | Spring Boot health endpoint. | SKELETON; AI nghiệp vụ NOT_IMPLEMENTED |
+| `ai-service` | AI matching boundary | Health, Deterministic Matching V1, Gemini analyzer/grounding, Qdrant semantic retrieval foundation. | PARTIAL; Hybrid Matching V2/RAG NOT_IMPLEMENTED |
 
 Không tạo thêm service hoặc chuyển domain owner nếu chưa có quyết định kiến trúc mới.
 
@@ -127,7 +127,8 @@ Nếu service tắt qua thời hạn, dữ liệu deadline/hàng đợi vẫn �
 
 - PostgreSQL 16;
 - RabbitMQ 3.13 Management;
-- Gotenberg 8.
+- Gotenberg 8;
+- Qdrant 1.18.x.
 
 Application service được chạy bằng Maven/PowerShell script, chưa được container hóa đầy đủ. Root `.env` là cấu hình dùng chung; có thể copy cùng nội dung sang `frontend-web/.env` để Vite nhận các biến web, nhưng chỉ biến `VITE_*` được phép lộ cho browser. Không commit JWT secret, AWS secret, private key hoặc operator keystore password. Cấu hình Sepolia hiện giữ `BLOCKCHAIN_EVENT_BLOCK_BATCH_SIZE=10` để giảm nguy cơ RPC throttle khi quét event.
 
@@ -135,7 +136,7 @@ Application service được chạy bằng Maven/PowerShell script, chưa đư�
 
 - Một blockchain operator instance; chưa có distributed signer coordination.
 - Một RPC endpoint cấu hình chính; chưa có multi-RPC automatic failover.
-- AI service mới là skeleton; chưa có Qdrant/Spring AI/model pipeline.
+- AI service đã có Matching V1 và Qdrant semantic retrieval foundation; chưa có Hybrid Matching V2, Spring AI hoặc production semantic ranking pipeline.
 - Web chat chưa nối backend chat.
 - Mobile chưa feature-complete.
 - Reviewer notification phụ thuộc producer cung cấp recipient id đáng tin cậy.

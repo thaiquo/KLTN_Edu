@@ -58,12 +58,26 @@ export const classApi = {
     if (filterParams.categoryId) params.set('categoryId', String(filterParams.categoryId));
     if (filterParams.subjectId) params.set('subjectId', String(filterParams.subjectId));
     if (filterParams.levelId) params.set('levelId', String(filterParams.levelId));
+    if (Array.isArray(filterParams.levelIds)) {
+      filterParams.levelIds.forEach((levelId) => params.append('levelIds', String(levelId)));
+    }
     if (filterParams.keyword) params.set('keyword', filterParams.keyword);
     if (filterParams.mode) params.set('mode', filterParams.mode);
+    if (filterParams.teachingMode) params.set('teachingMode', filterParams.teachingMode);
     if (filterParams.tutorEmail) params.set('tutorEmail', filterParams.tutorEmail);
     if (filterParams.tutorProfileId) params.set('tutorProfileId', String(filterParams.tutorProfileId));
     if (filterParams.minPrice) params.set('minPrice', String(filterParams.minPrice));
     if (filterParams.maxPrice) params.set('maxPrice', String(filterParams.maxPrice));
+    if (filterParams.weekday) params.set('weekday', String(filterParams.weekday));
+    if (Array.isArray(filterParams.weekdays)) {
+      filterParams.weekdays.forEach((weekday) => params.append('weekdays', String(weekday)));
+    }
+    if (filterParams.startTime) params.set('startTime', filterParams.startTime);
+    if (filterParams.endTime) params.set('endTime', filterParams.endTime);
+    if (filterParams.availableOnly) params.set('availableOnly', 'true');
+    if (filterParams.page != null) params.set('page', String(filterParams.page));
+    if (filterParams.size != null) params.set('size', String(filterParams.size));
+    if (filterParams.sort) params.set('sort', filterParams.sort);
     const queryString = params.toString();
     return apiRequest(`/api/learning/public/classes${queryString ? `?${queryString}` : ''}`);
   },

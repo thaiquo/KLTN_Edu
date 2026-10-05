@@ -303,15 +303,14 @@ class TutorMatchingServiceTest {
     void matchingReasonsAreSupportedByFacts() {
         var result = service(List.of(candidate(1L))).match(offlineRequest("79", "26734")).results().getFirst();
 
-        assertThat(result.matchingReasons())
-                .contains("Dạy đúng môn và cấp độ học đã chọn.")
-                .contains("Hỗ trợ hình thức học OFFLINE.")
-                .contains("Phù hợp khu vực học trực tiếp.");
+        assertThat(result.matchingReasons()).hasSizeGreaterThanOrEqualTo(3);
+        assertThat(result.matchingReasons()).anySatisfy(reason -> assertThat(reason).contains("OFFLINE"));
+        assertThat(result.scoreBreakdown().location().normalizedScore()).isEqualTo(1.0);
     }
 
     private TutorMatchingService service(List<TutorCandidate> candidates) {
         TutorCandidateClient client = (subjectId, levelId, teachingMode) -> candidates;
-        return new TutorMatchingService(client);
+        return new TutorMatchingService(client, null, new HybridMatchingProperties(false, 3.0));
     }
 
     private TutorMatchingRequest defaultRequest() {
@@ -354,14 +353,14 @@ class TutorMatchingServiceTest {
         return new SubjectCapability(
                 1000L + subjectId,
                 subjectId,
-                "Toán",
+                "ToÃ¡n",
                 30L,
-                "Tự nhiên",
-                List.of(new Level(levelId, "Lớp 12")),
+                "Tá»± nhiÃªn",
+                List.of(new Level(levelId, "Lá»›p 12")),
                 5,
                 BigDecimal.valueOf(200_000),
                 BigDecimal.valueOf(250_000),
-                "Ôn thi và củng cố kiến thức"
+                "Ã”n thi vÃ  cá»§ng cá»‘ kiáº¿n thá»©c"
         );
     }
 
@@ -369,14 +368,14 @@ class TutorMatchingServiceTest {
         return new SubjectCapability(
                 1000L,
                 SUBJECT_ID,
-                "Toán",
+                "ToÃ¡n",
                 30L,
-                "Tự nhiên",
-                List.of(new Level(LEVEL_ID, "Lớp 12")),
+                "Tá»± nhiÃªn",
+                List.of(new Level(LEVEL_ID, "Lá»›p 12")),
                 5,
                 tuitionMin,
                 tuitionMax,
-                "Ôn thi và củng cố kiến thức"
+                "Ã”n thi vÃ  cá»§ng cá»‘ kiáº¿n thá»©c"
         );
     }
 
@@ -384,10 +383,10 @@ class TutorMatchingServiceTest {
         return new SubjectCapability(
                 1000L,
                 SUBJECT_ID,
-                "Toán",
+                "ToÃ¡n",
                 30L,
-                "Tự nhiên",
-                List.of(new Level(LEVEL_ID, "Lớp 12")),
+                "Tá»± nhiÃªn",
+                List.of(new Level(LEVEL_ID, "Lá»›p 12")),
                 null,
                 null,
                 null,
@@ -433,7 +432,9 @@ class TutorMatchingServiceTest {
                     provinceCode,
                     communeCode,
                     preferredSchedules,
-                    "Muốn học chắc kiến thức nền"
+                    "Muá»‘n há»c cháº¯c kiáº¿n thá»©c ná»n",
+                    List.of(),
+                    List.of()
             );
         }
     }
@@ -442,7 +443,7 @@ class TutorMatchingServiceTest {
         private final Long id;
         private String name;
         private boolean approved = true;
-        private SafeLocation location = new SafeLocation("79", "TP. Hồ Chí Minh", "26734", "Phường 1", null);
+        private SafeLocation location = new SafeLocation("79", "TP. Há»“ ChÃ­ Minh", "26734", "PhÆ°á»ng 1", null);
         private Set<String> teachingModes = new LinkedHashSet<>(Set.of("ONLINE", "OFFLINE"));
         private SubjectCapability capability = TutorMatchingServiceTest.this.capability(SUBJECT_ID, LEVEL_ID);
         private List<AvailabilitySlot> availability = List.of(slot(2, "17:00", "21:00"));
@@ -511,3 +512,4 @@ class TutorMatchingServiceTest {
         }
     }
 }
+

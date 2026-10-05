@@ -21,7 +21,7 @@
 | `learning-service` | IMPLEMENTED | Catalog, Tutor registration/availability, classroom, enrollment, rolling session, attendance, meeting-link gate, homework và settlement delivery. |
 | `contract-service` | IMPLEMENTED + LIMITED | Agreement/signing/document/funding/settlement/refund/dispute/evidence/transaction recovery chạy thật trên Sepolia; event polling có đối soát receipt để phục hồi event bị lỡ; V1 dispute chỉ cho `BOTH_PRESENT`, legacy rows bị cách ly và ops còn giới hạn. |
 | `notification-service` | IMPLEMENTED/PARTIAL | Notification persistence, REST, Rabbit consumer, WebSocket hoạt động cho event đã nối. Chat backend có persistence/API/WebSocket nhưng Web Messages chưa nối. |
-| `ai-service` | PARTIAL | Có health, Student-only Deterministic Matching V1, Gemini Natural Language Requirement Analyzer, Catalog Grounding qua Learning catalog, Offline Location Grounding qua Account administrative reference data và Tutor Marketplace frontend integration; chưa có semantic matching/RAG/vector. |
+| `ai-service` | PARTIAL | Có health, Student-only Deterministic Matching V1, Gemini Natural Language Requirement Analyzer, Catalog Grounding qua Learning catalog, Offline Location Grounding qua Account administrative reference data, Tutor Marketplace frontend integration và Qdrant semantic retrieval foundation; chưa có Hybrid Matching V2/RAG/eval. |
 | `frontend-web` | IMPLEMENTED/PARTIAL | Flow chính Account/Learning/Contract/Dispute/Wallet/Notification có dữ liệu thật; một số Portal dashboard/message vẫn chứa mock state. |
 | `mobile-app` | PARTIAL | Login/register/home cơ bản; không có parity với Web. |
 
@@ -120,7 +120,11 @@
 - IMPLEMENTED trong phạm vi Phase 4.3.2.1: Java + Account administrative reference data resolve OFFLINE `locationHint` sang `provinceCode`/`communeCode` khi có match duy nhất; location là tiêu chí mềm nên thiếu/mơ hồ/not-found không làm mất `coreMatchingReady` nếu subject/level/teachingMode đã sẵn sàng.
 - IMPLEMENTED trong phạm vi Phase 4.3.3: Tutor Marketplace large modal gọi Analyze -> Ground -> Matching V1 sau khi Student xác nhận, render ranked Tutor cards bằng `matchPercentage` và `matchingReasons` thật; không có standalone AI Matching page/header item.
 - IMPLEMENTED trong phạm vi Web V1 Phase 4.3.3.3B: Tutor Marketplace lưu search session bằng frontend abstraction trên `sessionStorage` có version/TTL/account scope; Manual Search và AI Matching được restore tách biệt khi quay lại từ Tutor Detail hoặc F5, không dùng Redis và không biến AI requirement thành manual filters.
-- NOT_IMPLEMENTED: semantic matching/ranking, embeddings, Qdrant, RAG, chatbot, eval/monitoring.
+- IMPLEMENTED trong phạm vi Phase 4.4.1: Gemini `gemini-embedding-2` embedding abstraction/runtime prepared with 768-dimensional vectors and deterministic semantic text builders.
+- IMPLEMENTED trong phạm vi Phase 4.4.2: Qdrant dev vector store, collection init/validation, public tutor capability indexing, document-hash skip, deterministic point IDs, Staff/Admin semantic maintenance endpoints and raw semantic retrieval foundation.
+- IMPLEMENTED trong pham vi Phase 4.4.3: Semantic candidate retrieval consumes grounded student requirements, skips embedding when no meaningful semantic context exists, hard-scopes Qdrant by subject/level/mode, validates hits against Account Search V2 authoritative tutor data, rejects stale hits, deduplicates capability hits by tutor, and returns raw `SemanticTutorCandidate` similarity without changing Matching V1 or frontend.
+- IMPLEMENTED trong pham vi Phase 4.4.4: Hybrid Matching V2 backend keeps Matching V1 as baseline, joins validated semantic candidates by tutor, applies only a bounded rank-based semantic boost, preserves V1 when semantic is not applicable or fails, and does not expose raw cosine as match percentage.
+- NOT_IMPLEMENTED: frontend Hybrid UX/evaluation labels, RAG, chatbot, production eval/monitoring.
 
 ## 5. Bằng chứng Sepolia hiện tại
 
@@ -149,7 +153,7 @@
 ## 7. Việc còn lại ưu tiên
 
 1. Nối Portal Messages vào chat API/WebSocket, bỏ mock conversation/reply.
-2. Nâng AI Matching sang semantic/ranking Phase 4.4 khi có thiết kế embedding/vector/eval rõ ràng; không để Gemini tự chọn Tutor hoặc sinh điểm giả.
+2. Nâng AI Matching từ semantic retrieval foundation sang Hybrid Matching V2/ranking/eval; không để Gemini tự chọn Tutor hoặc sinh điểm giả.
 3. Hoàn thiện mobile theo các flow Web cần thiết.
 4. Bổ sung violation/support ticket và reporting tổng hợp.
 5. Tăng cường production ops: multi-RPC/failover, operator HA an toàn, metrics/alerting, backup/restore drill.
@@ -158,3 +162,34 @@
 ## 8. Nguyên tắc cập nhật
 
 Khi source thay đổi, cập nhật file này dựa trên đủ bằng chứng: entity/migration + service + controller/security + client + test/runtime phù hợp. Không dùng UI mock, comment hoặc tên file làm bằng chứng duy nhất cho `IMPLEMENTED`.
+
+## Phase 4.4 Semantic Notes
+
+AI status remains PARTIAL. Phase 4.4.1 selected Google Gemini `gemini-embedding-2`, 768 dimensions, reusing `GEMINI_API_KEY`. Phase 4.4.2 adds Qdrant-backed tutor capability indexing and raw semantic retrieval foundation. Phase 4.4.3 turns raw retrieval into validated semantic tutor candidates. Phase 4.4.4 adds conservative Hybrid Matching V2 backend ranking with V1 fallback. Phase 4.4.5 connects the existing Tutor Marketplace AI flow to Hybrid V2 transparently, preserves backend ranking order, sends learning-goal/weak-topic/tutor-preference context, and restores AI result snapshots without replaying provider calls. Phase 4.4.6 enriches development-only Tutor semantic descriptions and validates selective Qdrant re-indexing plus a small offline semantic/hybrid evaluation set; it is seed/evaluation work, not proof of production matching accuracy. RAG, chatbot, production evaluation and monitoring are still not implemented.
+
+## Phase 4.6.2 Public Class Marketplace Notes
+
+Manual Public Class Search V1 is implemented through the existing Learning endpoint `GET /api/public/classes`. The backend owns eligibility and filtering: marketplace results include only `PUBLISHED` and `ACTIVE` classes, support catalog/subject/level/mode/price/schedule/capacity filters, deterministic sort values `newest`, `price_asc`, `price_desc`, `soonest`, and `rating_desc`, and return server-paged public card DTOs without meeting links, invite keys, tutor emails, or staff review metadata.
+
+Phase 4.6.2.1 refines the Web Class Marketplace manual filters: the Subject dropdown is intentionally removed from the UI while backend `subjectId` remains supported; displayed Level options are deduplicated from all active subjects in the current Program -> Education Level -> Category scope and sent as `levelIds`; selected schedule days are treated as Student availability, so every recurring class schedule must fit within the selected days and optional time window. Later Phase 4.6.4-4.6.5 adds backend AI Class Search separately; final frontend AI-ranked class result rendering remains NOT_IMPLEMENTED.
+
+## Phase 4.6.3 AI Class Search Analyze/Ground Notes
+
+AI Class Search is now PARTIAL for Analyze -> Ground -> Review only. `ai-service` adds Student-only `/api/ai/classes/analyze` and `/api/ai/classes/ground`; Gemini extracts class-search hints without IDs/rankings, and deterministic Java grounding resolves subject/level against the Learning catalog snapshot with clarification support. The Class Marketplace has a large modal CTA that runs this flow independently from manual search. Class embeddings, Qdrant class vectors, semantic class retrieval, Hybrid Class Matching, and AI-ranked class result rendering remain NOT_IMPLEMENTED.
+
+## Phase 4.6.4-4.6.5 Class Semantic/Hybrid Backend Notes
+
+Backend Class AI Search is IMPLEMENTED for the backend contract. Learning Service now exposes public-safe `GET /api/public/classes/semantic-source` for indexing and authoritative validation. AI Service adds dedicated class semantic infrastructure using Qdrant collection `public_classes_v1`, one vector per public class, deterministic point IDs from `classId`, document-hash skip, stale point cleanup, and safe payload metadata only.
+
+Student-only `POST /api/ai/classes/match` now performs structured class matching from grounded subject/level/teachingMode and optionally applies validated semantic retrieval as a bounded rank boost. Hard eligibility remains authoritative and cannot be bypassed: public status `PUBLISHED`/`ACTIVE`, subject, level, teaching mode, available seats, and schedule compatibility are required. Missing vectors are neutral, raw cosine is not exposed as `matchPercentage`, and Gemini/Qdrant/Learning validation failures fall back to structured V1.
+
+Runtime verification on 2026-10-05: updated Learning started on port `18082`, updated AI started on port `18085`, Qdrant `public_classes_v1` synced 3 real class points with `indexed=3`, `failed=0`, Qdrant count returned 3, and real `POST /api/ai/classes/match` returned `rankingMode=HYBRID_V2` with semantic boost. Final frontend AI-ranked class result rendering is covered by Phase 4.6.6.
+
+## Phase 4.6.6 AI Class Search Frontend Notes
+
+Final Class Marketplace AI result rendering is IMPLEMENTED in the Web frontend. The existing large modal now completes Analyze -> Ground -> Review -> Match, calls `POST /api/ai/classes/match` with the grounded requirement and `topK`, and renders returned class matches using the existing public class card UI plus `% phù hợp` and backend `matchingReasons`.
+
+Manual Class Search and AI Class Search are kept independent. Manual filters, sort, pagination, URL state, and Learning public class search remain unchanged. AI mode stores a returned result snapshot in account-scoped, versioned, TTL-limited `sessionStorage`; Detail -> Back and F5 restore the AI result without replaying Analyze/Ground/Match or provider/vector calls. Failed new AI searches keep the previous successful AI result until a new match response succeeds.
+
+Privacy/status note: the Web UI does not expose raw semantic similarity, vector IDs, Qdrant metadata, document hashes, embedding model internals, score breakdown internals, meeting links, join keys, tutor email, or private Student data. On 2026-10-05 Qdrant `public_classes_v1` was green with `points_count=3`; no bulk re-index was performed for this frontend phase. Verification: frontend production build passed; `ai-service` Maven tests passed 151 run, 0 failures/errors, 4 skipped.
+

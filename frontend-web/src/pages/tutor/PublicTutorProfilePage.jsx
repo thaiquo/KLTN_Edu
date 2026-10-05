@@ -88,7 +88,7 @@ export function PublicTutorProfilePage() {
       setClassesLoading(true);
       try {
         const data = await classApi.getPublicClasses({ tutorProfileId: tutor.tutorId });
-        if (active) setPublicClasses(Array.isArray(data) ? data : []);
+        if (active) setPublicClasses(Array.isArray(data) ? data : (data?.content || []));
       } catch {
         if (active) setPublicClasses([]);
       } finally {

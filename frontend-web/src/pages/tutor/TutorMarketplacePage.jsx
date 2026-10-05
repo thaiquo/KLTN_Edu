@@ -411,7 +411,7 @@ export function TutorMarketplacePage() {
                     ? `${aiMatchResult.results?.length || 0} gia sư phù hợp với nhu cầu của bạn`
                     : loading ? 'Đang tìm gia sư phù hợp...' : hasActiveFilters ? `${result.totalElements} gia sư phù hợp với tiêu chí của bạn` : `${result.totalElements} gia sư phù hợp`}
                 </h2>
-                {aiMatchResult && <p className="mt-1 text-sm font-semibold text-slate-500">Được sắp xếp theo mức độ phù hợp từ Matching V1.</p>}
+                {aiMatchResult && <p className="mt-1 text-sm font-semibold text-slate-500">Được sắp xếp theo điểm phù hợp EduConnect từ hệ thống gợi ý gia sư.</p>}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" onClick={() => setMobileFiltersOpen(true)} className="inline-flex min-h-10 items-center gap-2 rounded-[8px] border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 lg:hidden">
@@ -647,13 +647,16 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiR
         </div>
         <p className="line-clamp-3 text-sm font-semibold leading-7 text-slate-600">{description || 'Gia sư đã được xét duyệt trên EduConnect. Xem hồ sơ để biết thêm thông tin giảng dạy và các lớp đang mở.'}</p>
         {isAiResult && matchingReasons.length > 0 && (
-          <ul className="space-y-2 rounded-[8px] border border-emerald-100 bg-emerald-50 p-3">
-            {matchingReasons.slice(0, 4).map((reason) => (
-              <li key={reason} className="flex items-start gap-2 text-xs font-extrabold leading-5 text-emerald-800">
-                <ShieldCheck size={14} className="mt-0.5 shrink-0" /> {reason}
-              </li>
-            ))}
-          </ul>
+          <section className="rounded-[8px] border border-emerald-100 bg-emerald-50 p-3">
+            <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-emerald-700">Vì sao phù hợp</p>
+            <ul className="space-y-2">
+              {matchingReasons.slice(0, 4).map((reason) => (
+                <li key={reason} className="flex items-start gap-2 text-xs font-extrabold leading-5 text-emerald-800">
+                  <ShieldCheck size={14} className="mt-0.5 shrink-0" /> {reason}
+                </li>
+              ))}
+            </ul>
+          </section>
         )}
       </div>
       <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">

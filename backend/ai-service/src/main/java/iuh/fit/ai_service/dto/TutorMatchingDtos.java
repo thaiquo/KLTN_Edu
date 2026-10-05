@@ -80,7 +80,13 @@ public final class TutorMatchingDtos {
             List<@Valid PreferredScheduleRequest> preferredSchedules,
 
             @Size(max = 1200, message = "learningGoal supports at most 1200 characters")
-            String learningGoal
+            String learningGoal,
+
+            @Size(max = 12, message = "weakTopics supports at most 12 items")
+            List<@Size(max = 120, message = "weakTopics item is too long") String> weakTopics,
+
+            @Size(max = 12, message = "tutorPreferences supports at most 12 items")
+            List<@Size(max = 120, message = "tutorPreferences item is too long") String> tutorPreferences
     ) {
         @AssertTrue(message = "budgetMin must be less than or equal to budgetMax")
         public boolean isBudgetRangeValid() {
@@ -111,7 +117,9 @@ public final class TutorMatchingDtos {
             String provinceCode,
             String communeCode,
             List<PreferredScheduleRequest> preferredSchedules,
-            String learningGoal
+            String learningGoal,
+            List<String> weakTopics,
+            List<String> tutorPreferences
     ) {
     }
 
@@ -175,8 +183,18 @@ public final class TutorMatchingDtos {
             ScoreComponent location,
             ScoreComponent experience,
             ScoreComponent ratingConfidence,
+            SemanticScoreComponent semantic,
             BigDecimal rawScore,
             Map<String, Integer> weights
+    ) {
+    }
+
+    public record SemanticScoreComponent(
+            boolean applicable,
+            boolean used,
+            Double normalizedSignal,
+            BigDecimal rankBoost,
+            String policy
     ) {
     }
 

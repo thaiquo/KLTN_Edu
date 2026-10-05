@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   ArrowRight,
   BookOpen,
-  CheckCircle2,
   Clock,
   Loader2,
   LocateFixed,
@@ -17,6 +16,7 @@ import {
 import { aiMatchingApi } from '../../api/aiMatching';
 import { ApiError } from '../../api/client';
 import { useAuth } from '../../hooks/useAuth';
+import { AiRequirementReviewLayout } from './AiRequirementReviewLayout';
 
 const INITIAL_MESSAGE = '';
 const EXAMPLE_PROMPT = 'Em đang học lớp 12, muốn tìm gia sư Toán online để ôn thi tốt nghiệp. Em yếu hình học, rảnh tối thứ 2 và thứ 4, ngân sách khoảng 250.000đ mỗi buổi.';
@@ -30,6 +30,7 @@ export function AiTutorMatchingModal({ onClose, onMatched }) {
   const [grounding, setGrounding] = useState(null);
   const [error, setError] = useState('');
   const [freeText, setFreeText] = useState({});
+  const [optionalInputs, setOptionalInputs] = useState({});
 
   const requirement = grounding?.requirement || null;
   const blockingClarifications = (grounding?.clarifications || []).filter((item) => item.blocking);
@@ -56,6 +57,7 @@ export function AiTutorMatchingModal({ onClose, onMatched }) {
     }
     setError('');
     setStep('ANALYZING');
+    setOptionalInputs({});
     try {
       const analysis = await aiMatchingApi.analyze(trimmed);
       if (analysis?.status === 'INVALID' || !analysis?.requirement) {
@@ -116,9 +118,10 @@ export function AiTutorMatchingModal({ onClose, onMatched }) {
     setError('');
     setStep('MATCHING');
     try {
-      const response = await aiMatchingApi.matchTutors(buildMatchingPayload(requirement));
+      const finalRequirement = mergeTutorOptionalEnrichment(requirement, optionalInputs);
+      const response = await aiMatchingApi.matchTutors(buildMatchingPayload(finalRequirement));
       onMatched?.(response, {
-        requirement,
+        requirement: finalRequirement,
         originalMessage: message.trim(),
         analyzedRequirement,
         grounding
@@ -167,6 +170,8 @@ export function AiTutorMatchingModal({ onClose, onMatched }) {
               blockingClarifications={blockingClarifications}
               optionalClarifications={optionalClarifications}
               readyForMatching={readyForMatching}
+              optionalInputs={optionalInputs}
+              setOptionalInputs={setOptionalInputs}
               freeText={freeText}
               setFreeText={setFreeText}
               applyClarification={applyClarification}
@@ -233,7 +238,7 @@ function InputStep({ message, setMessage, appendHint, analyze, busy, busyLabel, 
           <div className="mt-4 grid gap-3 text-sm font-semibold leading-6 text-slate-600">
             <p>Bạn có thể nói về môn học, trình độ, mục tiêu, phần đang gặp khó khăn, hình thức học, ngân sách, thời gian rảnh và khu vực nếu học trực tiếp.</p>
             <blockquote className="rounded-[8px] border border-slate-200 bg-slate-50 p-4 text-xs font-bold leading-6 text-slate-700">
-              “{EXAMPLE_PROMPT}”
+              "{EXAMPLE_PROMPT}"
             </blockquote>
           </div>
         </section>
@@ -248,6 +253,8 @@ function ReviewStep({
   blockingClarifications,
   optionalClarifications,
   readyForMatching,
+  optionalInputs,
+  setOptionalInputs,
   freeText,
   setFreeText,
   applyClarification,
@@ -258,70 +265,120 @@ function ReviewStep({
   error,
   matching
 }) {
+  const missingOptionalFields = tutorMissingOptionalFields(requirement);
+  const hasRightContent = blockingClarifications.length > 0 || optionalClarifications.length > 0 || missingOptionalFields.length > 0;
+
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <section className="rounded-[8px] border border-slate-200 bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,.05)] sm:p-6">
-        <div className="flex items-start gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[8px] bg-emerald-50 text-emerald-700">
-            <CheckCircle2 size={21} />
-          </span>
-          <div>
-            <h3 className="font-display text-xl font-extrabold text-slate-950">AI đã hiểu nhu cầu của bạn</h3>
-            <p className="mt-1 text-sm font-semibold leading-6 text-slate-500">
-              Hãy kiểm tra lại thông tin trước khi tìm gia sư phù hợp.
-            </p>
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
-          <ReviewItem icon={<BookOpen size={16} />} label="Môn học" value={requirement?.subject?.name || 'Cần bổ sung'} />
-          <ReviewItem icon={<Target size={16} />} label="Trình độ" value={requirement?.level?.name || 'Cần bổ sung'} />
-          <ReviewItem icon={<MapPin size={16} />} label="Hình thức" value={modeLabel(requirement?.teachingMode)} />
-          <ReviewItem icon={<WalletCards size={16} />} label="Ngân sách" value={budgetLabel(requirement?.budget)} />
-          <ReviewItem icon={<Clock size={16} />} label="Thời gian" value={scheduleLabel(requirement?.preferredSchedules)} />
-          <ReviewItem icon={<LocateFixed size={16} />} label="Khu vực" value={locationLabel(requirement)} />
-        </div>
-
-        <div className="mt-5 grid gap-3">
-          <TextBlock label="Mục tiêu" values={[requirement?.learningGoal]} fallback="Chưa có mô tả mục tiêu cụ thể." />
-          <TextBlock label="Nội dung cần cải thiện" values={requirement?.weakTopics} fallback="Chưa nêu phần cần cải thiện." />
-          <TextBlock label="Mong muốn về gia sư" values={requirement?.tutorPreferences} fallback="Chưa nêu mong muốn riêng về gia sư." />
-        </div>
-
-        {error && <InlineMessage tone="error" text={error} />}
-        {!readyForMatching && <InlineMessage tone="warning" text="Bạn cần trả lời các thông tin bắt buộc trước khi tìm gia sư phù hợp." />}
-        {matching && <InlineMessage tone="info" icon={<Loader2 size={18} className="animate-spin" />} text="Đang tìm gia sư phù hợp..." />}
-      </section>
-
-      <aside className="space-y-4">
-        <ClarificationPanel
-          title="Thông tin cần bổ sung"
-          emptyText={readyForMatching ? 'Các thông tin bắt buộc đã sẵn sàng.' : 'Chưa có dữ liệu để xác nhận.'}
-          clarifications={blockingClarifications}
-          freeText={freeText}
-          setFreeText={setFreeText}
-          applyClarification={applyClarification}
-          applyFreeText={applyFreeText}
+    <AiRequirementReviewLayout
+      leftTitle="AI đã hiểu nhu cầu của bạn"
+      leftDescription="Hãy kiểm tra lại thông tin trước khi tìm gia sư phù hợp."
+      leftContent={
+        <TutorAiRequirementReview
+          requirement={requirement}
+          readyForMatching={readyForMatching}
+          error={error}
+          matching={matching}
         />
-        <ClarificationPanel
-          title="Có thể bổ sung để kết quả tốt hơn"
-          emptyText="Không có gợi ý bổ sung."
-          clarifications={optionalClarifications}
-          freeText={freeText}
-          setFreeText={setFreeText}
-          applyClarification={applyClarification}
-          applyFreeText={applyFreeText}
-          profileLocationLabel={profileLocationLabel}
-          useProfileLocation={useProfileLocation}
-        />
-        <button type="button" onClick={onBack} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[8px] border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 hover:bg-slate-50">
-          <ArrowLeft size={16} /> Sửa mô tả ban đầu
-        </button>
-      </aside>
-    </div>
+      }
+      rightTitle="Bổ sung nếu bạn muốn"
+      rightDescription="Chỉ những thông tin còn thiếu mới được hỏi thêm. Bạn có thể bỏ trống và tiếp tục."
+      rightContent={hasRightContent ? (
+        <div className="space-y-4">
+          {blockingClarifications.length > 0 && (
+            <ClarificationPanel
+              title="Thông tin bắt buộc cần bổ sung"
+              emptyText="Chưa có dữ liệu để xác nhận."
+              clarifications={blockingClarifications}
+              freeText={freeText}
+              setFreeText={setFreeText}
+              applyClarification={applyClarification}
+              applyFreeText={applyFreeText}
+            />
+          )}
+          {optionalClarifications.length > 0 && (
+            <ClarificationPanel
+              title="Gợi ý từ hệ thống"
+              emptyText="Không có gợi ý bổ sung."
+              clarifications={optionalClarifications}
+              freeText={freeText}
+              setFreeText={setFreeText}
+              applyClarification={applyClarification}
+              applyFreeText={applyFreeText}
+              profileLocationLabel={profileLocationLabel}
+              useProfileLocation={useProfileLocation}
+            />
+          )}
+          {missingOptionalFields.length > 0 && (
+            <TutorAiMissingFields
+              fields={missingOptionalFields}
+              values={optionalInputs}
+              onChange={setOptionalInputs}
+            />
+          )}
+          <button type="button" onClick={onBack} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-[8px] border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 hover:bg-slate-50">
+            <ArrowLeft size={16} /> Sửa mô tả ban đầu
+          </button>
+        </div>
+      ) : null}
+      emptyRightText="Thông tin đã khá đầy đủ. Bạn có thể tiếp tục tìm gia sư phù hợp."
+    />
   );
 }
 
+function TutorAiRequirementReview({ requirement, readyForMatching, error, matching }) {
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ReviewItem icon={<BookOpen size={16} />} label="Môn học" value={requirement?.subject?.name || 'Cần bổ sung'} />
+        <ReviewItem icon={<Target size={16} />} label="Trình độ" value={requirement?.level?.name || 'Cần bổ sung'} />
+        <ReviewItem icon={<MapPin size={16} />} label="Hình thức" value={modeLabel(requirement?.teachingMode)} />
+        <ReviewItem icon={<WalletCards size={16} />} label="Ngân sách" value={budgetLabel(requirement?.budget)} />
+        <ReviewItem icon={<Clock size={16} />} label="Thời gian" value={scheduleLabel(requirement?.preferredSchedules)} />
+        <ReviewItem icon={<LocateFixed size={16} />} label="Khu vực" value={locationLabel(requirement)} />
+      </div>
+
+      <div className="mt-5 grid gap-3">
+        <TextBlock label="Mục tiêu" values={[requirement?.learningGoal]} fallback="Chưa có mô tả mục tiêu cụ thể." />
+        <TextBlock label="Nội dung cần cải thiện" values={requirement?.weakTopics} fallback="Chưa nêu phần cần cải thiện." />
+        <TextBlock label="Mong muốn về gia sư" values={requirement?.tutorPreferences} fallback="Chưa nêu mong muốn riêng về gia sư." />
+      </div>
+
+      {error && <InlineMessage tone="error" text={error} />}
+      {!readyForMatching && <InlineMessage tone="warning" text="Bạn cần trả lời các thông tin bắt buộc trước khi tìm gia sư phù hợp." />}
+      {matching && <InlineMessage tone="info" icon={<Loader2 size={18} className="animate-spin" />} text="Đang tìm gia sư phù hợp..." />}
+    </>
+  );
+}
+
+function TutorAiMissingFields({ fields, values, onChange }) {
+  return (
+    <section className="space-y-4">
+      {fields.map((field) => (
+        <OptionalTextField
+          key={field.name}
+          label={field.label}
+          placeholder={field.placeholder}
+          value={values[field.name] || ''}
+          onChange={(value) => onChange((current) => ({ ...current, [field.name]: value }))}
+        />
+      ))}
+    </section>
+  );
+}
+
+function OptionalTextField({ label, placeholder, value, onChange }) {
+  return (
+    <label className="grid gap-2 rounded-[8px] border border-slate-200 bg-slate-50 p-4">
+      <span className="text-sm font-extrabold leading-6 text-slate-800">{label}</span>
+      <textarea
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="min-h-20 resize-y rounded-[8px] border border-slate-200 bg-white p-3 text-sm font-semibold leading-6 text-slate-900 outline-none focus:border-primary"
+        placeholder={placeholder}
+      />
+    </label>
+  );
+}
 function ClarificationPanel({ title, emptyText, clarifications, freeText, setFreeText, applyClarification, applyFreeText, profileLocationLabel, useProfileLocation }) {
   return (
     <section className="rounded-[8px] border border-slate-200 bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,.05)]">
@@ -421,6 +478,51 @@ function patchRequirement(requirement, clarification, option) {
   return requirement;
 }
 
+function tutorMissingOptionalFields(requirement) {
+  if (!requirement) return [];
+  const fields = [];
+  if (!hasText(requirement.learningGoal)) {
+    fields.push({
+      name: 'learningGoal',
+      label: 'Bạn có muốn bổ sung mục tiêu học tập không?',
+      placeholder: 'Ví dụ: ôn thi THPT, cải thiện điểm số, lấy lại gốc...'
+    });
+  }
+  if (!hasList(requirement.weakTopics)) {
+    fields.push({
+      name: 'weakTopics',
+      label: 'Bạn có muốn bổ sung nội dung đang gặp khó khăn không?',
+      placeholder: 'Ví dụ: hình học không gian, hàm số, bài vận dụng cao...'
+    });
+  }
+  if (!hasList(requirement.tutorPreferences)) {
+    fields.push({
+      name: 'tutorPreferences',
+      label: 'Bạn có muốn bổ sung mong muốn về gia sư không?',
+      placeholder: 'Ví dụ: giải thích chậm, nhiều kinh nghiệm, giao bài đều...'
+    });
+  }
+  return fields;
+}
+
+function mergeTutorOptionalEnrichment(requirement, optionalInputs = {}) {
+  const next = { ...requirement };
+  const learningGoal = cleanText(optionalInputs.learningGoal);
+  const weakTopics = splitTextList(optionalInputs.weakTopics);
+  const tutorPreferences = splitTextList(optionalInputs.tutorPreferences);
+
+  if (!hasText(next.learningGoal) && learningGoal) {
+    next.learningGoal = learningGoal;
+  }
+  if (!hasList(next.weakTopics) && weakTopics.length > 0) {
+    next.weakTopics = weakTopics;
+  }
+  if (!hasList(next.tutorPreferences) && tutorPreferences.length > 0) {
+    next.tutorPreferences = tutorPreferences;
+  }
+  return next;
+}
+
 function buildMatchingPayload(requirement) {
   const budget = requirement?.budget || {};
   const target = budget.target ?? null;
@@ -439,8 +541,29 @@ function buildMatchingPayload(requirement) {
         startTime: slot.startTime,
         endTime: slot.endTime
       })),
-    learningGoal: requirement.learningGoal || null
+    learningGoal: requirement.learningGoal || null,
+    weakTopics: Array.isArray(requirement.weakTopics) ? requirement.weakTopics.filter(Boolean) : [],
+    tutorPreferences: Array.isArray(requirement.tutorPreferences) ? requirement.tutorPreferences.filter(Boolean) : []
   };
+}
+
+function hasText(value) {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function hasList(value) {
+  return Array.isArray(value) && value.some((item) => hasText(item));
+}
+
+function cleanText(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function splitTextList(value) {
+  return cleanText(value)
+    .split(/[,;\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function userFriendlyError(error, stage) {

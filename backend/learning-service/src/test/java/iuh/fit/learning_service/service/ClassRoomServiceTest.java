@@ -11,6 +11,7 @@ import iuh.fit.learning_service.entity.TutorSubjectRegistration;
 import iuh.fit.learning_service.dto.ClassRoomDtos;
 import iuh.fit.learning_service.enums.ClassRoomStatus;
 import iuh.fit.learning_service.enums.DurationUnit;
+import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 import iuh.fit.learning_service.enums.LearningMode;
 import iuh.fit.learning_service.enums.SyllabusMode;
 import iuh.fit.learning_service.enums.TeachingMode;
@@ -33,8 +34,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.lang.reflect.RecordComponent;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 
@@ -176,6 +180,142 @@ class ClassRoomServiceTest {
     }
 
     @Test
+    void publicSearchIncludesOnlyPublishedAndActiveClasses() {
+        ClassRoom published = publicClass(1L, "Spring Toán 10", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 150_000, "2026-10-01T09:00:00");
+        ClassRoom active = publicClass(2L, "Vật lý lớp 11", ClassRoomStatus.ACTIVE, 31L, 21L, LearningMode.OFFLINE, 180_000, "2026-10-02T09:00:00");
+        ClassRoom closed = publicClass(3L, "Closed Math", ClassRoomStatus.CLOSED, 30L, 20L, LearningMode.ONLINE, 120_000, "2026-10-03T09:00:00");
+        ClassRoom locked = publicClass(4L, "Locked Math", ClassRoomStatus.LOCKED, 30L, 20L, LearningMode.ONLINE, 120_000, "2026-10-04T09:00:00");
+        when(classRoomRepository.findAllWithDetails()).thenReturn(List.of(published, active, closed, locked));
+
+        var response = service.searchPublicClasses(null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, false, 0, 12, "newest");
+
+        assertThat(response.totalElements()).isEqualTo(2);
+        assertThat(response.content()).extracting(ClassRoomDtos.PublicClassCardResponse::id).containsExactly(2L, 1L);
+    }
+
+    @Test
+    void publicSearchFiltersByKeywordSubjectLevelModeAndPrice() {
+        ClassRoom target = publicClass(1L, "Spring Toán 10", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 150_000, "2026-10-01T09:00:00");
+        target.setDescription("Ôn thi học kỳ theo lộ trình Spring");
+        ClassRoom wrongLevel = publicClass(2L, "Spring Toán 11", ClassRoomStatus.PUBLISHED, 30L, 21L, LearningMode.ONLINE, 150_000, "2026-10-02T09:00:00");
+        ClassRoom wrongMode = publicClass(3L, "Spring Toán 10 offline", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.OFFLINE, 150_000, "2026-10-03T09:00:00");
+        ClassRoom tooExpensive = publicClass(4L, "Spring Toán 10 premium", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 350_000, "2026-10-04T09:00:00");
+        when(classRoomRepository.findAllWithDetails()).thenReturn(List.of(target, wrongLevel, wrongMode, tooExpensive));
+
+        var response = service.searchPublicClasses(null, null, null, 30L, 20L, null, "spring", "ONLINE", null, null,
+                BigDecimal.valueOf(100_000), BigDecimal.valueOf(200_000), null, null, null, null, false, 0, 12, "newest");
+
+        assertThat(response.totalElements()).isEqualTo(1);
+        assertThat(response.content().get(0).id()).isEqualTo(1L);
+    }
+
+    @Test
+    void publicSearchSupportsPaginationAndDeterministicPriceSort() {
+        ClassRoom cheap = publicClass(1L, "Cheap", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 100_000, "2026-10-01T09:00:00");
+        ClassRoom mid = publicClass(2L, "Mid", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 150_000, "2026-10-02T09:00:00");
+        ClassRoom expensive = publicClass(3L, "Expensive", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 250_000, "2026-10-03T09:00:00");
+        when(classRoomRepository.findAllWithDetails()).thenReturn(List.of(expensive, cheap, mid));
+
+        var response = service.searchPublicClasses(null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, false, 1, 1, "price_asc");
+
+        assertThat(response.totalElements()).isEqualTo(3);
+        assertThat(response.totalPages()).isEqualTo(3);
+        assertThat(response.page()).isEqualTo(1);
+        assertThat(response.content()).extracting(ClassRoomDtos.PublicClassCardResponse::id).containsExactly(2L);
+    }
+
+    @Test
+    void publicSearchFiltersByRecurringScheduleWindow() {
+        ClassRoom evening = publicClass(1L, "Evening", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 150_000, "2026-10-01T09:00:00");
+        evening.setSchedules(List.of(schedule(evening, 5, "18:00", "19:30")));
+        ClassRoom morning = publicClass(2L, "Morning", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 150_000, "2026-10-02T09:00:00");
+        morning.setSchedules(List.of(schedule(morning, 5, "08:00", "09:30")));
+        when(classRoomRepository.findAllWithDetails()).thenReturn(List.of(evening, morning));
+
+        var response = service.searchPublicClasses(null, null, null, null, null, null, null, null, null, null,
+                null, null, 5, null, "17:00", "20:00", false, 0, 12, "newest");
+
+        assertThat(response.content()).extracting(ClassRoomDtos.PublicClassCardResponse::id).containsExactly(1L);
+    }
+
+    @Test
+    void publicSearchSupportsMultipleLevelIdsForDuplicateDisplayedLevels() {
+        ClassRoom mathGrade10 = publicClass(1L, "Math grade 10", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 150_000, "2026-10-01T09:00:00");
+        ClassRoom physicsGrade10 = publicClass(2L, "Physics grade 10", ClassRoomStatus.PUBLISHED, 31L, 22L, LearningMode.ONLINE, 150_000, "2026-10-02T09:00:00");
+        ClassRoom grade11 = publicClass(3L, "Math grade 11", ClassRoomStatus.PUBLISHED, 30L, 21L, LearningMode.ONLINE, 150_000, "2026-10-03T09:00:00");
+        when(classRoomRepository.findAllWithDetails()).thenReturn(List.of(mathGrade10, physicsGrade10, grade11));
+
+        var response = service.searchPublicClasses(null, null, null, null, null, List.of(20L, 22L), null, null, null, null,
+                null, null, null, null, null, null, false, 0, 12, "newest");
+
+        assertThat(response.content()).extracting(ClassRoomDtos.PublicClassCardResponse::id).containsExactly(2L, 1L);
+    }
+
+    @Test
+    void publicSearchTreatsSelectedWeekdaysAsStudentAvailabilitySubset() {
+        ClassRoom fitsAvailability = publicClass(1L, "Fits availability", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 150_000, "2026-10-01T09:00:00");
+        fitsAvailability.setSchedules(List.of(
+                schedule(fitsAvailability, 2, "18:30", "20:00"),
+                schedule(fitsAvailability, 4, "19:00", "20:30")
+        ));
+        ClassRoom outsideDay = publicClass(2L, "Outside day", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 150_000, "2026-10-02T09:00:00");
+        outsideDay.setSchedules(List.of(
+                schedule(outsideDay, 2, "18:30", "20:00"),
+                schedule(outsideDay, 5, "19:00", "20:30")
+        ));
+        ClassRoom outsideTime = publicClass(3L, "Outside time", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 150_000, "2026-10-03T09:00:00");
+        outsideTime.setSchedules(List.of(schedule(outsideTime, 2, "17:00", "18:30")));
+        when(classRoomRepository.findAllWithDetails()).thenReturn(List.of(fitsAvailability, outsideDay, outsideTime));
+
+        var response = service.searchPublicClasses(null, null, null, null, null, null, null, null, null, null,
+                null, null, null, List.of(2, 4, 6), "18:00", "21:00", false, 0, 12, "newest");
+
+        assertThat(response.content()).extracting(ClassRoomDtos.PublicClassCardResponse::id).containsExactly(1L);
+    }
+
+    @Test
+    void publicSearchWithoutWeekdaysDoesNotRestrictClassDays() {
+        ClassRoom monday = publicClass(1L, "Monday", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 150_000, "2026-10-01T09:00:00");
+        monday.setSchedules(List.of(schedule(monday, 2, "18:00", "19:30")));
+        ClassRoom saturday = publicClass(2L, "Saturday", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 150_000, "2026-10-02T09:00:00");
+        saturday.setSchedules(List.of(schedule(saturday, 7, "18:00", "19:30")));
+        when(classRoomRepository.findAllWithDetails()).thenReturn(List.of(monday, saturday));
+
+        var response = service.searchPublicClasses(null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, false, 0, 12, "newest");
+
+        assertThat(response.content()).extracting(ClassRoomDtos.PublicClassCardResponse::id).containsExactly(2L, 1L);
+    }
+
+    @Test
+    void publicSearchHandlesInvalidFiltersSafely() {
+        var invalidMode = service.searchPublicClasses(null, null, null, null, null, null, null, "HYBRID", null, null,
+                null, null, null, null, null, null, false, 0, 12, "not_supported");
+        var invalidTime = service.searchPublicClasses(null, null, null, null, null, null, null, null, null, null,
+                null, null, 5, null, "20:00", "18:00", false, 0, 12, "newest");
+
+        assertThat(invalidMode.content()).isEmpty();
+        assertThat(invalidMode.sort()).isEqualTo("newest");
+        assertThat(invalidTime.content()).isEmpty();
+    }
+
+    @Test
+    void publicClassCardDoesNotExposePrivateFields() {
+        ClassRoom classRoom = publicClass(1L, "Math", ClassRoomStatus.PUBLISHED, 30L, 20L, LearningMode.ONLINE, 150_000, "2026-10-01T09:00:00");
+        classRoom.setMeetingLink("https://meet.example/private");
+        classRoom.setJoinKey("SECRET");
+        when(classRoomRepository.findAllWithDetails()).thenReturn(List.of(classRoom));
+
+        var card = service.searchPublicClasses(null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, false, 0, 12, "newest").content().get(0);
+
+        assertThat(Arrays.stream(card.getClass().getRecordComponents()).map(RecordComponent::getName))
+                .doesNotContain("meetingLink", "joinKey", "tutorEmail", "rejectReason", "reviewedByEmail", "reviewedAt");
+    }
+
+    @Test
     void tutorClassResponseStillContainsMeetingLink() {
         ClassRoom classRoom = classRoom("tutor@example.com", ClassRoomStatus.PUBLISHED);
         classRoom.setId(77L);
@@ -295,6 +435,77 @@ class ClassRoomServiceTest {
         classRoom.setTutorEmail(tutorEmail);
         classRoom.setStatus(status);
         return classRoom;
+    }
+
+    private ClassRoom publicClass(Long id, String name, ClassRoomStatus status, Long subjectId, Long levelId,
+                                  LearningMode mode, long price, String createdAt) {
+        ClassRoom classRoom = classRoom("tutor@example.com", status);
+        classRoom.setId(id);
+        classRoom.setName(name);
+        classRoom.setDescription("Mô tả lớp học");
+        classRoom.setTutorFullName("Nguyễn Gia Sư");
+        classRoom.setLearningMode(mode);
+        classRoom.setMaxStudents(10);
+        classRoom.setMaxPendingRequests(15);
+        classRoom.setPricePerSession(BigDecimal.valueOf(price));
+        classRoom.setTotalPrice(BigDecimal.valueOf(price * 8));
+        classRoom.setSessionsPerWeek(2);
+        classRoom.setDurationPerSessionMinutes(90);
+        classRoom.setDurationValue(4);
+        classRoom.setDurationUnit(DurationUnit.WEEK);
+        classRoom.setStartDate(LocalDate.of(2026, 10, 1));
+        classRoom.setEndDate(LocalDate.of(2026, 10, 29));
+        classRoom.setTotalSessions(8);
+        classRoom.setCreatedAt(LocalDateTime.parse(createdAt));
+        classRoom.setTutorSubjectRegistration(publicRegistration(subjectId));
+        classRoom.setLevel(publicLevel(levelId, classRoom.getTutorSubjectRegistration().getSubject()));
+        classRoom.setSchedules(List.of(schedule(classRoom, 5, "18:00", "19:30")));
+        lenient().when(enrollmentRequestRepository.countByClassRoomIdAndStatus(id, EnrollmentRequestStatus.PENDING)).thenReturn(0L);
+        lenient().when(enrollmentRequestRepository.countByClassRoomIdAndStatusIn(eq(id), any())).thenReturn(0L);
+        return classRoom;
+    }
+
+    private TutorSubjectRegistration publicRegistration(Long subjectId) {
+        CatalogCategory category = new CatalogCategory();
+        category.setId(100L);
+        category.setName("Khoa học tự nhiên");
+        category.setActive(true);
+
+        CatalogSubject subject = new CatalogSubject();
+        subject.setId(subjectId);
+        subject.setName(subjectId == 31L ? "Vật lý" : "Toán");
+        subject.setCode(subjectId == 31L ? "PHYSICS" : "MATH");
+        subject.setCategory(category);
+        subject.setActive(true);
+
+        TutorSubjectRegistration registration = new TutorSubjectRegistration();
+        registration.setId(500L + subjectId);
+        registration.setTutorEmail("tutor@example.com");
+        registration.setCategory(category);
+        registration.setSubject(subject);
+        registration.setStatus(TutorSubjectRegistrationStatus.APPROVED);
+        registration.setTuitionMin(BigDecimal.valueOf(100_000));
+        registration.setTuitionMax(BigDecimal.valueOf(300_000));
+        return registration;
+    }
+
+    private CatalogLevel publicLevel(Long levelId, CatalogSubject subject) {
+        CatalogLevel level = new CatalogLevel();
+        level.setId(levelId);
+        level.setName(levelId == 21L ? "Lớp 11" : "Lớp 10");
+        level.setCode(levelId == 21L ? "GRADE_11" : "GRADE_10");
+        level.setSubject(subject);
+        level.setActive(true);
+        return level;
+    }
+
+    private ClassSchedule schedule(ClassRoom classRoom, int dayOfWeek, String startTime, String endTime) {
+        ClassSchedule schedule = new ClassSchedule();
+        schedule.setClassRoom(classRoom);
+        schedule.setDayOfWeek(dayOfWeek);
+        schedule.setStartTime(startTime);
+        schedule.setEndTime(endTime);
+        return schedule;
     }
 
     private void arrangeCreateClass(TeachingMode mode, List<ClassRoom> existingClasses) {
