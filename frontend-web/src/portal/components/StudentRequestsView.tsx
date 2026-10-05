@@ -97,6 +97,9 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
       const agrList: AgreementSummary[] = agreementsRes?.content || (Array.isArray(agreementsRes) ? agreementsRes : []);
       const map: Record<string, AgreementSummary> = {};
       agrList.forEach((a) => {
+        if (a.id) {
+          map[`id:${a.id}`] = a;
+        }
         if (a.classroomId && a.studentEmail) {
           map[`${a.classroomId}_${a.studentEmail.toLowerCase()}`] = a;
         }
@@ -137,10 +140,25 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [requests]);
 
+  // The acceptance workflow persists this exact ID. Do not infer an agreement
+  // merely by classroom/email: old or cancelled agreements can share that pair.
+  const agreementFor = (request: EnrollmentRequestItem) =>
+    request.agreementId ? agreementsMap[`id:${request.agreementId}`] : undefined;
+
+  // Contract activation is confirmed on-chain first.  Until the asynchronous
+  // Learning update arrives, render and count the request by that authoritative
+  // state so one student cannot appear both "reserved" and "enrolled".
+  const effectiveStatus = (request: EnrollmentRequestItem) => {
+    const agreement = agreementFor(request);
+    if (agreement?.status === "ACTIVE" || agreement?.onchainFunded) return "ENROLLED";
+    if (agreement?.status === "EXPIRED") return "EXPIRED";
+    return request.status;
+  };
+
   // Filtered requests
   const filteredRequests = useMemo(() => {
     return requests.filter((r) => {
-      if (statusFilter !== "ALL" && r.status !== statusFilter) return false;
+      if (statusFilter !== "ALL" && effectiveStatus(r) !== statusFilter) return false;
       if (selectedClassId !== "ALL" && String(r.classRoomId) !== selectedClassId) return false;
       if (searchTerm.trim()) {
         const query = searchTerm.toLowerCase();
@@ -152,19 +170,19 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
       }
       return true;
     });
-  }, [requests, statusFilter, selectedClassId, searchTerm]);
+  }, [requests, agreementsMap, statusFilter, selectedClassId, searchTerm]);
 
   // KPI stats
   const stats = useMemo(() => {
     return {
       total: requests.length,
-      pending: requests.filter((r) => r.status === "PENDING").length,
-      accepted: requests.filter((r) => r.status === "ACCEPTED").length,
-      enrolled: requests.filter((r) => r.status === "ENROLLED").length,
-      expired: requests.filter((r) => r.status === "EXPIRED").length,
-      rejected: requests.filter((r) => r.status === "REJECTED").length,
+      pending: requests.filter((r) => effectiveStatus(r) === "PENDING").length,
+      accepted: requests.filter((r) => effectiveStatus(r) === "ACCEPTED").length,
+      enrolled: requests.filter((r) => effectiveStatus(r) === "ENROLLED").length,
+      expired: requests.filter((r) => effectiveStatus(r) === "EXPIRED").length,
+      rejected: requests.filter((r) => effectiveStatus(r) === "REJECTED").length,
     };
-  }, [requests]);
+  }, [requests, agreementsMap]);
 
   const handleOpenReject = (req: EnrollmentRequestItem) => {
     setRejectModalReq(req);
@@ -493,16 +511,16 @@ export function StudentRequestsView({ onNavigate }: StudentRequestsViewProps) {
               ? req.studentName
               : "Học viên";
 
-            const isPending = req.status === "PENDING";
-            const isAccepted = req.status === "ACCEPTED";
-            const isRejected = req.status === "REJECTED";
-
-            const matchingAgr = agreementsMap[`${req.classRoomId}_${(req.studentEmail || "").toLowerCase()}`];
+            const matchingAgr = agreementFor(req);
+            const resolvedStatus = effectiveStatus(req);
+            const isPending = resolvedStatus === "PENDING";
+            const isAccepted = resolvedStatus === "ACCEPTED";
+            const isRejected = resolvedStatus === "REJECTED";
             const isContractActive = matchingAgr?.status === "ACTIVE" || Boolean(matchingAgr?.onchainFunded);
             const isContractWaitingPayment = matchingAgr?.status === "WAITING_PAYMENT";
             const isContractPendingStudent = matchingAgr?.status === "PENDING_STUDENT_ACCEPTANCE";
-            const isEnrolled = req.status === "ENROLLED" || isContractActive;
-            const isExpired = req.status === "EXPIRED" || matchingAgr?.status === "EXPIRED";
+            const isEnrolled = resolvedStatus === "ENROLLED";
+            const isExpired = resolvedStatus === "EXPIRED";
 
             return (
               <div

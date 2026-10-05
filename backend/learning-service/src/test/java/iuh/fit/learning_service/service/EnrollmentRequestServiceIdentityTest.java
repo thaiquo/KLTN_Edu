@@ -1,6 +1,9 @@
 package iuh.fit.learning_service.service;
 
 import iuh.fit.learning_service.dto.EnrollmentRequestDtos.EnrollClassRequest;
+import iuh.fit.learning_service.entity.ClassRoom;
+import iuh.fit.learning_service.entity.EnrollmentRequest;
+import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 import iuh.fit.learning_service.exception.BadRequestException;
 import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
@@ -9,6 +12,7 @@ import iuh.fit.learning_service.repository.TutorAuthorizationStateRepository;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -103,5 +107,39 @@ class EnrollmentRequestServiceIdentityTest {
         verifyNoInteractions(
                 classRoomRepository,
                 enrollmentRequestRepository);
+    }
+
+    @Test
+    void refusesActivationWhenAgreementIdentityDoesNotMatchEnrollment() {
+        EnrollmentRequest enrollment = new EnrollmentRequest();
+        ClassRoom classRoom = new ClassRoom();
+        org.springframework.test.util.ReflectionTestUtils.setField(classRoom, "id", 22L);
+        enrollment.setClassRoom(classRoom);
+        enrollment.setStudentId(33L);
+        enrollment.setAgreementId("agreement-a");
+        enrollment.setStatus(EnrollmentRequestStatus.ACCEPTED);
+        when(enrollmentRequestRepository.findByAgreementId("agreement-a"))
+                .thenReturn(java.util.Optional.of(enrollment));
+
+        assertThatThrownBy(() -> service.activateEnrollment(22L, 34L, "agreement-a"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("identity");
+    }
+
+    @Test
+    void refusesActivationOfPendingRequestEvenWhenTheIdentityMatches() {
+        EnrollmentRequest enrollment = new EnrollmentRequest();
+        ClassRoom classRoom = new ClassRoom();
+        org.springframework.test.util.ReflectionTestUtils.setField(classRoom, "id", 22L);
+        enrollment.setClassRoom(classRoom);
+        enrollment.setStudentId(33L);
+        enrollment.setAgreementId("agreement-a");
+        enrollment.setStatus(EnrollmentRequestStatus.PENDING);
+        when(enrollmentRequestRepository.findByAgreementId("agreement-a"))
+                .thenReturn(java.util.Optional.of(enrollment));
+
+        assertThatThrownBy(() -> service.activateEnrollment(22L, 33L, "agreement-a"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("cannot be activated");
     }
 }

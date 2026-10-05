@@ -6,6 +6,7 @@ import iuh.fit.learning_service.messaging.event.ClassReviewedNotificationEvent;
 import iuh.fit.learning_service.messaging.event.EnrollmentNotificationEvent;
 import iuh.fit.learning_service.messaging.event.HomeworkNotificationEvent;
 import iuh.fit.learning_service.messaging.event.TeachingRegistrationReviewedEvent;
+import iuh.fit.learning_service.messaging.event.CommunityPostConvertedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -99,6 +100,44 @@ public class LearningEventPublisher {
                 "CANCELLED",
                 null,
                 studentName
+        );
+    }
+
+    public void publishCommunityPostConverted(
+            Long postId,
+            Long classId,
+            Long recipientUserId,
+            Long actorUserId,
+            String postTitle,
+            String classTitle,
+            String tutorName
+    ) {
+        if (postId == null || classId == null || recipientUserId == null) {
+            log.warn(
+                    "Skipping community conversion notification postId={} classId={} recipientUserId={}",
+                    postId,
+                    classId,
+                    recipientUserId);
+            return;
+        }
+        String eventId = "community-post-converted:" + postId + ":" + classId + ":" + recipientUserId;
+        publishAfterCommit(
+                LearningRabbitConfig.EXCHANGE,
+                LearningRabbitConfig.COMMUNITY_POST_CONVERTED_ROUTING_KEY,
+                new CommunityPostConvertedEvent(
+                        eventId,
+                        "COMMUNITY_POST_CONVERTED_TO_CLASS",
+                        LocalDateTime.now(),
+                        "learning-service",
+                        postId,
+                        classId,
+                        recipientUserId,
+                        actorUserId,
+                        postTitle,
+                        classTitle,
+                        tutorName,
+                        "COMMUNITY_POST",
+                        String.valueOf(postId))
         );
     }
 

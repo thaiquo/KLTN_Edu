@@ -6,6 +6,7 @@ import iuh.fit.notification_service.messaging.event.ClassReviewedNotificationEve
 import iuh.fit.notification_service.messaging.event.EnrollmentNotificationEvent;
 import iuh.fit.notification_service.messaging.event.HomeworkNotificationEvent;
 import iuh.fit.notification_service.messaging.event.TeachingRegistrationReviewedEvent;
+import iuh.fit.notification_service.messaging.event.CommunityPostConvertedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApplicationSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApprovedEvent;
 import iuh.fit.notification_service.messaging.event.TutorRejectedEvent;
@@ -265,6 +266,39 @@ public class NotificationEventConsumer {
                 "STUDENT",
                 "HOMEWORK",
                 event.referenceId() == null ? String.valueOf(event.sessionId()) : event.referenceId()
+        ));
+    }
+
+    @RabbitListener(queues = NotificationRabbitConfig.COMMUNITY_POST_CONVERTED_QUEUE)
+    public void onCommunityPostConverted(CommunityPostConvertedEvent event) {
+        if (event == null
+                || !StringUtils.hasText(event.eventId())
+                || event.recipientUserId() == null
+                || event.postId() == null
+                || event.classId() == null
+                || !"COMMUNITY_POST_CONVERTED_TO_CLASS".equals(event.eventType())) {
+            log.warn("Skipping invalid community post converted notification event");
+            return;
+        }
+
+        String classTitle = safeReason(event.classTitle());
+        String postTitle = safeReason(event.postTitle());
+        String message = StringUtils.hasText(classTitle)
+                ? "Lớp \"" + classTitle + "\" từ khảo sát bạn đã bình chọn đang chờ duyệt."
+                : "Lớp học từ khảo sát bạn đã bình chọn đang chờ duyệt.";
+        if (StringUtils.hasText(postTitle)) {
+            message += " Bài viết: \"" + postTitle + "\".";
+        }
+
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                "COMMUNITY_POST_CONVERTED_TO_CLASS",
+                "Khảo sát đã được chuyển thành lớp học",
+                message,
+                "STUDENT",
+                "COMMUNITY_POST",
+                String.valueOf(event.postId())
         ));
     }
 

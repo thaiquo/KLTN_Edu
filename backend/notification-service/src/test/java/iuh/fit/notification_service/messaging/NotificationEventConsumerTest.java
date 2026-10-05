@@ -1,6 +1,7 @@
 package iuh.fit.notification_service.messaging;
 
 import iuh.fit.notification_service.messaging.event.ClassReviewedNotificationEvent;
+import iuh.fit.notification_service.messaging.event.CommunityPostConvertedEvent;
 import iuh.fit.notification_service.messaging.event.TeachingRegistrationReviewedEvent;
 import iuh.fit.notification_service.service.NotificationCommand;
 import iuh.fit.notification_service.service.NotificationService;
@@ -15,6 +16,37 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 class NotificationEventConsumerTest {
+
+    @Test
+    void createsStudentNotificationForCommunityConversion() {
+        NotificationService notificationService = mock(NotificationService.class);
+        NotificationEventConsumer consumer = new NotificationEventConsumer(notificationService);
+
+        consumer.onCommunityPostConverted(new CommunityPostConvertedEvent(
+                "community-post-converted:10:20:30",
+                "COMMUNITY_POST_CONVERTED_TO_CLASS",
+                LocalDateTime.now(),
+                "learning-service",
+                10L,
+                20L,
+                30L,
+                40L,
+                "Khảo sát Toán",
+                "Lớp Toán",
+                "Gia sư A",
+                "CLASS",
+                "20"));
+
+        org.mockito.ArgumentCaptor<NotificationCommand> captor =
+                org.mockito.ArgumentCaptor.forClass(NotificationCommand.class);
+        verify(notificationService).createIfAbsent(captor.capture());
+        NotificationCommand command = captor.getValue();
+        assertThat(command.recipientUserId()).isEqualTo(30L);
+        assertThat(command.type()).isEqualTo("COMMUNITY_POST_CONVERTED_TO_CLASS");
+        assertThat(command.targetRole()).isEqualTo("STUDENT");
+        assertThat(command.referenceType()).isEqualTo("COMMUNITY_POST");
+        assertThat(command.referenceId()).isEqualTo("10");
+    }
 
     @Test
     void onClassReviewedCreatesTutorNotification() {

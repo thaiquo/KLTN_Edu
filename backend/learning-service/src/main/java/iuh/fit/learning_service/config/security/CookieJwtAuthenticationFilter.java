@@ -38,6 +38,27 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
+        if (request.getRequestURI().startsWith("/api/learning/internal/")) {
+            try {
+                Claims claims = Jwts.parser().verifyWith(secretKey).build()
+                        .parseSignedClaims(request.getHeader("X-Service-Token")).getPayload();
+                if (!"contract-service".equals(claims.getSubject())
+                        || !"learning-enrollment".equals(claims.get("serviceScope", String.class))
+                        || claims.getExpiration() == null
+                        || claims.getExpiration().before(new Date())) {
+                    throw new IllegalArgumentException("Invalid service identity");
+                }
+                SecurityContextHolder.getContext().setAuthentication(
+                        new UsernamePasswordAuthenticationToken("contract-service", null,
+                                List.of(new SimpleGrantedAuthority("ROLE_INTERNAL_CONTRACT"))));
+            } catch (Exception ex) {
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                return;
+            }
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         String token = extractToken(request);
         if (token == null || token.isBlank()) {
             filterChain.doFilter(request, response);

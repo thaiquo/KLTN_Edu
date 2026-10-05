@@ -53,6 +53,11 @@ export function getNotificationTarget(notification, activeRole) {
     return target('/tutor/teaching-registrations');
   }
 
+  if (type === 'COMMUNITY_POST_CONVERTED_TO_CLASS') {
+    const postId = notification?.referenceId;
+    return target(postId ? `/community#post-${encodeURIComponent(postId)}` : '/community');
+  }
+
   if (type === 'CLASS_REVIEWED' || referenceType === 'CLASS') {
     if (role === 'STAFF' || role === 'ADMIN') {
       return target('/staff/tutors', 'class-management');

@@ -15,6 +15,7 @@ import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { PublicTutorProfilePage } from './pages/tutor/PublicTutorProfilePage';
 import { TutorMarketplacePage } from './pages/tutor/TutorMarketplacePage';
 import { ClassMarketplacePage } from './pages/class/ClassMarketplacePage';
+import { CommunityFeedPage } from './pages/community/CommunityFeedPage';
 import { TutorProfilePage } from './pages/tutor/TutorProfilePage';
 import { TeachingRegistrationPage } from './pages/tutor/TeachingRegistrationPage';
 import { StudentContractsPage } from './pages/student/StudentContractsPage';
@@ -207,10 +208,12 @@ export default function App() {
             <Route path="/forgot-password" element={<Gate guest><ForgotPasswordPage /></Gate>} />
             <Route path="/reset-password" element={<Gate guest><ResetPasswordPage /></Gate>} />
 
-            {/* Public marketplace */}
+            {/* Public marketplace & Community Feed */}
             <Route path="/tutors" element={<TutorMarketplacePage />} />
             <Route path="/tutors/:id" element={<PublicTutorProfilePage />} />
             <Route path="/classes" element={<ClassMarketplacePage />} />
+            <Route path="/community" element={<CommunityFeedPage />} />
+            <Route path="/feed" element={<Navigate to="/community" replace />} />
 
             {/* Student */}
             <Route

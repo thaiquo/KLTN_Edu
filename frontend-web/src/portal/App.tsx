@@ -55,6 +55,8 @@ import { TutorSessionManagement } from "./components/TutorSessionManagement";
 import { TutorHomeworkManagement } from "./components/TutorHomeworkManagement";
 import { StudentClassManagement } from "./components/StudentClassManagement";
 import { AdminFinanceMonitoring } from "./components/AdminFinanceMonitoring";
+import { CommunityFeedPage } from "../pages/community/CommunityFeedPage";
+import { TutorCommunityManagement } from "./components/TutorCommunityManagement";
 
 // High Resolution course and avatar placeholders
 const studentAvatar =
@@ -463,6 +465,9 @@ export default function App({ user, onLogout }: AppProps) {
       case "admin-finance":
         return <AdminFinanceMonitoring />;
 
+      case "community":
+        return activeRole === "tutor" ? <CommunityFeedPage embedded /> : null;
+
       case "courses":
         return activeRole === "student" ? (
           <StudentClassManagement />
@@ -482,6 +487,11 @@ export default function App({ user, onLogout }: AppProps) {
 
       case "settings":
         return <ProfileSettings settings={profileSettings} onSaveSettings={setProfileSettings} activeRole={activeRole} initialTab={settingsTab} onQuickNavigate={handleNavigate} />;
+
+      case "community":
+        return activeRole === "tutor"
+          ? <TutorCommunityManagement onNavigate={handleNavigate} />
+          : <CommunityFeedPage embedded={true} />;
 
       case "subjects":
         return fullTutorAccess ? <TeachingRegistrationPage embedded={true} /> : null;
@@ -533,7 +543,7 @@ export default function App({ user, onLogout }: AppProps) {
         return <StudentRequestsView onNavigate={handleNavigate} />;
 
       case "schedule":
-        return <TutorAvailabilityScheduler />;
+        return <TutorAvailabilityScheduler onNavigate={handleNavigate} />;
 
       case "help":
         return (

@@ -1,0 +1,199 @@
+package iuh.fit.learning_service.controller;
+
+import iuh.fit.learning_service.config.security.LearningUserPrincipal;
+import iuh.fit.learning_service.dto.CommunityPostDtos.*;
+import iuh.fit.learning_service.enums.LearningMode;
+import iuh.fit.learning_service.enums.PostStatus;
+import iuh.fit.learning_service.enums.PostType;
+import iuh.fit.learning_service.service.CommunityPostService;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.validation.annotation.Validated;
+
+@RestController
+@RequestMapping("/api/community")
+@Validated
+public class CommunityPostController {
+
+    private final CommunityPostService postService;
+
+    public CommunityPostController(CommunityPostService postService) {
+        this.postService = postService;
+    }
+
+    private LearningUserPrincipal extractPrincipal(Authentication auth) {
+        if (auth != null && auth.getPrincipal() instanceof LearningUserPrincipal principal) {
+            return principal;
+        }
+        return null;
+    }
+
+    private Long extractUserId(Authentication auth) {
+        LearningUserPrincipal principal = extractPrincipal(auth);
+        return principal != null ? principal.userId() : null;
+    }
+
+    @GetMapping("/posts")
+    public ResponseEntity<Page<PostSummaryDto>> getPosts(
+            @RequestParam(required = false) PostType postType,
+            @RequestParam(required = false) PostStatus status,
+            @RequestParam(required = false) Long subjectId,
+            @RequestParam(required = false) LearningMode learningMode,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "10") @Min(1) @Max(100) int size,
+            Authentication authentication
+    ) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        Long currentUserId = extractUserId(authentication);
+        return ResponseEntity.ok(postService.searchPosts(postType, status, subjectId, learningMode, keyword, pageable, currentUserId));
+    }
+
+    @GetMapping("/posts/{id}")
+    public ResponseEntity<PostSummaryDto> getPostDetail(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        Long currentUserId = extractUserId(authentication);
+        return ResponseEntity.ok(postService.getPostDetail(id, currentUserId));
+    }
+
+    @GetMapping("/posts/mine")
+    public ResponseEntity<Page<PostSummaryDto>> getMyPosts(
+            @RequestParam(required = false) PostStatus status,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "10") @Min(1) @Max(100) int size,
+            Authentication authentication
+    ) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        return ResponseEntity.ok(postService.getMyPosts(status, pageable, extractPrincipal(authentication)));
+    }
+
+    @GetMapping("/posts/bookmarked")
+    public ResponseEntity<Page<PostSummaryDto>> getBookmarkedPosts(
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "10") @Min(1) @Max(100) int size,
+            Authentication authentication
+    ) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        return ResponseEntity.ok(postService.getBookmarkedPosts(pageable, extractPrincipal(authentication)));
+    }
+
+    @PostMapping("/posts")
+    public ResponseEntity<PostSummaryDto> createPost(
+            @Valid @RequestBody CreatePostRequest request,
+            Authentication authentication
+    ) {
+        LearningUserPrincipal principal = extractPrincipal(authentication);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(postService.createPost(request, principal, null, null));
+    }
+
+    @PutMapping("/posts/{id}")
+    public ResponseEntity<PostSummaryDto> updatePost(
+            @PathVariable Long id,
+            @Valid @RequestBody CreatePostRequest request,
+            Authentication authentication
+    ) {
+        LearningUserPrincipal principal = extractPrincipal(authentication);
+        return ResponseEntity.ok(postService.updatePost(id, request, principal));
+    }
+
+    @DeleteMapping("/posts/{id}")
+    public ResponseEntity<Void> deletePost(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        LearningUserPrincipal principal = extractPrincipal(authentication);
+        boolean isAdmin = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        postService.deletePost(id, principal, isAdmin);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/posts/{id}/close")
+    public ResponseEntity<PostSummaryDto> closePost(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(postService.closePost(id, extractPrincipal(authentication)));
+    }
+
+    @PostMapping("/polls/{pollId}/vote")
+    public ResponseEntity<PollSummaryDto> votePoll(
+            @PathVariable Long pollId,
+            @Valid @RequestBody VotePollRequest request,
+            Authentication authentication
+    ) {
+        LearningUserPrincipal principal = extractPrincipal(authentication);
+        return ResponseEntity.ok(postService.votePoll(pollId, request.getOptionId(), principal, null));
+    }
+
+    @DeleteMapping("/polls/{pollId}/vote")
+    public ResponseEntity<PollSummaryDto> unvotePoll(
+            @PathVariable Long pollId,
+            Authentication authentication
+    ) {
+        LearningUserPrincipal principal = extractPrincipal(authentication);
+        return ResponseEntity.ok(postService.unvotePoll(pollId, principal));
+    }
+
+    @PostMapping("/posts/{id}/reactions")
+    public ResponseEntity<Boolean> toggleReaction(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        LearningUserPrincipal principal = extractPrincipal(authentication);
+        boolean isLiked = postService.toggleLike(id, principal, null, null);
+        return ResponseEntity.ok(isLiked);
+    }
+
+    @PostMapping("/posts/{id}/bookmarks")
+    public ResponseEntity<Boolean> toggleBookmark(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(postService.toggleBookmark(id, extractPrincipal(authentication)));
+    }
+
+    @GetMapping("/posts/{id}/comments")
+    public ResponseEntity<Page<CommentDto>> getComments(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
+    ) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").ascending());
+        return ResponseEntity.ok(postService.getComments(id, pageable));
+    }
+
+    @PostMapping("/posts/{id}/comments")
+    public ResponseEntity<CommentDto> addComment(
+            @PathVariable Long id,
+            @Valid @RequestBody CreateCommentRequest request,
+            Authentication authentication
+    ) {
+        LearningUserPrincipal principal = extractPrincipal(authentication);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(postService.addComment(id, request.getCommentText(), principal, null, null));
+    }
+
+    @PostMapping("/posts/{id}/convert-to-class")
+    public ResponseEntity<ClassCreatedFromPostResponse> convertPostToClass(
+            @PathVariable Long id,
+            @Valid @RequestBody ConvertPostToClassRequest request,
+            Authentication authentication
+    ) {
+        LearningUserPrincipal principal = extractPrincipal(authentication);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(postService.convertPostToClass(id, request, principal, null));
+    }
+}

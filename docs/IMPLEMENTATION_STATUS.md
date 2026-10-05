@@ -35,7 +35,7 @@
 | UC004 | Student quản lý yêu cầu tham gia | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Gửi, xem, hủy. |
 | UC005 | Student quản lý thông tin cá nhân | IMPLEMENTED | IMPLEMENTED | PARTIAL | Profile/avatar/password/wallet trên Web. |
 | UC006 | Student/Tutor quản lý hợp đồng | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Snapshot, ký EIP-712, artifact, lifecycle, chấm dứt hợp đồng đơn phương (Student) & đề xuất hủy lớp (Tutor) kèm chữ ký số ví Web3; nút hủy khóa an toàn chỉ mở khi ACTIVE. |
-| UC007 | Bài đăng tìm gia sư | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | Chưa có domain/controller. |
+| UC007 | Bảng tin kết nối & Khảo sát mở lớp | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Tutor có Bảng tin trong sidebar portal; tài khoản được like/comment/bookmark, có tab bài đã lưu; khách chỉ duyệt/tìm kiếm. Role/validation, soft-delete HIDDEN và toàn vẹn DB V38-V41 đã siết; conversion khóa chống tạo trùng, tái sử dụng luật tạo lớp chuẩn và gửi persistent Bell notification cho voter. |
 | UC008 | Tin nhắn Student–Tutor | IMPLEMENTED | PARTIAL | NOT_IMPLEMENTED | Backend persistence/API/WebSocket có; Portal vẫn dùng mock/in-memory. |
 | UC009 | Xem thông tin lớp | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Marketplace/list/detail và lớp đã tham gia. |
 | UC010 | Student quản lý bài tập | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Trang riêng /my-homework trên Sidebar; xem trạng thái bài nộp (Đã khóa nếu chưa điểm danh, Cần làm, Đã nộp, Đã chấm, Quá hạn); tải file đề bài S3 sau điểm danh; nộp file bài làm S3 và tải về xem lại; cho phép gỡ bỏ/thay thế file khi còn hạn nộp kèm cơ chế tự động xóa file cũ trên S3; loại bỏ thuật ngữ kỹ thuật hạ tầng khỏi UI. |
@@ -47,7 +47,7 @@
 | UC016 | Buổi học và điểm danh | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Rolling sessions, điểm danh độc lập, auto-finalize, link gate, gated assignment files (khóa tải file bài tập/slide trước khi điểm danh). |
 | UC017 | Tutor quản lý bài tập | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Trang riêng /tutor/homework trên Sidebar; đính kèm tối đa 5 file đề bài & slide S3; xem lại toàn bộ đề bài/yêu cầu/ghi chú đã giao; tải bài nộp S3 của học viên và chấm điểm/nhận xét; chuẩn hóa thống kê và bộ lọc chỉ tính các buổi thực tế có bài tập; hỗ trợ 2 chế độ chấm (Split View có mẫu nhận xét nhanh và lưu chuyển học viên tiếp theo; Table View xem bảng điểm toàn bộ sĩ số lớp); cảnh báo học viên chưa làm bài. |
 | UC018 | Tutor theo dõi thu nhập | IMPLEMENTED/PARTIAL | IMPLEMENTED/PARTIAL | NOT_IMPLEMENTED | Wallet/settlement có số confirmed; chưa có báo cáo kế toán chuyên sâu. |
-| UC019 | Staff kiểm duyệt nội dung | IMPLEMENTED/PARTIAL | IMPLEMENTED/PARTIAL | NOT_IMPLEMENTED | Tutor, teaching registration, catalog suggestion và class review; không có post moderation vì UC007 chưa có. |
+| UC019 | Staff kiểm duyệt nội dung | IMPLEMENTED/PARTIAL | IMPLEMENTED/PARTIAL | NOT_IMPLEMENTED | Tutor, teaching registration, catalog suggestion và class review; Community Post đã có feed nhưng chưa có moderation/PII masking/quy trình ẩn bài cho Staff. |
 | UC020 | Quản lý vi phạm | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | Chưa có violation module. |
 | UC021 | Giám sát lớp | PARTIAL | PARTIAL | NOT_IMPLEMENTED | Có class/contract/dispute view theo reviewer; chưa có monitoring tổng hợp hoàn chỉnh. |
 | UC022 | Xử lý khiếu nại | IMPLEMENTED + LIMITED | IMPLEMENTED | NOT_IMPLEMENTED | Per-agreement, history, S3 evidence, Tutor response window, Staff/Admin arbitration; V1 chỉ `BOTH_PRESENT`. |

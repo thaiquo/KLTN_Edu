@@ -58,6 +58,14 @@ export function ClassMarketplacePage() {
   // Selected Class Modal
   const [selectedClass, setSelectedClass] = useState(null);
 
+  useEffect(() => {
+    const classId = searchParams.get('id');
+    if (!classId) return;
+    classApi.getPublicClassById(classId)
+      .then(setSelectedClass)
+      .catch(() => setSelectedClass(null));
+  }, [searchParams]);
+
   // Load student schedule if active role is STUDENT
   useEffect(() => {
     if (user?.activeRole === 'STUDENT') {

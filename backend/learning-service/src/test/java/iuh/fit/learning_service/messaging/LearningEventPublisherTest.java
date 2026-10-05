@@ -3,6 +3,7 @@ package iuh.fit.learning_service.messaging;
 import iuh.fit.learning_service.messaging.event.ClassReviewedNotificationEvent;
 import iuh.fit.learning_service.messaging.event.EnrollmentNotificationEvent;
 import iuh.fit.learning_service.messaging.event.TeachingRegistrationReviewedEvent;
+import iuh.fit.learning_service.messaging.event.CommunityPostConvertedEvent;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -14,6 +15,28 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.ArgumentMatchers.eq;
 
 class LearningEventPublisherTest {
+
+    @Test
+    void publishCommunityConversionUsesStableRecipientEventId() {
+        RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+        LearningEventPublisher publisher = new LearningEventPublisher(rabbitTemplate);
+        ArgumentCaptor<CommunityPostConvertedEvent> captor =
+                ArgumentCaptor.forClass(CommunityPostConvertedEvent.class);
+
+        publisher.publishCommunityPostConverted(
+                10L, 20L, 30L, 40L, "Khảo sát Toán", "Lớp Toán", "Gia sư A");
+
+        verify(rabbitTemplate).convertAndSend(
+                eq(LearningRabbitConfig.EXCHANGE),
+                eq(LearningRabbitConfig.COMMUNITY_POST_CONVERTED_ROUTING_KEY),
+                captor.capture());
+        CommunityPostConvertedEvent event = captor.getValue();
+        assertThat(event.eventId()).isEqualTo("community-post-converted:10:20:30");
+        assertThat(event.eventType()).isEqualTo("COMMUNITY_POST_CONVERTED_TO_CLASS");
+        assertThat(event.recipientUserId()).isEqualTo(30L);
+        assertThat(event.referenceType()).isEqualTo("COMMUNITY_POST");
+        assertThat(event.referenceId()).isEqualTo("10");
+    }
 
     @Test
     void publishEnrollmentRequestedUsesRoutingKeyAndStablePayloadShape() {

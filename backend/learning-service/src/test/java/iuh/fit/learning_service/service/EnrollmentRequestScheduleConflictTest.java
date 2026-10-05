@@ -131,7 +131,7 @@ class EnrollmentRequestScheduleConflictTest {
         ClassSchedule targetSlot = createSchedule(targetClass, 2, "18:00", "19:30");
         targetClass.setSchedules(List.of(targetSlot));
 
-        // Existing enrolled class: Mon (day 2) 19:30 - 21:00 (back-to-back, no overlap)
+        // Existing accepted class: Mon (day 2) 19:30 - 21:00 (back-to-back, no overlap)
         ClassRoom existingClass = createClassRoom(20L, "Vật Lý 10 Cơ Bản", LocalDate.now(), LocalDate.now().plusMonths(2));
         ClassSchedule existingSlot = createSchedule(existingClass, 2, "19:30", "21:00");
         existingClass.setSchedules(List.of(existingSlot));
@@ -210,7 +210,7 @@ class EnrollmentRequestScheduleConflictTest {
         EnrollmentRequest acceptedReq = new EnrollmentRequest();
         acceptedReq.setClassRoom(enrolledClass);
         acceptedReq.setStudentEmail("student@example.com");
-        acceptedReq.setStatus(EnrollmentRequestStatus.ACCEPTED);
+        acceptedReq.setStatus(EnrollmentRequestStatus.ENROLLED);
 
         ClassSession session = new ClassSession();
         ReflectionTestUtils.setField(session, "id", 101L);
@@ -233,6 +233,66 @@ class EnrollmentRequestScheduleConflictTest {
 
         assertThat(scheduleResponse.sessions()).hasSize(1);
         assertThat(scheduleResponse.sessions().get(0).topic()).isEqualTo("Hàm số lượng giác");
+    }
+
+    @Test
+    void studentScheduleExcludesAcceptedReservationUntilEscrowFundingActivatesIt() {
+        EnrollmentRequestService service = service();
+        ClassRoom reservedClass = createClassRoom(20L, "Lớp đang giữ chỗ", LocalDate.now(), LocalDate.now().plusMonths(1));
+        EnrollmentRequest request = new EnrollmentRequest();
+        request.setClassRoom(reservedClass);
+        request.setStudentEmail("student@example.com");
+        request.setStatus(EnrollmentRequestStatus.ACCEPTED);
+        when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(request));
+
+        StudentScheduleResponse response = service.getStudentSchedule("student@example.com");
+
+        assertThat(response.recurringSchedules()).isEmpty();
+        assertThat(response.sessions()).isEmpty();
+    }
+
+    @Test
+    void cancelledClassKeepsCompletedSessionsVisibleAndOnlyMarksFutureSessionsStopped() {
+        EnrollmentRequestService service = service();
+        ClassRoom classRoom = createClassRoom(20L, "Lớp đã thanh lý", LocalDate.now().minusMonths(1), LocalDate.now().plusMonths(1));
+        classRoom.setStatus(ClassRoomStatus.CANCELLED);
+        classRoom.setTerminationCutoffSession(1);
+        EnrollmentRequest enrollment = new EnrollmentRequest();
+        enrollment.setClassRoom(classRoom);
+        enrollment.setStudentEmail("student@example.com");
+        enrollment.setStatus(EnrollmentRequestStatus.CANCELLED);
+        enrollment.setAgreementId("agreement-terminated");
+
+        ClassSession completed = new ClassSession();
+        ReflectionTestUtils.setField(completed, "id", 101L);
+        completed.setClassRoom(classRoom);
+        completed.setSequenceNumber(1);
+        completed.setSessionDate(LocalDate.now().minusDays(7));
+        completed.setStartTime("19:00");
+        completed.setEndTime("20:30");
+        completed.setStatus(ClassSessionStatus.COMPLETED);
+
+        ClassSession cancelled = new ClassSession();
+        ReflectionTestUtils.setField(cancelled, "id", 102L);
+        cancelled.setClassRoom(classRoom);
+        cancelled.setSequenceNumber(2);
+        cancelled.setSessionDate(LocalDate.now().plusDays(7));
+        cancelled.setStartTime("19:00");
+        cancelled.setEndTime("20:30");
+        cancelled.setStatus(ClassSessionStatus.CANCELLED);
+
+        when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(enrollment));
+        when(classSessionRepository.findByClassRoomIdInOrderBySessionDateAscStartTimeAsc(List.of(20L)))
+                .thenReturn(List.of(completed, cancelled));
+
+        StudentScheduleResponse response = service.getStudentSchedule("student@example.com");
+
+        assertThat(response.recurringSchedules()).isEmpty();
+        assertThat(response.sessions()).hasSize(2);
+        assertThat(response.sessions().get(0).status()).isEqualTo("COMPLETED");
+        assertThat(response.sessions().get(0).attendanceStopped()).isFalse();
+        assertThat(response.sessions().get(1).status()).isEqualTo("CANCELLED");
+        assertThat(response.sessions().get(1).attendanceStopped()).isTrue();
     }
 
     private EnrollmentRequestService service() {

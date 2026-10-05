@@ -10,6 +10,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.nio.charset.StandardCharsets;
+
+import javax.crypto.SecretKey;
+
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 
 @Component
 public class LearningServiceDispatcher {
@@ -17,13 +23,16 @@ public class LearningServiceDispatcher {
 
     private final HttpClient httpClient;
     private final String learningServiceUrl;
+    private final SecretKey serviceKey;
 
     public LearningServiceDispatcher(
-            @Value("${LEARNING_SERVICE_URL:http://localhost:8082}") String learningServiceUrl) {
+            @Value("${LEARNING_SERVICE_URL:http://localhost:8082}") String learningServiceUrl,
+            @Value("${jwt.secret}") String jwtSecret) {
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(3))
                 .build();
         this.learningServiceUrl = learningServiceUrl;
+        this.serviceKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
     public void activateEnrollmentAsync(Long classroomId, Long studentId, String agreementId) {
@@ -48,6 +57,12 @@ public class LearningServiceDispatcher {
                     .uri(URI.create(url))
                     .timeout(Duration.ofSeconds(4))
                     .header("Content-Type", "application/json")
+                    .header("X-Service-Token", Jwts.builder()
+                            .subject("contract-service")
+                            .claim("serviceScope", "learning-enrollment")
+                            .expiration(java.util.Date.from(java.time.Instant.now().plusSeconds(60)))
+                            .signWith(serviceKey)
+                            .compact())
                     .POST(HttpRequest.BodyPublishers.ofString(bodyJson))
                     .build();
 

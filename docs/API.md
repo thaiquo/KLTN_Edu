@@ -258,6 +258,30 @@ Internal notification security (2026-10-02): `POST /api/notifications/internal/s
 
 Automatic absence cases expose `origin=AUTO_TUTOR_ABSENCE`, `responseDeadline` and `tutorRespondedAt`. Normal `APPROVE`/`RECOMMEND` waits for the Tutor response or deadline; Admin may use `FORCE_APPROVE` with a mandatory audited reason for an urgent decision. The response deadline is calculated from the next scheduled session, with a maximum 24-hour window and a two-hour pre-session buffer.
 
+## 3.9 Community Posts API status
+
+Community Posts currently belongs to `learning-service`. Phase 1 (feed, poll, vote, reaction, comment) and Phase 2 (Smart Class Conversion & real-time notification) are fully implemented.
+
+Controller: `CommunityPostController` in `learning-service` (prefix `/api/community`).
+
+| Method | Endpoint | Status | Scope / Authorization |
+| --- | --- | --- | --- |
+| `GET` | `/api/community/posts` | Implemented | Public; supports `postType`, `status`, `subjectId`, `learningMode`, `keyword`, `page`, `size`. Excludes `HIDDEN` posts by default. |
+| `GET` | `/api/community/posts/{id}` | Implemented | Public; returns post summary/detail including poll, vote breakdown, and linked class fields when present. |
+| `GET` | `/api/community/posts/bookmarked` | Implemented | Authenticated; returns the current user's saved visible posts. |
+| `POST` | `/api/community/posts` | Implemented | Authenticated; role-restricted (`TUTOR_POLL` requires approved Tutor; `STUDENT_FIND_TUTOR`/`STUDENT_GROUP_STUDY` restricted to Student). Poll requires at least 2 options. |
+| `PUT` | `/api/community/posts/{id}` | Implemented | Author only in service logic. |
+| `DELETE` | `/api/community/posts/{id}` | Implemented | Author/Admin; soft-deletes post by setting `status = HIDDEN`. |
+| `POST` | `/api/community/polls/{pollId}/vote` | Implemented | Authenticated Student-only; creates or switches the student's vote; updates counts. |
+| `DELETE` | `/api/community/polls/{pollId}/vote` | Implemented | Authenticated Student; removes vote and decrements counts. |
+| `POST` | `/api/community/posts/{id}/reactions` | Implemented | Authenticated; toggles LIKE. |
+| `POST` | `/api/community/posts/{id}/bookmarks` | Implemented | Authenticated; toggles BOOKMARK with one bookmark per user/post. |
+| `GET` | `/api/community/posts/{id}/comments` | Implemented | Authenticated. |
+| `POST` | `/api/community/posts/{id}/comments` | Implemented | Authenticated; adds comment to post. |
+| `POST` | `/api/community/posts/{postId}/convert-to-class` | Implemented | Tutor-author only; requires an open poll meeting quorum, creates a `PENDING_APPROVAL` class through `ClassRoomService`, closes the poll, and emits one persistent notification event per voter. |
+
+Frontend source currently calls `/api/community` through `frontend-web/src/api/community.js`; do not document or implement `/api/learning/community` unless the route is deliberately changed across gateway, backend and client.
+
 ## 4. API Status Principle
 
 Termination notifications use a transactional outbox (Contract V18). Account owns recipient lookup:
