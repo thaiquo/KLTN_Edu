@@ -12,6 +12,11 @@ import java.util.UUID;
 @Builder
 public class ConversationDto {
     private UUID id;
+    private Long counterpartUserId;
+    private String counterpartEmail;
+    private String counterpartDisplayName;
+    private String counterpartAvatarUrl;
+    private String counterpartRole;
     private Long participant1Id;
     private String participant1Email;
     private Long participant2Id;

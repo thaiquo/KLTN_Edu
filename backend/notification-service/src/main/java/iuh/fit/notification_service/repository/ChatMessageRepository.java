@@ -9,21 +9,16 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
 import java.util.UUID;
 
 @Repository
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> {
 
-    List<ChatMessage> findByConversationIdOrderByCreatedAtAsc(UUID conversationId);
+    Page<ChatMessage> findByConversationIdOrderByCreatedAtDescIdDesc(UUID conversationId, Pageable pageable);
 
-    Page<ChatMessage> findByConversationIdOrderByCreatedAtDesc(UUID conversationId, Pageable pageable);
-
-    long countByRecipientEmailIgnoreCaseAndIsReadFalse(String email);
-
-    long countByConversationIdAndRecipientEmailIgnoreCaseAndIsReadFalse(UUID conversationId, String email);
+    long countByConversationIdAndRecipientIdAndIsReadFalse(UUID conversationId, Long recipientId);
 
     @Modifying
-    @Query("UPDATE ChatMessage m SET m.isRead = true WHERE m.conversationId = :conversationId AND LOWER(m.recipientEmail) = LOWER(:email) AND m.isRead = false")
-    int markMessagesAsRead(@Param("conversationId") UUID conversationId, @Param("email") String email);
+    @Query("UPDATE ChatMessage m SET m.isRead = true WHERE m.conversationId = :conversationId AND m.recipientId = :recipientId AND m.isRead = false")
+    int markMessagesAsReadByRecipientId(@Param("conversationId") UUID conversationId, @Param("recipientId") Long recipientId);
 }

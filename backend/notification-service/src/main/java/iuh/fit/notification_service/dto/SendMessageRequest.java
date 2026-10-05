@@ -1,7 +1,7 @@
 package iuh.fit.notification_service.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
 import java.util.UUID;
@@ -15,12 +15,17 @@ public class SendMessageRequest {
 
     private UUID conversationId;
 
-    @NotNull(message = "Recipient ID is required")
+    private Long recipientUserId;
+
+    /**
+     * Deprecated compatibility alias for old clients. Server-side recipient
+     * identity is resolved by user id, never by email.
+     */
     private Long recipientId;
 
-    @NotBlank(message = "Recipient email is required")
     private String recipientEmail;
 
     @NotBlank(message = "Message content cannot be blank")
+    @Size(max = 3000, message = "Message content must be at most 3000 characters")
     private String content;
 }

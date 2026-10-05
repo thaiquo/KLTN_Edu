@@ -164,6 +164,20 @@ public class NotificationService {
         return new MarkAllReadResponse(count);
     }
 
+    @Transactional
+    public int markUnreadChatConversationNotificationsRead(
+            Long userId,
+            String conversationId) {
+        if (userId == null || !StringUtils.hasText(conversationId)) {
+            return 0;
+        }
+
+        return notificationRepository.markUnreadChatNotificationsAsRead(
+                userId,
+                conversationId.trim(),
+                LocalDateTime.now());
+    }
+
     private Notification insert(NotificationCommand command) {
         try {
             Notification notification = new Notification();

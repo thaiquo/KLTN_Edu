@@ -95,6 +95,13 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- S3 chat attachment storage -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>2.25.70</version>
+        </dependency>
+
         <!-- JWT -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>

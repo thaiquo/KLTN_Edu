@@ -1231,6 +1231,7 @@ public class ClassRoomService {
                 && (visibleMeetingLink == null || visibleMeetingLink.isBlank())) {
             visibleMeetingLink = "https://meet.google.com/edu-class-" + (c.getId() != null ? c.getId() : "online");
         }
+        String visibleJoinKey = includeMeetingLink ? c.getJoinKey() : null;
         Long tutorUserId = resolveTutorUserIdForRating(c);
         double averageRating = tutorUserId == null ? 0.0 : safeAverage(tutorReviewRepository.averageRatingByTutorId(tutorUserId));
         long reviewCount = tutorUserId == null ? 0 : tutorReviewRepository.countByTutorId(tutorUserId);
@@ -1267,7 +1268,7 @@ public class ClassRoomService {
                 c.getSyllabusMode(),
                 c.getSyllabusFileUrl(),
                 c.getJoinMode(),
-                c.getJoinKey(),
+                visibleJoinKey,
                 c.getStatus(),
                 c.getRejectReason(),
                 c.getReviewedByEmail(),

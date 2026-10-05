@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -37,6 +39,16 @@ public class ChatMessage {
     @Column(name = "content", nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "message_type", nullable = false, length = 16)
+    @Builder.Default
+    private ChatMessageType type = ChatMessageType.TEXT;
+
+    @OneToMany(mappedBy = "message", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("createdAt ASC, id ASC")
+    @Builder.Default
+    private List<ChatAttachment> attachments = new ArrayList<>();
+
     @Column(name = "is_read", nullable = false)
     @Builder.Default
     private boolean isRead = false;
@@ -52,5 +64,10 @@ public class ChatMessage {
         if (this.createdAt == null) {
             this.createdAt = OffsetDateTime.now();
         }
+    }
+
+    public void addAttachment(ChatAttachment attachment) {
+        attachment.setMessage(this);
+        this.attachments.add(attachment);
     }
 }

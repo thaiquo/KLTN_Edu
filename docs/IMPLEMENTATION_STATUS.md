@@ -20,9 +20,9 @@
 | `account-service` | IMPLEMENTED | Auth cookie JWT, OTP, refresh rotation/revocation, role/activeRole, profile, wallet, Tutor application/documents, Staff/Admin management, S3, mail, RabbitMQ. |
 | `learning-service` | IMPLEMENTED | Catalog, Tutor registration/availability, classroom, enrollment, rolling session, attendance, meeting-link gate, homework và settlement delivery. |
 | `contract-service` | IMPLEMENTED + LIMITED | Agreement/signing/document/funding/settlement/refund/dispute/evidence/transaction recovery chạy thật trên Sepolia; event polling có đối soát receipt để phục hồi event bị lỡ; V1 dispute chỉ cho `BOTH_PRESENT`, legacy rows bị cách ly và ops còn giới hạn. |
-| `notification-service` | IMPLEMENTED/PARTIAL | Notification persistence, REST, Rabbit consumer, WebSocket hoạt động cho event đã nối. Chat backend có persistence/API/WebSocket nhưng Web Messages chưa nối. |
+| `notification-service` | IMPLEMENTED/PARTIAL | Notification persistence, REST, Rabbit consumer, WebSocket hoạt động cho event đã nối. Chat backend đã harden direct Student-Tutor contract bằng account `userId`, uniqueness theo cặp user, unread/read API và WebSocket theo `userId`; Web Messages đã nối REST/WebSocket thật. |
 | `ai-service` | PARTIAL | Có health, Student-only Deterministic Matching V1, Gemini Natural Language Requirement Analyzer, Catalog Grounding qua Learning catalog, Offline Location Grounding qua Account administrative reference data, Tutor Marketplace frontend integration và Qdrant semantic retrieval foundation; chưa có Hybrid Matching V2/RAG/eval. |
-| `frontend-web` | IMPLEMENTED/PARTIAL | Flow chính Account/Learning/Contract/Dispute/Wallet/Notification có dữ liệu thật; một số Portal dashboard/message vẫn chứa mock state. |
+| `frontend-web` | IMPLEMENTED/PARTIAL | Flow chính Account/Learning/Contract/Dispute/Wallet/Notification/Student-Tutor Messages có dữ liệu thật; một số Portal dashboard vẫn chứa mock state. |
 | `mobile-app` | PARTIAL | Login/register/home cơ bản; không có parity với Web. |
 
 ## 3. Trạng thái use case
@@ -36,7 +36,7 @@
 | UC005 | Student quản lý thông tin cá nhân | IMPLEMENTED | IMPLEMENTED | PARTIAL | Profile/avatar/password/wallet trên Web. |
 | UC006 | Student/Tutor quản lý hợp đồng | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Snapshot, ký EIP-712, artifact, lifecycle, chấm dứt hợp đồng đơn phương (Student) & đề xuất hủy lớp (Tutor) kèm chữ ký số ví Web3. |
 | UC007 | Bài đăng tìm gia sư | NOT_IMPLEMENTED | NOT_IMPLEMENTED | NOT_IMPLEMENTED | Chưa có domain/controller. |
-| UC008 | Tin nhắn Student–Tutor | IMPLEMENTED | PARTIAL | NOT_IMPLEMENTED | Backend persistence/API/WebSocket có; Portal vẫn dùng mock/in-memory. |
+| UC008 | Tin nhắn Student–Tutor | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Backend persistence/API/WebSocket, Web Messages thật cho Student/Tutor, và CTA tạo/reuse chat từ Tutor Marketplace/Public Tutor Profile đã có; mobile chưa có. |
 | UC009 | Xem thông tin lớp | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Marketplace/list/detail và lớp đã tham gia. |
 | UC010 | Student quản lý bài tập | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | Xem/nộp text/file; nội dung bị gate bằng điểm danh. |
 | UC011 | Student thanh toán/ký quỹ | IMPLEMENTED | IMPLEMENTED | NOT_IMPLEMENTED | `approve` + `fundAgreement`; ACTIVE chỉ sau confirmed event. |
@@ -109,8 +109,12 @@
 - IMPLEMENTED: Notification CRUD read state, unread count, mark one/all, recipient ownership, idempotent Rabbit consumer, `/ws/notifications`.
 - IMPLEMENTED theo producer hiện có: Tutor application, teaching registration, subject request, class review, enrollment và một số contract/settlement/dispute notification gửi nội bộ.
 - PARTIAL: chưa phải mọi session/homework action đều phát persistent notification; exact-item deep link/archive/delete chưa đầy đủ.
-- IMPLEMENTED backend chat: conversation/message tables, participant authorization, unread marking, REST và `/ws/chat`.
-- PARTIAL Web chat: API client tồn tại nhưng `MessagesView` vẫn nhận `INITIAL_CONVERSATIONS` và sinh phản hồi giả.
+- IMPLEMENTED backend chat: conversation/message tables, participant authorization theo account `userId`, một direct conversation duy nhất cho mỗi cặp Student-Tutor, message persistence, paginated history, explicit mark-read, unread count, REST và `/ws/chat`.
+- IMPLEMENTED trong phạm vi Phase 5.1: direct chat chỉ cho Student với Tutor đã approved; identity/eligibility được resolve từ Account Service, sender/recipient không tin từ body request, WebSocket route gửi theo `userId`, migration fail rõ nếu dữ liệu cũ có duplicate direct pair cần merge thủ công.
+- IMPLEMENTED trong phạm vi Phase 5.2: Web `MessagesView` tải conversation/history thật, gửi text message thật, mark-read rõ ràng, consume `/ws/chat` qua Gateway, không còn mock conversation/reply generator trong runtime messages. Chưa có call/typing/presence/mobile parity.
+- IMPLEMENTED trong phạm vi Phase 5.3: Student có thể mở hoặc reuse direct conversation từ Tutor Marketplace manual/AI card và Public Tutor Profile bằng `tutor.userId`, sau đó được điều hướng vào Web Messages qua query `conversation`.
+- IMPLEMENTED trong phạm vi Phase 5.3.1: Student Messages bỏ hero/description để mở trực tiếp workspace; Student/Tutor dùng cùng `MessagesView` gọn hơn, không còn nút fake emoji/call trong runtime chat; incoming/outgoing message được merge ngay từ POST/`NEW_MESSAGE` thay vì refetch full history, mark-read realtime được coalesce nhẹ, `/ws/chat` giữ một active socket mỗi client, và cấu hình realtime frontend chịu được legacy `VITE_REALTIME_URL` để tránh URL `/api/notifications/ws/ws/...`.
+- IMPLEMENTED trong phạm vi Phase 5.4/5.4.1: Student/Tutor Web Messages gửi và nhận ảnh/video đính kèm qua Notification Service. Một lần gửi ảnh tạo một `IMAGE` message với 1-5 ảnh, tối đa 10 MB/ảnh; một lần gửi video tạo một `VIDEO` message với đúng 1 video, tối đa 40 MB; không cho trộn ảnh và video. File được validate MIME/signature/size, upload vào private S3, DB chỉ lưu metadata/object key/SHA-256 trong `chat_attachments`, REST trả presigned URL ngắn hạn, và `/ws/chat` chỉ gửi metadata trong `NEW_MESSAGE` chứ không gửi binary. Runtime verification ngày 2026-10-05: upload ảnh PNG và video WebM thật qua UI, render sau refresh, DB có `IMAGE`/`VIDEO` rows metadata-only, WebSocket có 0 binary frames. Typing/presence/call/Bell summary/mobile parity vẫn chưa triển khai.
 
 ### AI
 
@@ -152,9 +156,9 @@
 
 ## 7. Việc còn lại ưu tiên
 
-1. Nối Portal Messages vào chat API/WebSocket, bỏ mock conversation/reply.
-2. Nâng AI Matching từ semantic retrieval foundation sang Hybrid Matching V2/ranking/eval; không để Gemini tự chọn Tutor hoặc sinh điểm giả.
-3. Hoàn thiện mobile theo các flow Web cần thiết.
+1. Hoàn thiện mobile theo các flow Web cần thiết, bao gồm messages.
+2. Bổ sung mobile chat parity khi business flow cho phép.
+3. Nâng AI Matching từ semantic retrieval foundation sang Hybrid Matching V2/ranking/eval; không để Gemini tự chọn Tutor hoặc sinh điểm giả.
 4. Bổ sung violation/support ticket và reporting tổng hợp.
 5. Tăng cường production ops: multi-RPC/failover, operator HA an toàn, metrics/alerting, backup/restore drill.
 6. Nếu cần khiếu nại cho outcome ngoài `BOTH_PRESENT`, thiết kế/deploy Solidity version mới; không vá lệch backend với V1.

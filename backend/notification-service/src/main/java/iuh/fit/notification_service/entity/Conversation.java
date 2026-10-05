@@ -31,6 +31,12 @@ public class Conversation {
     @Column(name = "participant2_email", nullable = false, length = 255)
     private String participant2Email;
 
+    @Column(name = "participant_low_user_id", nullable = false)
+    private Long participantLowUserId;
+
+    @Column(name = "participant_high_user_id", nullable = false)
+    private Long participantHighUserId;
+
     @Column(name = "last_message", columnDefinition = "TEXT")
     private String lastMessage;
 
@@ -48,6 +54,7 @@ public class Conversation {
         if (this.id == null) {
             this.id = UUID.randomUUID();
         }
+        normalizeParticipantPair();
         if (this.createdAt == null) {
             this.createdAt = OffsetDateTime.now();
         }
@@ -58,6 +65,15 @@ public class Conversation {
 
     @PreUpdate
     public void preUpdate() {
+        normalizeParticipantPair();
         this.updatedAt = OffsetDateTime.now();
+    }
+
+    private void normalizeParticipantPair() {
+        if (participant1Id == null || participant2Id == null) {
+            return;
+        }
+        participantLowUserId = Math.min(participant1Id, participant2Id);
+        participantHighUserId = Math.max(participant1Id, participant2Id);
     }
 }

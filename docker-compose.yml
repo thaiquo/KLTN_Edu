@@ -19,7 +19,11 @@ services:
     restart: unless-stopped
 
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-kltn_db}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-kltn_db}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -27,15 +31,20 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management
     container_name: kltn-rabbitmq
+
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-guest}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
+
     ports:
       - "${RABBITMQ_PORT:-5672}:5672"
       - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+
     restart: unless-stopped
+
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 10s
@@ -45,12 +54,16 @@ services:
   gotenberg:
     image: gotenberg/gotenberg:8
     container_name: kltn-gotenberg
+
     ports:
       - "${GOTENBERG_PORT:-3000}:3000"
+
     command:
       - gotenberg
       - --api-timeout=60s
+
     restart: unless-stopped
+
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:3000/health"]
       interval: 10s
@@ -60,17 +73,21 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.18.3
     container_name: kltn-qdrant
+
     ports:
       - "${QDRANT_PORT:-6333}:6333"
       - "${QDRANT_GRPC_PORT:-6334}:6334"
+
     volumes:
       - qdrant_data:/qdrant/storage
+
     restart: unless-stopped
+
+    healthcheck:
       test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/6333'"]
       interval: 10s
       timeout: 5s
       retries: 5
-    healthcheck:
 
 volumes:
   postgres_data:

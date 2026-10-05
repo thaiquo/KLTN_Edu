@@ -1,18 +1,13 @@
-import { MessageCircle } from 'lucide-react';
-import { StudentEmptyState, StudentPageScaffold } from './StudentPageScaffold';
+import { HomeHeader } from '../../components/home/HomeHeader';
+import { MessagesView } from '../../portal/components/MessagesView';
 
 export function StudentMessagesPage() {
   return (
-    <StudentPageScaffold
-      eyebrow="Tin nhắn"
-      title="Tin nhắn"
-      description="Tin nhắn Student sẽ được nối bằng API thật khi messaging backend sẵn sàng."
-    >
-      <StudentEmptyState
-        icon={<MessageCircle size={24} />}
-        title="Chưa có trung tâm tin nhắn thật"
-        description="Legacy MessagesView đang dùng mock/local state nên không được migrate như dữ liệu thật trong phase này."
-      />
-    </StudentPageScaffold>
+    <div className="min-h-screen bg-bg font-sans text-slate-950">
+      <HomeHeader />
+      <main className="container-app pb-6 pt-[calc(80px+16px)]">
+        <MessagesView embeddedInStudentPage />
+      </main>
+    </div>
   );
 }

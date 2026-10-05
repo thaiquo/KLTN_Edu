@@ -4,6 +4,7 @@ import iuh.fit.account_service.dto.user.ChangePasswordRequest;
 import iuh.fit.account_service.dto.user.UpdateUserProfileRequest;
 import iuh.fit.account_service.dto.user.UserProfileResponse;
 import iuh.fit.account_service.config.FilePolicyProperties;
+import iuh.fit.account_service.dto.chat.ChatIdentityResponse;
 import iuh.fit.account_service.entity.Student;
 import iuh.fit.account_service.entity.Tutor;
 import iuh.fit.account_service.entity.User;
@@ -13,7 +14,9 @@ import iuh.fit.account_service.exception.FileValidationException;
 import iuh.fit.account_service.exception.ResourceNotFoundException;
 import iuh.fit.account_service.exception.StorageException;
 import iuh.fit.account_service.enums.TutorApplicationStatus;
+import iuh.fit.account_service.enums.TutorStatus;
 import iuh.fit.account_service.repository.TutorApplicationRepository;
+import iuh.fit.account_service.repository.TutorProfileRepository;
 import iuh.fit.account_service.repository.StudentRepository;
 import iuh.fit.account_service.repository.TutorRepository;
 import iuh.fit.account_service.repository.AdministrativeCommuneRepository;
@@ -50,13 +53,14 @@ public class UserService {
     private final AdministrativeCommuneRepository communeRepository;
     private final TutorApplicationRepository tutorApplicationRepository;
     private final RefreshTokenService refreshTokenService;
+    private final TutorProfileRepository tutorProfileRepository;
 
     public UserService(
             UserRepository userRepository,
             UserRoleRepository userRoleRepository,
             PasswordEncoder passwordEncoder
     ) {
-        this(userRepository, userRoleRepository, null, null, passwordEncoder, null, null, null, null, null, null);
+        this(userRepository, userRoleRepository, null, null, passwordEncoder, null, null, null, null, null, null, null);
     }
 
     public UserService(
@@ -66,7 +70,7 @@ public class UserService {
             FileStorageService fileStorageService,
             FilePolicyProperties filePolicyProperties
     ) {
-        this(userRepository, userRoleRepository, null, null, passwordEncoder, fileStorageService, filePolicyProperties, null, null, null, null);
+        this(userRepository, userRoleRepository, null, null, passwordEncoder, fileStorageService, filePolicyProperties, null, null, null, null, null);
     }
 
     public UserService(
@@ -81,7 +85,25 @@ public class UserService {
             AdministrativeCommuneRepository communeRepository
     ) {
         this(userRepository, userRoleRepository, studentRepository, tutorRepository, passwordEncoder, fileStorageService, filePolicyProperties, provinceRepository, communeRepository, null,
-                null);
+                null, null);
+    }
+
+    public UserService(
+            UserRepository userRepository,
+            UserRoleRepository userRoleRepository,
+            StudentRepository studentRepository,
+            TutorRepository tutorRepository,
+            PasswordEncoder passwordEncoder,
+            FileStorageService fileStorageService,
+            FilePolicyProperties filePolicyProperties,
+            AdministrativeProvinceRepository provinceRepository,
+            AdministrativeCommuneRepository communeRepository,
+            TutorApplicationRepository tutorApplicationRepository,
+            RefreshTokenService refreshTokenService
+    ) {
+        this(userRepository, userRoleRepository, studentRepository, tutorRepository, passwordEncoder, fileStorageService,
+                filePolicyProperties, provinceRepository, communeRepository, tutorApplicationRepository,
+                refreshTokenService, null);
     }
 
     @Autowired
@@ -96,7 +118,8 @@ public class UserService {
             @Autowired(required = false) AdministrativeProvinceRepository provinceRepository,
             @Autowired(required = false) AdministrativeCommuneRepository communeRepository,
             @Autowired(required = false) TutorApplicationRepository tutorApplicationRepository,
-            @Autowired(required = false) RefreshTokenService refreshTokenService
+            @Autowired(required = false) RefreshTokenService refreshTokenService,
+            @Autowired(required = false) TutorProfileRepository tutorProfileRepository
     ) {
         this.userRepository = userRepository;
         this.userRoleRepository = userRoleRepository;
@@ -109,6 +132,53 @@ public class UserService {
         this.communeRepository = communeRepository;
         this.tutorApplicationRepository = tutorApplicationRepository;
         this.refreshTokenService = refreshTokenService;
+        this.tutorProfileRepository = tutorProfileRepository;
+    }
+
+    @Transactional(readOnly = true)
+    public ChatIdentityResponse getChatIdentity(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        List<String> roles = userRoleRepository.findByUserId(user.getId()).stream()
+                .map(UserRole::getRole)
+                .map(Enum::name)
+                .distinct()
+                .toList();
+        boolean hasStudentProfile = studentRepository != null && studentRepository.existsByUserId(user.getId());
+        boolean hasTutorProfile = tutorRepository != null && tutorRepository.existsByUserId(user.getId());
+        boolean tutorApproved = false;
+        if (tutorRepository != null && tutorApplicationRepository != null) {
+            Tutor tutor = tutorRepository.findByUserId(user.getId()).orElse(null);
+            TutorApplicationStatus applicationStatus = tutorApplicationRepository.findByUserId(user.getId())
+                    .map(app -> app.getStatus())
+                    .orElse(null);
+            tutorApproved = tutor != null
+                    && tutor.getStatus() == TutorStatus.APPROVED
+                    && applicationStatus == TutorApplicationStatus.APPROVED;
+        }
+        Long tutorProfileId = tutorProfileRepository != null
+                ? tutorProfileRepository.findByUserId(user.getId()).map(profile -> profile.getId()).orElse(null)
+                : null;
+        String avatarUrl = null;
+        if (fileStorageService != null && StringUtils.hasText(user.getAvatarKey())) {
+            try {
+                avatarUrl = fileStorageService.createPresignedGetUrl(user.getAvatarKey());
+            } catch (RuntimeException ignored) {
+                avatarUrl = null;
+            }
+        }
+        return new ChatIdentityResponse(
+                user.getId(),
+                user.getEmail(),
+                user.getFullName(),
+                avatarUrl,
+                user.getAccountStatus(),
+                roles,
+                hasStudentProfile,
+                hasTutorProfile,
+                tutorApproved,
+                tutorProfileId
+        );
     }
 
     @Transactional(readOnly = true)

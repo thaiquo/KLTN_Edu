@@ -54,13 +54,18 @@ export function Header({
   };
 
   function handleNotificationNavigate(target: unknown) {
+    const route = getNotificationRoute(target);
+    if (route && route.includes("conversation=")) {
+      navigate(route);
+      return;
+    }
+
     const portalPage = getNotificationPortalPage(target);
     if (portalPage && onNavigate) {
       onNavigate(portalPage);
       return;
     }
 
-    const route = getNotificationRoute(target);
     if (route) {
       navigate(route);
     }

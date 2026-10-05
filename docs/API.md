@@ -29,7 +29,7 @@ from confirmed financial data. See [runtime semantics](ESCROW_HARDENING_2026-09-
 | Enrollment/Join Request | `learning-service` | Student class enrollment requests and tutor accept/reject flows. |
 | Contract/Escrow/Settlement | `contract-service` | Contract agreement, signing, document, payment submission, transaction, settlement, dispute, expiry, cancellation/refund, and blockchain workflow APIs. Funding/session/lifecycle state transitions require confirmed blockchain events where Solidity emits authoritative events. Deployment/runtime hardening remains partial end-to-end. |
 | Notification | `notification-service` | Persistent user notifications, unread count, mark one read, mark all read, and limited realtime notification delivery for the authenticated recipient account. |
-| Chat | `notification-service` | Conversation/message persistence, participant-scoped REST APIs and raw WebSocket delivery. Web Portal integration is still partial. |
+| Chat | `notification-service` | Hardened Student-Tutor direct conversation/message persistence, participant-scoped REST APIs, explicit unread/read state and WebSocket delivery consumed by the Web Messages UI. |
 | AI Matching | `ai-service` | `GET /api/ai/health`, Student-only Tutor AI endpoints `POST /api/ai/matching/analyze`, `POST /api/ai/matching/ground`, `POST /api/ai/matching/tutors`, and Student-only Class AI endpoints `POST /api/ai/classes/analyze`, `POST /api/ai/classes/ground`, `POST /api/ai/classes/match`. Tutor matching and backend Class matching return conservative Hybrid V2 results with deterministic fallback. Staff/Admin semantic maintenance exists under `/api/ai/semantic/**`; RAG APIs are not implemented yet. |
 
 ## 3. Current API Groups
@@ -103,6 +103,7 @@ Current Notification Service endpoints:
 | `GET` | `/api/notifications/unread-count` | Return unread notification count for the authenticated user. | Supports optional `targetRole`. |
 | `PATCH` | `/api/notifications/{id}/read` | Mark one owned notification as read. | Idempotent for already-read rows. |
 | `PATCH` | `/api/notifications/read-all` | Mark all matching owned notifications as read. | Supports optional `targetRole`; returns updated count. |
+| `PUT` | `/api/notifications/chat-view-context` | Update the authenticated browser client's active Messages-view context. | Used by Web to suppress chat Bell notifications while the recipient is already inside Messages; user ownership is derived from the JWT cookie and `clientId` is only a per-browser-tab presence key. |
 
 Current Notification Service WebSocket endpoint:
 
@@ -241,14 +242,39 @@ Managed file policy: maximum 50 MB; JPEG/PNG/WebP/GIF, MP4/WebM/QuickTime, MP3/M
 
 ## 3.7 Chat API status
 
+Chat remains owned by `notification-service`. Account `userId` is the canonical participant identity; email is retained only as a display snapshot and backward-compatible field.
+
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/chat/conversations` | List conversations owned by authenticated email. |
-| `GET` | `/api/chat/conversations/{id}/messages` | Require participant, mark received messages read and return ordered history. |
-| `POST` | `/api/chat/messages` | Create/reuse conversation and persist a participant-validated message. |
-| WebSocket | `/ws/chat` | Push `NEW_MESSAGE` to sender and recipient authenticated sessions. |
+| `POST` | `/api/chat/conversations/direct` | Create or reuse one direct conversation for the authenticated user and `recipientUserId`. |
+| `GET` | `/api/chat/conversations` | List conversations where the authenticated `userId` is a participant, including counterpart display metadata and unread count. |
+| `GET` | `/api/chat/conversations/{id}/messages?page&size` | Return participant-authorized message history, newest first, without read side effects. |
+| `POST` | `/api/chat/conversations/{id}/read` | Mark unread incoming messages in that conversation as read for the authenticated participant. |
+| `POST` | `/api/chat/messages` | Persist a text message in an existing conversation; sender comes from the JWT principal and recipient is derived from the conversation. Compatibility create-by-recipient still accepts `recipientUserId` when `conversationId` is absent. |
+| `POST multipart` | `/api/chat/conversations/{id}/attachments` | Persist one media chat message in an existing conversation. The `files` parts contain either 1-5 images or exactly 1 video; optional `caption` is stored as message content. |
+| WebSocket | `/ws/chat` | Push `NEW_MESSAGE` frames only to authenticated sender/recipient `userId` sessions. |
 
-Backend chat is implemented, but current Portal `MessagesView` still uses `INITIAL_CONVERSATIONS` and simulated replies. Therefore UC008 remains partial from the user's perspective.
+Direct chat is limited to Student with approved Tutor. `notification-service` resolves current participant eligibility through `account-service` chat identity lookup; Staff/Admin direct chat, self-chat, Student-Student and unapproved Tutor conversations are rejected. The database enforces one conversation per unordered user pair through normalized `participant_low_user_id`/`participant_high_user_id` uniqueness; duplicate historical pairs must be merged manually before the hardening migration can apply.
+
+Chat attachments are owned by `notification-service`. Supported runtime attachment types are JPEG/PNG/WebP images and MP4/WebM videos. One IMAGE message may contain 1-5 image attachments, maximum 10 MB each. One VIDEO message contains exactly one video attachment, maximum 40 MB. Image and video files cannot be mixed in one send. The service stores file bytes in private S3, while PostgreSQL stores message metadata plus child `chat_attachments` rows with object key, original filename, MIME type, byte size and SHA-256. Clients receive short-lived presigned GET URLs in `ChatMessageDto.attachments[].url`; URLs are not permanent public object URLs. Legacy V4 single-attachment columns remain in the database for migration compatibility, but runtime read/write uses `chat_attachments`.
+
+Current WebSocket chat frame shape:
+
+| Field | Purpose |
+| --- | --- |
+| `type` | Current value: `NEW_MESSAGE`. |
+| `payload.messageId` | Persisted chat message id. |
+| `payload.conversationId` | Conversation id. |
+| `payload.senderUserId` | Account id of the sender. |
+| `payload.type` | `TEXT`, `IMAGE`, or `VIDEO`. |
+| `payload.content` | Persisted text content. |
+| `payload.attachments` | Attachment metadata list plus presigned URLs for image/video messages; no binary payload is sent over WebSocket. |
+| `payload.createdAt` | Server timestamp. |
+| `payload.read` | Initial read state, normally `false`. |
+
+Web chat integration is implemented for the Student `/messages` page, Tutor Portal `messages` tab, Tutor Marketplace cards, and Public Tutor Profile. Marketplace manual/AI cards and profile actions use the canonical tutor `userId` to call `POST /api/chat/conversations/direct`, then navigate to `/messages?conversation={id}` where the selected conversation opens. The UI loads real conversations/history from `/api/chat/conversations`, sends text messages through `/api/chat/messages`, sends grouped image messages or one-video messages through the multipart attachment endpoint, marks active conversations read through `/api/chat/conversations/{id}/read`, consumes `/ws/chat` `NEW_MESSAGE` frames through the Gateway, and keeps the selected conversation in the `conversation` query parameter. Chat Bell summaries are implemented for recipients outside Messages; calls, typing/presence, group chat, and mobile app parity remain out of scope.
+
+Chat Bell summaries are now implemented for Web. When the recipient is outside Messages, each persisted ChatMessage creates at most one `CHAT_MESSAGE` notification with `referenceType=CHAT_CONVERSATION` and `referenceId=conversationId`; grouped image messages still count as one notification. When the recipient browser has the Messages route active through `/api/notifications/chat-view-context`, Notification Service suppresses chat Bell creation and the Messages sidebar unread state remains the attention surface. Opening/marking a conversation read clears unread chat Bell notifications for that conversation.
 
 ## 3.8 Contract Termination & Cancellation API status
 

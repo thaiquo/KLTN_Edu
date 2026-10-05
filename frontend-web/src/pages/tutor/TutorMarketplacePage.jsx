@@ -12,6 +12,7 @@ import {
   Filter,
   Laptop,
   MapPin,
+  MessageCircle,
   RotateCcw,
   Search,
   ShieldCheck,
@@ -28,6 +29,7 @@ import { referenceApi } from '../../api/reference';
 import { HomeHeader } from '../../components/home/HomeHeader';
 import { AiTutorMatchingModal } from '../../components/matching/AiTutorMatchingModal';
 import { useAuth } from '../../hooks/useAuth';
+import { useStartTutorConversation } from '../../hooks/useStartTutorConversation';
 import { marketplaceSearchSessionStore } from '../../store/marketplaceSearchSessionStore';
 
 const DEFAULT_PAGE_SIZE = 9;
@@ -583,6 +585,7 @@ function FilterPanel({ filters, catalog, locations, updateFilter, clearFilters, 
 }
 
 function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiResult = false, marketplaceReturnTo = '/tutors' }) {
+  const { canShowChatAction, startTutorConversation, startingTutorUserId } = useStartTutorConversation();
   const capability = isAiResult ? capabilityFromMatch(tutor.matchedSubject) : getDisplayCapability(tutor, selectedSubjectId);
   const hasSubjectFilter = Boolean((selectedSubjectId || isAiResult) && capability);
   const location = formatLocation(tutor.location);
@@ -595,6 +598,8 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiR
   const matchPercentage = Number(tutor.matchPercentage);
   const hasMatchPercentage = isAiResult && Number.isFinite(matchPercentage);
   const matchingReasons = Array.isArray(tutor.matchingReasons) ? tutor.matchingReasons.filter(Boolean) : [];
+  const canChat = canShowChatAction(tutor.userId);
+  const startingChat = Number(startingTutorUserId) === Number(tutor.userId);
 
   return (
     <article className="group flex min-h-[360px] flex-col rounded-[8px] border border-slate-200 bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,.06)] transition-all duration-200 hover:-translate-y-1 hover:border-primary/40 hover:shadow-[0_22px_50px_rgba(15,23,42,.10)]">
@@ -664,6 +669,18 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiR
           <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Mức nhận dạy / buổi</p>
           <strong className="mt-1 block font-display text-xl font-extrabold text-slate-950">{hasSubjectFilter ? formatTuitionRange(capability.tuitionMin, capability.tuitionMax) : startingTuitionLabel(tutor.startingTuition)}</strong>
         </div>
+        {canChat && (
+          <button
+            type="button"
+            onClick={() => startTutorConversation(tutor.userId)}
+            disabled={startingChat}
+            data-chat-user-id={tutor.userId || ''}
+            aria-label={`Nhắn tin với ${tutor.fullName || 'gia sư'}`}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-primary px-5 text-sm font-black text-white transition-colors hover:bg-primary-dark disabled:cursor-wait disabled:opacity-70"
+          >
+            <MessageCircle size={16} /> {startingChat ? 'Đang mở...' : 'Nhắn tin'}
+          </button>
+        )}
         <Link
           to={`/tutors/${tutor.tutorId}`}
           state={{ marketplaceReturnTo }}

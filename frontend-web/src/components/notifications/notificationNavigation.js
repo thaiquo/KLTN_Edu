@@ -17,6 +17,18 @@ export function getNotificationTarget(notification, activeRole) {
   const type = normalizeValue(notification?.type);
   const referenceType = normalizeValue(notification?.referenceType);
   const role = normalizeRole(activeRole);
+  const conversationId = notification?.referenceId;
+
+  if (
+    type === 'CHAT_MESSAGE' ||
+    type === 'CHAT_MESSAGE_RECEIVED' ||
+    referenceType === 'CHAT_CONVERSATION'
+  ) {
+    if (role === 'TUTOR') {
+      return target(`/dashboard?tab=messages${conversationId ? `&conversation=${encodeURIComponent(conversationId)}` : ''}`, 'messages');
+    }
+    return target(`/messages${conversationId ? `?conversation=${encodeURIComponent(conversationId)}` : ''}`);
+  }
 
   if (type === 'TUTOR_APPLICATION_SUBMITTED') {
     return target('/staff/tutors', 'tutor-approval');

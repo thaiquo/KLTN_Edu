@@ -27,7 +27,6 @@ import {
   UserRole,
   StudentRequest,
   ScheduleItem,
-  Conversation,
   SystemUser,
   AppProfileSettings
 } from "./types";
@@ -120,70 +119,6 @@ const INITIAL_SCHEDULE: ScheduleItem[] = [
     detailType: "location",
     detailValue: "Phòng 4B",
     status: "past",
-  },
-];
-
-const INITIAL_CONVERSATIONS: Conversation[] = [
-  {
-    id: "vance",
-    partnerName: "Dr. Julian Vance",
-    partnerAvatar: tutorAvatar2,
-    partnerRole: "Mathematics Department Head",
-    lastMessage: "I found those composite derivatives pretty tricky.",
-    lastMessageTime: "12:45 PM",
-    unreadCount: 0,
-    isOnline: true,
-    messages: [
-      {
-        id: "m-1",
-        sender: "partner",
-        text: "Hello Alex! I've just reviewed your latest calculus assignment on composition of functions. You scored a solid 94%!",
-        timestamp: "12:30 PM",
-      },
-      {
-        id: "m-2",
-        sender: "partner",
-        text: "I have some extra notes on how to apply the Chain Rule without making standard bracket typos. I am attaching a PDF practice sheet below.",
-        timestamp: "12:32 PM",
-        attachments: [
-          {
-            name: "Calculus_ChainRule_Adv.pdf",
-            size: "1.2 MB",
-            type: "pdf",
-          },
-        ],
-      },
-      {
-        id: "m-3",
-        sender: "user",
-        text: "That sounds perfect, Dr. Vance! I found those composite derivatives pretty tricky during the exam.",
-        timestamp: "12:42 PM",
-      },
-      {
-        id: "m-4",
-        sender: "user",
-        text: "Thanks, I will download the sheet now to practice.",
-        timestamp: "12:45 PM",
-      },
-    ],
-  },
-  {
-    id: "jenkins",
-    partnerName: "Dr. Sarah Jenkins",
-    partnerAvatar: tutorAvatar1,
-    partnerRole: "AI Lead Researcher",
-    lastMessage: "Let me check the prompt engineering curriculum.",
-    lastMessageTime: "Yesterday",
-    unreadCount: 2,
-    isOnline: false,
-    messages: [
-      {
-        id: "m-5",
-        sender: "partner",
-        text: "Hello, have you had a chance to work with the NLP modules yet?",
-        timestamp: "Yesterday",
-      },
-    ],
   },
 ];
 
@@ -295,7 +230,6 @@ export default function App({ user, onLogout }: AppProps) {
   // Custom mock database tables binded in React
   const [requests, setRequests] = useState<StudentRequest[]>(INITIAL_REQUESTS);
   const [schedule, setSchedule] = useState<ScheduleItem[]>(INITIAL_SCHEDULE);
-  const [conversations, setConversations] = useState<Conversation[]>(INITIAL_CONVERSATIONS);
   const [users, setUsers] = useState<SystemUser[]>(INITIAL_SYSTEM_USERS);
   const [profileSettings, setProfileSettings] = useState<AppProfileSettings>({
     ...INITIAL_PROFILE_SETTINGS,
@@ -304,7 +238,6 @@ export default function App({ user, onLogout }: AppProps) {
     phoneNumber: user.phone || '',
   });
 
-  const [activeConversationId, setActiveConversationId] = useState<string>("vance");
   const [settingsTab, setSettingsTab] = useState<"info" | "password">("info");
   const {
     data: tutorApplication,
@@ -315,7 +248,8 @@ export default function App({ user, onLogout }: AppProps) {
   });
 
   const tutorApplicationStatus = activeRole === "tutor" ? tutorApplication?.status || null : null;
-  const restrictedTutor = activeRole === "tutor" && (tutorApplicationLoading || tutorApplicationFetching || tutorApplicationStatus !== "APPROVED");
+  const tutorAccessPending = activeRole === "tutor" && (tutorApplicationLoading || tutorApplicationFetching);
+  const restrictedTutor = activeRole === "tutor" && !tutorAccessPending && tutorApplicationStatus !== "APPROVED";
   const fullTutorAccess = activeRole === "tutor" && !restrictedTutor;
 
   useEffect(() => {
@@ -358,29 +292,6 @@ export default function App({ user, onLogout }: AppProps) {
   // Interaction handlers
   const handleStartSession = () => {
     feedback.info("Phòng học trực tuyến sẽ được kết nối khi module video/audio thật sẵn sàng.");
-  };
-
-  // Messages handlers
-  const handleSendMessage = (conversationId: string, text: string) => {
-    setConversations((prev) =>
-      prev.map((c) => {
-        if (c.id === conversationId) {
-          const newMsg = {
-            id: Date.now().toString(),
-            sender: "user" as const,
-            text,
-            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-          };
-          return {
-            ...c,
-            lastMessage: text,
-            lastMessageTime: newMsg.timestamp,
-            messages: [...c.messages, newMsg],
-          };
-        }
-        return c;
-      })
-    );
   };
 
   // Tutor specific handlers
@@ -469,14 +380,7 @@ export default function App({ user, onLogout }: AppProps) {
         );
 
       case "messages":
-        return (
-          <MessagesView
-            conversations={conversations}
-            onSendMessage={handleSendMessage}
-            activeConversationId={activeConversationId}
-            onSelectConversation={setActiveConversationId}
-          />
-        );
+        return <MessagesView />;
 
       case "settings":
         return <ProfileSettings settings={profileSettings} onSaveSettings={setProfileSettings} activeRole={activeRole} initialTab={settingsTab} onQuickNavigate={handleNavigate} />;

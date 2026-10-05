@@ -35,7 +35,7 @@
 - Ghi nhận Sepolia payout 85/15 và refund `TUTOR_ABSENT` 100% đã xác nhận.
 - Ghi đầy đủ session attendance độc lập, link/homework gate, restart catch-up, per-Student settlement và dispute privacy/response window.
 - Ghi nhận Contract dispute evidence lưu S3 theo key agreement/session/role, tối đa 50 MB, metadata SHA-256 trong PostgreSQL.
-- Điều chỉnh Messaging: backend chat persistence/API/WebSocket đã có, nhưng Web Portal vẫn dùng mock state nên UC008 còn PARTIAL.
+- Điều chỉnh Messaging: backend chat persistence/API/WebSocket đã có; Phase 5.2 sau đó đã nối Web Messages vào dữ liệu thật cho Student/Tutor.
 - Điều chỉnh AI: `ai-service` đã có skeleton/health, nhưng matching/RAG/vector/model vẫn NOT_IMPLEMENTED.
 - Thay các tuyên bố “100% hoàn thành” tổng quát bằng trạng thái có phạm vi, evidence và giới hạn.
 

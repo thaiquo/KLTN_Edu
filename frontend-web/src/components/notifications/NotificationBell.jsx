@@ -81,9 +81,6 @@ export function NotificationBell({
     const route = getNotificationRoute(target);
 
     if (!portalPage && !route) {
-      if (import.meta.env.DEV) {
-        console.debug('No navigation target for notification', notification);
-      }
       return;
     }
 

@@ -14,6 +14,7 @@ import {
   Laptop,
   Loader2,
   MapPin,
+  MessageCircle,
   ShieldCheck,
   Star,
   UsersRound,
@@ -23,6 +24,7 @@ import { tutorApi } from '../../api/tutors';
 import { classApi } from '../../api/classes';
 import { reviewApi } from '../../api/reviews';
 import { HomeHeader } from '../../components/home/HomeHeader';
+import { useStartTutorConversation } from '../../hooks/useStartTutorConversation';
 import { PublicClassDetailModal } from '../class/PublicClassDetailModal';
 
 const REVIEW_PAGE_SIZE = 4;
@@ -55,6 +57,7 @@ export function PublicTutorProfilePage() {
   const [reviewsPage, setReviewsPage] = useState(null);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [reviewPageIndex, setReviewPageIndex] = useState(0);
+  const { canShowChatAction, startTutorConversation, startingTutorUserId } = useStartTutorConversation();
 
   useEffect(() => {
     let active = true;
@@ -139,6 +142,8 @@ export function PublicTutorProfilePage() {
   const availabilityByDay = useMemo(() => groupAvailability(tutor?.availability || []), [tutor?.availability]);
   const subjectSummary = useMemo(() => summarizeSubjects(capabilities), [capabilities]);
   const safeLocation = formatLocation(tutor?.location);
+  const canChat = canShowChatAction(tutor?.userId);
+  const startingChat = Number(startingTutorUserId) === Number(tutor?.userId);
 
   return (
     <div className="min-h-screen bg-bg text-ink font-sans">
@@ -320,6 +325,18 @@ export function PublicTutorProfilePage() {
                 <section className="border border-slate-200 bg-white p-6 shadow-[0_18px_42px_rgba(15,23,42,.06)]">
                   <h2 className="font-display text-xl font-extrabold text-slate-950">Hành động</h2>
                   <div className="mt-4 grid gap-3">
+                    {canChat && (
+                      <button
+                        type="button"
+                        onClick={() => startTutorConversation(tutor.userId)}
+                        disabled={startingChat}
+                        data-chat-user-id={tutor.userId || ''}
+                        aria-label={`Nhắn tin với ${tutor.fullName || 'gia sư'}`}
+                        className="inline-flex items-center justify-center gap-2 bg-primary px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark disabled:cursor-wait disabled:opacity-70"
+                      >
+                        <MessageCircle size={16} /> {startingChat ? 'Đang mở tin nhắn...' : 'Nhắn tin'}
+                      </button>
+                    )}
                     <a
                       href="#classes"
                       className="inline-flex items-center justify-center gap-2 bg-primary px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark"

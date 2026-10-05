@@ -35,4 +35,15 @@ public final class NotificationDtos {
 
     public record MarkAllReadResponse(int count) {
     }
+
+    public record ChatViewContextRequest(
+            boolean active,
+            String clientId
+    ) {
+    }
+
+    public record ChatViewContextResponse(
+            boolean active
+    ) {
+    }
 }

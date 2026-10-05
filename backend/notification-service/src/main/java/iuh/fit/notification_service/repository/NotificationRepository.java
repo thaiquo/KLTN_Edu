@@ -53,4 +53,20 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
             @Param("readAt") LocalDateTime readAt
     );
 
+    @Modifying
+    @Query("""
+            update Notification n
+               set n.readAt = :readAt
+             where n.recipientUserId = :recipientUserId
+               and n.readAt is null
+               and n.type in ('CHAT_MESSAGE', 'CHAT_MESSAGE_RECEIVED')
+               and n.referenceType = 'CHAT_CONVERSATION'
+               and n.referenceId = :conversationId
+            """)
+    int markUnreadChatNotificationsAsRead(
+            @Param("recipientUserId") Long recipientUserId,
+            @Param("conversationId") String conversationId,
+            @Param("readAt") LocalDateTime readAt
+    );
+
 }

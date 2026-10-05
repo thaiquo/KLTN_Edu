@@ -93,7 +93,7 @@ Tỷ lệ được tính theo base unit của USDC; Tutor và Platform được 
 
 - Đã có luồng chính Web cho Account, Tutor approval, catalog/class/enrollment, session/attendance/homework, contract/escrow/settlement/dispute và notification.
 - Sepolia đã có bằng chứng funding, payout 85/15, refund 100% và refund hoàn cọc thanh lý hợp đồng 4.80 USDC thực tế; chi tiết transaction nằm trong [BLOCKCHAIN.md](BLOCKCHAIN.md).
-- Chat backend có persistence/API/WebSocket nhưng Portal message hiện vẫn dùng mock state, nên luồng người dùng chưa hoàn chỉnh.
+- Chat Student-Tutor có persistence/API/WebSocket, Web Messages đã dùng dữ liệu thật, hỗ trợ gửi nhóm 1-5 ảnh hoặc 1 video qua S3 metadata-only, và Student có thể tạo/reuse chat từ Tutor Marketplace/Public Tutor Profile; mobile chat parity chưa có.
 - AI Matching đã có flow Student trong Tutor Marketplace dựa trên Analyze -> Ground -> Matching V1 và đã có Qdrant semantic retrieval foundation; Hybrid Matching V2/RAG chưa triển khai.
 - Student post, violation/support ticket, báo cáo quản trị đầy đủ và mobile feature parity chưa có.
 - Bốn agreement legacy nạp sai bằng raw ERC-20 transfer đã được `legacy_excluded`; không tham gia KPI hoặc tự quyết toán.

@@ -3,6 +3,7 @@ package iuh.fit.notification_service.dto;
 import lombok.*;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Getter
@@ -17,7 +18,9 @@ public class ChatMessageDto {
     private String senderEmail;
     private Long recipientId;
     private String recipientEmail;
+    private String type;
     private String content;
+    private List<ChatAttachmentDto> attachments;
     private boolean isRead;
     private OffsetDateTime createdAt;
 }

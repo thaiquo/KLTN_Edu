@@ -80,6 +80,7 @@ public class SecurityConfig {
                                 "/api/subjects/**",
                                 "/api/reference/**"
                         ).permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/users/chat-identities/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/tutors/**").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated()

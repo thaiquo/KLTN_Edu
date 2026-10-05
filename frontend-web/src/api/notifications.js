@@ -31,5 +31,12 @@ export const notificationApi = {
     return apiRequest(`/api/notifications/read-all${buildQuery(params)}`, {
       method: 'PATCH'
     });
+  },
+
+  updateChatViewContext({ active, clientId }) {
+    return apiRequest('/api/notifications/chat-view-context', {
+      method: 'PUT',
+      body: JSON.stringify({ active: Boolean(active), clientId })
+    });
   }
 };

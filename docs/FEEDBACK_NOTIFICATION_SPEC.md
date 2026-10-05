@@ -21,7 +21,7 @@ This spec covers:
 - TanStack Query invalidation.
 - Current and future event behavior.
 
-This spec is documentation only. Current source includes persistent Notification/Bell APIs, limited notification WebSocket delivery, and a persisted Chat REST/WebSocket backend. Portal chat still uses mock state. Entries marked `PLANNED` remain future requirements only.
+This spec is documentation only. Current source includes persistent Notification/Bell APIs, limited notification WebSocket delivery, a persisted Chat REST/WebSocket backend, and Web Messages integration for Student/Tutor chat. Entries marked `PLANNED` remain future requirements only.
 
 ## 2. Status Model
 
@@ -57,18 +57,18 @@ Do not replace REST with WebSocket. WebSocket is delivery, not source of truth.
 | Important success modal | `frontend-web/src/components/feedback/ImportantSuccessModal.jsx` | `IMPLEMENTED` | Used for important acknowledgement-style success states such as password change. |
 | Feedback hook | `frontend-web/src/components/feedback/useFeedback.js` | `IMPLEMENTED` | Re-export of `useFeedback` from the provider. |
 | Feedback types | `frontend-web/src/components/feedback/feedbackTypes.js` | `IMPLEMENTED` | Defines `success`, `error`, `warning`, `info`, and confirm variants. |
-| Realtime provider | `frontend-web/src/realtime/RealtimeProvider.jsx` | `PARTIAL` | Connects to `/ws/account`, `/ws/learning`, and `/ws/notifications`; dispatches `realtime:event`, shows global toasts, invalidates notification queries, and syncs TutorApplication review state. |
+| Realtime provider | `frontend-web/src/realtime/RealtimeProvider.jsx` | `PARTIAL` | Connects to `/ws/account`, `/ws/learning`, `/ws/notifications`, and `/ws/chat`; dispatches `realtime:event`, shows global toasts for supported non-chat events, invalidates notification queries, syncs TutorApplication review state, and lets Messages UI handle chat frames. |
 | Realtime refresh hook | `frontend-web/src/realtime/useRealtimeRefresh.js` | `PARTIAL` | Local browser event bridge for screens that need refresh. |
 | Student Bell | `frontend-web/src/components/home/HomeHeader.jsx` | `IMPLEMENTED` | Uses shared REST Bell dropdown with real unread count, latest notifications, read state, mark-one-read, and mark-all-read. |
 | Portal Bell | `frontend-web/src/portal/components/Header.tsx` | `IMPLEMENTED` | Uses shared REST Bell dropdown for Tutor/Staff/Admin with the same account-wide notification source. |
 | Notification service | `backend/notification-service` | `PARTIAL` | Backend persistence, REST read/unread API, JWT-cookie security, RabbitMQ consumers, event idempotency, and raw WebSocket delivery exist for a limited event slice. |
 | Chat backend | `backend/notification-service` | `IMPLEMENTED` | Conversation/message persistence, participant checks, read marking, REST and `/ws/chat` exist. |
-| Chat Web UI | `frontend-web/src/portal/components/MessagesView.tsx` | `PARTIAL` | Still uses `INITIAL_CONVERSATIONS`, local state and simulated replies instead of the implemented backend API. |
+| Chat Web UI | `frontend-web/src/portal/components/MessagesView.tsx` | `IMPLEMENTED` | Loads real conversations/history for Student `/messages` and Tutor Portal `messages`, sends text plus grouped image or one-video messages, marks read state, consumes `/ws/chat` metadata frames through the Gateway, suppresses chat Bell notifications while Messages is active through chat-view context, and does not send binary data over WebSocket. |
 | TutorApplication cache | `frontend-web/src/hooks/useTutorApplication.js` | `IMPLEMENTED` | TanStack Query key `["tutorApplication", "me"]`. |
 
 Future frontend code must not create browser `alert()`, browser `confirm()`, or arbitrary local toast systems for normal action feedback. Use `useFeedback()` unless a business-input modal is required.
 
-Known legacy exception: `frontend-web/src/portal/components/MessagesView.tsx` still contains browser `alert()` calls in a mock/legacy messaging UI. Do not copy that pattern.
+Known legacy exception: none for current Web Messages runtime. Do not introduce browser `alert()`/`confirm()` for messaging feedback.
 
 ## 5. Local Feedback Classification
 
@@ -227,7 +227,7 @@ These are target events derived from current project scope and docs. They are no
 | `REFUND_PROCESSED` | `IMPLEMENTED` | Contract Service | Student/Tutor/Admin as applicable | Important Success Modal | Partial | Partial after authoritative confirmation | Partial | `/payments` or `/contracts` | Tutor-absent refund, unused-fund refund and dispute-approved refund paths exist. |
 | `DISPUTE_OPENED` | `PARTIAL` | Contract Service | Tutor | Confirm before submit, then toast | Immediate when a Student complaint is accepted locally | Notification Service WebSocket | Yes | Portal `complaints` | Tutor notification includes the persisted Student complaint reason. Submission immediately holds the per-Student settlement. Tutor-origin complaints are private Staff/Admin reports and do not notify the Student. Reviewer Bell delivery remains unavailable because agreements do not store reviewer user id. |
 | `DISPUTE_RESOLVED` | `PARTIAL` | Contract Service | Student/Tutor | Important Success Modal for resolver | Yes after confirmed on-chain resolution | Notification Service WebSocket | Yes | `/contracts` or Portal `complaints` | Both parties receive the authoritative resolution result; reviewer Bell delivery remains pending a reviewer recipient id. |
-| `MESSAGE_RECEIVED` | `PARTIAL` | Notification Service chat domain | Recipient | Sender local send state | Optional summary | Backend `/ws/chat` implemented | Bell integration not implemented | `/messages` | Message persistence/API/WebSocket exist; current Portal UI is not connected. |
+| `MESSAGE_RECEIVED` | `IMPLEMENTED` | Notification Service chat domain | Recipient | Sender local send state | `CHAT_MESSAGE` Bell summary outside Messages; suppressed inside active Messages | `/ws/chat` is consumed by Web Messages; `/ws/notifications` updates Bell summaries | Bell implemented for outside-Messages recipients | `/messages?conversation={id}` or `/dashboard?tab=messages&conversation={id}` | Message persistence/API/WebSocket and Student/Tutor Web Messages are connected; mobile remains pending. |
 | `COMPLAINT_CREATED` | `PLANNED` | Complaint/support domain owner TBD | Staff/Admin or counterparty as applicable | Confirm when sensitive, then toast | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Complaint/support module not implemented. |
 | `COMPLAINT_RESOLVED` | `PLANNED` | Complaint/support domain owner TBD | Reporter and affected users | Important success when current user resolves | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Complaint/support module not implemented. |
 | `MATCHING_READY` | `PLANNED` | AI Matching domain owner TBD | Student/Tutor depending matching flow | Toast only when generated from explicit action | Optional | Recommended only for long-running jobs | Optional | `/matching` | AI Matching service not implemented. |
@@ -254,7 +254,7 @@ These are target events derived from current project scope and docs. They are no
 | Admin | User status | `IMPLEMENTED` | Local feedback; persistent notification optional only if user-facing account status notification is required. |
 | Admin | Catalog management | `IMPLEMENTED` | Local feedback only; no Bell notification required for normal catalog CRUD. |
 | Contract/Web3 | Contract/payment/escrow/dispute | `IMPLEMENTED + LIMITED` | Core flow is implemented; dispute V1 is limited to `BOTH_PRESENT`, and notification coverage is partial. Financial UI must wait for authoritative backend/on-chain confirmation. |
-| Messaging | Messages | `PARTIAL` | Backend persistence/API/realtime exist; Web Portal remains mock/local and must be connected. |
+| Messaging | Messages | `IMPLEMENTED` Web / `NOT_IMPLEMENTED` Mobile | Backend persistence/API/realtime and Student/Tutor Web Messages exist; mobile remains pending. |
 | Notification | Persistent notifications and Bell center | `PARTIAL` | Backend Notification Service has persistence, REST list/unread/read APIs, JWT-cookie ownership checks, a limited Rabbit consumer slice, raw WebSocket delivery for persisted notification creation, and frontend Bell cache synchronization. |
 | AI Matching | Matching/recommendations | `PLANNED` | AI Service has only a health skeleton; matching, embeddings, ranking and recommendation are not implemented. |
 
@@ -307,7 +307,7 @@ These are target events derived from current project scope and docs. They are no
 | `ENROLLMENT_ACCEPTED` | `IMPLEMENTED` | Learning Service | Student | Persistent notification implemented | Implemented through Notification Service WebSocket | `STUDENT` | `/my-classes` |
 | `ENROLLMENT_REJECTED` | `IMPLEMENTED` | Learning Service | Student | Persistent notification implemented | Implemented through Notification Service WebSocket | `STUDENT` | `/my-classes` |
 | `ENROLLMENT_CANCELLED` | `IMPLEMENTED` | Learning Service | Tutor | Persistent notification implemented | Implemented through Notification Service WebSocket | `TUTOR` | `/dashboard` |
-| `MESSAGE_RECEIVED` | `PARTIAL` | Notification Service chat domain | Recipient | Chat message persists; Bell summary is not wired | Implemented through `/ws/chat` | Active role/context if known | `/messages` |
+| `CHAT_MESSAGE` | `IMPLEMENTED` | Notification Service chat domain | Recipient | Chat message persists and creates one Bell summary only when recipient is outside Messages; active Messages route suppresses Bell and uses sidebar unread state | Implemented through `/ws/chat` plus `/ws/notifications` for outside-Messages Bell summaries | `STUDENT`/`TUTOR` context inferred from chat counterpart | Student `/messages?conversation={id}` or Tutor `/dashboard?tab=messages&conversation={id}` |
 | `ESCROW_FUNDED` | `PARTIAL` | Contract Service | Student/Tutor | Business flow implemented; persistent coverage requires per-path audit | Partial after authoritative confirmation | `STUDENT`/`TUTOR` | `/payments` or `/contracts` |
 | `DISPUTE_OPENED` | `PARTIAL` | Contract Service | Tutor | Persistent notification implemented after confirmed opening | Implemented through Notification Service WebSocket | `TUTOR` | Portal `complaints` |
 | `DISPUTE_RESOLVED` | `PARTIAL` | Contract Service | Student/Tutor | Persistent notification implemented after confirmed resolution | Implemented through Notification Service WebSocket | `STUDENT`/`TUTOR` | `/contracts` or Portal `complaints` |
@@ -323,7 +323,7 @@ These are target events derived from current project scope and docs. They are no
 | `CONTRACT_SIGNED` | `PLANNED` | Counterparty should know promptly once implemented. |
 | `ESCROW_FUNDED` | `PLANNED` | Financial state should update promptly after authoritative confirmation. |
 | `SESSION_CANCELLED` | `PLANNED` | Schedule impact is time-sensitive. |
-| `MESSAGE_RECEIVED` | `IMPLEMENTED` backend | `/ws/chat` pushes persisted messages to authenticated sender/recipient sessions; Portal consumption remains pending. |
+| `MESSAGE_RECEIVED` | `IMPLEMENTED` Web | `/ws/chat` pushes persisted messages to authenticated sender/recipient sessions; Student `/messages` and Tutor Portal `messages` consume frames and render active-conversation messages immediately. |
 
 ### REALTIME_RECOMMENDED
 
@@ -443,7 +443,7 @@ Do not treat wallet signature, transaction hash creation, or frontend optimistic
 
 ## 21. Messaging Rules
 
-Messaging backend persistence/API is implemented in Notification Service. It stores conversations/messages, checks participants, marks received messages read, and pushes `NEW_MESSAGE` on `/ws/chat`. The Web Portal remains partial/mock and must not be treated as a complete end-to-end feature until it loads/sends through this backend.
+Messaging backend persistence/API is implemented in Notification Service. It stores conversations/messages, checks participants, marks received messages read, stores chat image/video bytes in private S3 with PostgreSQL metadata, supports one `IMAGE` message with 1-5 images or one `VIDEO` message with exactly one video, and pushes `NEW_MESSAGE` metadata on `/ws/chat`. Grouped image messages count as one chat message/read-unread item and one Bell notification when the recipient is outside Messages. Web Messages loads/sends through this backend for Student `/messages` and Tutor Portal `messages`; Tutor Marketplace/Public Tutor Profile can create or reuse direct conversations and deep-link into Messages. Mobile remains pending.
 
 Future message send flow:
 
@@ -451,12 +451,13 @@ Future message send flow:
 2. Persistent message storage.
 3. Realtime recipient delivery.
 4. Unread state update.
-5. Bell notification behavior for recipient attention.
+5. Bell notification behavior for recipient attention when outside Messages.
 
 Avoid duplicate concepts:
 
 - chat unread state belongs to messaging;
 - Bell notification should show a summary or entry point, not duplicate every low-value chat UI state.
+- When a recipient is already in Messages, chat attention stays in the sidebar/active conversation and Notification Service suppresses `CHAT_MESSAGE` Bell rows using in-memory authenticated chat-view presence. This single-instance presence is not shared across multiple backend instances.
 
 ## 22. Route Target Rules
 
@@ -474,7 +475,7 @@ Current route targets that may be used:
 | `/profile` | `IMPLEMENTED` | Account profile and TutorApplication context section. |
 | `/profile/password` | `IMPLEMENTED` | Change password. |
 | `/my-classes` | `IMPLEMENTED` | Student enrollment/request page. |
-| `/messages` | `PARTIAL` | Student/Portal UI still mock; backend chat exists. |
+| `/messages` | `IMPLEMENTED` Web | Student Web Messages uses backend chat REST/WebSocket and accepts `?conversation={id}` deep links from Bell and marketplace/profile chat entry points. |
 | `/contracts` | `IMPLEMENTED` | Shared real contract view uses Contract Service APIs; blockchain state is confirmed-event driven. |
 | `/payments` | `IMPLEMENTED` | Redirects to `/student/wallet`, which provides the current funding/wallet/settlement view. |
 | `/matching` | `PLANNED` | Student shell exists; AI service missing. |

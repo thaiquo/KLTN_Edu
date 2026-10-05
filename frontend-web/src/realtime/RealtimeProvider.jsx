@@ -1,11 +1,14 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useLocation } from 'react-router-dom';
 import { useFeedback } from '../components/feedback/useFeedback';
+import { notificationApi } from '../api/notifications';
 import { useAuth } from '../hooks/useAuth';
 import { notificationKeys } from '../hooks/useNotifications';
 import { tutorApplicationKeys } from '../hooks/useTutorApplication';
+import { isChatNotification, isMessagesRoute } from './chatViewRoute';
 
-const ENDPOINTS = ['/ws/account', '/ws/learning', '/ws/notifications'];
+const ENDPOINTS = ['/ws/account', '/ws/learning', '/ws/notifications', '/ws/chat'];
 const TOAST_DEDUPE_WINDOW_MS = 15_000;
 
 function socketUrl(path, email) {
@@ -13,7 +16,14 @@ function socketUrl(path, email) {
   const query = email ? `?email=${encodeURIComponent(email)}` : '';
 
   if (configured) {
-    return `${configured}${path}${query}`;
+    const realtimeBase = configured
+      .replace(/^http:/, 'ws:')
+      .replace(/^https:/, 'wss:')
+      .replace(/\/api\/notifications\/ws$/i, '')
+      .replace(/\/ws\/notifications$/i, '')
+      .replace(/\/ws\/chat$/i, '')
+      .replace(/\/ws$/i, '');
+    return `${realtimeBase}${path}${query}`;
   }
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -38,18 +48,6 @@ function notificationFor(event, reviewer) {
       notif.title || 'Thông báo mới',
       notif.content || '',
       tone
-    ];
-  }
-
-  /*
-   * Giữ khả năng hiểu NEW_MESSAGE để tái sử dụng sau này.
-   * Hiện tại /ws/chat CHƯA được kết nối trong ENDPOINTS.
-   */
-  if (event.type === 'NEW_MESSAGE' && event.message) {
-    return [
-      'Tin nhắn mới',
-      `${event.message.senderEmail}: ${event.message.content}`,
-      'info'
     ];
   }
 
@@ -365,6 +363,7 @@ function shouldIgnoreDomainEvent(
 }
 
 export function RealtimeProvider({ children }) {
+  const location = useLocation();
   const {
     user,
     refreshUser
@@ -378,6 +377,42 @@ export function RealtimeProvider({ children }) {
 
   const retryTimers = useRef([]);
   const toastKeys = useRef(new Map());
+  const chatViewClientId = useRef(
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `chat-view-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  );
+  const messagesRouteActive = useMemo(
+    () => isMessagesRoute(location.pathname, location.search),
+    [location.pathname, location.search]
+  );
+
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+
+    const clientId = chatViewClientId.current;
+
+    const syncChatViewContext = (active) => {
+      notificationApi.updateChatViewContext({ active, clientId }).catch(() => null);
+    };
+
+    syncChatViewContext(messagesRouteActive);
+    let heartbeat = null;
+    if (messagesRouteActive) {
+      heartbeat = window.setInterval(() => syncChatViewContext(true), 20_000);
+    }
+
+    return () => {
+      if (heartbeat) {
+        window.clearInterval(heartbeat);
+      }
+      if (messagesRouteActive) {
+        notificationApi.updateChatViewContext({ active: false, clientId }).catch(() => null);
+      }
+    };
+  }, [messagesRouteActive, user]);
 
   useEffect(() => {
     retryTimers.current.forEach(clearTimeout);
@@ -422,13 +457,16 @@ export function RealtimeProvider({ children }) {
          * invalidate query để lấy lại các notification có thể
          * đã bị bỏ lỡ trong thời gian mất kết nối.
          */
-        if (
-          path === '/ws/notifications' &&
-          attempt > 0
-        ) {
+        if (path === '/ws/notifications' && attempt > 0) {
           queryClient.invalidateQueries({
             queryKey: notificationKeys.all
           });
+        }
+
+        if (path === '/ws/chat' && attempt > 0) {
+          window.dispatchEvent(
+            new CustomEvent('chat:reconnected')
+          );
         }
       };
 
@@ -450,14 +488,21 @@ export function RealtimeProvider({ children }) {
             return;
           }
 
-          handleRealtimeStateSync(
-            event,
-            {
-              queryClient,
-              refreshUser,
-              reviewer
-            }
-          );
+          const suppressChatBell =
+            messagesRouteActive &&
+            event.eventType === 'NOTIFICATION_CREATED' &&
+            isChatNotification(event);
+
+          if (!suppressChatBell) {
+            handleRealtimeStateSync(
+              event,
+              {
+                queryClient,
+                refreshUser,
+                reviewer
+              }
+            );
+          }
 
           /*
            * Cho phép các component sử dụng useRealtimeRefresh()
@@ -476,12 +521,13 @@ export function RealtimeProvider({ children }) {
            * Notification-service có format NOTIFICATION_CREATED.
            * Account/Learning realtime cũ sử dụng notificationFor().
            */
-          const message =
-            notificationToastFor(event) ||
-            notificationFor(
-              event,
-              reviewer
-            );
+          const message = suppressChatBell
+            ? null
+            : notificationToastFor(event) ||
+              notificationFor(
+                event,
+                reviewer
+              );
 
           if (!message) {
             return;
@@ -563,12 +609,10 @@ export function RealtimeProvider({ children }) {
      * - account realtime
      * - learning realtime
      * - notification realtime
+     * - chat realtime
      *
      * Guest:
      * - chỉ learning realtime
-     *
-     * /ws/chat chưa bật ở đây cho đến khi backend chat
-     * sử dụng authentication/authorization an toàn.
      */
     const endpoints = user
       ? ENDPOINTS
@@ -593,7 +637,8 @@ export function RealtimeProvider({ children }) {
     queryClient,
     refreshUser,
     showToast,
-    user
+    user,
+    messagesRouteActive
   ]);
 
   return (

@@ -172,11 +172,13 @@ class ClassRoomServiceTest {
         classRoom.setId(77L);
         classRoom.setName("Math 10");
         classRoom.setMeetingLink("https://meet.example/private-room");
+        classRoom.setJoinKey("SECRET");
         when(classRoomRepository.findByIdWithDetails(77L)).thenReturn(Optional.of(classRoom));
 
         var response = service.getPublicClassById(77L);
 
         assertThat(response.meetingLink()).isNull();
+        assertThat(response.joinKey()).isNull();
     }
 
     @Test

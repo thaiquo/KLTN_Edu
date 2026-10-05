@@ -23,6 +23,7 @@ public enum NotificationType {
     CLASS_MUTATED,
     
     // Chat & System
+    CHAT_MESSAGE,
     CHAT_MESSAGE_RECEIVED,
     SYSTEM_ALERT
 }
