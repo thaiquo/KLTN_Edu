@@ -33,6 +33,18 @@ public class SessionAccessControl {
 
     public Long currentStudentId() { return hasRole("STUDENT") ? user().userId() : null; }
 
+    public void requireCurrentStudent(Long studentId) {
+        if (!hasRole("STUDENT") || !Objects.equals(user().userId(), studentId)) {
+            throw new ForbiddenException("Student role is required");
+        }
+    }
+
+    public void requireCurrentTutor(String tutorEmail) {
+        if (!hasRole("TUTOR") || tutorEmail == null || !user().email().equalsIgnoreCase(tutorEmail.trim())) {
+            throw new ForbiddenException("Tutor role is required");
+        }
+    }
+
     public void requireTutor(ClassRoom room) {
         if (!hasRole("TUTOR") || !user().email().equalsIgnoreCase(room.getTutorEmail())) {
             throw new ForbiddenException("Only this classroom's tutor can manage sessions");

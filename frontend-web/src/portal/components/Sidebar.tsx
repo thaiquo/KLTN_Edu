@@ -4,6 +4,7 @@ import {
   BookOpen,
   Calendar,
   CheckCircle2,
+  CheckSquare,
   Globe,
   GraduationCap,
   HelpCircle,
@@ -45,6 +46,7 @@ export function Sidebar({
           { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
           { id: "subjects", label: "Môn học", icon: BookOpen },
           { id: "my-classes", label: "Lớp học", icon: GraduationCap },
+          { id: "homework", label: "Quản lý bài tập", icon: CheckSquare },
           { id: "sessions", label: "Quản lý Buổi học", icon: Calendar },
           { id: "contracts", label: "Hợp đồng & Ký quỹ", icon: ShieldCheck },
           { id: "wallet", label: "Ví của tôi", icon: WalletCards },
@@ -52,6 +54,14 @@ export function Sidebar({
           { id: "messages", label: "Tin nhắn", icon: MessageSquare },
           { id: "schedule", label: "Lịch dạy", icon: Calendar },
           { id: "complaints", label: "Khiếu nại lớp học", icon: ShieldAlert },
+        ];
+      case "student":
+        return [
+          { id: "my-classes", label: "Lớp học của tôi", icon: GraduationCap },
+          { id: "homework", label: "Quản lý bài tập", icon: CheckSquare },
+          { id: "contracts", label: "Hợp đồng của tôi", icon: ShieldCheck },
+          { id: "messages", label: "Tin nhắn", icon: MessageSquare },
+          { id: "complaints", label: "Khiếu nại", icon: ShieldAlert },
         ];
       case "admin":
         return [
@@ -79,7 +89,7 @@ export function Sidebar({
   };
 
   const navItems = getNavItems();
-  const lockedTutorItems = new Set(["subjects", "my-classes", "contracts", "wallet", "requests", "messages", "schedule", "complaints"]);
+  const lockedTutorItems = new Set(["subjects", "my-classes", "homework", "contracts", "wallet", "requests", "messages", "schedule", "complaints"]);
 
   return (
     <aside className={`fixed left-0 top-16 bottom-0 z-20 flex w-72 select-none flex-col border-r pt-3 font-sans ${

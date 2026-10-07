@@ -58,6 +58,7 @@ public class ClassRoomService {
     private final TutorIdentityLookup tutorIdentityLookup;
     private final LearningEventPublisher eventPublisher;
     private final RealtimeEventHub realtimeEventHub;
+    private final LearningStorageCleanupService learningStorageCleanupService;
 
     public ClassRoomService(
             ClassRoomRepository classRoomRepository,
@@ -69,7 +70,8 @@ public class ClassRoomService {
             TutorReviewRepository tutorReviewRepository,
             TutorIdentityLookup tutorIdentityLookup,
             LearningEventPublisher eventPublisher,
-            RealtimeEventHub realtimeEventHub
+            RealtimeEventHub realtimeEventHub,
+            LearningStorageCleanupService learningStorageCleanupService
     ) {
         this.classRoomRepository = classRoomRepository;
         this.registrationRepository = registrationRepository;
@@ -81,6 +83,7 @@ public class ClassRoomService {
         this.tutorIdentityLookup = tutorIdentityLookup;
         this.eventPublisher = eventPublisher;
         this.realtimeEventHub = realtimeEventHub;
+        this.learningStorageCleanupService = learningStorageCleanupService;
     }
 
     @Transactional(readOnly = true)
@@ -381,7 +384,10 @@ public class ClassRoomService {
                 && classRoom.getStatus() != ClassRoomStatus.PENDING_APPROVAL) {
             throw new ConflictException("Only DRAFT, REJECTED or PENDING_APPROVAL classrooms can be deleted");
         }
+        Set<String> storageKeys = learningStorageCleanupService.collectClassroomObjectKeys(classRoom);
         classRoomRepository.delete(classRoom);
+        classRoomRepository.flush();
+        learningStorageCleanupService.deleteObjectsAfterCommit(storageKeys);
     }
 
     // ==========================================

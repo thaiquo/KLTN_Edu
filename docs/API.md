@@ -69,7 +69,7 @@ Contract Service authentication now follows the same browser-cookie baseline as 
 
 Learning Service exposes Manual Public Class Search through the existing `GET /api/public/classes` endpoint. The endpoint returns a paged marketplace response, not an unbounded list. Public listing eligibility is authoritative in the backend: only `PUBLISHED` and `ACTIVE` classes are listed; `CLOSED`, `LOCKED`, rejected, draft, private, and invalid lifecycle states are excluded from the marketplace list.
 
-Supported V1 filters include `keyword`, `subjectId`, `levelId`, repeated `levelIds`, `mode`/`teachingMode`, `minPrice`, `maxPrice`, `programTypeId`, `educationLevelId`, `categoryId`, repeated `weekdays`, legacy single `weekday`, `startTime`, `endTime`, `availableOnly`, `page`, `size`, and `sort`. Keyword search covers class title, description, tutor public display name, subject/category names, and level names. Price uses `pricePerSession` and is displayed in the UI as `đ / buổi`.
+Supported V1 filters include `keyword`, `subjectId`, `levelId`, repeated `levelIds`, `mode`/`teachingMode`, `minPrice`, `maxPrice`, `programTypeId`, `educationLevelId`, `categoryId`, repeated `weekdays`, legacy single `weekday`, `startTime`, `endTime`, `availableOnly`, `page`, `size`, and `sort`. Keyword search covers class title, description, tutor public display name, subject/category names, and level names. Price uses `pricePerSession` and is displayed in the UI as `Ä‘ / buá»•i`.
 
 Manual Class Marketplace UI intentionally does not expose a Subject selector. `subjectId` remains supported by the backend for direct API compatibility, grounding, and future AI Class Search. Because catalog levels are stored under subjects, the UI deduplicates displayed level labels across the selected Program -> Education Level -> Category scope and sends every matching level id through `levelIds` instead of choosing one arbitrary `levelId`.
 
@@ -92,6 +92,10 @@ Phase 4.6.3 adds Student-only AI Class Search preparation endpoints in `ai-servi
 These endpoints require active `STUDENT` authentication with the same cookie/JWT/CSRF baseline as Tutor AI Matching. Class Marketplace currently has a large modal entry point for Analyze -> Ground -> Review; final AI-ranked class result rendering remains future frontend work. Manual Class Search remains independent and continues to use `GET /api/public/classes`.
 
 Learning Service also exposes `GET /api/public/classes/semantic-source` as a public-safe source endpoint for AI indexing and authoritative validation. It returns only `PUBLISHED`/`ACTIVE` classes through the same public filter path as `GET /api/public/classes`, can require `availableOnly=true`, and omits private fields such as meeting links, invite keys, tutor email, and staff review metadata while including public chapter text for semantic documents.
+
+## 3.0B Contract Final PDF Retention
+
+Official contract retention policy: PostgreSQL keeps the immutable signed terms JSON, hashes and EIP-712 proofs; the blockchain keeps the agreement terms hash and escrow state. After an agreement is `ACTIVE`, Contract Service renders and retains exactly one final PDF per agreement version in private object storage, with its SHA-256 and size in PostgreSQL. DOCX is a transient conversion input and is not retained; legacy DOCX objects are removed by a scheduled cleanup job. Contract files are streamed only after agreement authorization.
 
 ## 3.1 Notification API
 
@@ -211,9 +215,9 @@ Current Contract Service protected APIs derive identity from the authenticated c
 | Agreement expire/cancel | `access_token` cookie JWT | Assigned Staff/Admin can enqueue lifecycle transactions. Scheduler also queues overdue WAITING_PAYMENT expiry. Local agreement status changes only after confirmed escrow lifecycle events. |
 | Transaction list/detail | `access_token` cookie JWT | Staff/Admin active roles can view administrative transaction lists; Student/Tutor sees own agreement transactions. |
 
-## 3.5 Session, attendance and settlement bridge
+## 3.5 Session, attendance, homework and storage API
 
-| Method | Endpoint | Rule |
+| Method | Endpoint | Rule / Purpose |
 | --- | --- | --- |
 | `GET` | `/api/classes/{classId}/sessions` | Returns session timeline subject to classroom access rules. |
 | `PUT` | `/api/classes/{classId}/meeting-link` | Tutor updates the classroom-level link; later sessions read the new value. |
@@ -221,6 +225,20 @@ Current Contract Service protected APIs derive identity from the authenticated c
 | `GET` | `/api/sessions/{sessionId}/student-meeting-link` | Returns link only after the current Student's valid check-in. |
 | `POST` | `/api/sessions/{sessionId}/tutor-attendance` | Tutor checks in for teaching; the request cannot mark Students present. |
 | `POST` | `/api/sessions/{sessionId}/homework-submission` | Checked-in Student submits homework on their attendance record. |
+| `POST multipart` | `/api/learning/sessions/{sessionId}/homework-submission-file` | Student uploads actual homework submission file to S3 with optional notes. |
+| `GET` | `/api/learning/sessions/{sessionId}/submissions/{attendanceId}/download-url` | Presigned download URL for student homework submission (Tutor or owning Student). |
+| `PUT` | `/api/learning/sessions/{sessionId}/attendances/{attendanceId}/grade` | Tutor grades homework and provides feedback. |
+| `GET` | `/api/learning/sessions/tutor-homework-overview` | List sessions with homework/submission metrics for Tutor Homework Management. |
+| `POST multipart` | `/api/learning/sessions/{sessionId}/assignment-files` | Tutor uploads up to 5 assignment files to S3 for this session. |
+| `POST multipart` | `/api/learning/sessions/{sessionId}/material-files` | Tutor uploads lecture slide / material files to S3 for this session. |
+| `DELETE` | `/api/learning/sessions/{sessionId}/files/{fileId}` | Tutor deletes a session assignment or material file. |
+| `GET` | `/api/learning/sessions/{sessionId}/files/{fileId}/download-url` | Presigned download URL for session assignment/slide (Tutor, or Student ONLY IF `studentChecked == true`). |
+| `GET` | `/api/learning/classes/{classId}/materials` | List class-level materials (enrolled Student or Tutor). |
+| `POST multipart` | `/api/learning/classes/{classId}/materials` | Tutor uploads multiple class-level materials to S3. |
+| `DELETE` | `/api/learning/classes/{classId}/materials/{materialId}` | Tutor deletes a class-level material. |
+| `GET` | `/api/learning/classes/{classId}/materials/{materialId}/download-url` | Presigned download URL for class-level material (no check-in required). |
+| `POST multipart` | `/api/learning/classes/{classId}/syllabus` | Tutor uploads syllabus / curriculum file to S3. |
+| `GET` | `/api/learning/classes/{classId}/syllabus/download-url` | Presigned download URL for class syllabus file. |
 | `POST` | `/api/contracts/internal/classrooms/{classroomId}/sessions/{sessionId}/auto-propose` | Signed internal Learning call; proposes one settlement for every eligible agreement and defaults missing/corrupt attendance to `TUTOR_ABSENT`. |
 
 Learning keeps `settlementDispatched=false` until Contract returns a successful proposal list. A worker retries completed sessions after restart; Contract independently finalizes only confirmed `PROPOSED` settlements whose on-chain deadline expired and which are not disputed.
@@ -278,7 +296,7 @@ Chat Bell summaries are now implemented for Web. When the recipient is outside M
 
 ## 3.8 Contract Termination & Cancellation API status
 
-Luồng Chấm dứt hợp đồng & Đề xuất Hủy lớp học tích hợp bảo chứng chữ ký số EIP-712 gasless, khu vực đệm minh chứng trước khi gửi và theo dõi hoàn tiền tự động 15 giây.
+Luá»“ng Cháº¥m dá»©t há»£p Ä‘á»“ng & Äá» xuáº¥t Há»§y lá»›p há»c tÃ­ch há»£p báº£o chá»©ng chá»¯ kÃ½ sá»‘ EIP-712 gasless, khu vá»±c Ä‘á»‡m minh chá»©ng trÆ°á»›c khi gá»­i vÃ  theo dÃµi hoÃ n tiá»n tá»± Ä‘á»™ng 15 giÃ¢y.
 
 Controller: `TerminationController` in `contract-service` (prefix `/api/contracts/terminations`).
 
@@ -297,7 +315,7 @@ Controller: `TerminationController` in `contract-service` (prefix `/api/contract
 
 Web Class Marketplace now consumes the full Student-only AI Class Search flow: `POST /api/ai/classes/analyze` -> `POST /api/ai/classes/ground` -> `POST /api/ai/classes/match`. The final `/match` request sends the grounded requirement returned by `/ground` as `{ requirement, topK }`; it does not ask Gemini to rerun analysis and does not transform the AI requirement into manual class filters.
 
-The browser renders `/api/ai/classes/match` results through the existing public class card design with an additional EduConnect `% phù hợp` badge and backend-provided `matchingReasons`. Raw semantic internals such as vector IDs, Qdrant payload, document hashes, embedding model, raw cosine similarity, and score breakdown details are not part of the student UI contract.
+The browser renders `/api/ai/classes/match` results through the existing public class card design with an additional EduConnect `% phÃ¹ há»£p` badge and backend-provided `matchingReasons`. Raw semantic internals such as vector IDs, Qdrant payload, document hashes, embedding model, raw cosine similarity, and score breakdown details are not part of the student UI contract.
 
 Class Marketplace AI and Manual Search are independent UI modes. Manual search continues to call `GET /api/learning/public/classes` with URL filters, sorting, and pagination. AI results are a session-scoped snapshot stored in browser `sessionStorage` with version, TTL, and account ownership; detail/back and page refresh restore the saved AI cards without replaying Analyze, Ground, Match, or embedding calls.
 

@@ -538,6 +538,14 @@ function AccountMenu({ user, roleAction, roleActionError, onStudentTutorAction, 
             Hồ sơ cá nhân
           </MenuLink>
 
+          <MenuLink to="/my-classes" icon={<GraduationCap size={16} />} onClick={onClose}>
+            Lớp học của tôi
+          </MenuLink>
+
+          <MenuLink to="/my-homework" icon={<BookOpen size={16} />} onClick={onClose}>
+            Bài tập của tôi
+          </MenuLink>
+
           <MenuLink to="/contracts" icon={<FileText size={16} />} onClick={onClose}>
             Hợp đồng của tôi
           </MenuLink>

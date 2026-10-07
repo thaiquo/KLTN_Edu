@@ -11,6 +11,8 @@ import iuh.fit.contract_service.repository.ContractDocumentArtifactRepository;
 import iuh.fit.contract_service.repository.EscrowPaymentRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.scheduling.annotation.Scheduled;
+import lombok.extern.slf4j.Slf4j;
 import org.web3j.crypto.Hash;
 
 import java.math.BigDecimal;
@@ -22,6 +24,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Service
+@Slf4j
 public class ContractDocumentArtifactService {
     private static final Set<String> FINALIZABLE_STATUSES = Set.of(
             "ACTIVE", "COMPLETED", "CANCELLED");
@@ -80,21 +83,13 @@ public class ContractDocumentArtifactService {
         artifactRepository.saveAndFlush(artifact);
 
         String baseKey = "contracts/" + agreementId + "/v" + view.contractVersion() + "/final/contract";
-        String docxKey = baseKey + ".docx";
         String pdfKey = baseKey + ".pdf";
-        boolean docxStored = false;
         try {
             byte[] docx = renderer.render(toTemplateModel(view));
-            storage.put(docxKey, docx,
-                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-            docxStored = true;
-            artifact.setDocxObjectKey(docxKey);
-            artifact.setDocxSha256(sha256(docx));
-            artifact.setDocxSize((long) docx.length);
-
             byte[] pdf = converter.docxToPdf(docx, "contract-" + agreementId + ".docx");
             storage.put(pdfKey, pdf, MediaTypes.PDF);
 
+            deleteLegacyDocxIfPresent(artifact);
             artifact.setPdfObjectKey(pdfKey);
             artifact.setPdfSha256(sha256(pdf));
             artifact.setPdfSize((long) pdf.length);
@@ -102,9 +97,7 @@ public class ContractDocumentArtifactService {
             artifact.setStatus(ContractDocumentArtifactStatus.READY);
         } catch (RuntimeException ex) {
             artifact.setStatus(ContractDocumentArtifactStatus.FAILED);
-            artifact.setFailureCode(docxStored
-                    ? "CONTRACT_DOCUMENT_PDF_GENERATION_FAILED"
-                    : "CONTRACT_DOCUMENT_GENERATION_FAILED");
+            artifact.setFailureCode("CONTRACT_DOCUMENT_PDF_GENERATION_FAILED");
             artifact.setFailureMessage(truncate(rootMessage(ex), 1000));
         }
         artifact.setUpdatedAt(OffsetDateTime.now());
@@ -115,14 +108,33 @@ public class ContractDocumentArtifactService {
     public byte[] read(UUID agreementId, String format) {
         ContractDocumentArtifact artifact = find(agreementId)
                 .orElseThrow(() -> new IllegalStateException("Hợp đồng chưa có artifact"));
-        boolean docx = "docx".equalsIgnoreCase(format);
-        String objectKey = docx ? artifact.getDocxObjectKey() : artifact.getPdfObjectKey();
-        Long size = docx ? artifact.getDocxSize() : artifact.getPdfSize();
+        if (!"pdf".equalsIgnoreCase(format)) {
+            throw new IllegalArgumentException("Only PDF contract artifacts are retained");
+        }
+        String objectKey = artifact.getPdfObjectKey();
+        Long size = artifact.getPdfSize();
         if (objectKey == null || size == null || size <= 0
-                || (!docx && artifact.getStatus() != ContractDocumentArtifactStatus.READY)) {
+                || artifact.getStatus() != ContractDocumentArtifactStatus.READY) {
             throw new IllegalStateException("Artifact is not ready");
         }
         return storage.get(objectKey);
+    }
+
+    /** Removes DOCX files created by the previous two-artifact design after their PDF is retained. */
+    @Scheduled(initialDelayString = "${contract.storage.legacy-docx-cleanup-initial-delay:PT1M}",
+            fixedDelayString = "${contract.storage.legacy-docx-cleanup-fixed-delay:PT24H}")
+    @Transactional
+    public void cleanupLegacyDocxArtifacts() {
+        artifactRepository.findByDocxObjectKeyIsNotNull().forEach(artifact -> {
+            String key = artifact.getDocxObjectKey();
+            try {
+                storage.delete(key);
+                clearLegacyDocxMetadata(artifact);
+                artifactRepository.save(artifact);
+            } catch (RuntimeException ex) {
+                log.warn("Could not remove legacy contract DOCX artifact {}", key, ex);
+            }
+        });
     }
 
     private ContractDocumentArtifact newArtifact(ContractDocumentViewDto view) {
@@ -132,6 +144,25 @@ public class ContractDocumentArtifactService {
                 .contractVersion(view.contractVersion()).templateVersion(properties.templateVersion())
                 .status(ContractDocumentArtifactStatus.GENERATING)
                 .createdAt(now).updatedAt(now).build();
+    }
+
+    private void clearLegacyDocxMetadata(ContractDocumentArtifact artifact) {
+        artifact.setDocxObjectKey(null);
+        artifact.setDocxSha256(null);
+        artifact.setDocxSize(null);
+    }
+
+    private void deleteLegacyDocxIfPresent(ContractDocumentArtifact artifact) {
+        if (!hasText(artifact.getDocxObjectKey())) {
+            clearLegacyDocxMetadata(artifact);
+            return;
+        }
+        try {
+            storage.delete(artifact.getDocxObjectKey());
+            clearLegacyDocxMetadata(artifact);
+        } catch (RuntimeException ex) {
+            log.warn("Could not remove legacy contract DOCX artifact {}", artifact.getDocxObjectKey(), ex);
+        }
     }
 
     private void validateFinalizable(ContractDocumentViewDto view) {

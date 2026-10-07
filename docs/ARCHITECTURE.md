@@ -85,17 +85,21 @@ Các service hiện dùng chung một PostgreSQL database vật lý `kltn_db`, n
 | Service | Số migration hiện thấy | Nhóm bảng tiêu biểu |
 | --- | ---: | --- |
 | Account | 13 | users, roles, refresh_sessions, OTP, students, tutors, tutor applications/documents. |
-| Learning | 32 | catalog, registrations, class_rooms, schedules/chapters, enrollment_requests, class_sessions, session_attendances, learning_termination_stops. |
-| Contract | 14 | contract_agreement/acceptance/artifact, escrow_payment, session_settlement, dispute/evidence, blockchain_transaction, processed_event/outbox/cursor, termination_cases/items. |
+| Learning | 37 | catalog, registrations, class_rooms, schedules/chapters, enrollment_requests, class_sessions, session_attendances, learning_termination_stops, classroom_materials, session_files. |
+| Contract | 16 | contract_agreement/acceptance/artifact, escrow_payment, session_settlement, dispute/evidence, blockchain_transaction, processed_event/outbox/cursor, termination_cases/items. |
 | Notification | 2 | notifications, conversations, chat_messages. |
 
 ## 6. Storage và document
 
-- Account Service dùng S3 cho avatar và hồ sơ/tài liệu Tutor, trả presigned URL có thời hạn.
-- Contract Service dùng abstraction `ContractArtifactStorage`: local cho dev hoặc S3. Root environment hiện chọn `s3`.
-- Artifact hợp đồng: template DOCX + poi-tl render; Gotenberg/LibreOffice chuyển DOCX sang PDF; metadata/hash lưu database.
-- Dispute evidence dùng cùng storage abstraction, key tách theo agreement/session/role, giới hạn 50 MB và lưu SHA-256.
-- Không lưu file binary evidence trong bảng dispute.
+- **Account Service**: Dùng S3 cho avatar và hồ sơ/tài liệu xét duyệt Tutor, trả presigned URL có thời hạn.
+- **Contract Service**: Dùng abstraction `ContractArtifactStorage` (local cho dev hoặc S3):
+  - Artifact hợp đồng: template DOCX + poi-tl render; Gotenberg/LibreOffice chuyển DOCX sang PDF; metadata/hash lưu database.
+  - Dispute evidence dùng cùng storage abstraction, key tách theo agreement/session/role, giới hạn 50 MB và lưu SHA-256. Không lưu file binary evidence trong bảng dispute.
+- **Learning Service**: Dùng abstraction `FileStorageService` (lớp hiện thực `S3FileStorageService` dùng AWS SDK v2 `S3Presigner` và `LocalFileStorageService` cho fallback):
+  - Tài liệu môn học cấp lớp: key `classes/{classId}/materials/{uuid}_{fileName}`; học viên đã tham gia lớp và gia sư tải qua presigned URL không cần điểm danh.
+  - File đề bài & slide bài giảng theo buổi: key `classes/{classId}/sessions/{sessionId}/assignments/` hoặc `.../materials/`; học viên chỉ được cấp presigned URL tải về sau khi đã điểm danh thành công (`studentChecked = true`).
+  - File bài nộp của học viên: key `classes/{classId}/sessions/{sessionId}/submissions/{studentId}/{uuid}_{fileName}`; chỉ gia sư và chính học viên sở hữu mới có quyền lấy presigned URL tải bài.
+  - File giáo trình/lộ trình học (Syllabus): key `classes/{classId}/syllabus/{uuid}_{fileName}` lưu trên `class_rooms`.
 
 ## 7. Blockchain architecture
 

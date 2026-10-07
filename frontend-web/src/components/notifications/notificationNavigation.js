@@ -91,6 +91,18 @@ export function getNotificationTarget(notification, activeRole) {
       : target('/dashboard');
   }
 
+  if (type === 'HOMEWORK_GRADED' || referenceType === 'HOMEWORK') {
+    const sessionId = notification?.referenceId;
+    return target(sessionId ? `/my-homework?sessionId=${encodeURIComponent(sessionId)}` : '/my-homework');
+  }
+
+  if (type === 'HOMEWORK_SUBMITTED' || referenceType === 'HOMEWORK_SUBMISSION') {
+    if (role === 'TUTOR') {
+      return target('/dashboard', 'homework');
+    }
+    return target('/my-homework');
+  }
+
   if (type.startsWith('DISPUTE_') || referenceType === 'DISPUTE') {
     if (role === 'TUTOR' || role === 'STAFF' || role === 'ADMIN') {
       return target('/dashboard', 'complaints');

@@ -55,7 +55,7 @@ export function TeachingRegistrationDetailsStep({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="flex items-center gap-2 font-display text-xl font-extrabold text-slate-950"><FileText size={20} className="text-primary" /> Minh chứng chuyên môn</h3>
-            <p className="mt-2 text-sm font-semibold text-slate-500">Mỗi minh chứng nằm trong một form riêng. File chỉ được giữ tạm và chưa tải lên S3.</p>
+            <p className="mt-2 text-sm font-semibold text-slate-500">Mỗi minh chứng nằm trong một form riêng. File chỉ được giữ tạm cho đến khi bạn gửi hồ sơ.</p>
           </div>
           <button type="button" onClick={addEvidence} disabled={evidenceDrafts.length >= 5} className="rounded-[8px] border border-[#147b77] px-3 py-2 text-sm font-extrabold text-[#147b77] disabled:opacity-40">+ Thêm minh chứng</button>
         </div>

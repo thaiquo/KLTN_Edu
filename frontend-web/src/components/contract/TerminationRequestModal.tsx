@@ -211,11 +211,11 @@ export function TerminationRequestModal({
         sigResult.requestedAt
       );
 
-      // 3. Upload evidence files sequentially to S3 if any
+      // 3. Upload evidence files sequentially if any
       const failedUploads: string[] = [];
       if (files.length > 0) {
         for (let i = 0; i < files.length; i++) {
-          setUploadStatus(`Đang tải minh chứng lên S3 (${i + 1}/${files.length}): ${files[i].name}...`);
+          setUploadStatus(`Đang tải minh chứng (${i + 1}/${files.length}): ${files[i].name}...`);
           try {
             await terminationsApi.uploadEvidence(created.request.id, files[i]);
           } catch (uploadErr: any) {

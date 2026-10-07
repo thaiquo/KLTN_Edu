@@ -28,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -64,7 +65,9 @@ class ContractDocumentArtifactServiceTest {
         ContractDocumentArtifact artifact = service().finalizeDocument(agreementId);
 
         assertThat(artifact.getStatus()).isEqualTo(ContractDocumentArtifactStatus.READY);
+        assertThat(artifact.getDocxObjectKey()).isNull();
         assertThat(artifact.getTemplateVersion()).isEqualTo("EDUCONNECT_HOP_DONG_TEMPLATE_V1_1_20260923");
+        verify(storage, times(1)).put(any(), any(), any());
         ArgumentCaptor<Map<String, Object>> model = ArgumentCaptor.forClass(Map.class);
         verify(renderer).render(model.capture());
         assertThat(model.getValue().get("agreementStatus")).isEqualTo("ĐÃ CHẤM DỨT (CANCELLED)");

@@ -84,6 +84,9 @@ class ClassRoomServiceTest {
     @Mock
     private RealtimeEventHub realtimeEventHub;
 
+    @Mock
+    private LearningStorageCleanupService learningStorageCleanupService;
+
     @InjectMocks
     private ClassRoomService service;
 

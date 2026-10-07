@@ -21,7 +21,7 @@ public record ContractDocumentArtifactDto(
         return new ContractDocumentArtifactDto(
                 value.getAgreementId().toString(), value.getContractVersion(), value.getTemplateVersion(),
                 value.getStatus().name(),
-                value.getDocxObjectKey() != null && value.getDocxSize() != null && value.getDocxSize() > 0,
+                false,
                 value.getPdfObjectKey() != null && value.getPdfSize() != null && value.getPdfSize() > 0,
                 value.getPdfSha256(), value.getPdfSize(), value.getGeneratedAt(),
                 value.getFailureCode(), value.getFailureMessage());

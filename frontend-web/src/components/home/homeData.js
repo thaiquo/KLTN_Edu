@@ -1,60 +1,61 @@
 export const homeNavLinks = [
-  { label: 'Tìm gia sư', href: '/tutors' },
-  { label: 'Tìm lớp', href: '/classes' },
-  { label: 'An toàn & hợp đồng', href: '#trust' },
+  { label: 'TÃ¬m gia sÆ°', href: '/tutors' },
+  { label: 'TÃ¬m lá»›p', href: '/classes' },
+  { label: 'An toÃ n & há»£p Ä‘á»“ng', href: '#trust' },
 ];
 
 export const studentNavLinks = [
-  { label: 'Trang chủ', href: '/', icon: 'home' },
-  { label: 'Tìm gia sư', href: '/tutors', icon: 'search' },
-  { label: 'Tìm lớp', href: '/classes', icon: 'book' },
-  { label: 'Lịch học', href: '/my-schedule', icon: 'calendar' },
-  { label: 'Lớp học của tôi', href: '/my-classes', icon: 'book' },
-  { label: 'Tin nhắn', href: '/messages', icon: 'message' },
+  { label: 'Trang chá»§', href: '/', icon: 'home' },
+  { label: 'TÃ¬m gia sÆ°', href: '/tutors', icon: 'search' },
+  { label: 'TÃ¬m lá»›p', href: '/classes', icon: 'book' },
+  { label: 'Lá»‹ch há»c', href: '/my-schedule', icon: 'calendar' },
+  { label: 'Lá»›p há»c cá»§a tÃ´i', href: '/my-classes', icon: 'book' },
+  { label: 'Bài tập của tôi', href: '/my-homework', icon: 'file' },
+  { label: 'Tin nháº¯n', href: '/messages', icon: 'message' },
 ];
 
 export const pathways = [
   {
     tone: 'student',
-    title: 'Dành cho Học viên',
-    intro: 'Từ nhu cầu học tập đến người đồng hành phù hợp - chỉ trong vài bước đơn giản.',
+    title: 'DÃ nh cho Há»c viÃªn',
+    intro: 'Tá»« nhu cáº§u há»c táº­p Ä‘áº¿n ngÆ°á»i Ä‘á»“ng hÃ nh phÃ¹ há»£p - chá»‰ trong vÃ i bÆ°á»›c Ä‘Æ¡n giáº£n.',
     steps: [
       {
         number: '01',
-        title: 'Mô tả nhu cầu học',
-        description: 'Cho chúng tôi biết môn học, mục tiêu, thời gian và mức học phí phù hợp với bạn.',
+        title: 'MÃ´ táº£ nhu cáº§u há»c',
+        description: 'Cho chÃºng tÃ´i biáº¿t mÃ´n há»c, má»¥c tiÃªu, thá»i gian vÃ  má»©c há»c phÃ­ phÃ¹ há»£p vá»›i báº¡n.',
       },
       {
         number: '02',
-        title: 'Xem gia sư được gợi ý',
-        description: 'Hệ thống lọc và hiển thị những gia sư phù hợp nhất theo chuyên môn, lịch rảnh và khu vực.',
+        title: 'Xem gia sÆ° Ä‘Æ°á»£c gá»£i Ã½',
+        description: 'Há»‡ thá»‘ng lá»c vÃ  hiá»ƒn thá»‹ nhá»¯ng gia sÆ° phÃ¹ há»£p nháº¥t theo chuyÃªn mÃ´n, lá»‹ch ráº£nh vÃ  khu vá»±c.',
       },
       {
         number: '03',
-        title: 'Học với hợp đồng rõ ràng',
-        description: 'Theo dõi tiến độ và quyền lợi qua hợp đồng điện tử minh bạch, có xác nhận hai bên.',
+        title: 'Há»c vá»›i há»£p Ä‘á»“ng rÃµ rÃ ng',
+        description: 'Theo dÃµi tiáº¿n Ä‘á»™ vÃ  quyá»n lá»£i qua há»£p Ä‘á»“ng Ä‘iá»‡n tá»­ minh báº¡ch, cÃ³ xÃ¡c nháº­n hai bÃªn.',
       },
     ],
   },
   {
     tone: 'tutor',
-    title: 'Dành cho Gia sư',
-    intro: 'Xây dựng uy tín chuyên môn, nhận lớp đúng thế mạnh và phát triển bền vững.',
+    title: 'DÃ nh cho Gia sÆ°',
+    intro: 'XÃ¢y dá»±ng uy tÃ­n chuyÃªn mÃ´n, nháº­n lá»›p Ä‘Ãºng tháº¿ máº¡nh vÃ  phÃ¡t triá»ƒn bá»n vá»¯ng.',
     steps: [
       {
         number: '01',
-        title: 'Đăng ký & xác minh hồ sơ',
-        description: 'Tạo hồ sơ và gửi bằng cấp, chứng chỉ để được kiểm duyệt và hiển thị cho học viên.',
+        title: 'ÄÄƒng kÃ½ & xÃ¡c minh há»“ sÆ¡',
+        description: 'Táº¡o há»“ sÆ¡ vÃ  gá»­i báº±ng cáº¥p, chá»©ng chá»‰ Ä‘á»ƒ Ä‘Æ°á»£c kiá»ƒm duyá»‡t vÃ  hiá»ƒn thá»‹ cho há»c viÃªn.',
       },
       {
         number: '02',
-        title: 'Nhận yêu cầu phù hợp',
-        description: 'Xem các lớp học sát với chuyên môn, khu vực và khung giờ bạn có thể dạy.',
+        title: 'Nháº­n yÃªu cáº§u phÃ¹ há»£p',
+        description: 'Xem cÃ¡c lá»›p há»c sÃ¡t vá»›i chuyÃªn mÃ´n, khu vá»±c vÃ  khung giá» báº¡n cÃ³ thá»ƒ dáº¡y.',
       },
       {
         number: '03',
-        title: 'Dạy & nhận thù lao đúng hạn',
-        description: 'Giảng dạy chuyên nghiệp và nhận thanh toán theo tiến độ cam kết trong hợp đồng.',
+        title: 'Dáº¡y & nháº­n thÃ¹ lao Ä‘Ãºng háº¡n',
+        description: 'Giáº£ng dáº¡y chuyÃªn nghiá»‡p vÃ  nháº­n thanh toÃ¡n theo tiáº¿n Ä‘á»™ cam káº¿t trong há»£p Ä‘á»“ng.',
       },
     ],
   },
@@ -62,90 +63,90 @@ export const pathways = [
 
 export const featuredTutors = [
   {
-    name: 'Nguyễn Mai Phương',
-    credential: 'ĐH Ngoại Thương - Chuyên Anh văn & IELTS',
+    name: 'Nguyá»…n Mai PhÆ°Æ¡ng',
+    credential: 'ÄH Ngoáº¡i ThÆ°Æ¡ng - ChuyÃªn Anh vÄƒn & IELTS',
     tags: ['IELTS 8.5', 'SAT 1550'],
-    rate: '350.000đ',
+    rate: '350.000Ä‘',
     rating: '4.9',
     image: 'https://images.unsplash.com/photo-1656225725406-43779c174182?auto=format&fit=crop&w=900&q=82',
-    imageAlt: 'Sinh viên đang đọc sách trong thư viện',
+    imageAlt: 'Sinh viÃªn Ä‘ang Ä‘á»c sÃ¡ch trong thÆ° viá»‡n',
   },
   {
-    name: 'Lê Minh Anh',
-    credential: 'ĐH Bách Khoa - Chuyên Toán & Vật lý',
-    tags: ['Toán nâng cao', 'Luyện thi ĐH'],
-    rate: '450.000đ',
+    name: 'LÃª Minh Anh',
+    credential: 'ÄH BÃ¡ch Khoa - ChuyÃªn ToÃ¡n & Váº­t lÃ½',
+    tags: ['ToÃ¡n nÃ¢ng cao', 'Luyá»‡n thi ÄH'],
+    rate: '450.000Ä‘',
     rating: '5.0',
     image: 'https://images.unsplash.com/photo-1699502877697-ad87f0af008b?auto=format&fit=crop&w=900&q=82',
-    imageAlt: 'Sinh viên nghiên cứu tài liệu',
+    imageAlt: 'Sinh viÃªn nghiÃªn cá»©u tÃ i liá»‡u',
   },
   {
-    name: 'Trần Thu Hà',
-    credential: 'RMIT - Kinh tế & Tài chính',
-    tags: ['Kế toán', 'Tài chính DN'],
-    rate: '500.000đ',
+    name: 'Tráº§n Thu HÃ ',
+    credential: 'RMIT - Kinh táº¿ & TÃ i chÃ­nh',
+    tags: ['Káº¿ toÃ¡n', 'TÃ i chÃ­nh DN'],
+    rate: '500.000Ä‘',
     rating: '4.8',
     image: 'https://images.unsplash.com/photo-1721441932984-93e1bf3a2e9f?auto=format&fit=crop&w=900&q=82',
-    imageAlt: 'Gia sư trong không gian thư viện',
+    imageAlt: 'Gia sÆ° trong khÃ´ng gian thÆ° viá»‡n',
   },
 ];
 
 export const classRequests = [
   {
-    subject: 'Toán cao cấp 1',
+    subject: 'ToÃ¡n cao cáº¥p 1',
     icon: 'calculator',
-    title: 'Ôn thi học kỳ cho sinh viên kỹ thuật',
-    requirement: 'Sinh viên năm 3+, học online hoặc offline tại Hà Nội',
-    budget: '3.000.000đ',
-    duration: 'Trọn khóa 10 buổi',
+    title: 'Ã”n thi há»c ká»³ cho sinh viÃªn ká»¹ thuáº­t',
+    requirement: 'Sinh viÃªn nÄƒm 3+, há»c online hoáº·c offline táº¡i HÃ  Ná»™i',
+    budget: '3.000.000Ä‘',
+    duration: 'Trá»n khÃ³a 10 buá»•i',
   },
   {
-    subject: 'Khóa luận CNTT',
+    subject: 'KhÃ³a luáº­n CNTT',
     icon: 'code',
-    title: 'Tìm mentor đồng hành xây dựng sản phẩm tốt nghiệp',
-    requirement: 'Cần hỗ trợ React, Node.js và xây dựng tài liệu bảo vệ',
-    budget: '5.000.000đ',
-    duration: 'Trong 8 tuần',
+    title: 'TÃ¬m mentor Ä‘á»“ng hÃ nh xÃ¢y dá»±ng sáº£n pháº©m tá»‘t nghiá»‡p',
+    requirement: 'Cáº§n há»— trá»£ React, Node.js vÃ  xÃ¢y dá»±ng tÃ i liá»‡u báº£o vá»‡',
+    budget: '5.000.000Ä‘',
+    duration: 'Trong 8 tuáº§n',
   },
   {
     subject: 'IELTS 7.0+',
     icon: 'language',
-    title: 'Luyện Speaking & Writing theo mục tiêu cá nhân',
-    requirement: 'Lịch học buổi tối, ưu tiên gia sư có kinh nghiệm luyện thi',
-    budget: '280.000đ',
-    duration: 'Theo buổi',
+    title: 'Luyá»‡n Speaking & Writing theo má»¥c tiÃªu cÃ¡ nhÃ¢n',
+    requirement: 'Lá»‹ch há»c buá»•i tá»‘i, Æ°u tiÃªn gia sÆ° cÃ³ kinh nghiá»‡m luyá»‡n thi',
+    budget: '280.000Ä‘',
+    duration: 'Theo buá»•i',
   },
 ];
 
 export const trustFeatures = [
   {
     icon: 'contract',
-    title: 'Hợp đồng điện tử minh bạch',
-    description: 'Lịch học, mức học phí và các điều khoản thay đổi đều được ghi nhận rõ ràng, có chữ ký xác nhận hai bên.',
+    title: 'Há»£p Ä‘á»“ng Ä‘iá»‡n tá»­ minh báº¡ch',
+    description: 'Lá»‹ch há»c, má»©c há»c phÃ­ vÃ  cÃ¡c Ä‘iá»u khoáº£n thay Ä‘á»•i Ä‘á»u Ä‘Æ°á»£c ghi nháº­n rÃµ rÃ ng, cÃ³ chá»¯ kÃ½ xÃ¡c nháº­n hai bÃªn.',
   },
   {
     icon: 'identity',
-    title: 'Xác minh danh tính & hồ sơ',
-    description: 'Bằng cấp và chứng chỉ của gia sư được kiểm duyệt trước khi hiển thị để học viên có thêm cơ sở lựa chọn.',
+    title: 'XÃ¡c minh danh tÃ­nh & há»“ sÆ¡',
+    description: 'Báº±ng cáº¥p vÃ  chá»©ng chá»‰ cá»§a gia sÆ° Ä‘Æ°á»£c kiá»ƒm duyá»‡t trÆ°á»›c khi hiá»ƒn thá»‹ Ä‘á»ƒ há»c viÃªn cÃ³ thÃªm cÆ¡ sá»Ÿ lá»±a chá»n.',
   },
   {
     icon: 'matching',
-    title: 'Gợi ý gia sư phù hợp',
-    description: 'Hệ thống đề xuất dựa trên chuyên môn, khu vực, mức học phí và lịch rảnh - không chỉ dựa trên rating.',
+    title: 'Gá»£i Ã½ gia sÆ° phÃ¹ há»£p',
+    description: 'Há»‡ thá»‘ng Ä‘á» xuáº¥t dá»±a trÃªn chuyÃªn mÃ´n, khu vá»±c, má»©c há»c phÃ­ vÃ  lá»‹ch ráº£nh - khÃ´ng chá»‰ dá»±a trÃªn rating.',
   },
 ];
 
 export const footerGroups = [
   {
-    title: 'Dịch vụ',
-    links: ['Tìm gia sư', 'Đăng lớp học', 'Gợi ý gia sư phù hợp'],
+    title: 'Dá»‹ch vá»¥',
+    links: ['TÃ¬m gia sÆ°', 'ÄÄƒng lá»›p há»c', 'Gá»£i Ã½ gia sÆ° phÃ¹ há»£p'],
   },
   {
-    title: 'Hỗ trợ',
-    links: ['Trung tâm trợ giúp', 'An toàn tài khoản', 'Liên hệ hỗ trợ'],
+    title: 'Há»— trá»£',
+    links: ['Trung tÃ¢m trá»£ giÃºp', 'An toÃ n tÃ i khoáº£n', 'LiÃªn há»‡ há»— trá»£'],
   },
   {
-    title: 'Pháp lý',
-    links: ['Chính sách riêng tư', 'Hợp đồng điện tử', 'Điều khoản sử dụng'],
+    title: 'PhÃ¡p lÃ½',
+    links: ['ChÃ­nh sÃ¡ch riÃªng tÆ°', 'Há»£p Ä‘á»“ng Ä‘iá»‡n tá»­', 'Äiá»u khoáº£n sá»­ dá»¥ng'],
   },
 ];

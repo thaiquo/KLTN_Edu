@@ -31,6 +31,8 @@ public class LearningRabbitConfig {
     public static final String TEACHING_REGISTRATION_SUBMITTED_ROUTING_KEY = "learning.teaching-registration.submitted";
     public static final String SUBJECT_REQUEST_SUBMITTED_ROUTING_KEY = "learning.subject-request.submitted";
     public static final String CLASS_SUBMITTED_ROUTING_KEY = "learning.class.submitted";
+    public static final String HOMEWORK_SUBMITTED_ROUTING_KEY = "learning.homework.submitted";
+    public static final String HOMEWORK_GRADED_ROUTING_KEY = "learning.homework.graded";
 
     public static final String CONTRACT_ACTIVATED_QUEUE = "learning.contract-activated";
     public static final String CONTRACT_EXPIRED_QUEUE = "learning.contract-expired";

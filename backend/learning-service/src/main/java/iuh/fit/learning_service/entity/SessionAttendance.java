@@ -55,7 +55,29 @@ public class SessionAttendance {
     @Column(length = 1000)
     private String submissionFileUrl;
 
+    @Column(length = 500)
+    private String submissionFileKey;
+
+    @Column(length = 255)
+    private String submissionFileName;
+
+    private Long submissionFileSize;
+
+    @Column(length = 100)
+    private String submissionContentType;
+
     private LocalDateTime submittedAt;
+
+    @Column(length = 50)
+    private String gradeScore;
+
+    @Column(columnDefinition = "TEXT")
+    private String tutorFeedback;
+
+    private LocalDateTime gradedAt;
+
+    @Column(length = 255)
+    private String gradedByTutorEmail;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();

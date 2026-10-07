@@ -108,5 +108,64 @@ export const classApi = {
   }),
   getBufferPoolStatus: (classId) => apiRequest(`/api/learning/v1/classes/${classId}/buffer-pool`),
   getStudentClasses: () => apiRequest('/api/learning/student/classes'),
-  getStudentSchedule: () => apiRequest('/api/learning/v1/student/schedule')
+  getStudentSchedule: () => apiRequest('/api/learning/v1/student/schedule'),
+
+  // Session & Homework endpoints
+  getSessionById: (sessionId) => apiRequest(`/api/learning/sessions/${sessionId}`),
+  updateSessionDetails: (sessionId, payload) => apiRequest(`/api/learning/sessions/${sessionId}/details`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  }),
+  gradeSessionHomework: (sessionId, attendanceId, payload) => apiRequest(`/api/learning/sessions/${sessionId}/attendances/${attendanceId}/grade`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  }),
+  getTutorHomeworkOverview: () => apiRequest('/api/learning/tutor/homework-overview'),
+  getStudentHomeworkOverview: () => apiRequest('/api/learning/student/homework-overview'),
+
+  // Classroom Materials (Course-wide files)
+  getClassroomMaterials: (classId) => apiRequest(`/api/learning/classes/${classId}/materials`),
+  uploadClassroomMaterial: (classId, formData) => apiRequest(`/api/learning/classes/${classId}/materials`, {
+    method: 'POST',
+    body: formData
+  }),
+  deleteClassroomMaterial: (classId, materialId) => apiRequest(`/api/learning/classes/${classId}/materials/${materialId}`, {
+    method: 'DELETE'
+  }),
+  getClassroomMaterialDownloadUrl: (classId, materialId) => apiRequest(`/api/learning/classes/${classId}/materials/${materialId}/download-url`),
+
+  // Session Files (Assignments max 5 & Lecture slides)
+  uploadSessionAssignmentFiles: (sessionId, formData) => apiRequest(`/api/learning/sessions/${sessionId}/assignment-files`, {
+    method: 'POST',
+    body: formData
+  }),
+  uploadSessionMaterialFiles: (sessionId, formData) => apiRequest(`/api/learning/sessions/${sessionId}/material-files`, {
+    method: 'POST',
+    body: formData
+  }),
+  deleteSessionFile: (sessionId, fileId) => apiRequest(`/api/learning/sessions/${sessionId}/files/${fileId}`, {
+    method: 'DELETE'
+  }),
+  getSessionFileDownloadUrl: (sessionId, fileId) => apiRequest(`/api/learning/sessions/${sessionId}/files/${fileId}/download-url`),
+
+  // Student Homework Submission (Mandatory File)
+  submitHomeworkWithFile: (sessionId, formData) => apiRequest(`/api/learning/sessions/${sessionId}/homework-submission-file`, {
+    method: 'POST',
+    body: formData
+  }),
+  submitHomework: (sessionId, payload) => apiRequest(`/api/learning/sessions/${sessionId}/homework-submission`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }),
+  deleteHomeworkSubmission: (sessionId) => apiRequest(`/api/learning/sessions/${sessionId}/homework-submission`, {
+    method: 'DELETE'
+  }),
+  getSubmissionDownloadUrl: (sessionId, attendanceId) => apiRequest(`/api/learning/sessions/${sessionId}/attendances/${attendanceId}/submission-download-url`),
+
+  // Syllabus file
+  uploadSyllabusFile: (classId, formData) => apiRequest(`/api/learning/classes/${classId}/syllabus-file`, {
+    method: 'POST',
+    body: formData
+  }),
+  getSyllabusDownloadUrl: (classId) => apiRequest(`/api/learning/classes/${classId}/syllabus/download-url`)
 };

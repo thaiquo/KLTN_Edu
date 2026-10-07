@@ -2,6 +2,67 @@
 
 ---
 
+## 29/09/2026 — Nâng Cấp Quản Lý & Chấm Bài Tập Gia Sư Toàn Diện, Tự Động Dọn Dẹp S3 Khi Gỡ Bài Nộp, Đồng Bộ Hiển Thị Lớp Học Thực Tế
+
+- **Chuẩn hóa Thống kê & Phân loại Bài tập Gia sư**:
+  - Khắc phục triệt để lỗi thống kê hiển thị sai lệch "19 học viên chưa làm bài" (do trước đây hệ thống tính gộp toàn bộ 20 buổi học của tất cả các lớp, bao gồm 19 buổi học bình thường không giao bài tập).
+  - Tối ưu hóa 4 thẻ thống kê trên cùng trang Quản lý bài tập của Gia sư (`/portal/tutor/homework`), chỉ tính toán dữ liệu trên các buổi thực tế có bài tập:
+    1. `Buổi đã giao bài tập`: Tổng số buổi học có giao bài tập hoặc đính kèm tài liệu đề bài.
+    2. `Tổng bài học viên đã nộp`: Tổng số lượt học viên đã nộp bài tập về nhà.
+    3. `Bài đang chờ chấm điểm`: Số bài tập đã nộp cần gia sư chấm và nhận xét.
+    4. `Bài đã chấm điểm xong`: Số bài tập gia sư đã hoàn thành chấm điểm (thể hiện kết quả công việc, thay cho thẻ gây hiểu lầm trước đó).
+  - **Lọc thông minh danh sách buổi học**: Mặc định chỉ hiển thị các buổi học có giao bài tập (`assignmentTitle`, `assignmentDescription`, `assignmentFiles` hoặc đã có bài nộp). Các buổi học bình thường không giao bài sẽ được ẩn đi để màn hình gọn gàng, tránh hiểu lầm; bổ sung tùy chọn trong dropdown *"Xem tất cả buổi học (kể cả chưa giao bài)"* khi gia sư muốn tìm lại buổi để giao bài mới.
+- **Nâng cấp Giao diện Chấm bài Hai chế độ (Dual Views) cho Gia sư**:
+  - Bổ sung nút chuyển đổi linh hoạt giữa 2 chế độ hiển thị trong modal chấm bài:
+    - **Chế độ Chấm chi tiết (Split View)**:
+      - Cột trái: Ô tìm kiếm học viên theo Tên/Email/Mã số, các tab lọc nhanh (`Tất cả`, `Cần chấm`, `Chưa nộp`, `Đã chấm`, `Nộp muộn`), nhãn trạng thái điểm danh vào học và trạng thái nộp bài.
+      - Cột phải: Khung đối chiếu đề bài gốc; bảng cảnh báo nổi bật nếu học viên chưa nộp bài kèm hướng dẫn cho điểm trực tiếp (vấn đáp/trả lời tại lớp) hoặc ghi chú nhắc nhở; các chip chọn điểm số nhanh (10, 9.5, 9... Đạt/Chưa đạt); gợi ý câu nhận xét chuẩn mực (`QUICK_FEEDBACK_TEMPLATES`); nút tiện ích **"Lưu & Sang học viên tiếp theo"** tự động chuyển ngay sang học viên kế tiếp cần chấm giúp gia sư chấm liên tục cả lớp với tốc độ cao.
+    - **Chế độ Bảng điểm cả lớp (Classroom Table View)**: Bảng danh sách tổng hợp toàn bộ học viên của buổi học gồm STT, Họ tên & Email, Điểm danh (Có mặt / Vắng), Trạng thái nộp bài (thời gian nộp hoặc nhãn đỏ `Chưa làm / Chưa nộp bài`), Tệp đính kèm & nút tải nhanh, Điểm số, Nhận xét chi tiết của gia sư và nút thao tác nhanh chuyển đến chấm/sửa điểm.
+- **Vòng đời Nộp bài của Học viên & Tự động Dọn dẹp S3 (S3 Storage Cleanup)**:
+  - Cho phép học viên gỡ bỏ hoặc thay thế file bài làm đã nộp trong khoảng thời gian còn hạn nộp (deadline).
+  - Khi học viên gỡ bỏ hoặc tải lên file bài làm mới thay thế, hệ thống tự động xóa file cũ trên AWS S3 (`s3Client.deleteObject`) nhằm giải phóng dung lượng và chống phát sinh file rác trên bucket.
+  - Loại bỏ hoàn toàn các thuật ngữ kỹ thuật hạ tầng nội bộ (như "tải lên S3", "S3 bucket", "S3 key"...) trên giao diện người dùng, thay bằng thông điệp thân thiện: *"Đã nộp bài thành công"*, *"Tải bài nộp"*, *"Đang lưu bài làm"...*
+- **Đồng bộ Link học & Đề xuất lớp học đến giờ dạy**:
+  - Đồng bộ chặt chẽ: Link học và file đề bài/slide của buổi học chỉ hiển thị sau khi học viên tự điểm danh (`studentChecked == true`).
+  - Cập nhật link học cấp lớp (`meeting_link`) tự động áp dụng cho các buổi học tiếp theo.
+  - Thẻ buổi học hiển thị hiệu ứng trực quan sinh động khi đến khung giờ dạy/học giúp gia sư và học viên dễ dàng nhận diện và tham gia.
+- **Độ ổn định Backend & Frontend**:
+  - Khắc phục lỗi biên dịch Java 21 trong `SessionAttendanceService.java` (`record AttendanceWithFiles` thay cho lambda closure không tương thích).
+  - Toàn bộ backend `learning-service` (`BUILD SUCCESS`) và `frontend-web` (`npm run build`) biên dịch thành công 100% không có lỗi.
+
+---
+
+## 28/09/2026 — Chuẩn Hóa Khóa Nút Hủy Hợp Đồng, Tích Hợp AWS S3 Toàn Diện Cho Bài Tập & Tài Liệu Môn Học
+
+- **Chuẩn hóa Điều kiện Hủy Hợp Đồng**:
+  - Khóa chặt nút "Hủy hợp đồng": chỉ xuất hiện và cho phép bấm khi hợp đồng đang ở trạng thái `ACTIVE` (đã ký kết đầy đủ và thanh toán nạp cọc thành công).
+  - Loại bỏ hoàn toàn fallback lấy hợp đồng chưa kích hoạt ở frontend (`TutorClassManagement.tsx`) và backend (`TerminationService.java`).
+- **Kiến trúc Lưu trữ AWS S3 & CSDL Chuẩn hóa cho Learning Service**:
+  - Tích hợp AWS SDK v2 S3 và `S3Presigner` vào `learning-service` (cấu hình `StorageProperties`, hỗ trợ cả S3 và Local Storage fallback).
+  - Tạo bảng quan hệ chuẩn với khóa ngoại `ON DELETE CASCADE` (Flyway `V36__classroom_materials_and_session_files.sql`):
+    - `classroom_materials`: Lưu trữ tài liệu môn học cấp lớp (`classes/{classId}/materials/`).
+    - `session_files`: Lưu trữ file đề bài tập (`ASSIGNMENT`, tối đa 5 file/buổi) và file slide bài giảng (`MATERIAL`) theo từng buổi học (`classes/{classId}/sessions/{sessionId}/...`).
+    - Bổ sung cột `syllabus_file_key`, `syllabus_file_name`, `syllabus_file_size` trên bảng `class_rooms` để lưu trữ giáo trình/lộ trình học.
+    - Bổ sung cột `submission_s3_key`, `submission_file_name`, `submission_file_size` trên bảng `session_attendances` để lưu trữ bài nộp của học viên.
+- **Phân định Quyền Truy cập Tài liệu & Bài tập Chặt chẽ**:
+  - **Tài liệu môn học cấp lớp (`classroom_materials`)**: Học viên đã tham gia lớp (enrolled) và Gia sư có quyền xem và tải trực tiếp tài liệu về máy qua S3 presigned URL bất kỳ lúc nào mà **KHÔNG CẦN ĐIỂM DANH**.
+  - **File Lộ trình học (Syllabus)**: Gia sư có thể tải lên file lộ trình/đề cương môn học khi tạo/sửa lớp; học viên có nút tải trực tiếp.
+  - **Tài liệu & Đề bài tập theo từng buổi học (`session_files`)**: Học viên **BẮT BUỘC PHẢI ĐIỂM DANH (Check-in)** thì mới mở khóa xem nội dung đề bài và tải các file bài tập / slide bài giảng của buổi học đó (`studentChecked == true`).
+  - **Nộp bài tập của học viên**: Học viên nộp bài làm bằng **file thật (lưu trữ trên S3)**; link ngoài chỉ là ghi chú bổ sung. Gia sư và học viên có nút tải file nộp từ S3 về máy bằng presigned URL bảo mật. Gia sư chấm điểm (thang điểm 0–10, Đạt/Chưa đạt) và gửi nhận xét chi tiết.
+- **Bổ sung Mục Chuyên biệt trên Sidebar & Giao diện Quản lý Bài tập**:
+  - **Sidebar Gia sư**: Thêm mục **"Quản lý bài tập"** (`/portal/tutor/homework`): quản lý bài tập theo lớp, buổi học, đính kèm tối đa 5 file đề bài & slide S3, xem danh sách bài nộp, tải file nộp của học viên từ S3 về máy và chấm điểm trực tiếp.
+  - **Tính năng Xem lại toàn bộ Đề bài & Yêu cầu đã phân công cho Gia sư**:
+    - Nhấn vào tiêu đề bài tập hoặc nút **"Xem đề bài"** mở modal chi tiết: xem đầy đủ tên bài, buổi học, yêu cầu/hướng dẫn ghi chú chi tiết không bị cắt ngắn, danh sách file đề bài và slide S3 kèm nút tải về máy.
+    - Nút "Xem toàn bộ / Thu gọn" ngay trên thẻ bài tập.
+    - Khung xem lại đề bài & file đính kèm tích hợp ngay trong modal "Xem & Chấm bài" giúp gia sư đối chiếu bài làm học sinh khi đang chấm.
+  - **Sidebar Học viên**: Thêm mục **"Bài tập về nhà"** (`/portal/student/homework`): lọc theo lớp, hiển thị trạng thái hạn nộp, cảnh báo khóa nếu chưa điểm danh, modal nộp bài hỗ trợ chọn file S3 và tải về xem lại.
+  - **Chi tiết lớp học**: Tích hợp component `ClassroomMaterialsSection.jsx` cho cả Học viên và Gia sư.
+- **Kiểm thử tự động**:
+  - Bổ sung 7 test cases chuyên sâu trong `SessionSecurityAndStorageTest.java`. Toàn bộ 81 test cases của `learning-service` pass 100%.
+  - Frontend `npm run build` biên dịch thành công 100%.
+
+---
+
 ## 22/09/2026 — Hoàn tất Chấm dứt hợp đồng, Xác thực EIP-712 và Hoàn tiền Escrow Sepolia Thành công
 
 - **Nghiệp vụ Chấm dứt & Hủy lớp**:

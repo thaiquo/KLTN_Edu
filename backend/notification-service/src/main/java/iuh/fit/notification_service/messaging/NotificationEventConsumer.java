@@ -5,6 +5,7 @@ import iuh.fit.notification_service.messaging.event.SubjectRequestRejectedEvent;
 import iuh.fit.notification_service.messaging.event.ClassSubmittedNotificationEvent;
 import iuh.fit.notification_service.messaging.event.ClassReviewedNotificationEvent;
 import iuh.fit.notification_service.messaging.event.EnrollmentNotificationEvent;
+import iuh.fit.notification_service.messaging.event.HomeworkNotificationEvent;
 import iuh.fit.notification_service.messaging.event.TeachingRegistrationReviewedEvent;
 import iuh.fit.notification_service.messaging.event.TeachingRegistrationSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.SubjectRequestSubmittedEvent;
@@ -42,8 +43,8 @@ public class NotificationEventConsumer {
                 event.eventId(),
                 event.recipientUserId(),
                 "TUTOR_APPLICATION_SUBMITTED",
-                "Có hồ sơ gia sư mới cần xét duyệt",
-                "Có hồ sơ đăng ký gia sư mới cần Staff xét duyệt.",
+                "C\u00f3 h\u1ed3 s\u01a1 gia s\u01b0 m\u1edbi c\u1ea7n x\u00e9t duy\u1ec7t",
+                "C\u00f3 h\u1ed3 s\u01a1 \u0111\u0103ng k\u00fd gia s\u01b0 m\u1edbi c\u1ea7n Staff x\u00e9t duy\u1ec7t.",
                 "STAFF",
                 "TUTOR_APPLICATION",
                 String.valueOf(event.applicationId())
@@ -60,8 +61,8 @@ public class NotificationEventConsumer {
                 event.eventId(),
                 event.userId(),
                 "TUTOR_APPLICATION_REVIEWED",
-                "Hồ sơ gia sư đã được phê duyệt",
-                "Hồ sơ gia sư của bạn đã được phê duyệt. Bạn có thể chuyển sang Gia sư khi sẵn sàng.",
+                "H\u1ed3 s\u01a1 gia s\u01b0 \u0111\u00e3 \u0111\u01b0\u1ee3c ph\u00ea duy\u1ec7t",
+                "H\u1ed3 s\u01a1 gia s\u01b0 c\u1ee7a b\u1ea1n \u0111\u00e3 \u0111\u01b0\u1ee3c ph\u00ea duy\u1ec7t. B\u1ea1n c\u00f3 th\u1ec3 chuy\u1ec3n sang Gia s\u01b0 khi s\u1eb5n s\u00e0ng.",
                 "TUTOR",
                 "TUTOR_APPLICATION",
                 String.valueOf(event.applicationId())
@@ -79,10 +80,10 @@ public class NotificationEventConsumer {
                 event.eventId(),
                 event.userId(),
                 "TUTOR_APPLICATION_REVIEWED",
-                "Hồ sơ gia sư cần cập nhật",
+                "H\u1ed3 s\u01a1 gia s\u01b0 c\u1ea7n c\u1eadp nh\u1eadt",
                 reason == null
-                        ? "Hồ sơ gia sư của bạn chưa được phê duyệt. Vui lòng cập nhật hồ sơ và gửi lại."
-                        : "Hồ sơ gia sư của bạn chưa được phê duyệt. Lý do: " + reason,
+                        ? "H\u1ed3 s\u01a1 gia s\u01b0 c\u1ee7a b\u1ea1n ch\u01b0a \u0111\u01b0\u1ee3c ph\u00ea duy\u1ec7t. Vui l\u00f2ng c\u1eadp nh\u1eadt h\u1ed3 s\u01a1 v\u00e0 g\u1eedi l\u1ea1i."
+                        : "H\u1ed3 s\u01a1 gia s\u01b0 c\u1ee7a b\u1ea1n ch\u01b0a \u0111\u01b0\u1ee3c ph\u00ea duy\u1ec7t. L\u00fd do: " + reason,
                 "TUTOR",
                 "TUTOR_APPLICATION",
                 String.valueOf(event.applicationId())
@@ -99,8 +100,8 @@ public class NotificationEventConsumer {
                 event.eventId(),
                 event.requestedByUserId(),
                 "SUBJECT_REQUEST_REVIEWED",
-                "Đề xuất môn học đã được phê duyệt",
-                "Đề xuất môn học đã được phê duyệt và thêm vào thư mục.",
+                "\u0110\u1ec1 xu\u1ea5t m\u00f4n h\u1ecdc \u0111\u00e3 \u0111\u01b0\u1ee3c ph\u00ea duy\u1ec7t",
+                "\u0110\u1ec1 xu\u1ea5t m\u00f4n h\u1ecdc \u0111\u00e3 \u0111\u01b0\u1ee3c ph\u00ea duy\u1ec7t v\u00e0 th\u00eam v\u00e0o th\u01b0 m\u1ee5c.",
                 "TUTOR",
                 "SUBJECT_REQUEST",
                 String.valueOf(event.subjectRequestId())
@@ -118,10 +119,10 @@ public class NotificationEventConsumer {
                 event.eventId(),
                 event.requestedByUserId(),
                 "SUBJECT_REQUEST_REVIEWED",
-                "Đề xuất môn học chưa được phê duyệt",
+                "\u0110\u1ec1 xu\u1ea5t m\u00f4n h\u1ecdc ch\u01b0a \u0111\u01b0\u1ee3c ph\u00ea duy\u1ec7t",
                 reason == null
-                        ? "Đề xuất môn học của bạn chưa được phê duyệt."
-                        : "Đề xuất môn học của bạn chưa được phê duyệt. Lý do: " + reason,
+                        ? "\u0110\u1ec1 xu\u1ea5t m\u00f4n h\u1ecdc c\u1ee7a b\u1ea1n ch\u01b0a \u0111\u01b0\u1ee3c ph\u00ea duy\u1ec7t."
+                        : "\u0110\u1ec1 xu\u1ea5t m\u00f4n h\u1ecdc c\u1ee7a b\u1ea1n ch\u01b0a \u0111\u01b0\u1ee3c ph\u00ea duy\u1ec7t. L\u00fd do: " + reason,
                 "TUTOR",
                 "SUBJECT_REQUEST",
                 String.valueOf(event.subjectRequestId())
@@ -137,7 +138,7 @@ public class NotificationEventConsumer {
                 event.eventId(),
                 event.recipientUserId(),
                 "ENROLLMENT_REQUESTED",
-                "Có yêu cầu tham gia lớp mới",
+                "C\u00f3 y\u00eau c\u1ea7u tham gia l\u1edbp m\u1edbi",
                 enrollmentRequestedMessage(event),
                 "TUTOR",
                 "ENROLLMENT_REQUEST",
@@ -154,8 +155,8 @@ public class NotificationEventConsumer {
                 event.eventId(),
                 event.recipientUserId(),
                 "ENROLLMENT_ACCEPTED",
-                "Yêu cầu tham gia lớp đã được chấp nhận",
-                classMessage("Yêu cầu tham gia lớp", event, " đã được chấp nhận."),
+                "Y\u00eau c\u1ea7u tham gia l\u1edbp \u0111\u00e3 \u0111\u01b0\u1ee3c ch\u1ea5p nh\u1eadn",
+                classMessage("Y\u00eau c\u1ea7u tham gia l\u1edbp", event, " \u0111\u00e3 \u0111\u01b0\u1ee3c ch\u1ea5p nh\u1eadn."),
                 "STUDENT",
                 "ENROLLMENT_REQUEST",
                 String.valueOf(event.enrollmentRequestId())
@@ -172,10 +173,10 @@ public class NotificationEventConsumer {
                 event.eventId(),
                 event.recipientUserId(),
                 "ENROLLMENT_REJECTED",
-                "Yêu cầu tham gia lớp đã bị từ chối",
+                "Y\u00eau c\u1ea7u tham gia l\u1edbp \u0111\u00e3 b\u1ecb t\u1eeb ch\u1ed1i",
                 reason == null
-                        ? classMessage("Yêu cầu tham gia lớp", event, " đã bị từ chối.")
-                        : classMessage("Yêu cầu tham gia lớp", event, " đã bị từ chối. Lý do: " + reason),
+                        ? classMessage("Y\u00eau c\u1ea7u tham gia l\u1edbp", event, " \u0111\u00e3 b\u1ecb t\u1eeb ch\u1ed1i.")
+                        : classMessage("Y\u00eau c\u1ea7u tham gia l\u1edbp", event, " \u0111\u00e3 b\u1ecb t\u1eeb ch\u1ed1i. L\u00fd do: " + reason),
                 "STUDENT",
                 "ENROLLMENT_REQUEST",
                 String.valueOf(event.enrollmentRequestId())
@@ -191,8 +192,8 @@ public class NotificationEventConsumer {
                 event.eventId(),
                 event.recipientUserId(),
                 "ENROLLMENT_CANCELLED",
-                "Yêu cầu tham gia lớp đã được hủy",
-                classMessage("Học viên đã hủy yêu cầu tham gia lớp", event, "."),
+                "Y\u00eau c\u1ea7u tham gia l\u1edbp \u0111\u00e3 \u0111\u01b0\u1ee3c h\u1ee7y",
+                classMessage("H\u1ecdc vi\u00ean \u0111\u00e3 h\u1ee7y y\u00eau c\u1ea7u tham gia l\u1edbp", event, "."),
                 "TUTOR",
                 "ENROLLMENT_REQUEST",
                 String.valueOf(event.enrollmentRequestId())
@@ -208,8 +209,8 @@ public class NotificationEventConsumer {
         String status = event.reviewStatus().trim().toUpperCase();
         boolean approved = "APPROVED".equals(status);
         String title = approved
-                ? "Lớp học đã được duyệt"
-                : "Lớp học chưa được duyệt";
+                ? "L\u1edbp h\u1ecdc \u0111\u00e3 \u0111\u01b0\u1ee3c duy\u1ec7t"
+                : "L\u1edbp h\u1ecdc ch\u01b0a \u0111\u01b0\u1ee3c duy\u1ec7t";
 
         notificationService.createIfAbsent(new NotificationCommand(
                 event.eventId(),
@@ -232,8 +233,8 @@ public class NotificationEventConsumer {
         String status = event.reviewStatus().trim().toUpperCase();
         boolean approved = "APPROVED".equals(status);
         String title = approved
-                ? "Đăng ký môn học đã được phê duyệt"
-                : "Đăng ký môn học đã bị từ chối";
+                ? "\u0110\u0103ng k\u00fd m\u00f4n h\u1ecdc \u0111\u00e3 \u0111\u01b0\u1ee3c ph\u00ea duy\u1ec7t"
+                : "\u0110\u0103ng k\u00fd m\u00f4n h\u1ecdc \u0111\u00e3 b\u1ecb t\u1eeb ch\u1ed1i";
 
         notificationService.createIfAbsent(new NotificationCommand(
                 event.eventId(),
@@ -298,6 +299,42 @@ public class NotificationEventConsumer {
                 "STAFF",
                 "CLASS",
                 String.valueOf(event.classId())
+        ));
+    }
+
+    @RabbitListener(queues = NotificationRabbitConfig.HOMEWORK_SUBMITTED_QUEUE)
+    public void onHomeworkSubmitted(HomeworkNotificationEvent event) {
+        if (!isValidHomeworkEvent(event, "HOMEWORK_SUBMITTED")) {
+            return;
+        }
+
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                "HOMEWORK_SUBMITTED",
+                "Học viên đã nộp bài tập",
+                homeworkSubmittedMessage(event),
+                "TUTOR",
+                "HOMEWORK_SUBMISSION",
+                event.referenceId() == null ? String.valueOf(event.attendanceId()) : event.referenceId()
+        ));
+    }
+
+    @RabbitListener(queues = NotificationRabbitConfig.HOMEWORK_GRADED_QUEUE)
+    public void onHomeworkGraded(HomeworkNotificationEvent event) {
+        if (!isValidHomeworkEvent(event, "HOMEWORK_GRADED")) {
+            return;
+        }
+
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                "HOMEWORK_GRADED",
+                "Bài tập đã được chấm",
+                homeworkGradedMessage(event),
+                "STUDENT",
+                "HOMEWORK",
+                event.referenceId() == null ? String.valueOf(event.sessionId()) : event.referenceId()
         ));
     }
 
@@ -404,9 +441,22 @@ public class NotificationEventConsumer {
     private String enrollmentRequestedMessage(EnrollmentNotificationEvent event) {
         String studentName = safeReason(event.studentName());
         if (StringUtils.hasText(studentName)) {
-            return classMessage(studentName + " đã gửi yêu cầu tham gia lớp", event, ".");
+            return classMessage(studentName + " \u0111\u00e3 g\u1eedi y\u00eau c\u1ea7u tham gia l\u1edbp", event, ".");
         }
-        return classMessage("Có học viên vừa gửi yêu cầu tham gia lớp của bạn", event, ".");
+        return classMessage("C\u00f3 h\u1ecdc vi\u00ean v\u1eeba g\u1eedi y\u00eau c\u1ea7u tham gia l\u1edbp c\u1ee7a b\u1ea1n", event, ".");
+    }
+
+    private boolean isValidHomeworkEvent(HomeworkNotificationEvent event, String expectedType) {
+        if (event == null
+                || !StringUtils.hasText(event.eventId())
+                || event.recipientUserId() == null
+                || event.sessionId() == null
+                || event.attendanceId() == null
+                || !expectedType.equals(event.eventType())) {
+            log.warn("Skipping invalid homework notification event type={}", expectedType);
+            return false;
+        }
+        return true;
     }
 
     private String classMessage(String prefix, EnrollmentNotificationEvent event, String suffix) {
@@ -417,20 +467,50 @@ public class NotificationEventConsumer {
         return prefix + suffix;
     }
 
+    private String homeworkSubmittedMessage(HomeworkNotificationEvent event) {
+        String studentName = safeReason(event.studentName());
+        String subject = StringUtils.hasText(studentName) ? studentName : "H\u1ecdc vi\u00ean";
+        return subject + " \u0111\u00e3 n\u1ed9p b\u00e0i t\u1eadp" + homeworkContext(event) + ".";
+    }
+
+    private String homeworkGradedMessage(HomeworkNotificationEvent event) {
+        String score = safeReason(event.gradeScore());
+        String suffix = StringUtils.hasText(score)
+                ? ". \u0110i\u1ec3m/\u0111\u00e1nh gi\u00e1: " + score + "."
+                : ".";
+        return "B\u00e0i t\u1eadp c\u1ee7a b\u1ea1n" + homeworkContext(event) + " \u0111\u00e3 \u0111\u01b0\u1ee3c gia s\u01b0 ch\u1ea5m" + suffix;
+    }
+
+    private String homeworkContext(HomeworkNotificationEvent event) {
+        String classTitle = safeReason(event.classTitle());
+        String topic = safeReason(event.sessionTopic());
+        StringBuilder builder = new StringBuilder();
+        if (StringUtils.hasText(classTitle)) {
+            builder.append(" l\u1edbp \"").append(classTitle).append("\"");
+        }
+        if (event.sequenceNumber() != null) {
+            builder.append(", bu\u1ed5i #").append(event.sequenceNumber());
+        }
+        if (StringUtils.hasText(topic)) {
+            builder.append(" - ").append(topic);
+        }
+        return builder.toString();
+    }
+
     private String teachingRegistrationReviewedMessage(TeachingRegistrationReviewedEvent event, boolean approved) {
         String subjectName = safeReason(event.subjectName());
         String prefix = StringUtils.hasText(subjectName)
-                ? "Đăng ký môn học \"" + subjectName + "\" của bạn"
-                : "Đăng ký môn học của bạn";
+                ? "\u0110\u0103ng k\u00fd m\u00f4n h\u1ecdc \"" + subjectName + "\" c\u1ee7a b\u1ea1n"
+                : "\u0110\u0103ng k\u00fd m\u00f4n h\u1ecdc c\u1ee7a b\u1ea1n";
 
         if (approved) {
-            return prefix + " đã được phê duyệt.";
+            return prefix + " \u0111\u00e3 \u0111\u01b0\u1ee3c ph\u00ea duy\u1ec7t.";
         }
 
         String reason = safeReason(event.rejectReason());
         return reason == null
-                ? prefix + " đã bị từ chối."
-                : prefix + " đã bị từ chối. Lý do: " + reason;
+                ? prefix + " \u0111\u00e3 b\u1ecb t\u1eeb ch\u1ed1i."
+                : prefix + " \u0111\u00e3 b\u1ecb t\u1eeb ch\u1ed1i. L\u00fd do: " + reason;
     }
 
     private String submittedSubjectMessage(String prefix, String subject, String suffix) {
@@ -445,18 +525,18 @@ public class NotificationEventConsumer {
         String classTitle = safeReason(event.classTitle());
         String prefix;
         if (StringUtils.hasText(classTitle)) {
-            prefix = "Lớp \"" + classTitle + "\" của bạn";
+            prefix = "L\u1edbp \"" + classTitle + "\" c\u1ee7a b\u1ea1n";
         } else {
-            prefix = "Lớp học của bạn";
+            prefix = "L\u1edbp h\u1ecdc c\u1ee7a b\u1ea1n";
         }
 
         if (approved) {
-            return prefix + " đã được duyệt.";
+            return prefix + " \u0111\u00e3 \u0111\u01b0\u1ee3c duy\u1ec7t.";
         }
 
         String reason = safeReason(event.rejectReason());
         return reason == null
-                ? prefix + " chưa được duyệt."
-                : prefix + " chưa được duyệt. Lý do: " + reason;
+                ? prefix + " ch\u01b0a \u0111\u01b0\u1ee3c duy\u1ec7t."
+                : prefix + " ch\u01b0a \u0111\u01b0\u1ee3c duy\u1ec7t. L\u00fd do: " + reason;
     }
 }
