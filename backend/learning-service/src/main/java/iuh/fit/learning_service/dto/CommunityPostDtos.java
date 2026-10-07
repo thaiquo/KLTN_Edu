@@ -4,6 +4,7 @@ import iuh.fit.learning_service.enums.DurationUnit;
 import iuh.fit.learning_service.enums.LearningMode;
 import iuh.fit.learning_service.enums.PostStatus;
 import iuh.fit.learning_service.enums.PostType;
+import iuh.fit.learning_service.enums.PollTimePeriod;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Future;
@@ -49,6 +50,7 @@ public class CommunityPostDtos {
         private BigDecimal targetPricePerSession;
         @Size(max = 500, message = "Địa chỉ không được vượt quá 500 ký tự")
         private String address;
+        private Long linkedClassId;
 
         // Cho bài khảo sát (Gia sư)
         @Valid
@@ -65,9 +67,18 @@ public class CommunityPostDtos {
         private String question;
         @Min(value = 1, message = "Mục tiêu bình chọn phải lớn hơn 0")
         private Integer minVotesTarget;
+        @Min(value = 1, message = "Số buổi trên tuần phải từ 1 đến 7")
+        @Max(value = 7, message = "Số buổi trên tuần phải từ 1 đến 7")
+        private Integer sessionsPerWeek;
+        @Min(value = 30, message = "Thời lượng buổi học tối thiểu 30 phút")
+        @Max(value = 240, message = "Thời lượng buổi học tối đa 240 phút")
+        private Integer durationMinutes;
+        @Min(value = 1, message = "Giới hạn bình chọn tối thiểu là 1")
+        @Max(value = 10, message = "Giới hạn bình chọn tối đa là 10")
+        private Integer maxVotesPerUser;
         @Future(message = "Hạn khảo sát phải ở tương lai")
         private LocalDateTime expiresAt;
-        @Size(min = 2, max = 20, message = "Khảo sát cần từ 2 đến 20 khung giờ")
+        @Size(min = 2, max = 21, message = "Khảo sát cần từ 2 đến 21 lựa chọn")
         private List<@Valid CreatePollOptionRequest> options;
     }
 
@@ -111,6 +122,14 @@ public class CommunityPostDtos {
         private Long linkedClassId;
         private String linkedClassName;
         private String linkedClassStatus;
+        private String linkedClassJoinMode;
+        private BigDecimal linkedClassPricePerSession;
+        private Integer linkedClassTotalSessions;
+        private Integer linkedClassMaxStudents;
+        private Long linkedClassAcceptedCount;
+        private Long linkedClassAvailableSlots;
+        private Boolean linkedClassAcceptingEnrollment;
+        private LocalDate linkedClassStartDate;
         private Integer likeCount;
         private Integer commentCount;
         private Integer viewCount;
@@ -130,9 +149,14 @@ public class CommunityPostDtos {
         private String question;
         private Integer minVotesTarget;
         private Integer totalVotes;
+        private Long participantCount;
+        private Integer sessionsPerWeek;
+        private Integer durationMinutes;
+        private Integer maxVotesPerUser;
         private Boolean isClosed;
         private LocalDateTime expiresAt;
         private Long userVotedOptionId;
+        private List<Long> userVotedOptionIds;
         private List<PollOptionDto> options;
     }
 
@@ -143,6 +167,7 @@ public class CommunityPostDtos {
     public static class PollOptionDto {
         private Long id;
         private Integer dayOfWeek;
+        private PollTimePeriod timePeriod;
         private LocalTime startTime;
         private LocalTime endTime;
         private String optionLabel;
@@ -161,10 +186,35 @@ public class CommunityPostDtos {
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
+    public static class UpdatePollVotesRequest {
+        @NotNull(message = "Danh sách khung giờ không được để trống")
+        @Size(max = 7, message = "Không thể chọn quá 7 khung giờ")
+        private List<@NotNull(message = "Khung giờ không hợp lệ") Long> optionIds;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class CreateCommentRequest {
         @NotBlank(message = "Nội dung bình luận không được để trống")
         @Size(max = 2000, message = "Bình luận không được vượt quá 2000 ký tự")
         private String commentText;
+
+        private String userName;
+        private String userAvatar;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class LikeUserDto {
+        private Long id;
+        private Long userId;
+        private String userRole;
+        private String userName;
+        private String userAvatar;
+        private LocalDateTime createdAt;
     }
 
     @Data
@@ -186,8 +236,12 @@ public class CommunityPostDtos {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class ConvertPostToClassRequest {
-        @NotNull(message = "Vui lòng chọn ca học từ khảo sát để tạo lịch cố định")
+        @Valid
+        private ClassRoomDtos.CreateClassRoomRequest classRequest;
         private Long selectedOptionId;
+        private List<Long> selectedOptionIds;
+        @Valid
+        private List<ClassRoomDtos.ScheduleRequest> customSchedules;
 
         private Long tutorSubjectRegistrationId;
         private Long levelId;
@@ -220,6 +274,36 @@ public class CommunityPostDtos {
         private String meetingLink;
         @Size(max = 500, message = "Địa chỉ không được vượt quá 500 ký tự")
         private String address;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PollDemandDto {
+        private Long optionId;
+        private Integer dayOfWeek;
+        private PollTimePeriod timePeriod;
+        private String optionLabel;
+        private Integer voteCount;
+        private Double votePercentage;
+        private Boolean feasible;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ClassSuggestionResponse {
+        private Long postId;
+        private Integer sessionsPerWeek;
+        private Integer durationMinutes;
+        private List<ClassRoomDtos.ScheduleRequest> recommendedSchedules;
+        private List<PollDemandDto> rankedDemand;
+        private Integer participantCount;
+        private Integer matchingStudentCount;
+        private Integer suggestedMaxStudents;
+        private List<String> warnings;
     }
 
     @Data

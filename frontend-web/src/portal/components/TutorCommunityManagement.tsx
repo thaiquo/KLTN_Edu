@@ -24,20 +24,37 @@ import {
   ExternalLink,
   Layers,
   GraduationCap,
-  Compass
+  Compass,
+  ChevronDown,
+  ChevronUp,
+  Reply,
+  X,
+  User as UserIcon
 } from 'lucide-react';
 import communityApi from '../../api/community';
+import { useAuth } from '../../hooks/useAuth';
+import { useFeedback } from '../../components/feedback/useFeedback';
 import { CreatePostModal } from '../../components/community/CreatePostModal';
 import { ConvertPostToClassModal } from '../../components/community/ConvertPostToClassModal';
 import { CommunityFeedPage } from '../../pages/community/CommunityFeedPage';
+import { PollWeeklyCalendar } from '../../components/community/PollWeeklyCalendar';
+import PostLikesModal from '../../components/community/PostLikesModal';
 
 interface TutorCommunityManagementProps {
   onNavigate?: (pageId: string) => void;
+  initialTab?: 'explore' | 'mine';
+  hideExploreTab?: boolean;
 }
 
-export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagementProps) {
-  // Main Tabs: 'mine' (default) | 'explore'
-  const [activeMainTab, setActiveMainTab] = useState<'mine' | 'explore'>('mine');
+export function TutorCommunityManagement({
+  onNavigate,
+  initialTab = 'explore',
+  hideExploreTab = false
+}: TutorCommunityManagementProps) {
+  // Main Tabs: 'explore' (default) | 'mine'
+  const [activeMainTab, setActiveMainTab] = useState<'explore' | 'mine'>(initialTab);
+  const { user } = useAuth();
+  const feedback = useFeedback();
 
   // 'mine' tab state
   const [posts, setPosts] = useState<any[]>([]);
@@ -47,6 +64,8 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
   const [searchKeyword, setSearchKeyword] = useState('');
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [likesModalPostId, setLikesModalPostId] = useState<number | null>(null);
+  const [replyingToMap, setReplyingToMap] = useState<Record<number, any>>({});
 
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -62,6 +81,16 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
 
   // Action status message
   const [toastMessage, setToastMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Expanded poll options by post ID (default compact: top options only)
+  const [expandedPollPostIds, setExpandedPollPostIds] = useState<Record<number, boolean>>({});
+
+  const toggleExpandPoll = (postId: number) => {
+    setExpandedPollPostIds(prev => ({
+      ...prev,
+      [postId]: !prev[postId]
+    }));
+  };
 
   const showToast = (type: 'success' | 'error', text: string) => {
     setToastMessage({ type, text });
@@ -90,10 +119,41 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
   }, [statusFilter, page]);
 
   useEffect(() => {
-    if (activeMainTab === 'mine') {
-      loadMyPosts(true);
-    }
-  }, [activeMainTab, statusFilter]);
+    loadMyPosts(true);
+  }, [statusFilter]);
+
+  useEffect(() => {
+    const handleRealtimeCommunityEvent = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      const postId = Number(detail?.payload?.postId ?? detail?.entityId);
+      if (!postId) return;
+
+      if (detail?.type === 'COMMUNITY_POST_DELETED') {
+        setPosts(current => current.filter(post => Number(post.id) !== postId));
+        return;
+      }
+
+      if (detail?.type === 'COMMUNITY_POLL_UPDATED' && detail.payload?.poll) {
+        setPosts(current => current.map(post => Number(post.id) === postId
+          ? { ...post, poll: detail.payload.poll }
+          : post));
+        return;
+      }
+
+      if (detail?.type === 'COMMUNITY_POST_UPDATED') {
+        setPosts(current => current.map(post => Number(post.id) === postId
+          ? {
+              ...post,
+              status: detail.payload?.status || post.status,
+              poll: detail.payload?.poll || post.poll
+            }
+          : post));
+      }
+    };
+
+    window.addEventListener('realtime:event', handleRealtimeCommunityEvent);
+    return () => window.removeEventListener('realtime:event', handleRealtimeCommunityEvent);
+  }, []);
 
   // Quick statistics
   const stats = useMemo(() => {
@@ -115,31 +175,42 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
     );
   }, [posts, searchKeyword]);
 
-  // Handle Close Poll
-  const handleClosePost = async (postId: number) => {
-    if (!window.confirm('Bạn có chắc chắn muốn đóng khảo sát bài viết này? Sau khi đóng, học viên sẽ không thể bình chọn thêm.')) {
-      return;
-    }
+  // Handle Close Post
+  const handleClosePost = async (postId: number, isPoll: boolean) => {
+    const confirmed = await feedback.confirm({
+      title: isPoll ? 'Kết thúc nhận bình chọn' : 'Đóng bài viết',
+      message: isPoll
+        ? 'Kết thúc nhận bình chọn cho khảo sát này? Học viên sẽ không thể vote thêm, nhưng bạn vẫn có thể xem thống kê, tạo lớp hoặc xóa bài.'
+        : 'Bạn có chắc chắn muốn đóng bài viết này? Bài viết sẽ được đánh dấu hoàn tất.',
+      confirmText: isPoll ? 'Đóng khảo sát' : 'Đóng bài viết',
+      cancelText: 'Hủy'
+    });
+    if (!confirmed) return;
     try {
       const updated = await communityApi.closePost(postId);
       setPosts(prev => prev.map(p => p.id === postId ? { ...p, status: 'CLOSED', poll: updated.poll || p.poll } : p));
-      showToast('success', 'Đã đóng bài khảo sát thành công.');
+      feedback.success(isPoll ? 'Đã kết thúc nhận bình chọn.' : 'Đã đóng bài viết thành công.');
     } catch (err: any) {
-      showToast('error', err.message || err.response?.data?.message || 'Không thể đóng bài viết');
+      feedback.error(err.message || err.response?.data?.message || 'Không thể đóng bài viết');
     }
   };
 
   // Handle Delete Post (Soft delete)
   const handleDeletePost = async (postId: number) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xóa bài viết này khỏi bảng tin?')) {
-      return;
-    }
+    const confirmed = await feedback.confirm({
+      title: 'Xác nhận xóa bài viết',
+      message: 'Bạn có chắc chắn muốn xóa bài viết này khỏi bảng tin? Thao tác này không thể hoàn tác.',
+      confirmText: 'Xóa bài viết',
+      cancelText: 'Hủy',
+      variant: 'danger'
+    });
+    if (!confirmed) return;
     try {
       await communityApi.deletePost(postId);
       setPosts(prev => prev.filter(p => p.id !== postId));
-      showToast('success', 'Đã xóa bài viết thành công.');
+      feedback.success('Đã xóa bài viết thành công.');
     } catch (err: any) {
-      showToast('error', err.message || err.response?.data?.message || 'Không thể xóa bài viết');
+      feedback.error(err.message || err.response?.data?.message || 'Không thể xóa bài viết');
     }
   };
 
@@ -163,6 +234,27 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
     }
   };
 
+  const handleReplyTo = (postId: number, comment: any) => {
+    setReplyingToMap(prev => ({ ...prev, [postId]: comment }));
+    const targetName = comment.userName || 'Học viên';
+    const mention = `@${targetName} `;
+    setCommentInputs(prev => {
+      const cur = prev[postId] || '';
+      if (!cur.includes(`@${targetName}`)) {
+        return { ...prev, [postId]: `${mention}${cur}`.trim() + ' ' };
+      }
+      return prev;
+    });
+  };
+
+  const handleCancelReply = (postId: number) => {
+    setReplyingToMap(prev => {
+      const copy = { ...prev };
+      delete copy[postId];
+      return copy;
+    });
+  };
+
   // Handle Add Comment
   const handleAddComment = async (postId: number) => {
     const text = commentInputs[postId]?.trim();
@@ -170,16 +262,21 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
 
     setSubmittingCommentPostId(postId);
     try {
-      const created = await communityApi.addComment(postId, text);
+      const created = await communityApi.addComment(postId, {
+        commentText: text,
+        userName: user?.fullName || user?.email,
+        userAvatar: user?.avatarUrl || user?.avatar
+      });
       setCommentsMap(prev => ({
         ...prev,
         [postId]: [...(prev[postId] || []), created]
       }));
       setCommentInputs(prev => ({ ...prev, [postId]: '' }));
+      handleCancelReply(postId);
       setPosts(prev => prev.map(p => p.id === postId ? { ...p, commentCount: (p.commentCount || 0) + 1 } : p));
-      showToast('success', 'Đã gửi câu trả lời thành công.');
+      feedback.success('Đã gửi phản hồi thành công.');
     } catch (err: any) {
-      showToast('error', err.message || 'Không thể gửi bình luận');
+      feedback.error(err.message || 'Không thể gửi bình luận');
     } finally {
       setSubmittingCommentPostId(null);
     }
@@ -236,10 +333,10 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
             <span className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
               <Sparkles className="w-5 h-5" />
             </span>
-            <h1 className="text-xl md:text-2xl font-black text-brand-text">Bảng tin & Khảo sát Mở lớp</h1>
+            <h1 className="text-xl md:text-2xl font-black text-brand-text">Bảng tin & Kết nối Cộng đồng</h1>
           </div>
           <p className="mt-1 text-xs md:text-sm text-brand-text-variant">
-            Khảo sát nhu cầu học viên trước khi mở lớp, theo dõi bình chọn ca học và chuyển thành lớp học thực tế.
+            Khám phá nhu cầu học viên, tìm kiếm lớp/nhóm học hoặc quản lý các bài đăng khảo sát của bạn.
           </p>
         </div>
 
@@ -253,43 +350,57 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
           className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 px-4 py-2.5 text-xs md:text-sm font-bold text-white shadow-md transition cursor-pointer"
         >
           <Plus className="h-4 w-4" />
-          <span>Tạo bài khảo sát mới</span>
+          <span>+ Tạo bài viết mới</span>
         </button>
       </div>
 
-      {/* Navigation Switch Tabs */}
-      <div className="flex items-center gap-2 border-b border-brand-border/20 pb-2">
-        <button
-          type="button"
-          onClick={() => setActiveMainTab('mine')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer ${
-            activeMainTab === 'mine'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'text-brand-text-variant hover:bg-brand-container/50 hover:text-brand-text'
-          }`}
-        >
-          <Layers className="w-4 h-4" />
-          <span>Bài đăng của tôi ({posts.length})</span>
-        </button>
+      {/* Navigation Switch Tabs (Segmented Control) */}
+      {!hideExploreTab && (
+        <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100/80 rounded-2xl border border-slate-200 w-fit">
+          <button
+            type="button"
+            onClick={() => setActiveMainTab('explore')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer ${
+              activeMainTab === 'explore'
+                ? 'bg-white text-indigo-600 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+            }`}
+          >
+            <Compass className="w-4 h-4" />
+            <span>1. Khám phá Bảng tin (Cộng đồng)</span>
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setActiveMainTab('explore')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer ${
-            activeMainTab === 'explore'
-              ? 'bg-indigo-600 text-white shadow-sm'
-              : 'text-brand-text-variant hover:bg-brand-container/50 hover:text-brand-text'
-          }`}
-        >
-          <Compass className="w-4 h-4" />
-          <span>Khám phá Bảng tin cộng đồng</span>
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => setActiveMainTab('mine')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer ${
+              activeMainTab === 'mine'
+                ? 'bg-white text-indigo-600 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+            }`}
+          >
+            <Layers className="w-4 h-4" />
+            <span>2. Quản lý bài đăng của tôi</span>
+            {posts.length > 0 && (
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                activeMainTab === 'mine' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {posts.length}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
 
-      {/* TAB 2: EXPLORE COMMUNITY FEED */}
+      {/* TAB 1: EXPLORE COMMUNITY FEED (OPTION 1) */}
       {activeMainTab === 'explore' && (
         <div className="pt-2">
-          <CommunityFeedPage embedded={true} />
+          <CommunityFeedPage
+            embedded={true}
+            hideSecondaryHeader={true}
+            hideMineTab={true}
+            exploreMode={true}
+          />
         </div>
       )}
 
@@ -310,7 +421,7 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
 
             <div className="p-4 rounded-2xl bg-white border border-brand-border/30 shadow-sm flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-bold text-brand-text-variant uppercase tracking-wider">Đang mở khảo sát</p>
+                <p className="text-[11px] font-bold text-brand-text-variant uppercase tracking-wider">Bài đang mở</p>
                 <h3 className="text-xl md:text-2xl font-black text-emerald-600 mt-0.5">{stats.openCount}</h3>
               </div>
               <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
@@ -411,9 +522,9 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
               <div className="w-16 h-16 rounded-3xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-4 font-bold">
                 <Sparkles className="w-8 h-8" />
               </div>
-              <h3 className="text-base font-bold text-slate-800">Chưa có bài đăng khảo sát nào</h3>
+              <h3 className="text-base font-bold text-slate-800">Chưa có bài đăng nào</h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 mb-5">
-                Hãy đăng bài khảo sát ca học để lắng nghe nhu cầu của học viên trước khi ấn định mở lớp học chính thức.
+                Hãy đăng thông báo, khảo sát ca học hoặc giới thiệu lớp đang tuyển sinh để kết nối với học viên.
               </p>
               <button
                 type="button"
@@ -424,7 +535,7 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-xs shadow-md hover:shadow-indigo-500/20 transition cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                <span>Tạo bài khảo sát đầu tiên</span>
+                <span>+ Tạo bài viết mới</span>
               </button>
             </div>
           ) : (
@@ -434,7 +545,7 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
                 const options = poll?.options || [];
                 const sortedOptions = [...options].sort((a, b) => (b.voteCount || 0) - (a.voteCount || 0));
                 const topOptionId = sortedOptions[0]?.voteCount > 0 ? sortedOptions[0]?.id : null;
-                const canConvert = poll && post.status !== 'CONVERTED';
+                const canConvert = post.postType === 'TUTOR_POLL' && poll && (post.status === 'OPEN' || post.status === 'CLOSED') && !post.linkedClassId;
                 const isExpanded = expandedCommentsPostId === post.id;
                 const comments = commentsMap[post.id] || [];
 
@@ -474,13 +585,13 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
                           {post.status === 'OPEN' && (
                             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold">
                               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                              Đang mở khảo sát
+                              Đang mở
                             </span>
                           )}
                           {post.status === 'CLOSED' && (
                             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold">
                               <Lock className="w-3 h-3 text-amber-600" />
-                              Đã đóng khảo sát
+                              Đã đóng
                             </span>
                           )}
                           {post.status === 'CONVERTED' && (
@@ -500,7 +611,7 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
                           </h3>
                           {post.targetPricePerSession && (
                             <div className="text-right flex-shrink-0">
-                              <span className="text-[10px] text-slate-400 block font-semibold">Học phí dự kiến</span>
+                              <span className="text-[10px] text-slate-400 block font-semibold">Học phí / ngân sách</span>
                               <span className="text-sm md:text-base font-black text-emerald-600">
                                 {formatPrice(post.targetPricePerSession)}/buổi
                               </span>
@@ -512,14 +623,19 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
                         </p>
                       </div>
 
-                      {/* Converted Success Banner */}
-                      {post.status === 'CONVERTED' && (
+                      {/* Linked Class Banner (for TUTOR_CLASS_SHARE or CONVERTED) */}
+                      {post.linkedClassId && (
                         <div className="mt-4 p-3.5 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 text-emerald-900 flex items-center justify-between gap-3 text-xs font-bold">
                           <div className="flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                            {post.status === 'CONVERTED' ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                            ) : (
+                              <GraduationCap className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                            )}
                             <span>
-                              Khảo sát này đã được chuyển đổi thành lớp học chính thức
-                              {post.linkedClassName ? `: "${post.linkedClassName}"` : ''}.
+                              {post.status === 'CONVERTED'
+                                ? `Khảo sát này đã được chuyển đổi thành lớp: "${post.linkedClassName || 'Lớp học'}"`
+                                : `Lớp đang được giới thiệu: "${post.linkedClassName || 'Lớp học'}"`}
                             </span>
                           </div>
                           {onNavigate && (
@@ -535,69 +651,18 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
                         </div>
                       )}
 
-                      {/* Poll Results Section */}
+                      {/* Weekly 7-Day Calendar Poll Section (Tutor View with Statistics & Recommendation) */}
                       {poll && (
-                        <div className="mt-4 p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
-                          <div className="flex items-center justify-between mb-3 text-xs">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-slate-900">📊 {poll.question || 'Khảo sát ca học mong muốn'}</span>
-                              {poll.isClosed && (
-                                <span className="px-2 py-0.5 rounded-md bg-slate-200 text-slate-600 text-[10px] font-bold">
-                                  Đã khóa bình chọn
-                                </span>
-                              )}
-                            </div>
-                            <span className="font-semibold text-slate-500">
-                              Tổng: <b className="text-indigo-600">{poll.totalVotes || 0}</b> lượt học viên vote
-                              {poll.minVotesTarget ? ` (Mục tiêu: ${poll.minVotesTarget})` : ''}
-                            </span>
-                          </div>
-
-                          {/* Options */}
-                          <div className="space-y-2.5">
-                            {options.map((opt: any) => {
-                              const isTop = opt.id === topOptionId;
-                              const percentage = poll.totalVotes > 0
-                                ? Math.round(((opt.voteCount || 0) / poll.totalVotes) * 100)
-                                : 0;
-
-                              return (
-                                <div
-                                  key={opt.id}
-                                  className={`relative overflow-hidden p-3 rounded-xl border transition ${
-                                    isTop
-                                      ? 'bg-indigo-50/60 border-indigo-300 ring-1 ring-indigo-400/30'
-                                      : 'bg-white border-slate-200'
-                                  }`}
-                                >
-                                  {/* Background Percentage Progress Bar */}
-                                  <div
-                                    className={`absolute left-0 top-0 bottom-0 opacity-20 transition-all duration-500 ${
-                                      isTop ? 'bg-indigo-600' : 'bg-slate-400'
-                                    }`}
-                                    style={{ width: `${percentage}%` }}
-                                  />
-
-                                  <div className="relative z-10 flex items-center justify-between text-xs">
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-bold text-slate-900">
-                                        {opt.optionLabel || `Thứ ${opt.dayOfWeek} (${opt.startTime} - ${opt.endTime})`}
-                                      </span>
-                                      {isTop && (
-                                        <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 font-black text-[10px] flex items-center gap-1 shadow-xs">
-                                          ⭐ Nhiều vote nhất
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="font-bold text-slate-700">{opt.voteCount || 0} phiếu</span>
-                                      <span className="text-[11px] font-semibold text-slate-400">({percentage}%)</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
+                        <div className="mt-4">
+                          <PollWeeklyCalendar
+                            poll={poll}
+                            isTutorView={true}
+                            userRole="TUTOR"
+                            authenticated={true}
+                            onConvert={() => setConvertingPost(post)}
+                            canConvert={canConvert}
+                            defaultExpanded={true}
+                          />
                         </div>
                       )}
                     </div>
@@ -610,10 +675,18 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
                           <Eye className="w-3.5 h-3.5 text-slate-400" />
                           <span>{post.viewCount || 0}</span>
                         </span>
-                        <span className="flex items-center gap-1" title="Lượt thích">
+                        <button
+                          type="button"
+                          onClick={() => setLikesModalPostId(post.id)}
+                          className="flex items-center gap-1 text-slate-600 hover:text-rose-600 font-bold transition cursor-pointer"
+                          title="Bấm để xem danh sách ai đã thả tim bài viết"
+                        >
                           <Heart className="w-3.5 h-3.5 text-rose-500 fill-rose-500" />
-                          <span>{post.likeCount || 0}</span>
-                        </span>
+                          <span>{post.likeCount || 0} thích</span>
+                          <span className="text-[10px] text-rose-500 underline ml-0.5">
+                            (Xem)
+                          </span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleToggleComments(post.id)}
@@ -629,28 +702,16 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
 
                       {/* Right: Actions */}
                       <div className="flex items-center gap-2">
-                        {/* Convert to Class Button */}
-                        {canConvert && (
-                          <button
-                            type="button"
-                            onClick={() => setConvertingPost(post)}
-                            className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-indigo-600 hover:from-amber-600 hover:to-indigo-700 text-white font-bold text-xs shadow-sm hover:shadow-indigo-500/20 transition flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                            <span>Mở lớp từ bài này</span>
-                          </button>
-                        )}
-
                         {/* Close Poll Button */}
                         {post.status === 'OPEN' && (
                           <button
                             type="button"
-                            onClick={() => handleClosePost(post.id)}
+                            onClick={() => handleClosePost(post.id, post.postType === 'TUTOR_POLL')}
                             className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200 font-bold transition flex items-center gap-1 cursor-pointer"
-                            title="Khóa không cho nhận thêm vote"
+                            title={post.postType === 'TUTOR_POLL' ? 'Kết thúc nhận bình chọn' : 'Đóng bài viết'}
                           >
                             <Lock className="w-3.5 h-3.5" />
-                            <span>Đóng khảo sát</span>
+                            <span>{post.postType === 'TUTOR_POLL' ? 'Kết thúc vote' : 'Đóng bài'}</span>
                           </button>
                         )}
 
@@ -672,7 +733,7 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
                           type="button"
                           onClick={() => handleDeletePost(post.id)}
                           className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                          title="Xóa bài viết"
+                          title="Xóa bài viết, không cần đóng trước"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -694,30 +755,97 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
                           <p className="text-xs text-slate-400 text-center py-2">Chưa có bình luận nào từ học viên.</p>
                         ) : (
                           <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                            {comments.map((c: any) => (
-                              <div key={c.id} className="p-3 bg-white rounded-xl border border-slate-200 text-xs">
-                                <div className="flex items-center justify-between mb-1">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="font-bold text-slate-900">{c.userName || 'Người dùng'}</span>
-                                    {c.userRole === 'TUTOR' && (
-                                      <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded text-[9px] font-bold">
-                                        Gia sư (Bạn)
+                            {comments.map((c: any) => {
+                              const roleNorm = (c.userRole || '').toUpperCase();
+                              const isTutorSelf = roleNorm === 'TUTOR';
+                              const isStudent = roleNorm === 'STUDENT';
+
+                              const renderCommentText = (text: string) => {
+                                if (!text) return null;
+                                const parts = text.split(/(@[^\s]+)/g);
+                                return parts.map((part, index) => {
+                                  if (part.startsWith('@')) {
+                                    return (
+                                      <span key={index} className="font-bold text-indigo-600 bg-indigo-50/80 px-1 py-0.5 rounded">
+                                        {part}
                                       </span>
-                                    )}
+                                    );
+                                  }
+                                  return part;
+                                });
+                              };
+
+                              return (
+                                <div key={c.id} className="p-3 bg-white rounded-xl border border-slate-200 text-xs">
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <div className="flex items-center gap-2">
+                                      {c.userAvatar ? (
+                                        <img
+                                          src={c.userAvatar}
+                                          alt={c.userName || 'Avatar'}
+                                          className="w-6 h-6 rounded-full object-cover border border-slate-200 flex-shrink-0"
+                                        />
+                                      ) : (
+                                        <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-slate-200 to-slate-300 text-slate-700 font-bold text-[10px] flex items-center justify-center flex-shrink-0 shadow-xs">
+                                          {c.userName ? c.userName.charAt(0).toUpperCase() : 'U'}
+                                        </div>
+                                      )}
+                                      <span className="font-bold text-slate-900">{c.userName || 'Người dùng'}</span>
+                                      {isTutorSelf && (
+                                        <span className="px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded text-[9px] font-bold border border-amber-200">
+                                          Gia sư (Bạn)
+                                        </span>
+                                      )}
+                                      {isStudent && (
+                                        <span className="px-1.5 py-0.2 bg-blue-100 text-blue-800 rounded text-[9px] font-bold border border-blue-200">
+                                          Học viên
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[10px] text-slate-400">
+                                      {new Date(c.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}{' '}
+                                      {new Date(c.createdAt).toLocaleDateString('vi-VN')}
+                                    </span>
                                   </div>
-                                  <span className="text-[10px] text-slate-400">
-                                    {new Date(c.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}{' '}
-                                    {new Date(c.createdAt).toLocaleDateString('vi-VN')}
-                                  </span>
+                                  <p className="text-slate-700 leading-relaxed whitespace-pre-line pl-8">{renderCommentText(c.commentText)}</p>
+                                  <div className="flex items-center gap-2 pl-8 mt-1.5 pt-1 border-t border-slate-50">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleReplyTo(post.id, c)}
+                                      className="font-bold text-indigo-600 hover:text-indigo-800 transition flex items-center gap-1 cursor-pointer text-[11px]"
+                                    >
+                                      <Reply className="w-3 h-3" />
+                                      <span>Trả lời</span>
+                                    </button>
+                                  </div>
                                 </div>
-                                <p className="text-slate-700 leading-relaxed">{c.commentText}</p>
-                              </div>
-                            ))}
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Reply indicator */}
+                        {replyingToMap[post.id] && (
+                          <div className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-indigo-50/90 border border-indigo-100 text-xs text-indigo-900">
+                            <div className="flex items-center gap-1.5 truncate">
+                              <Reply className="w-3.5 h-3.5 text-indigo-600 flex-shrink-0" />
+                              <span className="truncate">
+                                Đang trả lời <strong className="font-bold text-indigo-700">@{replyingToMap[post.id].userName || 'Học viên'}</strong>
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleCancelReply(post.id)}
+                              className="p-1 text-slate-400 hover:text-slate-700 rounded-full cursor-pointer flex-shrink-0"
+                              title="Hủy trả lời"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         )}
 
                         {/* Add Comment Input */}
-                        <div className="flex items-center gap-2 pt-2">
+                        <div className="flex items-center gap-2 pt-1">
                           <input
                             type="text"
                             value={commentInputs[post.id] || ''}
@@ -728,7 +856,7 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
                                 handleAddComment(post.id);
                               }
                             }}
-                            placeholder="Trả lời câu hỏi hoặc thông báo cho học viên..."
+                            placeholder={replyingToMap[post.id] ? `Trả lời @${replyingToMap[post.id].userName}...` : "Trả lời câu hỏi hoặc trao đổi với học viên..."}
                             className="flex-1 px-3.5 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                           />
                           <button
@@ -786,10 +914,10 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
         onPostCreated={savedPost => {
           if (editingPost) {
             setPosts(prev => prev.map(p => p.id === savedPost.id ? savedPost : p));
-            showToast('success', 'Đã cập nhật bài viết thành công.');
+            feedback.success('Đã cập nhật bài viết thành công.');
           } else {
             setPosts(prev => [savedPost, ...prev]);
-            showToast('success', 'Đã đăng bài khảo sát ca học mới thành công!');
+            feedback.success('Đã đăng bài viết mới thành công!');
           }
         }}
         userRole="TUTOR"
@@ -805,6 +933,14 @@ export function TutorCommunityManagement({ onNavigate }: TutorCommunityManagemen
           onConverted={handleClassConverted}
         />
       )}
+
+      {/* Post Likes Modal */}
+      <PostLikesModal
+        isOpen={likesModalPostId !== null}
+        onClose={() => setLikesModalPostId(null)}
+        postId={likesModalPostId || 0}
+        postTitle={posts.find(p => p.id === likesModalPostId)?.title}
+      />
     </div>
   );
 }

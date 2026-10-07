@@ -8,6 +8,7 @@ import iuh.fit.learning_service.enums.LearningMode;
 import iuh.fit.learning_service.enums.InteractionType;
 import iuh.fit.learning_service.enums.PostStatus;
 import iuh.fit.learning_service.enums.PostType;
+import iuh.fit.learning_service.enums.PollTimePeriod;
 import iuh.fit.learning_service.enums.TutorSubjectRegistrationStatus;
 import iuh.fit.learning_service.exception.BadRequestException;
 import iuh.fit.learning_service.exception.ForbiddenException;
@@ -27,6 +28,7 @@ import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -63,6 +65,9 @@ class CommunityPostServiceTest {
     private ClassRoomRepository classRoomRepository;
 
     @Mock
+    private TutorAvailabilityRepository availabilityRepository;
+
+    @Mock
     private ClassScheduleRepository classScheduleRepository;
 
     @Mock
@@ -76,6 +81,9 @@ class CommunityPostServiceTest {
 
     @Mock
     private ClassRoomService classRoomService;
+
+    @Mock
+    private EnrollmentRequestRepository enrollmentRequestRepository;
 
     @Mock
     private LearningEventPublisher eventPublisher;
@@ -132,6 +140,9 @@ class CommunityPostServiceTest {
         subject.setName("Toán");
         subject.setActive(true);
         when(subjectRepository.findById(5L)).thenReturn(Optional.of(subject));
+        TutorSubjectRegistration approvedRegistration = approvedRegistration("Toán");
+        when(registrationRepository.findByTutorEmailIgnoreCaseOrderByCreatedAtDesc("tutor@edu.vn"))
+                .thenReturn(List.of(approvedRegistration));
 
         PostSummaryDto result = postService.createPost(request, tutorPrincipal, "Thầy Hưng", null);
 
@@ -140,6 +151,257 @@ class CommunityPostServiceTest {
         assertThat(result.getAuthorRole()).isEqualTo("TUTOR");
         verify(postRepository).save(any(CommunityPost.class));
         verify(pollRepository).save(any(PostPoll.class));
+        ArgumentCaptor<List<PostPollOption>> optionsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(pollOptionRepository).saveAll(optionsCaptor.capture());
+        assertThat(optionsCaptor.getValue()).hasSize(21);
+        assertThat(optionsCaptor.getValue())
+                .extracting(PostPollOption::getTimePeriod)
+                .contains(PollTimePeriod.MORNING, PollTimePeriod.AFTERNOON, PollTimePeriod.EVENING);
+    }
+
+    @Test
+    void getClassSuggestion_CombinesVotesWithTutorNetAvailability() {
+        CommunityPost post = new CommunityPost();
+        post.setId(77L);
+        post.setAuthorId(101L);
+        post.setAuthorRole("TUTOR");
+        post.setPostType(PostType.TUTOR_POLL);
+        post.setStatus(PostStatus.OPEN);
+
+        PostPoll poll = new PostPoll();
+        poll.setId(88L);
+        poll.setPost(post);
+        poll.setSessionsPerWeek(2);
+        poll.setDurationMinutes(90);
+        poll.setTotalVotes(18);
+        post.setPoll(poll);
+
+        PostPollOption mondayMorning = pollOption(1L, poll, 1, PollTimePeriod.MORNING, 10);
+        PostPollOption wednesdayAfternoon = pollOption(2L, poll, 3, PollTimePeriod.AFTERNOON, 8);
+
+        when(postRepository.findById(77L)).thenReturn(Optional.of(post));
+        when(pollOptionRepository.findByPollIdOrderByDayOfWeekAscStartTimeAsc(88L))
+                .thenReturn(List.of(mondayMorning, wednesdayAfternoon));
+        when(availabilityRepository.findByTutorEmailIgnoreCaseOrderByDayOfWeekAscStartTimeAsc("tutor@edu.vn"))
+                .thenReturn(List.of(
+                        new TutorAvailability("tutor@edu.vn", 2, "08:30", "11:30"),
+                        new TutorAvailability("tutor@edu.vn", 4, "14:00", "17:00")
+                ));
+        when(classRoomRepository.findByTutorEmailWithDetails("tutor@edu.vn")).thenReturn(List.of());
+
+        ClassSuggestionResponse result = postService.getClassSuggestion(77L, tutorPrincipal);
+
+        assertThat(result.getRecommendedSchedules()).containsExactly(
+                new ClassRoomDtos.ScheduleRequest(2, "08:30", "10:00"),
+                new ClassRoomDtos.ScheduleRequest(4, "14:00", "15:30")
+        );
+        assertThat(result.getWarnings()).isEmpty();
+        assertThat(result.getRankedDemand()).extracting(PollDemandDto::getVoteCount)
+                .containsExactly(10, 8);
+    }
+
+    @Test
+    void getClassSuggestion_PrefersScheduleASharedCohortCanAttend() {
+        CommunityPost post = new CommunityPost();
+        post.setId(77L);
+        post.setAuthorId(101L);
+        post.setPostType(PostType.TUTOR_POLL);
+        post.setStatus(PostStatus.OPEN);
+
+        PostPoll poll = new PostPoll();
+        poll.setId(88L);
+        poll.setPost(post);
+        poll.setSessionsPerWeek(2);
+        poll.setDurationMinutes(90);
+        poll.setMinVotesTarget(5);
+        poll.setTotalVotes(31);
+        post.setPoll(poll);
+
+        PostPollOption disjointTopOne = pollOption(1L, poll, 1, PollTimePeriod.MORNING, 10);
+        PostPollOption disjointTopTwo = pollOption(2L, poll, 2, PollTimePeriod.MORNING, 9);
+        PostPollOption sharedOne = pollOption(3L, poll, 3, PollTimePeriod.AFTERNOON, 6);
+        PostPollOption sharedTwo = pollOption(4L, poll, 4, PollTimePeriod.AFTERNOON, 6);
+
+        List<PostPollVote> votes = new ArrayList<>();
+        for (long userId = 1; userId <= 10; userId++) votes.add(pollVote(poll, disjointTopOne, userId));
+        for (long userId = 11; userId <= 19; userId++) votes.add(pollVote(poll, disjointTopTwo, userId));
+        for (long userId = 20; userId <= 25; userId++) {
+            votes.add(pollVote(poll, sharedOne, userId));
+            votes.add(pollVote(poll, sharedTwo, userId));
+        }
+
+        when(postRepository.findById(77L)).thenReturn(Optional.of(post));
+        when(pollOptionRepository.findByPollIdOrderByDayOfWeekAscStartTimeAsc(88L))
+                .thenReturn(List.of(disjointTopOne, disjointTopTwo, sharedOne, sharedTwo));
+        when(pollVoteRepository.findByPollId(88L)).thenReturn(votes);
+        when(availabilityRepository.findByTutorEmailIgnoreCaseOrderByDayOfWeekAscStartTimeAsc("tutor@edu.vn"))
+                .thenReturn(List.of(
+                        new TutorAvailability("tutor@edu.vn", 2, "07:00", "12:00"),
+                        new TutorAvailability("tutor@edu.vn", 3, "07:00", "12:00"),
+                        new TutorAvailability("tutor@edu.vn", 4, "13:00", "17:00"),
+                        new TutorAvailability("tutor@edu.vn", 5, "13:00", "17:00")
+                ));
+        when(classRoomRepository.findByTutorEmailWithDetails("tutor@edu.vn")).thenReturn(List.of());
+
+        ClassSuggestionResponse result = postService.getClassSuggestion(77L, tutorPrincipal);
+
+        assertThat(result.getRecommendedSchedules()).containsExactly(
+                new ClassRoomDtos.ScheduleRequest(4, "13:00", "14:30"),
+                new ClassRoomDtos.ScheduleRequest(5, "13:00", "14:30")
+        );
+        assertThat(result.getParticipantCount()).isEqualTo(25);
+        assertThat(result.getMatchingStudentCount()).isEqualTo(6);
+        assertThat(result.getSuggestedMaxStudents()).isEqualTo(6);
+        assertThat(result.getWarnings()).isEmpty();
+    }
+
+    @Test
+    void getClassSuggestion_RejectsTutorWhoDoesNotOwnPoll() {
+        CommunityPost post = new CommunityPost();
+        post.setId(77L);
+        post.setAuthorId(999L);
+        post.setPostType(PostType.TUTOR_POLL);
+        post.setPoll(new PostPoll());
+        when(postRepository.findById(77L)).thenReturn(Optional.of(post));
+
+        assertThrows(ForbiddenException.class, () -> postService.getClassSuggestion(77L, tutorPrincipal));
+        verifyNoInteractions(availabilityRepository);
+    }
+
+    @Test
+    void createPost_TutorAnnouncement_UsesApprovedTeachingSubjectWithoutPoll() {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setPostType(PostType.TUTOR_ANNOUNCEMENT);
+        request.setTitle("Thông báo ôn tập Hóa 10");
+        request.setContent("Tuần này thầy sẽ mở buổi trao đổi lộ trình.");
+        request.setSubjectId(5L);
+        request.setEducationLevel("Lớp 10");
+
+        Subject subject = new Subject();
+        subject.setId(5L);
+        subject.setName("Hóa học");
+        subject.setActive(true);
+        when(subjectRepository.findById(5L)).thenReturn(Optional.of(subject));
+
+        CommunityPost savedPost = new CommunityPost();
+        savedPost.setId(2L);
+        savedPost.setAuthorId(101L);
+        savedPost.setAuthorRole("TUTOR");
+        savedPost.setTitle(request.getTitle());
+        savedPost.setContent(request.getContent());
+        savedPost.setPostType(PostType.TUTOR_ANNOUNCEMENT);
+        savedPost.setStatus(PostStatus.OPEN);
+        savedPost.setSubject(subject);
+        savedPost.setEducationLevel("Lớp 10");
+        when(postRepository.save(any(CommunityPost.class))).thenReturn(savedPost);
+
+        PostSummaryDto result = postService.createPost(request, tutorPrincipal, "Thầy Hưng", null);
+
+        assertThat(result.getPostType()).isEqualTo(PostType.TUTOR_ANNOUNCEMENT);
+        assertThat(result.getSubjectName()).isEqualTo("Hóa học");
+        verifyNoInteractions(pollRepository);
+        verifyNoInteractions(registrationRepository);
+    }
+
+    @Test
+    void createPost_TutorClassShare_LinksOwnedPublishedClass() {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setPostType(PostType.TUTOR_CLASS_SHARE);
+        request.setTitle("Lớp Hóa 10 còn 3 chỗ");
+        request.setContent("Các em có thể gửi yêu cầu tham gia trực tiếp.");
+        request.setLinkedClassId(9L);
+
+        ClassRoom classRoom = new ClassRoom();
+        classRoom.setId(9L);
+        classRoom.setName("Hóa 10 nền tảng");
+        classRoom.setTutorEmail("tutor@edu.vn");
+        classRoom.setStatus(iuh.fit.learning_service.enums.ClassRoomStatus.PUBLISHED);
+        classRoom.setLearningMode(LearningMode.ONLINE);
+        classRoom.setPricePerSession(BigDecimal.valueOf(180000));
+        classRoom.setMaxStudents(20);
+        classRoom.setTotalSessions(24);
+        classRoom.setStartDate(LocalDate.now().plusDays(7));
+        when(classRoomRepository.findByIdWithDetails(9L)).thenReturn(Optional.of(classRoom));
+
+        CommunityPost savedPost = new CommunityPost();
+        savedPost.setId(3L);
+        savedPost.setAuthorId(101L);
+        savedPost.setAuthorRole("TUTOR");
+        savedPost.setTitle(request.getTitle());
+        savedPost.setContent(request.getContent());
+        savedPost.setPostType(PostType.TUTOR_CLASS_SHARE);
+        savedPost.setStatus(PostStatus.OPEN);
+        savedPost.setLinkedClass(classRoom);
+        savedPost.setLearningMode(LearningMode.ONLINE);
+        savedPost.setTargetPricePerSession(BigDecimal.valueOf(180000));
+        when(postRepository.save(any(CommunityPost.class))).thenReturn(savedPost);
+
+        PostSummaryDto result = postService.createPost(request, tutorPrincipal, "Thầy Hưng", null);
+
+        assertThat(result.getPostType()).isEqualTo(PostType.TUTOR_CLASS_SHARE);
+        assertThat(result.getLinkedClassId()).isEqualTo(9L);
+        assertThat(result.getLinkedClassName()).isEqualTo("Hóa 10 nền tảng");
+        assertThat(result.getLinkedClassAcceptingEnrollment()).isTrue();
+        verifyNoInteractions(pollRepository);
+    }
+
+    @Test
+    void createPost_TutorClassShare_RejectsLockedClass() {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setPostType(PostType.TUTOR_CLASS_SHARE);
+        request.setTitle("Lớp đã khóa");
+        request.setContent("Nội dung giới thiệu");
+        request.setLinkedClassId(11L);
+
+        ClassRoom lockedClass = new ClassRoom();
+        lockedClass.setId(11L);
+        lockedClass.setTutorEmail("tutor@edu.vn");
+        lockedClass.setStatus(iuh.fit.learning_service.enums.ClassRoomStatus.LOCKED);
+        lockedClass.setStartDate(LocalDate.now().plusDays(5));
+        when(classRoomRepository.findByIdWithDetails(11L)).thenReturn(Optional.of(lockedClass));
+
+        assertThrows(BadRequestException.class, () ->
+                postService.createPost(request, tutorPrincipal, "Thầy Hưng", null));
+        verify(postRepository, never()).save(any());
+    }
+
+    @Test
+    void createPost_TutorClassShare_RejectsClassPastStartDate() {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setPostType(PostType.TUTOR_CLASS_SHARE);
+        request.setTitle("Lớp đã qua ngày khai giảng");
+        request.setContent("Nội dung giới thiệu");
+        request.setLinkedClassId(12L);
+
+        ClassRoom pastClass = new ClassRoom();
+        pastClass.setId(12L);
+        pastClass.setTutorEmail("tutor@edu.vn");
+        pastClass.setStatus(iuh.fit.learning_service.enums.ClassRoomStatus.PUBLISHED);
+        pastClass.setStartDate(LocalDate.now().minusDays(1)); // past start date
+        when(classRoomRepository.findByIdWithDetails(12L)).thenReturn(Optional.of(pastClass));
+
+        assertThrows(BadRequestException.class, () ->
+                postService.createPost(request, tutorPrincipal, "Thầy Hưng", null));
+        verify(postRepository, never()).save(any());
+    }
+
+    @Test
+    void createPost_TutorClassShare_RejectsClassWithoutFutureStartDate() {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setPostType(PostType.TUTOR_CLASS_SHARE);
+        request.setTitle("Lớp chưa có ngày khai giảng");
+        request.setContent("Nội dung giới thiệu");
+        request.setLinkedClassId(13L);
+
+        ClassRoom classRoom = new ClassRoom();
+        classRoom.setId(13L);
+        classRoom.setTutorEmail("tutor@edu.vn");
+        classRoom.setStatus(iuh.fit.learning_service.enums.ClassRoomStatus.PUBLISHED);
+        when(classRoomRepository.findByIdWithDetails(13L)).thenReturn(Optional.of(classRoom));
+
+        assertThrows(BadRequestException.class, () ->
+                postService.createPost(request, tutorPrincipal, "Thầy Hưng", null));
+        verify(postRepository, never()).save(any());
     }
 
     @Test
@@ -213,7 +475,8 @@ class CommunityPostServiceTest {
 
         when(pollRepository.findByIdForUpdate(pollId)).thenReturn(Optional.of(poll));
         when(pollOptionRepository.findById(optionId)).thenReturn(Optional.of(option));
-        when(pollVoteRepository.findByPollIdAndUserId(pollId, studentPrincipal.userId())).thenReturn(Optional.empty());
+        when(pollVoteRepository.findByPollIdAndOptionIdAndUserId(pollId, optionId, studentPrincipal.userId())).thenReturn(Optional.empty());
+        when(pollVoteRepository.findByPollIdAndUserId(pollId, studentPrincipal.userId())).thenReturn(List.of());
 
         PollSummaryDto result = postService.votePoll(pollId, optionId, studentPrincipal, "Học viên B");
 
@@ -221,6 +484,73 @@ class CommunityPostServiceTest {
         assertThat(option.getVoteCount()).isEqualTo(2);
         assertThat(poll.getTotalVotes()).isEqualTo(3);
         verify(pollVoteRepository).save(any(PostPollVote.class));
+    }
+
+    @Test
+    void votePoll_ToggleUnvote_Success() {
+        Long pollId = 10L;
+        Long optionId = 55L;
+
+        PostPoll poll = new PostPoll();
+        poll.setId(pollId);
+        poll.setTotalVotes(2);
+        poll.setIsClosed(false);
+        CommunityPost pollPost = new CommunityPost();
+        pollPost.setStatus(PostStatus.OPEN);
+        poll.setPost(pollPost);
+
+        PostPollOption option = new PostPollOption();
+        option.setId(optionId);
+        option.setPoll(poll);
+        option.setVoteCount(2);
+
+        PostPollVote existingVote = new PostPollVote();
+        existingVote.setId(101L);
+        existingVote.setPoll(poll);
+        existingVote.setOption(option);
+        existingVote.setUserId(studentPrincipal.userId());
+
+        when(pollRepository.findByIdForUpdate(pollId)).thenReturn(Optional.of(poll));
+        when(pollOptionRepository.findById(optionId)).thenReturn(Optional.of(option));
+        when(pollVoteRepository.findByPollIdAndOptionIdAndUserId(pollId, optionId, studentPrincipal.userId()))
+                .thenReturn(Optional.of(existingVote));
+
+        PollSummaryDto result = postService.votePoll(pollId, optionId, studentPrincipal, "Học viên B");
+
+        assertThat(result).isNotNull();
+        assertThat(option.getVoteCount()).isEqualTo(1);
+        assertThat(poll.getTotalVotes()).isEqualTo(1);
+        verify(pollVoteRepository).delete(existingVote);
+    }
+
+    @Test
+    void votePoll_ExceedsMaxVotes_ThrowsBadRequest() {
+        Long pollId = 10L;
+        Long optionId = 55L;
+
+        PostPoll poll = new PostPoll();
+        poll.setId(pollId);
+        poll.setMaxVotesPerUser(2);
+        poll.setIsClosed(false);
+        CommunityPost pollPost = new CommunityPost();
+        pollPost.setStatus(PostStatus.OPEN);
+        poll.setPost(pollPost);
+
+        PostPollOption option = new PostPollOption();
+        option.setId(optionId);
+        option.setPoll(poll);
+
+        when(pollRepository.findByIdForUpdate(pollId)).thenReturn(Optional.of(poll));
+        when(pollOptionRepository.findById(optionId)).thenReturn(Optional.of(option));
+        when(pollVoteRepository.findByPollIdAndOptionIdAndUserId(pollId, optionId, studentPrincipal.userId()))
+                .thenReturn(Optional.empty());
+        // Giả lập user đã vote 2 ca khác rồi
+        when(pollVoteRepository.findByPollIdAndUserId(pollId, studentPrincipal.userId()))
+                .thenReturn(List.of(new PostPollVote(), new PostPollVote()));
+
+        assertThrows(BadRequestException.class, () ->
+                postService.votePoll(pollId, optionId, studentPrincipal, "Học viên B"));
+        verify(pollVoteRepository, never()).save(any());
     }
 
     @Test
@@ -250,14 +580,129 @@ class CommunityPostServiceTest {
         post.setId(postId);
         post.setAuthorId(tutorPrincipal.userId());
         post.setStatus(PostStatus.OPEN);
+        PostPoll poll = new PostPoll();
+        poll.setPost(post);
+        poll.setIsClosed(false);
+        post.setPoll(poll);
 
         when(postRepository.findByIdForUpdate(postId)).thenReturn(Optional.of(post));
 
         postService.deletePost(postId, tutorPrincipal, false);
 
         assertThat(post.getStatus()).isEqualTo(PostStatus.HIDDEN);
+        assertThat(poll.getIsClosed()).isTrue();
+        verify(pollRepository).save(poll);
         verify(postRepository).save(post);
         verify(postRepository, never()).delete(any(CommunityPost.class));
+        verify(realtimeEventHub).publishToAll(eq("COMMUNITY_POST_DELETED"), eq(postId), anyMap());
+    }
+
+    @Test
+    void updatePollVotes_ReplacesSelectionsInOneTransaction() {
+        Long pollId = 10L;
+        CommunityPost post = new CommunityPost();
+        post.setId(1L);
+        post.setStatus(PostStatus.OPEN);
+
+        PostPoll poll = new PostPoll();
+        poll.setId(pollId);
+        poll.setPost(post);
+        poll.setIsClosed(false);
+        poll.setMaxVotesPerUser(2);
+        poll.setTotalVotes(4);
+
+        PostPollOption oldOption = pollOption(1L, poll, 1, PollTimePeriod.MORNING, 3);
+        PostPollOption newOptionOne = pollOption(2L, poll, 2, PollTimePeriod.AFTERNOON, 1);
+        PostPollOption newOptionTwo = pollOption(3L, poll, 4, PollTimePeriod.EVENING, 0);
+        PostPollVote oldVote = new PostPollVote();
+        oldVote.setPoll(poll);
+        oldVote.setOption(oldOption);
+        oldVote.setUserId(studentPrincipal.userId());
+
+        when(pollRepository.findByIdForUpdate(pollId)).thenReturn(Optional.of(poll));
+        when(pollOptionRepository.findAllById(List.of(2L, 3L)))
+                .thenReturn(List.of(newOptionOne, newOptionTwo));
+        when(pollVoteRepository.findByPollIdAndUserId(pollId, studentPrincipal.userId()))
+                .thenReturn(List.of(oldVote), List.of());
+        when(pollOptionRepository.findByPollIdOrderByDayOfWeekAscStartTimeAsc(pollId))
+                .thenReturn(List.of(oldOption, newOptionOne, newOptionTwo));
+
+        PollSummaryDto result = postService.updatePollVotes(
+                pollId,
+                List.of(2L, 3L),
+                studentPrincipal,
+                "Học viên"
+        );
+
+        assertThat(result.getTotalVotes()).isEqualTo(5);
+        assertThat(oldOption.getVoteCount()).isEqualTo(2);
+        assertThat(newOptionOne.getVoteCount()).isEqualTo(2);
+        assertThat(newOptionTwo.getVoteCount()).isEqualTo(1);
+        verify(pollVoteRepository).deleteAll(List.of(oldVote));
+        verify(pollVoteRepository).saveAll(argThat(votes -> {
+            List<PostPollVote> saved = new ArrayList<>();
+            votes.forEach(saved::add);
+            return saved.size() == 2;
+        }));
+        verify(realtimeEventHub).publishToAll(eq("COMMUNITY_POLL_UPDATED"), eq(pollId), anyMap());
+    }
+
+    @Test
+    void updatePollVotes_RejectsMoreThanConfiguredLimit() {
+        PostPoll poll = new PostPoll();
+        poll.setId(10L);
+        poll.setPost(new CommunityPost());
+        poll.getPost().setStatus(PostStatus.OPEN);
+        poll.setIsClosed(false);
+        poll.setMaxVotesPerUser(2);
+        when(pollRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(poll));
+
+        assertThrows(BadRequestException.class, () -> postService.updatePollVotes(
+                10L,
+                List.of(1L, 2L, 3L),
+                studentPrincipal,
+                "Học viên"
+        ));
+
+        verifyNoInteractions(pollOptionRepository);
+        verifyNoInteractions(realtimeEventHub);
+    }
+
+    @Test
+    void updatePollVotes_DoesNotWriteOrBroadcastWhenSelectionIsUnchanged() {
+        PostPoll poll = new PostPoll();
+        poll.setId(10L);
+        poll.setPost(new CommunityPost());
+        poll.getPost().setId(1L);
+        poll.getPost().setStatus(PostStatus.OPEN);
+        poll.setIsClosed(false);
+        poll.setMaxVotesPerUser(2);
+        poll.setTotalVotes(1);
+        PostPollOption option = pollOption(2L, poll, 2, PollTimePeriod.AFTERNOON, 1);
+        PostPollVote vote = new PostPollVote();
+        vote.setPoll(poll);
+        vote.setOption(option);
+        vote.setUserId(studentPrincipal.userId());
+
+        when(pollRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(poll));
+        when(pollOptionRepository.findAllById(List.of(2L))).thenReturn(List.of(option));
+        when(pollVoteRepository.findByPollIdAndUserId(10L, studentPrincipal.userId()))
+                .thenReturn(List.of(vote));
+        when(pollOptionRepository.findByPollIdOrderByDayOfWeekAscStartTimeAsc(10L))
+                .thenReturn(List.of(option));
+
+        PollSummaryDto result = postService.updatePollVotes(
+                10L,
+                List.of(2L),
+                studentPrincipal,
+                "Học viên"
+        );
+
+        assertThat(result.getUserVotedOptionIds()).containsExactly(2L);
+        verify(pollRepository, never()).save(any());
+        verify(pollVoteRepository, never()).saveAll(any());
+        verify(pollVoteRepository, never()).deleteAll(any());
+        verifyNoInteractions(realtimeEventHub);
     }
 
     @Test
@@ -310,6 +755,7 @@ class CommunityPostServiceTest {
         request.setPostType(PostType.TUTOR_POLL);
         request.setTitle("Bài mới");
         request.setContent("Nội dung mới");
+        request.setSubjectId(5L);
         CreatePollRequest pollRequest = new CreatePollRequest();
         pollRequest.setQuestion("Chọn ca học");
         pollRequest.setMinVotesTarget(3);
@@ -320,6 +766,13 @@ class CommunityPostServiceTest {
         request.setPoll(pollRequest);
 
         when(postRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(post));
+        Subject subject = new Subject();
+        subject.setId(5L);
+        subject.setName("Toán");
+        subject.setActive(true);
+        when(subjectRepository.findById(5L)).thenReturn(Optional.of(subject));
+        when(registrationRepository.findByTutorEmailIgnoreCaseOrderByCreatedAtDesc("tutor@edu.vn"))
+                .thenReturn(List.of(approvedRegistration("Toán")));
         when(pollOptionRepository.findByPollIdOrderByDayOfWeekAscStartTimeAsc(post.getPoll().getId()))
                 .thenReturn(List.of(existing));
 
@@ -373,6 +826,50 @@ class CommunityPostServiceTest {
     }
 
     @Test
+    void communityInteractions_AllowAuthenticatedUsersWithAnyRole() {
+        LearningUserPrincipal staffPrincipal = new LearningUserPrincipal("staff@edu.vn", 303L, "STAFF");
+        CommunityPost post = new CommunityPost();
+        post.setId(1L);
+        post.setStatus(PostStatus.OPEN);
+        post.setLikeCount(0);
+        post.setCommentCount(0);
+        when(postRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(post));
+        when(interactionRepository.findByPostIdAndUserIdAndInteractionType(1L, 303L, InteractionType.LIKE))
+                .thenReturn(Optional.empty());
+        when(interactionRepository.save(any(PostInteraction.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        boolean liked = postService.toggleLike(1L, staffPrincipal, "Staff Member", null);
+        org.assertj.core.api.Assertions.assertThat(liked).isTrue();
+        org.assertj.core.api.Assertions.assertThat(post.getLikeCount()).isEqualTo(1);
+
+        CommentDto comment = postService.addComment(1L, "Nội dung phản hồi", staffPrincipal, "Staff Member", null);
+        org.assertj.core.api.Assertions.assertThat(comment.getUserName()).isEqualTo("Staff Member");
+        org.assertj.core.api.Assertions.assertThat(comment.getUserRole()).isEqualTo("STAFF");
+    }
+
+    @Test
+    void getPostLikes_ReturnsLikeList() {
+        CommunityPost post = new CommunityPost();
+        post.setId(1L);
+        post.setStatus(PostStatus.OPEN);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+
+        PostInteraction like = new PostInteraction();
+        like.setId(10L);
+        like.setUserId(202L);
+        like.setUserRole("STUDENT");
+        like.setUserName("Nguyễn Văn A");
+        like.setCreatedAt(java.time.LocalDateTime.now());
+        when(interactionRepository.findByPostIdAndInteractionTypeOrderByCreatedAtDesc(1L, InteractionType.LIKE))
+                .thenReturn(List.of(like));
+
+        List<LikeUserDto> likes = postService.getPostLikes(1L);
+        org.assertj.core.api.Assertions.assertThat(likes).hasSize(1);
+        org.assertj.core.api.Assertions.assertThat(likes.get(0).getUserName()).isEqualTo("Nguyễn Văn A");
+        org.assertj.core.api.Assertions.assertThat(likes.get(0).getUserRole()).isEqualTo("STUDENT");
+    }
+
+    @Test
     void getPostDetail_HiddenPostIsNotPublic() {
         assertThrows(ResourceNotFoundException.class, () -> postService.getPostDetail(1L, null));
         verify(postRepository).incrementViewCount(1L);
@@ -402,6 +899,7 @@ class CommunityPostServiceTest {
         poll.setIsClosed(false);
         poll.setTotalVotes(2);
         poll.setMinVotesTarget(2);
+        poll.setSessionsPerWeek(2);
         post.setPoll(poll);
 
         PostPollOption option = new PostPollOption();
@@ -410,6 +908,12 @@ class CommunityPostServiceTest {
         option.setDayOfWeek(1);
         option.setStartTime(LocalTime.of(19, 30));
         option.setEndTime(LocalTime.of(21, 0));
+        PostPollOption secondOption = new PostPollOption();
+        secondOption.setId(21L);
+        secondOption.setPoll(poll);
+        secondOption.setDayOfWeek(3);
+        secondOption.setStartTime(LocalTime.of(19, 30));
+        secondOption.setEndTime(LocalTime.of(21, 0));
 
         TutorSubjectRegistration reg = new TutorSubjectRegistration();
         reg.setId(50L);
@@ -426,7 +930,7 @@ class CommunityPostServiceTest {
         reg.setLevels(List.of(level));
 
         ConvertPostToClassRequest request = ConvertPostToClassRequest.builder()
-                .selectedOptionId(20L)
+                .selectedOptionIds(List.of(20L, 21L))
                 .maxStudents(15)
                 .pricePerSession(BigDecimal.valueOf(200000))
                 .startDate(LocalDate.now().plusWeeks(1))
@@ -434,6 +938,7 @@ class CommunityPostServiceTest {
 
         when(postRepository.findByIdForUpdate(postId)).thenReturn(Optional.of(post));
         when(pollOptionRepository.findById(20L)).thenReturn(Optional.of(option));
+        when(pollOptionRepository.findById(21L)).thenReturn(Optional.of(secondOption));
         when(registrationRepository.findByTutorEmailIgnoreCaseOrderByCreatedAtDesc("tutor@edu.vn"))
                 .thenReturn(List.of(reg));
         ClassRoomDtos.ClassRoomResponse createdResponse = mock(ClassRoomDtos.ClassRoomResponse.class);
@@ -463,6 +968,9 @@ class CommunityPostServiceTest {
                 ArgumentCaptor.forClass(ClassRoomDtos.CreateClassRoomRequest.class);
         verify(classRoomService).createClass(eq("tutor@edu.vn"), classRequestCaptor.capture());
         assertThat(classRequestCaptor.getValue().schedules().getFirst().dayOfWeek()).isEqualTo(2);
+        assertThat(classRequestCaptor.getValue().sessionsPerWeek()).isEqualTo(2);
+        assertThat(classRequestCaptor.getValue().schedules()).hasSize(2);
+        assertThat(classRequestCaptor.getValue().schedules().get(1).dayOfWeek()).isEqualTo(4);
         verify(eventPublisher, times(2)).publishCommunityPostConverted(
                 eq(postId), eq(999L), anyLong(), eq(101L), eq(post.getTitle()), eq(savedClass.getName()), eq("Thầy Hưng"));
     }
@@ -481,28 +989,117 @@ class CommunityPostServiceTest {
     }
 
     @Test
-    void convertPostToClass_RejectsPollBelowTarget() {
+    void convertPostToClass_CustomSchedules_AfterSurveyClosedAndWithNewFrequency() {
+        Long postId = 1L;
         CommunityPost post = new CommunityPost();
-        post.setId(1L);
+        post.setId(postId);
         post.setAuthorId(tutorPrincipal.userId());
         post.setPostType(PostType.TUTOR_POLL);
-        post.setStatus(PostStatus.OPEN);
+        post.setTitle("Lớp Luyện Thi");
+        post.setContent("Mô tả chi tiết");
+        post.setAuthorName("Thầy Hưng");
+        post.setStatus(PostStatus.CLOSED);
+
+        Subject subject = new Subject();
+        subject.setId(10L);
+        subject.setName("Hóa học");
+        subject.setActive(true);
+        post.setSubject(subject);
+        post.setEducationLevel("Lớp 10");
+
         PostPoll poll = new PostPoll();
         poll.setId(10L);
         poll.setPost(post);
-        poll.setIsClosed(false);
-        poll.setTotalVotes(1);
-        poll.setMinVotesTarget(2);
+        poll.setIsClosed(true);
+        poll.setExpiresAt(LocalDateTime.now().minusDays(1));
+        poll.setSessionsPerWeek(2);
         post.setPoll(poll);
+
+        when(postRepository.findByIdForUpdate(postId)).thenReturn(Optional.of(post));
+        TutorSubjectRegistration reg = approvedRegistration("Hóa học", "Lớp 10");
+        when(registrationRepository.findByTutorEmailIgnoreCaseOrderByCreatedAtDesc("tutor@edu.vn"))
+                .thenReturn(List.of(reg));
+
+        ClassRoom savedClass = new ClassRoom();
+        savedClass.setId(99L);
+        savedClass.setName("Lớp Luyện Thi");
+        when(classRoomRepository.findById(99L)).thenReturn(Optional.of(savedClass));
+
+        ClassRoomDtos.ClassRoomResponse mockClassResp = mock(ClassRoomDtos.ClassRoomResponse.class);
+        when(mockClassResp.id()).thenReturn(99L);
+        when(classRoomService.createClass(eq(tutorPrincipal.email()), any(ClassRoomDtos.CreateClassRoomRequest.class)))
+                .thenReturn(mockClassResp);
+
+        ConvertPostToClassRequest request = ConvertPostToClassRequest.builder()
+                .sessionsPerWeek(1)
+                .customSchedules(List.of(new ClassRoomDtos.ScheduleRequest(2, "19:00", "20:30")))
+                .build();
+
+        ClassCreatedFromPostResponse resp = postService.convertPostToClass(postId, request, tutorPrincipal, "Thầy Hưng");
+
+        assertThat(resp).isNotNull();
+        assertThat(resp.getClassId()).isEqualTo(99L);
+        ArgumentCaptor<ClassRoomDtos.CreateClassRoomRequest> classRequestCaptor =
+                ArgumentCaptor.forClass(ClassRoomDtos.CreateClassRoomRequest.class);
+        verify(classRoomService).createClass(eq(tutorPrincipal.email()), classRequestCaptor.capture());
+        assertThat(classRequestCaptor.getValue().sessionsPerWeek()).isEqualTo(1);
+        assertThat(classRequestCaptor.getValue().schedules()).hasSize(1);
+    }
+
+    @Test
+    void convertPostToClass_FullWizardRequest_ReusesClassRoomServiceAndLinksPost() {
+        CommunityPost post = conversionPost(PostStatus.OPEN, false);
+        post.setTitle("Khảo sát Hóa học");
+        post.setAuthorName("Thầy Hưng");
+        Subject subject = new Subject();
+        subject.setName("Hóa học");
+        post.setSubject(subject);
+        when(postRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(post));
+
+        TutorSubjectRegistration registration = approvedRegistration("Hóa học", "Lớp 10");
+        when(registrationRepository.findByTutorEmailIgnoreCaseOrderByCreatedAtDesc("tutor@edu.vn"))
+                .thenReturn(List.of(registration));
+        when(levelRepository.findById(77L)).thenReturn(Optional.of(registration.getLevels().getFirst()));
+
+        ClassRoomDtos.CreateClassRoomRequest classRequest = mock(ClassRoomDtos.CreateClassRoomRequest.class);
+        when(classRequest.tutorSubjectRegistrationId()).thenReturn(50L);
+        when(classRequest.levelId()).thenReturn(77L);
+        ClassRoomDtos.ClassRoomResponse createdResponse = mock(ClassRoomDtos.ClassRoomResponse.class);
+        when(createdResponse.id()).thenReturn(99L);
+        when(classRoomService.createClass("tutor@edu.vn", classRequest)).thenReturn(createdResponse);
+        ClassRoom savedClass = new ClassRoom();
+        savedClass.setId(99L);
+        savedClass.setName("Lớp Hóa 10");
+        savedClass.setStatus(iuh.fit.learning_service.enums.ClassRoomStatus.PENDING_APPROVAL);
+        when(classRoomRepository.findById(99L)).thenReturn(Optional.of(savedClass));
+        when(pollVoteRepository.findByPollId(10L)).thenReturn(List.of());
+
+        ClassCreatedFromPostResponse result = postService.convertPostToClass(
+                1L,
+                ConvertPostToClassRequest.builder().classRequest(classRequest).build(),
+                tutorPrincipal,
+                "Thầy Hưng"
+        );
+
+        assertThat(result.getClassId()).isEqualTo(99L);
+        assertThat(post.getStatus()).isEqualTo(PostStatus.CONVERTED);
+        assertThat(post.getLinkedClass()).isSameAs(savedClass);
+        verify(classRoomService).createClass("tutor@edu.vn", classRequest);
+    }
+
+    @Test
+    void convertPostToClass_RejectsFewerSlotsThanSessionsPerWeek() {
+        CommunityPost post = conversionPost(PostStatus.OPEN, false);
+        post.getPoll().setSessionsPerWeek(2);
         when(postRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(post));
 
         ConvertPostToClassRequest request = ConvertPostToClassRequest.builder()
-                .selectedOptionId(20L)
+                .selectedOptionIds(List.of(20L))
                 .build();
 
         assertThrows(BadRequestException.class, () ->
-                postService.convertPostToClass(1L, request, tutorPrincipal, "Thầy Hưng"));
-        verifyNoInteractions(classRoomService, eventPublisher);
+                postService.convertPostToClass(1L, request, tutorPrincipal, "Gia sư"));
+        verifyNoInteractions(classRoomService);
     }
 
     @Test
@@ -530,12 +1127,27 @@ class CommunityPostServiceTest {
     }
 
     @Test
-    void convertPostToClass_RejectsClosedPoll() {
-        CommunityPost post = conversionPost(PostStatus.OPEN, true);
+    void convertPostToClass_RejectsHiddenPost() {
+        CommunityPost post = conversionPost(PostStatus.HIDDEN, true);
         when(postRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(post));
 
         assertThrows(ConflictException.class, () -> postService.convertPostToClass(
                 1L, ConvertPostToClassRequest.builder().selectedOptionId(20L).build(), tutorPrincipal, "Gia sư"));
+        verifyNoInteractions(classRoomService);
+    }
+
+    @Test
+    void convertPostToClass_RejectsMalformedCustomTime() {
+        CommunityPost post = conversionPost(PostStatus.OPEN, false);
+        when(postRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(post));
+
+        ConvertPostToClassRequest request = ConvertPostToClassRequest.builder()
+                .sessionsPerWeek(1)
+                .customSchedules(List.of(new ClassRoomDtos.ScheduleRequest(2, "not-a-time", "20:30")))
+                .build();
+
+        assertThrows(BadRequestException.class, () ->
+                postService.convertPostToClass(1L, request, tutorPrincipal, "Gia sư"));
         verifyNoInteractions(classRoomService);
     }
 
@@ -553,5 +1165,59 @@ class CommunityPostServiceTest {
         poll.setMinVotesTarget(2);
         post.setPoll(poll);
         return post;
+    }
+
+    private PostPollOption pollOption(
+            Long id,
+            PostPoll poll,
+            int dayOfWeek,
+            PollTimePeriod period,
+            int voteCount
+    ) {
+        PostPollOption option = new PostPollOption();
+        option.setId(id);
+        option.setPoll(poll);
+        option.setDayOfWeek(dayOfWeek);
+        option.setTimePeriod(period);
+        option.setStartTime(period.getStart());
+        option.setEndTime(period.getEndExclusive());
+        option.setOptionLabel((dayOfWeek == 7 ? "Chủ nhật" : "Thứ " + (dayOfWeek + 1))
+                + " - " + period.getLabel());
+        option.setVoteCount(voteCount);
+        return option;
+    }
+
+    private PostPollVote pollVote(PostPoll poll, PostPollOption option, Long userId) {
+        PostPollVote vote = new PostPollVote();
+        vote.setPoll(poll);
+        vote.setOption(option);
+        vote.setUserId(userId);
+        vote.setUserName("Student " + userId);
+        return vote;
+    }
+
+    private TutorSubjectRegistration approvedRegistration(String subjectName) {
+        return approvedRegistration(subjectName, null);
+    }
+
+    private TutorSubjectRegistration approvedRegistration(String subjectName, String levelName) {
+        TutorSubjectRegistration registration = new TutorSubjectRegistration();
+        registration.setId(50L);
+        registration.setStatus(TutorSubjectRegistrationStatus.APPROVED);
+        registration.setTutorEmail("tutor@edu.vn");
+        CatalogSubject catalogSubject = new CatalogSubject();
+        catalogSubject.setId(15L);
+        catalogSubject.setName(subjectName);
+        catalogSubject.setActive(true);
+        registration.setSubject(catalogSubject);
+        if (levelName != null) {
+            CatalogLevel level = new CatalogLevel();
+            level.setId(77L);
+            level.setName(levelName);
+            level.setCode(levelName);
+            level.setActive(true);
+            registration.setLevels(List.of(level));
+        }
+        return registration;
     }
 }

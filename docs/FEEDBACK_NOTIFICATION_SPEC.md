@@ -344,6 +344,8 @@ These are target events derived from current project scope and docs. They are no
 | `SUBJECT_REQUEST_REVIEWED` | `IMPLEMENTED` | Requester can update proposal state promptly; `/ws/notifications` also syncs Bell for persisted requester notifications. |
 | `CLASS_SUBMITTED` | `IMPLEMENTED` | Staff queue refresh benefits from realtime. |
 | Enrollment request/create/accept/reject/cancel | `IMPLEMENTED` | Student/Tutor request state benefits from prompt updates; Notification WebSocket and frontend `realtime:event` refresh are implemented for the current enrollment flow. |
+| Community post delete/status update | `IMPLEMENTED` | `/ws/learning` broadcasts after commit so Student and Tutor feeds remove or update the same post without a page reload. No Bell notification is required for ordinary community CRUD. |
+| Community poll aggregate update | `IMPLEMENTED` | A Student saves all draft selections in one REST write; `/ws/learning` then broadcasts public aggregate counts to Tutor/Student views. Private per-user selected option ids are not broadcast. |
 | Homework assignment/submission/grading | `PLANNED` | Learning workflow benefits from prompt updates. |
 
 ### PERSISTENT_ONLY

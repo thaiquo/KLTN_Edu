@@ -18,6 +18,9 @@ export const communityApi = {
 
   getPostDetail: (id) => apiRequest(`/api/community/posts/${id}`),
 
+  /**
+   * @param {{ status?: string, page?: number, size?: number }} [params]
+   */
   getMyPosts: ({ status, page = 0, size = 10 } = {}) => {
     const params = new URLSearchParams({ page: String(page), size: String(size) });
     if (status && status !== 'ALL') params.set('status', status);
@@ -52,14 +55,27 @@ export const communityApi = {
     body: JSON.stringify({ optionId })
   }),
 
+  updatePollVotes: (pollId, optionIds) => apiRequest(`/api/community/polls/${pollId}/votes`, {
+    method: 'PUT',
+    body: JSON.stringify({ optionIds })
+  }),
+
   unvotePoll: (pollId) => apiRequest(`/api/community/polls/${pollId}/vote`, {
     method: 'DELETE'
   }),
 
   // Reactions & Comments
-  toggleReaction: (postId) => apiRequest(`/api/community/posts/${postId}/reactions`, {
-    method: 'POST'
-  }),
+  getPostLikes: (postId) => apiRequest(`/api/community/posts/${postId}/likes`),
+
+  toggleReaction: (postId, { userName, userAvatar } = {}) => {
+    const params = new URLSearchParams();
+    if (userName) params.set('userName', userName);
+    if (userAvatar) params.set('userAvatar', userAvatar);
+    const query = params.toString();
+    return apiRequest(`/api/community/posts/${postId}/reactions${query ? `?${query}` : ''}`, {
+      method: 'POST'
+    });
+  },
 
   toggleBookmark: (postId) => apiRequest(`/api/community/posts/${postId}/bookmarks`, {
     method: 'POST'
@@ -69,12 +85,17 @@ export const communityApi = {
     return apiRequest(`/api/community/posts/${postId}/comments?page=${page}&size=${size}`);
   },
 
-  addComment: (postId, commentText) => apiRequest(`/api/community/posts/${postId}/comments`, {
-    method: 'POST',
-    body: JSON.stringify({ commentText })
-  }),
+  addComment: (postId, payload) => {
+    const body = typeof payload === 'string' ? { commentText: payload } : payload;
+    return apiRequest(`/api/community/posts/${postId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
 
   // Smart Class Conversion
+  getClassSuggestion: (postId) => apiRequest(`/api/community/posts/${postId}/class-suggestion`),
+
   convertPostToClass: (postId, data) => apiRequest(`/api/community/posts/${postId}/convert-to-class`, {
     method: 'POST',
     body: JSON.stringify(data)

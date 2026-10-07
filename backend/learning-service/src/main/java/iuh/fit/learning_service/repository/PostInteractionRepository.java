@@ -14,6 +14,7 @@ import java.util.Optional;
 public interface PostInteractionRepository extends JpaRepository<PostInteraction, Long> {
     Optional<PostInteraction> findByPostIdAndUserIdAndInteractionType(Long postId, Long userId, InteractionType type);
     Page<PostInteraction> findByPostIdAndInteractionTypeOrderByCreatedAtAsc(Long postId, InteractionType type, Pageable pageable);
+    java.util.List<PostInteraction> findByPostIdAndInteractionTypeOrderByCreatedAtDesc(Long postId, InteractionType type);
     boolean existsByPostIdAndUserIdAndInteractionType(Long postId, Long userId, InteractionType type);
     void deleteByPostIdAndUserIdAndInteractionType(Long postId, Long userId, InteractionType type);
 

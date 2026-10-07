@@ -209,7 +209,20 @@ AI Matching hỗ trợ gợi ý và xếp hạng trong nghiệp vụ tìm kiếm
 
 Hệ thống vẫn có business flow hợp lệ khi AI chưa triển khai; khi đó tìm kiếm/lọc thủ công vẫn là luồng nghiệp vụ nền.
 
-## 8. Change Policy
+## 8. Community Survey to Class
+
+- Tutor đăng khảo sát để tham khảo nhu cầu theo 21 lựa chọn cố định `7 ngày x 3 buổi`: Sáng `[07:00,13:00)`, Chiều `[13:00,18:00)` và Tối `[18:00,23:00)`. Ca khảo sát không giữ chỗ trong lịch rảnh, không phải giờ học chính thức và không tự tạo lớp.
+- Student có thể chọn tối đa số lựa chọn bằng số buổi dự kiến mỗi tuần. Số học viên duy nhất, số vote và mốc quan tâm chỉ hỗ trợ Tutor ra quyết định; mốc này không phải điều kiện bắt buộc để mở lớp.
+- Khi Tutor yêu cầu đề xuất, hệ thống riêng tư đối chiếu thứ/buổi được vote với lịch rảnh và các lớp đang chiếm lịch của chính Tutor. API công khai không trả toàn bộ lịch rảnh.
+- Tutor mở wizard tạo lớp đã được điền trước bằng lịch đề xuất, nhưng có quyền chỉnh toàn bộ thông tin và lịch chính thức trước khi xác nhận. Hệ thống chỉ liên kết bài khảo sát và thông báo cho người đã vote sau khi tạo lớp thành công.
+- Lớp chính thức vẫn phải tuân thủ đăng ký giảng dạy đã duyệt, học phí hợp lệ, lịch rảnh và quy tắc chống trùng lịch của `ClassRoomService`.
+
+## 9. Community Class Share and Interaction
+
+- Tutor chỉ được gắn lớp của chính mình khi lớp đang `PUBLISHED`, chưa có cutoff thanh lý và có ngày khai giảng sau ngày hiện tại. Bài giới thiệu cũ được giữ làm lịch sử, nhưng thẻ lớp tự chuyển sang trạng thái đóng tuyển sinh khi lớp không còn thỏa điều kiện; không còn điều hướng sang luồng gửi yêu cầu.
+- Chỉ active role `STUDENT` hoặc `TUTOR` được like, bookmark và comment bài cộng đồng. Guest chỉ đọc nội dung công khai; Staff/Admin giám sát qua các phân hệ quản trị, không dùng tương tác cộng đồng.
+
+## 10. Change Policy
 
 Business rules có thể thay đổi trong quá trình phát triển. Khi người dùng xác nhận business rule mới:
 

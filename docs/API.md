@@ -267,20 +267,24 @@ Controller: `CommunityPostController` in `learning-service` (prefix `/api/commun
 | Method | Endpoint | Status | Scope / Authorization |
 | --- | --- | --- | --- |
 | `GET` | `/api/community/posts` | Implemented | Public; supports `postType`, `status`, `subjectId`, `learningMode`, `keyword`, `page`, `size`. Excludes `HIDDEN` posts by default. |
-| `GET` | `/api/community/posts/{id}` | Implemented | Public; returns post summary/detail including poll, vote breakdown, and linked class fields when present. |
+| `GET` | `/api/community/posts/{id}` | Implemented | Public; returns post summary/detail including poll, total option selections (`totalVotes`), distinct voters (`participantCount`), and linked class fields when present. |
 | `GET` | `/api/community/posts/bookmarked` | Implemented | Authenticated; returns the current user's saved visible posts. |
-| `POST` | `/api/community/posts` | Implemented | Authenticated; role-restricted (`TUTOR_POLL` requires approved Tutor; `STUDENT_FIND_TUTOR`/`STUDENT_GROUP_STUDY` restricted to Student). Poll requires at least 2 options. |
+| `POST` | `/api/community/posts` | Implemented | Authenticated; Tutor may publish an announcement, a poll on an approved subject/level, or share an eligible class. Student may publish search/group posts. Poll requires at least 2 distinct schedule options and enough options for `sessionsPerWeek`. |
 | `PUT` | `/api/community/posts/{id}` | Implemented | Author only in service logic. |
 | `DELETE` | `/api/community/posts/{id}` | Implemented | Author/Admin; soft-deletes post by setting `status = HIDDEN`. |
-| `POST` | `/api/community/polls/{pollId}/vote` | Implemented | Authenticated Student-only; creates or switches the student's vote; updates counts. |
-| `DELETE` | `/api/community/polls/{pollId}/vote` | Implemented | Authenticated Student; removes vote and decrements counts. |
-| `POST` | `/api/community/posts/{id}/reactions` | Implemented | Authenticated; toggles LIKE. |
-| `POST` | `/api/community/posts/{id}/bookmarks` | Implemented | Authenticated; toggles BOOKMARK with one bookmark per user/post. |
-| `GET` | `/api/community/posts/{id}/comments` | Implemented | Authenticated. |
-| `POST` | `/api/community/posts/{id}/comments` | Implemented | Authenticated; adds comment to post. |
-| `POST` | `/api/community/posts/{postId}/convert-to-class` | Implemented | Tutor-author only; requires an open poll meeting quorum, creates a `PENDING_APPROVAL` class through `ClassRoomService`, closes the poll, and emits one persistent notification event per voter. |
+| `POST` | `/api/community/polls/{pollId}/vote` | Implemented | Authenticated Student-only; toggles one option per request, up to `maxVotesPerUser`; `totalVotes` counts option selections while `participantCount` counts distinct students. |
+| `PUT` | `/api/community/polls/{pollId}/votes` | Implemented | Preferred Web flow. Authenticated Student replaces all of their poll selections atomically with `optionIds`; the server validates ownership of every option and the configured maximum. Empty `optionIds` clears the Student's selections. |
+| `DELETE` | `/api/community/polls/{pollId}/vote` | Implemented | Authenticated Student; removes all selections by that student from the poll. |
+| `POST` | `/api/community/posts/{id}/reactions` | Implemented | Active role `STUDENT` or `TUTOR`; toggles LIKE. |
+| `POST` | `/api/community/posts/{id}/bookmarks` | Implemented | Active role `STUDENT` or `TUTOR`; toggles BOOKMARK with one bookmark per user/post. |
+| `GET` | `/api/community/posts/{id}/comments` | Implemented | Public; returns visible comments for the post. |
+| `POST` | `/api/community/posts/{id}/comments` | Implemented | Active role `STUDENT` or `TUTOR`; adds comment to post. |
+| `GET` | `/api/community/posts/{postId}/class-suggestion` | Implemented | Tutor-author only. Evaluates combinations of the 21 day/period cells, prioritizes the complete weekly schedule that the largest shared Student cohort voted for, then uses aggregate demand as a tie-breaker. It intersects candidates with the Tutor's private net availability and occupied classes, and returns editable schedules, participant/matching counts and suggested capacity without creating a class or exposing the complete availability calendar. |
+| `POST` | `/api/community/posts/{postId}/convert-to-class` | Implemented | Tutor-author only; accepts an OPEN or CLOSED poll without a vote quorum. The current client sends a complete validated `classRequest` from the shared class wizard; legacy `selectedOptionIds`/`customSchedules` remain accepted for compatibility. Creates a `PENDING_APPROVAL` class through `ClassRoomService`, marks the post CONVERTED, and emits one persistent notification event per distinct voter. |
 
 Frontend source currently calls `/api/community` through `frontend-web/src/api/community.js`; do not document or implement `/api/learning/community` unless the route is deliberately changed across gateway, backend and client.
+
+Community writes publish `COMMUNITY_POLL_UPDATED`, `COMMUNITY_POST_UPDATED`, and `COMMUNITY_POST_DELETED` through `/ws/learning` after transaction commit. Poll events contain public aggregate statistics only; another Student's private selected option ids are never broadcast.
 
 ## 4. API Status Principle
 

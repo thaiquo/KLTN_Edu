@@ -25,16 +25,32 @@ import CreatePostModal from '../../components/community/CreatePostModal';
 import { HomeHeader } from '../../components/home/HomeHeader';
 import { HomeFooter } from '../../components/home/HomeFooter';
 
-export function CommunityFeedPage({ embedded = false }) {
+const StudentCommunityManagement = React.lazy(() =>
+  import('../../portal/components/StudentCommunityManagement').then(m => ({ default: m.StudentCommunityManagement }))
+);
+const TutorCommunityManagement = React.lazy(() =>
+  import('../../portal/components/TutorCommunityManagement').then(m => ({ default: m.TutorCommunityManagement }))
+);
+
+export function CommunityFeedPage({
+  embedded = false,
+  hideSecondaryHeader = false,
+  hideMineTab = false,
+  exploreMode = false
+}) {
   const { user, authenticated } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const [mainTab, setMainTab] = useState(() => {
+    const searchParams = new URLSearchParams(location.search);
+    return searchParams.get('tab') === 'mine' ? 'mine' : 'explore';
+  });
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
   // Filters
-  const [activeTab, setActiveTab] = useState('ALL'); // 'ALL', 'TUTOR_POLL', 'STUDENT_FIND_TUTOR', 'STUDENT_GROUP_STUDY'
+  const [activeTab, setActiveTab] = useState('ALL');
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
   const [selectedMode, setSelectedMode] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -79,6 +95,8 @@ export function CommunityFeedPage({ embedded = false }) {
       };
       const res = activeTab === 'SAVED'
         ? await communityApi.getBookmarkedPosts({ page: targetPage, size: 10 })
+        : activeTab === 'MINE'
+        ? await communityApi.getMyPosts({ page: targetPage, size: 10 })
         : await communityApi.getPosts(params);
       setPosts(res.content || []);
       setTotalPages(res.totalPages || 1);
@@ -92,7 +110,7 @@ export function CommunityFeedPage({ embedded = false }) {
   }, [activeTab, selectedSubjectId, selectedMode, searchKeyword, page]);
 
   useEffect(() => {
-    if (!authenticated && activeTab === 'SAVED') {
+    if (!authenticated && ['SAVED', 'MINE'].includes(activeTab)) {
       setActiveTab('ALL');
     }
   }, [authenticated, activeTab]);
@@ -121,6 +139,31 @@ export function CommunityFeedPage({ embedded = false }) {
     }
   };
 
+  const handleLikeToggle = (postId, isLiked) => {
+    setPosts(prev => prev.map(p => p.id === postId ? {
+      ...p,
+      isLiked,
+      likeCount: isLiked ? (p.likeCount || 0) + 1 : Math.max(0, (p.likeCount || 0) - 1)
+    } : p));
+  };
+
+  const handleCommentAdded = (postId) => {
+    setPosts(prev => prev.map(p => p.id === postId ? {
+      ...p,
+      commentCount: (p.commentCount || 0) + 1
+    } : p));
+  };
+
+  const handlePostDeleted = (postId) => {
+    setPosts(prev => prev.filter(p => p.id !== postId));
+  };
+
+  const handleVoteSuccess = (postId, updatedPoll) => {
+    setPosts(prev => prev.map(post => post.id === postId
+      ? { ...post, poll: updatedPoll }
+      : post));
+  };
+
   return (
     <div className={`${embedded ? 'w-full' : 'min-h-screen'} bg-slate-50 flex flex-col font-sans`}>
       {!embedded && <HomeHeader />}
@@ -128,44 +171,97 @@ export function CommunityFeedPage({ embedded = false }) {
       {/* Main Content Area */}
       <main className={`flex-1 w-full mx-auto ${embedded ? 'max-w-none py-1' : 'max-w-7xl px-4 sm:px-6 lg:px-8 py-8'}`}>
         
-        {/* Hero Section */}
-        {!embedded && <div className="relative rounded-3xl bg-gradient-to-r from-indigo-900 via-indigo-800 to-purple-900 text-white p-6 sm:p-10 mb-8 overflow-hidden shadow-xl border border-indigo-700/50">
-          <div className="absolute top-0 right-0 -mt-10 -mr-10 w-80 h-80 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
-          <div className="absolute bottom-0 left-1/3 -mb-10 w-60 h-60 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
-          
-          <div className="relative z-10 max-w-3xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-semibold text-indigo-200 mb-4">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              <span>Bảng tin Kết nối & Khảo sát Nhu cầu 2 Chiều</span>
-            </div>
-            <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight leading-tight mb-3">
-              Cộng đồng Học tập & Khảo sát Mở lớp Thông minh
-            </h1>
-            <p className="text-sm sm:text-base text-indigo-100/90 mb-6 leading-relaxed">
-              Gia sư khảo sát khung giờ học để gom đủ học viên trước khi mở lớp. Học viên dễ dàng tìm gia sư phù hợp hoặc lập nhóm học chung để chia sẻ học phí.
-            </p>
+        {/* Modern Clean Header (Bỏ banner màu tím, giao diện sáng sủa trang nhã) */}
+        {!embedded && (
+          <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-6 sm:p-8 mb-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="max-w-2xl">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-100/80 text-xs font-bold text-indigo-700 mb-3">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Bảng tin Kết nối & Khảo sát Học tập</span>
+                </div>
+                <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+                  Cộng đồng Học tập & Kết nối
+                </h1>
+                <p className="mt-2 text-xs sm:text-sm text-slate-500 leading-relaxed">
+                  Khảo sát khung giờ học để gom lớp hiệu quả. Học viên dễ dàng tìm gia sư phù hợp hoặc lập nhóm học chung để chia sẻ học phí.
+                </p>
+              </div>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                onClick={openCreateModal}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-bold text-xs sm:text-sm shadow-lg hover:shadow-amber-500/20 transition flex items-center gap-2 cursor-pointer"
-              >
-                <Plus className="w-4 h-4 text-slate-950" />
-                <span>Đăng bài kết nối / Khảo sát</span>
-              </button>
+              <div className="flex flex-wrap items-center gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={openCreateModal}
+                  className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs sm:text-sm shadow-sm hover:shadow-indigo-500/20 transition flex items-center gap-2 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Đăng bài kết nối</span>
+                </button>
 
-              <Link
-                to="/classes"
-                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white font-semibold text-xs sm:text-sm transition flex items-center gap-2"
-              >
-                <Compass className="w-4 h-4 text-indigo-300" />
-                <span>Khám phá các lớp đã mở</span>
-              </Link>
+                <Link
+                  to="/classes"
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs sm:text-sm transition flex items-center gap-2"
+                >
+                  <Compass className="w-4 h-4 text-slate-500" />
+                  <span>Khám phá các lớp đã mở</span>
+                </Link>
+              </div>
             </div>
           </div>
-        </div>}
+        )}
 
-        {embedded && (
+        {/* Navigation Switch Tabs (Segmented Control - Đồng bộ 2 option giống bên Gia sư) */}
+        {!embedded && (
+          <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100/80 rounded-2xl border border-slate-200 w-fit mb-6">
+            <button
+              type="button"
+              onClick={() => setMainTab('explore')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer ${
+                mainTab === 'explore'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              }`}
+            >
+              <Compass className="w-4 h-4" />
+              <span>1. Khám phá Bảng tin (Cộng đồng)</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (!authenticated) {
+                  requireAuth();
+                  return;
+                }
+                setMainTab('mine');
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer ${
+                mainTab === 'mine'
+                  ? 'bg-white text-indigo-600 shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+              }`}
+            >
+              <Layers className="w-4 h-4" />
+              <span>2. Quản lý bài đăng của tôi</span>
+            </button>
+          </div>
+        )}
+
+        {/* Tab 2: Quản lý bài đăng của tôi */}
+        {!embedded && mainTab === 'mine' && (
+          <React.Suspense fallback={<div className="p-12 text-center text-slate-500 font-semibold">Đang tải quản lý bài đăng...</div>}>
+            {user?.role === 'TUTOR' ? (
+              <TutorCommunityManagement initialTab="mine" hideExploreTab={true} />
+            ) : (
+              <StudentCommunityManagement initialTab="mine" hideExploreTab={true} />
+            )}
+          </React.Suspense>
+        )}
+
+        {/* Tab 1: Khám phá Bảng tin */}
+        {(embedded || mainTab === 'explore') && (
+          <>
+        {embedded && !hideSecondaryHeader && (
           <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-5">
             <div>
               <h1 className="text-xl font-bold text-slate-950">Bảng tin cộng đồng</h1>
@@ -177,7 +273,7 @@ export function CommunityFeedPage({ embedded = false }) {
               className="inline-flex items-center gap-2 rounded-md bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700"
             >
               <Plus className="h-4 w-4" />
-              Tạo khảo sát
+              Tạo bài viết
             </button>
           </div>
         )}
@@ -197,6 +293,16 @@ export function CommunityFeedPage({ embedded = false }) {
               <span>Tất cả bài viết</span>
             </button>
             <button
+              onClick={() => setActiveTab('TUTOR_ANNOUNCEMENT')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'TUTOR_ANNOUNCEMENT'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <span>📢 Gia sư chia sẻ</span>
+            </button>
+            <button
               onClick={() => setActiveTab('TUTOR_POLL')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'TUTOR_POLL'
@@ -205,6 +311,16 @@ export function CommunityFeedPage({ embedded = false }) {
               }`}
             >
               <span>📊 Gia sư khảo sát</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('TUTOR_CLASS_SHARE')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'TUTOR_CLASS_SHARE'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <span>🎓 Lớp đang tuyển</span>
             </button>
             <button
               onClick={() => setActiveTab('STUDENT_FIND_TUTOR')}
@@ -227,6 +343,15 @@ export function CommunityFeedPage({ embedded = false }) {
               <Users className="w-3.5 h-3.5" />
               <span>👥 Tìm bạn học nhóm</span>
             </button>
+            {authenticated && !hideMineTab && (
+              <button
+                onClick={() => setMainTab('mine')}
+                className="px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer text-slate-600 hover:bg-slate-100"
+              >
+                <BookOpen className="w-3.5 h-3.5" />
+                <span>Quản lý bài đăng của tôi</span>
+              </button>
+            )}
             {authenticated && (
               <button
                 onClick={() => setActiveTab('SAVED')}
@@ -251,157 +376,123 @@ export function CommunityFeedPage({ embedded = false }) {
           </button>
         </div>
 
-        {/* Content Layout: Feed + Sidebar */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Content Layout: Clean Streamlined Feed */}
+        <div className="max-w-4xl mx-auto space-y-4">
           
-          {/* Main Feed Column (2 Cols) */}
-          <div className="lg:col-span-2 space-y-4">
-            
-            {/* Search & Filter Bar */}
-            <form onSubmit={handleSearchSubmit} className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-wrap items-center gap-3">
-              <div className="relative flex-1 min-w-[200px]">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={searchKeyword}
-                  onChange={e => setSearchKeyword(e.target.value)}
-                  placeholder="Tìm theo từ khóa (Môn, Lớp 12, ĐGNL, gia sư...)"
-                  className="w-full pl-9 pr-3.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                />
-              </div>
+          {/* Search & Filter Bar */}
+          <form onSubmit={handleSearchSubmit} className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px]">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchKeyword}
+                onChange={e => setSearchKeyword(e.target.value)}
+                placeholder="Tìm theo từ khóa (Môn học, lớp, kỹ năng, gia sư...)"
+                className="w-full pl-9 pr-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+              />
+            </div>
 
-              <select
-                value={selectedSubjectId}
-                onChange={e => setSelectedSubjectId(e.target.value)}
-                className="px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 font-medium"
-              >
-                <option value="">Tất cả môn</option>
-                {subjects.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+            <select
+              value={selectedSubjectId}
+              onChange={e => setSelectedSubjectId(e.target.value)}
+              className="px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 font-medium"
+            >
+              <option value="">Tất cả môn</option>
+              {subjects.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
 
-              <select
-                value={selectedMode}
-                onChange={e => setSelectedMode(e.target.value)}
-                className="px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 font-medium"
-              >
-                <option value="">Tất cả hình thức</option>
-                <option value="ONLINE">Trực tuyến (Online)</option>
-                <option value="OFFLINE">Trực tiếp (Offline)</option>
-              </select>
+            <select
+              value={selectedMode}
+              onChange={e => setSelectedMode(e.target.value)}
+              className="px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 font-medium"
+            >
+              <option value="">Tất cả hình thức</option>
+              <option value="ONLINE">Trực tuyến (Online)</option>
+              <option value="OFFLINE">Trực tiếp (Offline)</option>
+            </select>
 
+            <button
+              type="submit"
+              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition shadow-sm cursor-pointer flex items-center gap-1.5"
+            >
+              <Search className="w-3.5 h-3.5" />
+              <span>Tìm</span>
+            </button>
+          </form>
+
+          {/* Post Stream */}
+          {loading ? (
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-12 text-center">
+              <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+              <p className="text-xs text-slate-500 font-medium">Đang tải các bài viết mới nhất...</p>
+            </div>
+          ) : error ? (
+            <div className="bg-white rounded-2xl border border-rose-200 p-8 text-center text-rose-600 text-xs">
+              <p>{error}</p>
               <button
-                type="submit"
-                className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition shadow-sm cursor-pointer"
+                onClick={() => loadPosts(true)}
+                className="mt-3 px-4 py-1.5 bg-rose-50 text-rose-700 rounded-xl font-bold hover:bg-rose-100 transition cursor-pointer"
               >
-                Tìm
+                Thử lại
               </button>
-            </form>
-
-            {/* Post Stream */}
-            {loading ? (
-              <div className="bg-white rounded-2xl border border-slate-200/80 p-12 text-center">
-                <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                <p className="text-xs text-slate-500 font-medium">Đang tải các bài viết mới nhất...</p>
+            </div>
+          ) : posts.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-12 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-3">
+                {exploreMode ? <Compass className="w-7 h-7" /> : <BookOpen className="w-7 h-7" />}
               </div>
-            ) : error ? (
-              <div className="bg-white rounded-2xl border border-rose-200 p-8 text-center text-rose-600 text-xs">
-                <p>{error}</p>
+              <h3 className="font-bold text-slate-800 text-sm md:text-base mb-1">
+                {exploreMode ? 'Không tìm thấy bài viết cộng đồng nào' : 'Chưa có bài viết nào phù hợp'}
+              </h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto mb-4">
+                {exploreMode
+                  ? 'Hiện không có bài viết nào trong cộng đồng phù hợp với tiêu chí lọc của bạn. Bạn có thể thử đổi bộ lọc hoặc từ khóa.'
+                  : 'Hãy là người đầu tiên đăng bài khảo sát hoặc tìm kiếm trên EduConnect!'}
+              </p>
+              {exploreMode ? (
                 <button
-                  onClick={() => loadPosts(true)}
-                  className="mt-3 px-4 py-1.5 bg-rose-50 text-rose-700 rounded-xl font-bold hover:bg-rose-100 transition cursor-pointer"
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('ALL');
+                    setSelectedSubjectId('');
+                    setSelectedMode('');
+                    setSearchKeyword('');
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
                 >
-                  Thử lại
+                  Đặt lại bộ lọc
                 </button>
-              </div>
-            ) : posts.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-slate-200/80 p-12 text-center">
-                <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-3">
-                  <BookOpen className="w-7 h-7" />
-                </div>
-                <h3 className="font-bold text-slate-800 text-sm md:text-base mb-1">Chưa có bài viết nào phù hợp</h3>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto mb-4">
-                  Hãy là người đầu tiên đăng khảo sát mở lớp hoặc tìm kiếm bạn học nhóm trên EduConnect!
-                </p>
+              ) : (
                 <button
                   onClick={openCreateModal}
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
                 >
                   Tạo bài viết ngay
                 </button>
-              </div>
-            ) : (
-              posts.map(post => (
-                <PostCard
-                  key={post.id}
-                  post={post}
-                  currentUserId={user?.id}
-                  userRole={user?.activeRole}
-                  authenticated={authenticated}
-                  onRequireAuth={requireAuth}
-                  onBookmarkToggle={handleBookmarkToggle}
-                  onVoteSuccess={() => loadPosts(false)}
-                />
-              ))
-            )}
-          </div>
-
-          {/* Right Sidebar (1 Col) */}
-          <div className="space-y-5">
-            
-            {/* Widget: Quy trình Khảo sát & Mở lớp */}
-            <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
-                  <Sparkles className="w-4 h-4" />
-                </div>
-                <h4 className="font-bold text-slate-900 text-xs sm:text-sm">Cơ chế Khảo sát Mở lớp</h4>
-              </div>
-              <ul className="space-y-2.5 text-xs text-slate-600 leading-relaxed">
-                <li className="flex items-start gap-2">
-                  <span className="w-4 h-4 rounded-full bg-indigo-50 text-indigo-600 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">1</span>
-                  <span><strong>Gia sư tạo Poll:</strong> Đăng khung giờ dự kiến và đặt số lượng vote mục tiêu.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="w-4 h-4 rounded-full bg-indigo-50 text-indigo-600 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">2</span>
-                  <span><strong>Học viên bình chọn:</strong> Chọn ca học phù hợp nhất với thời gian biểu của mình.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="w-4 h-4 rounded-full bg-indigo-50 text-indigo-600 font-bold flex items-center justify-center text-[10px] flex-shrink-0 mt-0.5">3</span>
-                  <span><strong>Mở lớp & Ký hợp đồng:</strong> Khi đủ số lượng, gia sư chốt mở lớp và gửi thông báo mời học viên ký hợp đồng Escrow USDC.</span>
-                </li>
-              </ul>
+              )}
             </div>
-
-            {/* Widget: Lợi ích Học nhóm */}
-            <div className="bg-gradient-to-br from-emerald-500 to-teal-700 text-white rounded-3xl p-5 shadow-sm">
-              <div className="flex items-center gap-2 mb-2">
-                <Users className="w-5 h-5 text-emerald-200" />
-                <h4 className="font-bold text-sm">Học Nhóm Tiết Kiệm Học Phí</h4>
-              </div>
-              <p className="text-xs text-emerald-100 leading-relaxed mb-3">
-                Đăng bài tìm bạn cùng ôn thi môn Toán, Lý, Hóa, Ngoại ngữ hoặc Lập trình để nhận mức học phí ưu đãi hơn và có môi trường thảo luận sôi nổi.
-              </p>
-              <button
-                onClick={() => {
-                  setActiveTab('STUDENT_GROUP_STUDY');
-                  openCreateModal();
-                }}
-                className="w-full py-2 bg-white text-emerald-800 rounded-xl text-xs font-bold hover:bg-emerald-50 transition text-center shadow-sm cursor-pointer"
-              >
-                Đăng bài tìm nhóm ngay
-              </button>
-            </div>
-
-            {/* Widget: Quy tắc Cộng đồng */}
-            <div className="bg-slate-50 rounded-3xl p-5 border border-slate-200 text-xs text-slate-500 space-y-2">
-              <p className="font-bold text-slate-700">🔒 An toàn & Bảo mật trên EduConnect:</p>
-              <p>• Mọi giao dịch học phí đều được bảo toàn qua Hợp đồng thông minh Smart Contract.</p>
-              <p>• Khuyến khích trao đổi qua tính năng Tin nhắn nội bộ của hệ thống để được bảo vệ quyền lợi khi có tranh chấp.</p>
-            </div>
-          </div>
+          ) : (
+            posts.map(post => (
+              <PostCard
+                key={post.id}
+                post={post}
+                currentUserId={user?.id}
+                userRole={user?.activeRole}
+                authenticated={authenticated}
+                onRequireAuth={requireAuth}
+                onBookmarkToggle={handleBookmarkToggle}
+                onLikeToggle={handleLikeToggle}
+                onCommentAdded={handleCommentAdded}
+                onPostDeleted={handlePostDeleted}
+                onVoteSuccess={handleVoteSuccess}
+              />
+            ))
+          )}
         </div>
+        </>
+        )}
       </main>
 
       {!embedded && <HomeFooter />}

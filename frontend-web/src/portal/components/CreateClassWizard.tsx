@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { teachingRegistrationApi } from "../../api/teachingRegistrations";
 import { classApi } from "../../api/classes";
+import communityApi from "../../api/community";
 import { tutorApplicationApi } from "../../api/tutorApplications";
 import { tutorApi } from "../../api/tutors";
 import { useAuth } from "../../hooks/useAuth";
@@ -13,7 +14,25 @@ import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
 
 interface CreateClassWizardProps {
   onBack: () => void;
-  onSuccess: () => void;
+  onSuccess: (result?: any) => void;
+  sourcePostId?: number;
+  initialDraft?: {
+    subjectId?: number;
+    subjectName?: string;
+    educationLevel?: string;
+    name?: string;
+    description?: string;
+    learningMode?: "ONLINE" | "OFFLINE";
+    pricePerSession?: number;
+    address?: string;
+    sessionsPerWeek?: number;
+    durationMinutes?: number;
+    maxStudents?: number;
+    schedules?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+    participantCount?: number;
+    matchingStudentCount?: number;
+    warnings?: string[];
+  };
 }
 
 interface ApprovedRegistration {
@@ -218,7 +237,7 @@ function computeNetFreeIntervals(rawSlots: SavedSlot[], occupiedSlots: OccupiedS
   return result.sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime));
 }
 
-export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps) {
+export function CreateClassWizard({ onBack, onSuccess, sourcePostId, initialDraft }: CreateClassWizardProps) {
   const { user } = useAuth();
 
   // Data states
@@ -233,19 +252,21 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
   // Form states
   const [selectedRegId, setSelectedRegId] = useState<number | "">("");
   const [selectedLevelId, setSelectedLevelId] = useState<number | "">("");
-  const [className, setClassName] = useState("");
-  const [description, setDescription] = useState("");
-  const [maxStudents, setMaxStudents] = useState<number>(20);
+  const [className, setClassName] = useState(initialDraft?.name || "");
+  const [description, setDescription] = useState(initialDraft?.description || "");
+  const [maxStudents, setMaxStudents] = useState<number>(initialDraft?.maxStudents || 20);
   const [bufferPoolRatioPercent, setBufferPoolRatioPercent] = useState<number>(150);
-  const [maxPendingRequests, setMaxPendingRequests] = useState<number | "">(30);
-  const [learningMode, setLearningMode] = useState<"ONLINE" | "OFFLINE">("ONLINE");
+  const [maxPendingRequests, setMaxPendingRequests] = useState<number | "">(
+    Math.ceil((initialDraft?.maxStudents || 20) * 1.5)
+  );
+  const [learningMode, setLearningMode] = useState<"ONLINE" | "OFFLINE">(initialDraft?.learningMode || "ONLINE");
   const [meetingLink, setMeetingLink] = useState<string>("");
-  const [address, setAddress] = useState("");
-  const [pricePerSession, setPricePerSession] = useState<number | "">("");
+  const [address, setAddress] = useState(initialDraft?.address || "");
+  const [pricePerSession, setPricePerSession] = useState<number | "">(initialDraft?.pricePerSession || "");
 
   // Time and duration states
-  const [sessionsPerWeek, setSessionsPerWeek] = useState<number>(3);
-  const [durationPerSession, setDurationPerSession] = useState<number>(90);
+  const [sessionsPerWeek, setSessionsPerWeek] = useState<number>(initialDraft?.sessionsPerWeek || 3);
+  const [durationPerSession, setDurationPerSession] = useState<number>(initialDraft?.durationMinutes || 90);
   const [durationValue, setDurationValue] = useState<number>(3);
   const [durationUnit, setDurationUnit] = useState<"MONTH" | "WEEK">("MONTH");
   const [startDate, setStartDate] = useState<string>(() => {
@@ -284,11 +305,17 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
         setRegistrations(approved);
 
         if (approved.length > 0) {
-          setSelectedRegId(approved[0].id);
-          if (approved[0].levels && approved[0].levels.length > 0) {
-            setSelectedLevelId(approved[0].levels[0].id);
-          }
-          setPricePerSession(approved[0].tuitionMin || 150000);
+          const preferredRegistration = approved.find((registration: ApprovedRegistration) =>
+            (initialDraft?.subjectId && registration.subject?.id === initialDraft.subjectId)
+            || (initialDraft?.subjectName && (registration.subject?.name || registration.proposedSubjectName)
+              ?.toLowerCase() === initialDraft.subjectName.toLowerCase())
+          ) || approved[0];
+          setSelectedRegId(preferredRegistration.id);
+          const preferredLevel = preferredRegistration.levels?.find((level: any) =>
+            initialDraft?.educationLevel && level.name === initialDraft.educationLevel
+          ) || preferredRegistration.levels?.[0];
+          if (preferredLevel) setSelectedLevelId(preferredLevel.id);
+          setPricePerSession(initialDraft?.pricePerSession || preferredRegistration.tuitionMin || 150000);
         }
 
         // Available slots
@@ -323,15 +350,25 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
 
         // Compute net free intervals
         const netFree = computeNetFreeIntervals(mappedSlots, occupied);
-        const validNetFree = netFree.filter(i => i.durationMins >= 90);
+        const desiredDuration = initialDraft?.durationMinutes || 90;
+        const validNetFree = netFree.filter(i => i.durationMins >= desiredDuration);
 
+        const suggestedSchedules = initialDraft?.schedules || [];
+        const desiredSessionCount = initialDraft?.sessionsPerWeek || 3;
         const initialConfigured: ConfiguredSession[] = [];
-        for (let i = 0; i < 3; i++) {
-          const targetInterval = validNetFree[i % validNetFree.length] || netFree[0];
+        for (let i = 0; i < desiredSessionCount; i++) {
+          const suggested = suggestedSchedules[i];
+          const suggestedInterval = suggested && netFree.find(interval =>
+            interval.dayOfWeek === Number(suggested.dayOfWeek)
+            && timeToMinutes(suggested.startTime) >= timeToMinutes(interval.startTime)
+            && timeToMinutes(suggested.endTime) <= timeToMinutes(interval.endTime)
+          );
+          const targetInterval = suggestedInterval
+            || (!sourcePostId ? (validNetFree[i % validNetFree.length] || netFree[0]) : undefined);
           if (targetInterval) {
-            const stOptions = generateStartTimeOptions(targetInterval.startTime, targetInterval.endTime, 90);
-            const st = stOptions[0] || targetInterval.startTime;
-            const et = addMinutesToTime(st, 90);
+            const stOptions = generateStartTimeOptions(targetInterval.startTime, targetInterval.endTime, desiredDuration);
+            const st = suggestedInterval ? suggested.startTime : (stOptions[0] || targetInterval.startTime);
+            const et = suggestedInterval ? suggested.endTime : addMinutesToTime(st, desiredDuration);
             initialConfigured.push({
               sessionId: i + 1,
               freeIntervalId: targetInterval.id,
@@ -345,7 +382,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
               freeIntervalId: "",
               dayOfWeek: 2,
               startTime: "08:00",
-              endTime: "09:30"
+              endTime: addMinutesToTime("08:00", desiredDuration)
             });
           }
         }
@@ -359,7 +396,7 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
       }
     }
     loadData();
-  }, []);
+  }, [initialDraft, sourcePostId]);
 
   useRealtimeRefresh(["TEACHING_REGISTRATION_REVIEWED", "CLASS_REVIEWED"], async () => {
     const [regs, myClasses] = await Promise.all([
@@ -740,8 +777,10 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
 
     setSubmitting(true);
     try {
-      await classApi.createClass(payload);
-      onSuccess();
+      const result = sourcePostId
+        ? await communityApi.convertPostToClass(sourcePostId, { classRequest: payload })
+        : await classApi.createClass(payload);
+      onSuccess(result);
     } catch (err: any) {
       console.error("Failed to create class", err);
       setErrorBanner(err?.message || "Không thể tạo lớp học. Vui lòng kiểm tra lại thông tin và đảm bảo Backend đang chạy.");
@@ -806,6 +845,21 @@ export function CreateClassWizard({ onBack, onSuccess }: CreateClassWizardProps)
             Chọn Buổi rảnh trong tuần và Giờ bắt đầu tương ứng, hệ thống tự tính Giờ kết thúc và đảm bảo không vượt quá khung rảnh.
           </p>
         </div>
+
+        {sourcePostId && (
+          <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-2xl text-xs text-indigo-900">
+            <p className="font-black">Lịch bên dưới là đề xuất từ kết quả bình chọn và lịch rảnh của bạn.</p>
+            <p className="mt-1 text-indigo-700">Bạn có thể thay đổi toàn bộ thông tin trước khi gửi lớp để xét duyệt.</p>
+            {(initialDraft?.participantCount || 0) > 0 && (
+              <p className="mt-2 font-semibold text-indigo-800">
+                {initialDraft?.matchingStudentCount || 0}/{initialDraft?.participantCount || 0} học viên đã bình chọn có thể tham gia đầy đủ tổ hợp lịch hệ thống đề xuất ban đầu.
+              </p>
+            )}
+            {initialDraft?.warnings?.map((warning) => (
+              <p key={warning} className="mt-2 font-bold text-amber-700">{warning}</p>
+            ))}
+          </div>
+        )}
 
         {/* SECTION 1: NỘI DUNG GIẢNG DẠY */}
         <div className="space-y-4">

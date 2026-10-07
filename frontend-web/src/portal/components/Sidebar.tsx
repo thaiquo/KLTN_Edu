@@ -59,6 +59,7 @@ export function Sidebar({
         ];
       case "student":
         return [
+          { id: "community", label: "Bảng tin", icon: Newspaper },
           { id: "my-classes", label: "Lớp học của tôi", icon: GraduationCap },
           { id: "homework", label: "Quản lý bài tập", icon: CheckSquare },
           { id: "contracts", label: "Hợp đồng của tôi", icon: ShieldCheck },

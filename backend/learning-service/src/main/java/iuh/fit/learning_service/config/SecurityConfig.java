@@ -2,6 +2,7 @@ package iuh.fit.learning_service.config;
 
 import iuh.fit.learning_service.config.security.CookieJwtAuthenticationFilter;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -47,6 +48,8 @@ public class SecurityConfig {
                                 writeSecurityError(response, HttpServletResponse.SC_FORBIDDEN, accessDeniedException.getMessage()))
                 )
                 .authorizeHttpRequests(auth -> auth
+                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        .requestMatchers("/error").permitAll()
                         .requestMatchers("/ws/learning").permitAll()
                         .requestMatchers("/api/learning/internal/**").hasRole("INTERNAL_CONTRACT")
                         .requestMatchers(HttpMethod.GET, "/api/subjects/**").permitAll()
@@ -56,7 +59,6 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/sessions/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/community/posts/bookmarked").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/community/posts/mine").authenticated()
-                        .requestMatchers(HttpMethod.GET, "/api/community/posts/*/comments").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/community/**").permitAll()
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/subject-requests/pending").hasRole("ADMIN")

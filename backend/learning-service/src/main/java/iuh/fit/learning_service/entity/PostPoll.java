@@ -28,7 +28,7 @@ public class PostPoll {
     private String question;
 
     @Column(name = "min_votes_target", nullable = false)
-    private Integer minVotesTarget = 5;
+    private Integer minVotesTarget = 10;
 
     @Column(name = "expires_at")
     private LocalDateTime expiresAt;
@@ -39,6 +39,15 @@ public class PostPoll {
     @Column(name = "total_votes", nullable = false)
     private Integer totalVotes = 0;
 
+    @Column(name = "sessions_per_week", nullable = false)
+    private Integer sessionsPerWeek = 2;
+
+    @Column(name = "duration_minutes", nullable = false)
+    private Integer durationMinutes = 90;
+
+    @Column(name = "max_votes_per_user", nullable = false)
+    private Integer maxVotesPerUser = 2;
+
     @OneToMany(mappedBy = "poll", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<PostPollOption> options = new ArrayList<>();
 
@@ -48,8 +57,11 @@ public class PostPoll {
     @PrePersist
     public void prePersist() {
         if (createdAt == null) createdAt = LocalDateTime.now();
-        if (minVotesTarget == null) minVotesTarget = 5;
+        if (minVotesTarget == null) minVotesTarget = 10;
         if (isClosed == null) isClosed = false;
         if (totalVotes == null) totalVotes = 0;
+        if (sessionsPerWeek == null) sessionsPerWeek = 2;
+        if (durationMinutes == null) durationMinutes = 90;
+        if (maxVotesPerUser == null) maxVotesPerUser = (sessionsPerWeek != null ? sessionsPerWeek : 2);
     }
 }

@@ -19,7 +19,7 @@ public interface CommunityPostRepository extends JpaRepository<CommunityPost, Lo
     List<CommunityPost> findByAuthorIdAndAuthorRoleOrderByCreatedAtDesc(Long authorId, String authorRole);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT p FROM CommunityPost p LEFT JOIN FETCH p.poll WHERE p.id = :id")
+    @Query("SELECT p FROM CommunityPost p WHERE p.id = :id")
     Optional<CommunityPost> findByIdForUpdate(@Param("id") Long id);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)

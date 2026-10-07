@@ -1,5 +1,6 @@
 package iuh.fit.learning_service.entity;
 
+import iuh.fit.learning_service.enums.PollTimePeriod;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -31,6 +32,10 @@ public class PostPollOption {
     @Column(name = "end_time", nullable = false)
     private LocalTime endTime;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "time_period", nullable = false, length = 20)
+    private PollTimePeriod timePeriod;
+
     @Column(name = "option_label", nullable = false, length = 150)
     private String optionLabel;
 
@@ -40,5 +45,6 @@ public class PostPollOption {
     @PrePersist
     public void prePersist() {
         if (voteCount == null) voteCount = 0;
+        if (timePeriod == null) timePeriod = PollTimePeriod.fromStartTime(startTime);
     }
 }

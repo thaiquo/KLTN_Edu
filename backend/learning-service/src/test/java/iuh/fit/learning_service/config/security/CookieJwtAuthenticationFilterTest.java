@@ -148,6 +148,22 @@ class CookieJwtAuthenticationFilterTest {
     }
 
     @Test
+    void validCookieAuthenticatesWhenAnOlderDuplicateCookieIsInvalid() throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setCookies(
+                new Cookie("access_token", "stale-cookie"),
+                new Cookie("access_token", tutorToken(Date.from(Instant.now().plusSeconds(900))))
+        );
+        when(tutorAuthorizationStateRepository.findById(99L)).thenReturn(Optional.of(tutorState("APPROVED")));
+
+        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(authentication).isNotNull();
+        assertThat(authentication.getName()).isEqualTo("tutor@example.com");
+    }
+
+    @Test
     void expiredCookieDoesNotAuthenticateRequest() throws ServletException, IOException {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setCookies(new Cookie("access_token", tutorToken(Date.from(Instant.now().minusSeconds(60)))));

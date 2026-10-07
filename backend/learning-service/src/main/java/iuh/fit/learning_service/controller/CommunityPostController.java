@@ -138,6 +138,16 @@ public class CommunityPostController {
         return ResponseEntity.ok(postService.votePoll(pollId, request.getOptionId(), principal, null));
     }
 
+    @PutMapping("/polls/{pollId}/votes")
+    public ResponseEntity<PollSummaryDto> updatePollVotes(
+            @PathVariable Long pollId,
+            @Valid @RequestBody UpdatePollVotesRequest request,
+            Authentication authentication
+    ) {
+        LearningUserPrincipal principal = extractPrincipal(authentication);
+        return ResponseEntity.ok(postService.updatePollVotes(pollId, request.getOptionIds(), principal, null));
+    }
+
     @DeleteMapping("/polls/{pollId}/vote")
     public ResponseEntity<PollSummaryDto> unvotePoll(
             @PathVariable Long pollId,
@@ -147,13 +157,22 @@ public class CommunityPostController {
         return ResponseEntity.ok(postService.unvotePoll(pollId, principal));
     }
 
+    @GetMapping("/posts/{id}/likes")
+    public ResponseEntity<java.util.List<LikeUserDto>> getPostLikes(
+            @PathVariable Long id
+    ) {
+        return ResponseEntity.ok(postService.getPostLikes(id));
+    }
+
     @PostMapping("/posts/{id}/reactions")
     public ResponseEntity<Boolean> toggleReaction(
             @PathVariable Long id,
+            @RequestParam(required = false) String userName,
+            @RequestParam(required = false) String userAvatar,
             Authentication authentication
     ) {
         LearningUserPrincipal principal = extractPrincipal(authentication);
-        boolean isLiked = postService.toggleLike(id, principal, null, null);
+        boolean isLiked = postService.toggleLike(id, principal, userName, userAvatar);
         return ResponseEntity.ok(isLiked);
     }
 
@@ -183,7 +202,7 @@ public class CommunityPostController {
     ) {
         LearningUserPrincipal principal = extractPrincipal(authentication);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(postService.addComment(id, request.getCommentText(), principal, null, null));
+                .body(postService.addComment(id, request.getCommentText(), principal, request.getUserName(), request.getUserAvatar()));
     }
 
     @PostMapping("/posts/{id}/convert-to-class")
@@ -195,5 +214,13 @@ public class CommunityPostController {
         LearningUserPrincipal principal = extractPrincipal(authentication);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(postService.convertPostToClass(id, request, principal, null));
+    }
+
+    @GetMapping("/posts/{id}/class-suggestion")
+    public ClassSuggestionResponse getClassSuggestion(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        return postService.getClassSuggestion(id, extractPrincipal(authentication));
     }
 }

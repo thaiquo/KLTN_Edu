@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 @NoArgsConstructor
 @Entity
 @Table(name = "post_poll_votes", uniqueConstraints = {
-        @UniqueConstraint(name = "uq_user_poll_vote", columnNames = {"poll_id", "user_id"})
+        @UniqueConstraint(name = "uq_user_poll_option_vote", columnNames = {"poll_id", "user_id", "option_id"})
 })
 public class PostPollVote {
 

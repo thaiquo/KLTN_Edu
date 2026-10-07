@@ -1,5 +1,10 @@
 const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
-const API_URL = (configuredApiUrl || (import.meta.env.DEV ? '' : 'http://localhost:8080')).replace(/\/$/, '');
+// In development, keep browser requests same-origin and let Vite proxy /api.
+// This prevents cookie auth from breaking when the UI is opened through
+// 127.0.0.1 while the configured gateway host is localhost (or vice versa).
+const API_URL = (import.meta.env.DEV
+  ? ''
+  : (configuredApiUrl || 'http://localhost:8080')).replace(/\/$/, '');
 
 export class ApiError extends Error {
   constructor({ status, message, code, validationErrors, path, raw }) {

@@ -57,6 +57,7 @@ import { StudentClassManagement } from "./components/StudentClassManagement";
 import { AdminFinanceMonitoring } from "./components/AdminFinanceMonitoring";
 import { CommunityFeedPage } from "../pages/community/CommunityFeedPage";
 import { TutorCommunityManagement } from "./components/TutorCommunityManagement";
+import { StudentCommunityManagement } from "./components/StudentCommunityManagement";
 
 // High Resolution course and avatar placeholders
 const studentAvatar =
@@ -465,9 +466,6 @@ export default function App({ user, onLogout }: AppProps) {
       case "admin-finance":
         return <AdminFinanceMonitoring />;
 
-      case "community":
-        return activeRole === "tutor" ? <CommunityFeedPage embedded /> : null;
-
       case "courses":
         return activeRole === "student" ? (
           <StudentClassManagement />
@@ -491,7 +489,7 @@ export default function App({ user, onLogout }: AppProps) {
       case "community":
         return activeRole === "tutor"
           ? <TutorCommunityManagement onNavigate={handleNavigate} />
-          : <CommunityFeedPage embedded={true} />;
+          : <StudentCommunityManagement onNavigate={handleNavigate} />;
 
       case "subjects":
         return fullTutorAccess ? <TeachingRegistrationPage embedded={true} /> : null;

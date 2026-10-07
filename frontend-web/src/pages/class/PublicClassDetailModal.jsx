@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpen, Calendar, Clock, DollarSign, Globe, Info, Key, MapPin,
   Users, Video, X, UserRound, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle, XCircle, AlertTriangle
@@ -49,6 +49,7 @@ function checkProfileCompletion(user) {
 
 export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const feedback = useFeedback();
 
@@ -61,6 +62,11 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const [studentSchedule, setStudentSchedule] = React.useState({ recurringSchedules: [], upcomingSessions: [] });
 
   const profileCheck = React.useMemo(() => checkProfileCompletion(user), [user]);
+  const isStudent = user?.activeRole === 'STUDENT';
+  const enrollmentOpen = classRoom?.status === 'PUBLISHED'
+    && classRoom?.terminationCutoffSession == null
+    && classRoom?.startDate
+    && new Date(`${classRoom.startDate}T00:00:00`).getTime() > new Date().setHours(0, 0, 0, 0);
 
   React.useEffect(() => {
     if (user?.activeRole === 'STUDENT') {
@@ -108,6 +114,19 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const handleEnrollSubmit = async (e) => {
     if (e) e.preventDefault();
     setProfileWarning(null);
+
+    if (!user) {
+      navigate('/login', { state: { from: location } });
+      return;
+    }
+    if (!isStudent) {
+      feedback.warning('Chỉ tài khoản đang ở vai trò Học viên mới có thể gửi yêu cầu tham gia lớp.');
+      return;
+    }
+    if (!enrollmentOpen) {
+      feedback.warning('Lớp học này không còn nhận yêu cầu tham gia mới.');
+      return;
+    }
 
     // Profile Completeness Enforcement Check
     if (!profileCheck.isComplete) {
@@ -527,7 +546,7 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
         )}
 
         {/* Invite Key Form Dropdown (only shown when class has INVITE_KEY mode) */}
-        {showInviteKeyForm && classRoom.joinMode === 'INVITE_KEY' && (
+        {showInviteKeyForm && isStudent && enrollmentOpen && classRoom.joinMode === 'INVITE_KEY' && (
           <form onSubmit={handleEnrollSubmit} className="p-4 bg-sky-50 border border-sky-200 rounded-2xl space-y-3 animate-in fade-in">
             <h3 className="text-xs font-black text-sky-900 uppercase tracking-wider flex items-center gap-1.5">
               <Key className="w-4 h-4 text-sky-600" /> Nhập Mã mời để tham gia lớp học
@@ -574,7 +593,23 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
             Đóng
           </button>
 
-          {!myRequest || myRequest.status === 'CANCELLED' || myRequest.status === 'REJECTED' ? (
+          {!user ? (
+            <button
+              type="button"
+              onClick={() => navigate('/login', { state: { from: location } })}
+              className="px-6 py-2.5 rounded-xl bg-brand-primary text-white text-xs font-black hover:bg-brand-primary/90 transition-all shadow-md"
+            >
+              Đăng nhập để gửi yêu cầu
+            </button>
+          ) : !isStudent ? (
+            <span className="px-4 py-2 bg-slate-100 text-slate-600 font-extrabold text-xs rounded-xl">
+              Chỉ học viên có thể gửi yêu cầu
+            </span>
+          ) : !enrollmentOpen ? (
+            <span className="px-4 py-2 bg-slate-100 text-slate-600 font-extrabold text-xs rounded-xl">
+              Lớp đã đóng tuyển sinh
+            </span>
+          ) : (!myRequest || myRequest.status === 'CANCELLED' || myRequest.status === 'REJECTED') ? (
             classRoom.joinMode === 'INVITE_KEY' ? (
               !showInviteKeyForm && (
                 <button
