@@ -54,6 +54,7 @@ class AdminFinancialMonitoringControllerTest {
     @Mock private CurrentUserContext currentUserContext;
     @Mock private ContractAccessControl accessControl;
     @Mock private org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway;
+    @Mock private org.springframework.beans.factory.ObjectProvider<BlockchainEventIngestionService> blockchainEventIngestionService;
     @Mock private OperationalFundingPolicy operationalFundingPolicy;
 
     private ContractManagementController controller;
@@ -81,6 +82,7 @@ class AdminFinancialMonitoringControllerTest {
                 currentUserContext,
                 accessControl,
                 blockchainGateway,
+                blockchainEventIngestionService,
                 operationalFundingPolicy, org.mockito.Mockito.mock(iuh.fit.contract_service.service.TerminationService.class)
         );
         org.mockito.Mockito.lenient().when(terminationItemRepository.findAll()).thenReturn(List.of());

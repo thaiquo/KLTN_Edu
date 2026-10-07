@@ -4,6 +4,7 @@ import {
   Check,
   CheckCircle2,
   Copy,
+  FileText,
   FileSignature,
   GraduationCap,
   Printer,

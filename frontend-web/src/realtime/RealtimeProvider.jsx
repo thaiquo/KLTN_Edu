@@ -377,6 +377,7 @@ export function RealtimeProvider({ children }) {
 
   const retryTimers = useRef([]);
   const toastKeys = useRef(new Map());
+  const messagesRouteActiveRef = useRef(false);
   const chatViewClientId = useRef(
     typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
@@ -386,6 +387,10 @@ export function RealtimeProvider({ children }) {
     () => isMessagesRoute(location.pathname, location.search),
     [location.pathname, location.search]
   );
+
+  useEffect(() => {
+    messagesRouteActiveRef.current = messagesRouteActive;
+  }, [messagesRouteActive]);
 
   useEffect(() => {
     if (!user) {
@@ -489,7 +494,7 @@ export function RealtimeProvider({ children }) {
           }
 
           const suppressChatBell =
-            messagesRouteActive &&
+            messagesRouteActiveRef.current &&
             event.eventType === 'NOTIFICATION_CREATED' &&
             isChatNotification(event);
 
@@ -637,8 +642,7 @@ export function RealtimeProvider({ children }) {
     queryClient,
     refreshUser,
     showToast,
-    user,
-    messagesRouteActive
+    user
   ]);
 
   return (

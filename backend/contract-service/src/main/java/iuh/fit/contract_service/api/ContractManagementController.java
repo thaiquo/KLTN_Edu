@@ -29,6 +29,10 @@ import iuh.fit.contract_service.service.SessionSettlementWorkflowService;
 import iuh.fit.contract_service.service.OperationalFundingPolicy;
 import iuh.fit.contract_service.service.ContractTermsSnapshot;
 import iuh.fit.contract_service.service.ContractTermsSnapshotService;
+import iuh.fit.contract_service.service.BlockchainEventIngestionService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -53,6 +57,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/contracts")
 public class ContractManagementController {
+    private static final Logger log = LoggerFactory.getLogger(ContractManagementController.class);
 
     private final ContractAgreementRepository agreementRepository;
     private final SessionSettlementRepository settlementRepository;
@@ -76,6 +81,7 @@ public class ContractManagementController {
     private final OperationalFundingPolicy operationalFundingPolicy;
     private final iuh.fit.contract_service.service.TerminationService terminationService;
     private final org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway;
+    private final ObjectProvider<BlockchainEventIngestionService> blockchainEventIngestionService;
 
     public ContractManagementController(
             ContractAgreementRepository agreementRepository,
@@ -98,6 +104,7 @@ public class ContractManagementController {
             CurrentUserContext currentUserContext,
             ContractAccessControl accessControl,
             org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway,
+            ObjectProvider<BlockchainEventIngestionService> blockchainEventIngestionService,
             OperationalFundingPolicy operationalFundingPolicy,
             iuh.fit.contract_service.service.TerminationService terminationService) {
         this.agreementRepository = agreementRepository;
@@ -120,6 +127,7 @@ public class ContractManagementController {
         this.currentUserContext = currentUserContext;
         this.accessControl = accessControl;
         this.blockchainGateway = blockchainGateway;
+        this.blockchainEventIngestionService = blockchainEventIngestionService;
         this.operationalFundingPolicy = operationalFundingPolicy;
         this.terminationService = terminationService;
     }
@@ -417,13 +425,35 @@ public class ContractManagementController {
                         agreement.getStatus().name()));
             }
             ContractAgreement saved = fundingWorkflowService.recordPaymentSubmission(id, txHash);
-            return ResponseEntity.ok(toAgreementDetail(saved));
+            reconcileSubmittedPaymentTx(id, txHash);
+            ContractAgreement current = agreementRepository.findById(id).orElse(saved);
+            return ResponseEntity.ok(toAgreementDetail(current));
         } catch (ResponseStatusException e) {
             return ResponseEntity.status(e.getStatusCode()).body(Map.of("error", e.getReason() != null ? e.getReason() : "Forbidden"));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(Map.of("error", "Lỗi ghi nhận thanh toán: " + e.getMessage()));
+        }
+    }
+
+    private void reconcileSubmittedPaymentTx(UUID agreementId, String txHash) {
+        if (txHash == null || txHash.isBlank()) {
+            return;
+        }
+        BlockchainEventIngestionService ingestionService = blockchainEventIngestionService.getIfAvailable();
+        if (ingestionService == null) {
+            return;
+        }
+        try {
+            int recovered = ingestionService.reconcileTransactionEvents(txHash);
+            if (recovered > 0) {
+                log.info("Recovered {} escrow event(s) from submitted payment tx {} for agreement {}",
+                        recovered, txHash, agreementId);
+            }
+        } catch (RuntimeException exception) {
+            log.warn("Submitted payment tx reconciliation deferred for agreement {} tx {}: {}",
+                    agreementId, txHash, exception.getMessage());
         }
     }
 

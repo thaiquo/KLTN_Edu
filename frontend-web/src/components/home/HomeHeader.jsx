@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowUpRight,
   BookOpen,
+  CalendarDays,
   ChevronDown,
   FileText,
   GraduationCap,
@@ -12,6 +13,7 @@ import {
   LogOut,
   Menu,
   MessageCircle,
+  NotebookTabs,
   RefreshCw,
   Search,
   Settings,
@@ -227,6 +229,9 @@ export function HomeHeader() {
                 {link.icon === 'home' && (
                   <Home size={14} className={active ? 'text-white' : 'text-slate-400'} />
                 )}
+                {link.icon === 'calendar' && (
+                  <CalendarDays size={14} className={active ? 'text-white' : 'text-slate-400'} />
+                )}
                 {link.icon === 'message' && (
                   <MessageCircle size={14} className={active ? 'text-white' : 'text-slate-400'} />
                 )}
@@ -335,6 +340,8 @@ export function HomeHeader() {
             >
               {link.icon === 'search' && <Search size={16} />}
               {link.icon === 'book' && <BookOpen size={16} />}
+              {link.icon === 'home' && <Home size={16} />}
+              {link.icon === 'calendar' && <CalendarDays size={16} />}
               {link.icon === 'message' && <MessageCircle size={16} />}
               {link.icon === 'sparkles' && <Sparkles size={16} />}
               {link.icon === 'shield' && <ShieldCheck size={16} className="text-emerald-600" />}
@@ -372,6 +379,22 @@ export function HomeHeader() {
 
               {isStudentActive && (
                 <>
+                  <Link
+                    to="/my-homework"
+                    onClick={closeMenu}
+                    className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <NotebookTabs size={17} />
+                    Bài tập của tôi
+                  </Link>
+                  <Link
+                    to="/messages"
+                    onClick={closeMenu}
+                    className="inline-flex items-center justify-center gap-2 min-h-[46px] rounded-[14px] border border-slate-200 bg-white text-slate-800 font-extrabold hover:border-primary/40 hover:text-primary transition-colors"
+                  >
+                    <MessageCircle size={17} />
+                    Tin nhắn
+                  </Link>
                   <Link
                     to="/contracts"
                     onClick={closeMenu}
@@ -526,131 +549,158 @@ function NavItem({ link, className, onClick, children }) {
 function AccountMenu({ user, roleAction, roleActionError, onStudentTutorAction, onLogout, onClose }) {
   const isStaffOrAdmin = user?.roles?.includes('STAFF') || user?.roles?.includes('ADMIN');
   const isStudentActive = user?.activeRole === 'STUDENT';
+  const displayName = user?.fullName || user?.email || 'Tài khoản';
+  const initials = getInitials(displayName);
+  const avatarUrl = getAvatarUrl(user);
+  const roleText = displayRole(user);
+  const email = user?.email || '';
 
   return (
     <div
-      className="absolute right-0 top-[calc(100%+12px)] z-50 w-72 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl"
+      className="absolute right-0 top-[calc(100%+12px)] z-50 flex max-h-[65vh] w-[min(320px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white p-2.5 shadow-[0_18px_48px_rgba(15,23,42,.14)]"
       role="menu"
     >
-      {isStudentActive ? (
-        <>
-          <MenuLink to="/profile" icon={<UserRound size={16} />} onClick={onClose}>
-            Hồ sơ cá nhân
-          </MenuLink>
-
-          <MenuLink to="/my-classes" icon={<GraduationCap size={16} />} onClick={onClose}>
-            Lớp học của tôi
-          </MenuLink>
-
-          <MenuLink to="/my-homework" icon={<BookOpen size={16} />} onClick={onClose}>
-            Bài tập của tôi
-          </MenuLink>
-
-          <MenuLink to="/contracts" icon={<FileText size={16} />} onClick={onClose}>
-            Hợp đồng của tôi
-          </MenuLink>
-
-          <MenuLink to="/student/complaints" icon={<ShieldAlert size={16} />} onClick={onClose}>
-            Khiếu nại của tôi
-          </MenuLink>
-
-          <MenuLink to="/student/wallet" icon={<WalletCards size={16} />} onClick={onClose}>
-            Ví của tôi
-          </MenuLink>
-
-          <MenuLink to="/profile" icon={<Settings size={16} />} onClick={onClose}>
-            Cài đặt
-          </MenuLink>
-
-          <MenuLink to="/profile/password" icon={<KeyRound size={16} />} onClick={onClose}>
-            Đổi mật khẩu
-          </MenuLink>
-
-          {roleAction && (
-            <div className="my-2 border-t border-slate-100 pt-2">
-              <button
-                type="button"
-                onClick={onStudentTutorAction}
-                disabled={roleAction.disabled}
-                className="flex w-full items-center gap-3 rounded-[10px] px-3 py-3 text-left text-sm font-extrabold text-[#147b77] hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
-                role="menuitem"
-              >
-                {roleAction.icon === 'switch'
-                  ? <RefreshCw size={16} />
-                  : <GraduationCap size={16} />}
-                <span>{roleAction.label}</span>
-              </button>
-
-              {roleActionError && (
-                <p className="mt-1 rounded-[10px] border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold leading-5 text-red-700">
-                  {roleActionError}
-                </p>
-              )}
-            </div>
+      <div className="mb-2 flex shrink-0 items-center gap-3 rounded-[14px] bg-slate-50 px-3 py-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-[13px] bg-slate-900 text-xs font-extrabold text-white shadow-sm">
+          {avatarUrl ? (
+            <img src={avatarUrl} alt={`Ảnh đại diện của ${displayName}`} className="h-full w-full object-cover" />
+          ) : initials}
+        </span>
+        <span className="min-w-0 text-left">
+          <span className="block truncate text-sm font-extrabold text-slate-950">{displayName}</span>
+          <span className="block text-[11px] font-bold text-slate-500">{roleText}</span>
+          {email && (
+            <span className="block truncate text-[11px] font-medium text-slate-400">{email}</span>
           )}
-        </>
-      ) : user?.activeRole === 'TUTOR' ? (
-        <>
-          <MenuLink to="/dashboard" icon={<LayoutDashboard size={16} />} onClick={onClose}>
-            Dashboard Gia sư
-          </MenuLink>
+        </span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-color:rgba(148,163,184,.45)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300/70">
+        {isStudentActive ? (
+          <>
+            <MenuLink to="/profile" icon={<UserRound size={16} />} onClick={onClose}>
+              Hồ sơ cá nhân
+            </MenuLink>
 
-          <MenuLink to="/dashboard?tab=my-classes" icon={<BookOpen size={16} />} onClick={onClose}>
-            Lớp học của tôi
-          </MenuLink>
+            <MenuLink to="/my-classes" icon={<GraduationCap size={16} />} onClick={onClose}>
+              Lớp học của tôi
+            </MenuLink>
 
-          <MenuLink to="/dashboard?tab=contracts" icon={<FileText size={16} />} onClick={onClose}>
-            Hợp đồng & Ký quỹ
-          </MenuLink>
+            <MenuLink to="/my-homework" icon={<NotebookTabs size={16} />} onClick={onClose}>
+              Bài tập của tôi
+            </MenuLink>
 
-          <MenuLink to="/dashboard?tab=complaints" icon={<ShieldAlert size={16} />} onClick={onClose}>
-            Khiếu nại lớp học
-          </MenuLink>
+            <MenuLink to="/messages" icon={<MessageCircle size={16} />} onClick={onClose}>
+              Tin nhắn
+            </MenuLink>
 
-          <MenuLink to="/dashboard?tab=wallet" icon={<WalletCards size={16} />} onClick={onClose}>
-            Ví của tôi
-          </MenuLink>
+            <MenuLink to="/contracts" icon={<FileText size={16} />} onClick={onClose}>
+              Hợp đồng của tôi
+            </MenuLink>
 
-          <div className="my-1 border-t border-slate-100" />
+            <MenuLink to="/student/complaints" icon={<ShieldAlert size={16} />} onClick={onClose}>
+              Khiếu nại của tôi
+            </MenuLink>
 
-          <MenuLink to="/profile" icon={<UserRound size={16} />} onClick={onClose}>
-            Hồ sơ cá nhân
-          </MenuLink>
+            <MenuLink to="/student/wallet" icon={<WalletCards size={16} />} onClick={onClose}>
+              Ví của tôi
+            </MenuLink>
 
-          <MenuLink to="/profile" icon={<Settings size={16} />} onClick={onClose}>
-            Cài đặt tài khoản
-          </MenuLink>
+            <div className="my-2 border-t border-slate-100" />
 
-          <MenuLink to="/profile/password" icon={<KeyRound size={16} />} onClick={onClose}>
-            Đổi mật khẩu
-          </MenuLink>
-        </>
-      ) : (
-        <>
-          <MenuLink to="/profile" icon={<UserRound size={16} />} onClick={onClose}>
-            Hồ sơ cá nhân
-          </MenuLink>
+            <MenuLink to="/profile" icon={<Settings size={16} />} onClick={onClose}>
+              Cài đặt
+            </MenuLink>
 
-          <MenuLink to="/profile" icon={<Settings size={16} />} onClick={onClose}>
-            Cài đặt tài khoản
-          </MenuLink>
+            <MenuLink to="/profile/password" icon={<KeyRound size={16} />} onClick={onClose}>
+              Đổi mật khẩu
+            </MenuLink>
 
-          <MenuLink to="/profile/password" icon={<KeyRound size={16} />} onClick={onClose}>
-            Đổi mật khẩu
-          </MenuLink>
-        </>
-      )}
+            {roleAction && (
+              <div className="my-2 border-t border-slate-100 pt-2">
+                <button
+                  type="button"
+                  onClick={onStudentTutorAction}
+                  disabled={roleAction.disabled}
+                  className="flex min-h-[42px] w-full items-center gap-3 rounded-[12px] px-3 text-left text-sm font-bold text-[#147b77] transition-colors hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  role="menuitem"
+                >
+                  {roleAction.icon === 'switch'
+                    ? <RefreshCw size={16} />
+                    : <GraduationCap size={16} />}
+                  <span>{roleAction.label}</span>
+                </button>
 
-      {isStaffOrAdmin && (
-        <MenuLink to="/staff/tutors" icon={<Settings size={16} />} onClick={onClose}>
-          Staff Dashboard
-        </MenuLink>
-      )}
+                {roleActionError && (
+                  <p className="mt-1 rounded-[10px] border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold leading-5 text-red-700">
+                    {roleActionError}
+                  </p>
+                )}
+              </div>
+            )}
+          </>
+        ) : user?.activeRole === 'TUTOR' ? (
+          <>
+            <MenuLink to="/dashboard" icon={<LayoutDashboard size={16} />} onClick={onClose}>
+              Dashboard Gia sư
+            </MenuLink>
+
+            <MenuLink to="/dashboard?tab=my-classes" icon={<BookOpen size={16} />} onClick={onClose}>
+              Lớp học của tôi
+            </MenuLink>
+
+            <MenuLink to="/dashboard?tab=contracts" icon={<FileText size={16} />} onClick={onClose}>
+              Hợp đồng & Ký quỹ
+            </MenuLink>
+
+            <MenuLink to="/dashboard?tab=complaints" icon={<ShieldAlert size={16} />} onClick={onClose}>
+              Khiếu nại lớp học
+            </MenuLink>
+
+            <MenuLink to="/dashboard?tab=wallet" icon={<WalletCards size={16} />} onClick={onClose}>
+              Ví của tôi
+            </MenuLink>
+
+            <div className="my-1 border-t border-slate-100" />
+
+            <MenuLink to="/profile" icon={<UserRound size={16} />} onClick={onClose}>
+              Hồ sơ cá nhân
+            </MenuLink>
+
+            <MenuLink to="/profile" icon={<Settings size={16} />} onClick={onClose}>
+              Cài đặt tài khoản
+            </MenuLink>
+
+            <MenuLink to="/profile/password" icon={<KeyRound size={16} />} onClick={onClose}>
+              Đổi mật khẩu
+            </MenuLink>
+          </>
+        ) : (
+          <>
+            <MenuLink to="/profile" icon={<UserRound size={16} />} onClick={onClose}>
+              Hồ sơ cá nhân
+            </MenuLink>
+
+            <MenuLink to="/profile" icon={<Settings size={16} />} onClick={onClose}>
+              Cài đặt tài khoản
+            </MenuLink>
+
+            <MenuLink to="/profile/password" icon={<KeyRound size={16} />} onClick={onClose}>
+              Đổi mật khẩu
+            </MenuLink>
+          </>
+        )}
+
+        {isStaffOrAdmin && (
+          <MenuLink to="/staff/tutors" icon={<Settings size={16} />} onClick={onClose}>
+            Staff Dashboard
+          </MenuLink>
+        )}
+      </div>
 
       <button
         type="button"
         onClick={onLogout}
-        className="mt-2 flex w-full items-center gap-3 border-t border-slate-100 px-3 py-3 text-left text-sm font-extrabold text-[#b83333] hover:bg-red-50"
+        className="mt-2 flex min-h-[42px] w-full shrink-0 items-center gap-3 rounded-[12px] border-t border-slate-100 px-3 text-left text-sm font-bold text-red-600 transition-colors hover:bg-red-50 hover:text-red-700"
         role="menuitem"
       >
         <LogOut size={16} />
@@ -661,14 +711,25 @@ function AccountMenu({ user, roleAction, roleActionError, onStudentTutorAction, 
 }
 
 function MenuLink({ to, icon, children, onClick }) {
+  const location = useLocation();
+  const targetPath = to.split('?')[0];
+  const active = location.pathname === targetPath;
+
   return (
     <Link
       to={to}
       onClick={onClick}
-      className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-extrabold text-slate-800 hover:bg-slate-50 hover:text-primary transition-colors"
+      className={`group relative flex min-h-[42px] items-center gap-3 rounded-[12px] px-3 text-sm font-bold transition-colors ${
+        active
+          ? 'bg-blue-50 text-primary'
+          : 'text-slate-700 hover:bg-blue-50/70 hover:text-primary'
+      }`}
       role="menuitem"
     >
-      {icon}
+      {active && <span className="absolute left-0 h-5 w-0.5 rounded-full bg-primary" aria-hidden="true" />}
+      <span className={`grid h-5 w-5 place-items-center transition-colors ${active ? 'text-primary' : 'text-slate-400 group-hover:text-primary'}`}>
+        {icon}
+      </span>
       {children}
     </Link>
   );

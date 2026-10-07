@@ -9,6 +9,7 @@ import iuh.fit.contract_service.config.BlockchainProperties;
 import iuh.fit.contract_service.enums.ContractAgreementStatus;
 import iuh.fit.contract_service.repository.ContractAgreementRepository;
 import iuh.fit.contract_service.repository.BlockchainEventCursorRepository;
+import iuh.fit.contract_service.repository.EscrowPaymentRepository;
 import iuh.fit.contract_service.repository.ProcessedEventRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,6 +58,9 @@ class BlockchainEventIngestionServiceIntegrationTest {
 
     @Autowired
     private ContractAgreementRepository agreementRepository;
+
+    @Autowired
+    private EscrowPaymentRepository escrowPaymentRepository;
 
     @Autowired
     private AgreementRegistrationWorkflowService registrationWorkflowService;
@@ -215,6 +219,41 @@ class BlockchainEventIngestionServiceIntegrationTest {
         assertEquals(1, eventRepository.count());
     }
 
+    @Test
+    void reconcilesSubmittedUserFundingTransactionWithoutWaitingForCursorCatchup() {
+        UUID agreementId = UUID.randomUUID();
+        insertAgreement(agreementId, "PAYMENT_CONFIRMING");
+        String txHash = "0x" + "77".repeat(32);
+        insertConfirmingPayment(agreementId, txHash);
+        rpc.latestBlock = BigInteger.valueOf(20);
+        rpc.blocks.put(10L, block(10, "aa"));
+        BlockchainLog fundingLog = fundedLog(10, rpc.blocks.get(10L).hash(), 1, "77");
+        rpc.transactionLogs.put(txHash, List.of(fundingLog));
+        service = new BlockchainEventIngestionService(
+                properties,
+                rpc,
+                new EduConnectEscrowEventDecoder(),
+                cursorRepository,
+                eventRepository,
+                null,
+                escrowPaymentRepository,
+                null,
+                fundingWorkflowService,
+                null,
+                null,
+                null,
+                objectMapper,
+                transactionManager);
+
+        assertEquals(1, service.reconcileSubmittedFundingPaymentEvents());
+        assertEquals(0, service.reconcileSubmittedFundingPaymentEvents());
+
+        var agreement = agreementRepository.findById(agreementId).orElseThrow();
+        assertEquals(ContractAgreementStatus.ACTIVE, agreement.getStatus());
+        assertEquals(1, eventRepository.count());
+        assertEquals(0, cursorRepository.count());
+    }
+
     private static BlockchainLog fundedLog(long block, String blockHash, long logIndex, String txByte) {
         Event event = new Event("AgreementFunded", List.of(
                 new TypeReference<Bytes32>(true) {},
@@ -281,6 +320,18 @@ class BlockchainEventIngestionServiceIntegrationTest {
                 ESCROW, TOKEN, TERMS_HASH, status);
     }
 
+    private void insertConfirmingPayment(UUID agreementId, String txHash) {
+        jdbcTemplate.update("""
+                INSERT INTO escrow_payment (
+                    id, agreement_id, chain_id, token_address, escrow_contract_address,
+                    expected_amount, fund_tx_hash, status, version, created_at, updated_at
+                ) VALUES (
+                    ?, ?, ?, ?, ?, 40000000, ?, 'CONFIRMING', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                )
+                """,
+                UUID.randomUUID(), agreementId, properties.getChainId(), TOKEN, ESCROW, txHash);
+    }
+
     private static BlockchainBlock block(long number, String hashByte) {
         return new BlockchainBlock(number, "0x" + hashByte.repeat(32));
     }
@@ -294,6 +345,7 @@ class BlockchainEventIngestionServiceIntegrationTest {
         private BigInteger latestBlock = BigInteger.ZERO;
         private final Map<Long, BlockchainBlock> blocks = new HashMap<>();
         private final List<BlockchainLog> logs = new ArrayList<>();
+        private final Map<String, List<BlockchainLog>> transactionLogs = new HashMap<>();
 
         @Override
         public BigInteger getChainId() {
@@ -315,6 +367,11 @@ class BlockchainEventIngestionServiceIntegrationTest {
             return logs.stream()
                     .filter(log -> log.blockNumber() >= fromBlock && log.blockNumber() <= toBlock)
                     .toList();
+        }
+
+        @Override
+        public List<BlockchainLog> getTransactionLogs(String transactionHash) {
+            return transactionLogs.getOrDefault(transactionHash, List.of());
         }
     }
 }

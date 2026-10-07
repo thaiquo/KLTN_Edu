@@ -263,7 +263,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
             allTxEvents.push({
               id: `termination-${termination.request.id}-${item.agreementId}`,
               agreementId: item.agreementId,
-              className: agreement.className || `Lá»›p há»c #${agreement.classroomId}`,
+              className: agreement.className || `Lớp học #${agreement.classroomId}`,
               type: "REFUND",
               actionName: termination.request.wholeClass
                 ? "Hoàn cọc chưa dùng do Admin hủy lớp"

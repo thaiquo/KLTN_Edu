@@ -10,6 +10,7 @@ import iuh.fit.contract_service.enums.ContractDocumentArtifactStatus;
 import iuh.fit.contract_service.repository.ContractDocumentArtifactRepository;
 import iuh.fit.contract_service.repository.EscrowPaymentRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.scheduling.annotation.Scheduled;
 import lombok.extern.slf4j.Slf4j;
@@ -63,7 +64,7 @@ public class ContractDocumentArtifactService {
                 artifactRepository.findByAgreementIdAndContractVersion(agreementId, view.contractVersion()));
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public synchronized ContractDocumentArtifact finalizeDocument(UUID agreementId) {
         ContractDocumentViewDto view = queryService.findDocumentView(agreementId)
                 .orElseThrow(() -> new IllegalArgumentException("Hợp đồng không tồn tại"));

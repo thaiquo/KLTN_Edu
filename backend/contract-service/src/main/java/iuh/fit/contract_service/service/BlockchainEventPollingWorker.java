@@ -42,7 +42,8 @@ public class BlockchainEventPollingWorker {
             return;
         }
         try {
-            int recovered = ingestionService.reconcileConfirmedTransactionEvents();
+            int recovered = ingestionService.reconcileConfirmedTransactionEvents()
+                    + ingestionService.reconcileSubmittedFundingPaymentEvents();
             if (recovered > 0) {
                 log.info("Recovered {} blockchain event(s) from confirmed transaction receipts", recovered);
             }

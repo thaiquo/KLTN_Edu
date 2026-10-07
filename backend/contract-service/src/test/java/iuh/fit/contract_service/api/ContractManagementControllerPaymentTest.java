@@ -85,6 +85,8 @@ class ContractManagementControllerPaymentTest {
     private ContractAccessControl accessControl;
     @Mock
     private org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway;
+    @Mock
+    private org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.service.BlockchainEventIngestionService> blockchainEventIngestionService;
 
     private ContractManagementController controller;
 
@@ -110,7 +112,9 @@ class ContractManagementControllerPaymentTest {
                 learningServiceDispatcher,
                 currentUserContext,
                 accessControl,
-                blockchainGateway, new iuh.fit.contract_service.service.OperationalFundingPolicy(
+                blockchainGateway,
+                blockchainEventIngestionService,
+                new iuh.fit.contract_service.service.OperationalFundingPolicy(
                         agreementRepository, escrowPaymentRepository, processedEventRepository,
                         new tools.jackson.databind.ObjectMapper()),
                 org.mockito.Mockito.mock(iuh.fit.contract_service.service.TerminationService.class));

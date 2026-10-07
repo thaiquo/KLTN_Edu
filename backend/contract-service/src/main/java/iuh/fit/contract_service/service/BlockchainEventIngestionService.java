@@ -9,10 +9,15 @@ import iuh.fit.contract_service.blockchain.EduConnectEscrowEventDecoder;
 import iuh.fit.contract_service.config.BlockchainProperties;
 import iuh.fit.contract_service.entity.BlockchainEventCursor;
 import iuh.fit.contract_service.entity.BlockchainTransaction;
+import iuh.fit.contract_service.entity.EscrowPayment;
 import iuh.fit.contract_service.entity.ProcessedEvent;
+import iuh.fit.contract_service.enums.EscrowPaymentStatus;
 import iuh.fit.contract_service.repository.BlockchainEventCursorRepository;
 import iuh.fit.contract_service.repository.ProcessedEventRepository;
 import iuh.fit.contract_service.repository.BlockchainTransactionRepository;
+import iuh.fit.contract_service.repository.EscrowPaymentRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,12 +34,15 @@ import java.util.Locale;
 import java.util.Map;
 
 public class BlockchainEventIngestionService {
+    private static final Logger log = LoggerFactory.getLogger(BlockchainEventIngestionService.class);
+
     private final BlockchainProperties properties;
     private final BlockchainEventRpcClient rpcClient;
     private final EduConnectEscrowEventDecoder decoder;
     private final BlockchainEventCursorRepository cursorRepository;
     private final ProcessedEventRepository eventRepository;
     private final BlockchainTransactionRepository transactionRepository;
+    private final EscrowPaymentRepository escrowPaymentRepository;
     private final AgreementRegistrationWorkflowService registrationWorkflowService;
     private final AgreementFundingWorkflowService fundingWorkflowService;
     private final SessionSettlementWorkflowService settlementWorkflowService;
@@ -50,6 +58,7 @@ public class BlockchainEventIngestionService {
             BlockchainEventCursorRepository cursorRepository,
             ProcessedEventRepository eventRepository,
             BlockchainTransactionRepository transactionRepository,
+            EscrowPaymentRepository escrowPaymentRepository,
             AgreementRegistrationWorkflowService registrationWorkflowService,
             AgreementFundingWorkflowService fundingWorkflowService,
             SessionSettlementWorkflowService settlementWorkflowService,
@@ -63,6 +72,7 @@ public class BlockchainEventIngestionService {
         this.cursorRepository = cursorRepository;
         this.eventRepository = eventRepository;
         this.transactionRepository = transactionRepository;
+        this.escrowPaymentRepository = escrowPaymentRepository;
         this.registrationWorkflowService = registrationWorkflowService;
         this.fundingWorkflowService = fundingWorkflowService;
         this.settlementWorkflowService = settlementWorkflowService;
@@ -86,7 +96,7 @@ public class BlockchainEventIngestionService {
             AgreementLifecycleWorkflowService lifecycleWorkflowService,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager) {
-        this(properties, rpcClient, decoder, cursorRepository, eventRepository, null,
+        this(properties, rpcClient, decoder, cursorRepository, eventRepository, null, null,
                 registrationWorkflowService, fundingWorkflowService, settlementWorkflowService,
                 disputeWorkflowService, lifecycleWorkflowService, objectMapper, transactionManager);
     }
@@ -134,6 +144,62 @@ public class BlockchainEventIngestionService {
                 processPersistedEvent(event);
                 persisted++;
             }
+        }
+        eventRepository.flush();
+        return persisted;
+    }
+
+    @Transactional
+    public int reconcileSubmittedFundingPaymentEvents() {
+        if (escrowPaymentRepository == null) {
+            return 0;
+        }
+        int persisted = 0;
+        for (EscrowPayment payment : escrowPaymentRepository.findByStatusAndFundTxHashIsNotNull(
+                EscrowPaymentStatus.CONFIRMING, PageRequest.of(0, 100))) {
+            try {
+                persisted += reconcileTransactionEvents(payment.getFundTxHash());
+            } catch (RuntimeException exception) {
+                log.warn("Submitted funding tx reconciliation deferred for payment {} tx {}: {}",
+                        payment.getId(), payment.getFundTxHash(), exception.getMessage());
+            }
+        }
+        return persisted;
+    }
+
+    @Transactional
+    public int reconcileTransactionEvents(String transactionHash) {
+        if (transactionHash == null || !transactionHash.matches("^0x[0-9a-fA-F]{64}$")) {
+            throw new IllegalArgumentException("Invalid transaction hash");
+        }
+        BigInteger actualChainId = rpcClient.getChainId();
+        if (!actualChainId.equals(BigInteger.valueOf(properties.getChainId()))) {
+            throw new IllegalStateException("Event RPC chain ID does not match configured chain ID");
+        }
+
+        long latestBlock = rpcClient.getLatestBlockNumber().longValueExact();
+        long safeHead = latestBlock - properties.getConfirmations() + 1L;
+        int persisted = 0;
+        Map<Long, String> blockHashes = new HashMap<>();
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        for (BlockchainLog log : rpcClient.getTransactionLogs(transactionHash)) {
+            if (!properties.getEscrowAddress().equalsIgnoreCase(log.address())
+                    || log.blockNumber() > safeHead
+                    || eventRepository.existsByChainIdAndTransactionHashIgnoreCaseAndLogIndex(
+                    properties.getChainId(), log.transactionHash(), log.logIndex())) {
+                continue;
+            }
+            validateLog(log, log.blockNumber(), log.blockNumber(), blockHashes);
+            DecodedEscrowEvent decoded = decoder.decode(log).orElse(null);
+            if (decoded == null) {
+                continue;
+            }
+            ProcessedEvent event = ProcessedEvent.blockchainLog(
+                    properties.getChainId(), properties.getEscrowAddress(), log,
+                    decoded.type().name(), serialize(decoded), now);
+            eventRepository.save(event);
+            processPersistedEvent(event);
+            persisted++;
         }
         eventRepository.flush();
         return persisted;

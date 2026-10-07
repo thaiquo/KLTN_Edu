@@ -25,8 +25,6 @@ import {
 
 import {
   UserRole,
-  StudentRequest,
-  ScheduleItem,
   SystemUser,
   AppProfileSettings
 } from "./types";
@@ -62,66 +60,6 @@ const tutorAvatar1 =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuDRu0OVaIcgue-YXnknr5dY-iLecwj2hXTJCP1BwuiISehZGksR-kfcE_isqtt_tihIolfeslpHxKMuBXKWj1CNOEPPXE_SPy1rX-sqbLCrxHwNk54BB6KmaV1A8q0s1sJ39bCu88RA6dgS87wdrEjUcCdlGfQpH1lyt7fPWk1MpWLgNUnqX6eD_VwF8ubV_scELBg1jr2mgcQQpc6kljNIC1fqkJIH5NcJ_m80UfxpT4VhjTp7Mzbtq_sbr1Y9F-IfTdEIHvnvFyaN";
 const tutorAvatar2 =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuBhwW3n6U0eBWTDne_iulj_Auj40EVPpMpQb_Ty2AmFqUqnCNtOtcugJcmoz3Wqy5667xVuLljO9Q7wnie5Nlxc0xfVQ4EW-BkKrLtK7ulPXjCY2tNCUPRksiYJkTTOuRQi4l12qR7vruVIbGkokyxG2U5HamxYV8xTj2EAiBram-_YsKG4hlqzbt1VQGJIZcsEI-_LymkavkzmdrrbDSNe1lBDVhtMVZJxmhimVQREO5_faCg4la-rGcz9tzLq9zH_bWjSEgA-qwnm";
-
-const INITIAL_REQUESTS: StudentRequest[] = [
-  {
-    id: "req-1",
-    studentName: "Nguyễn Minh Anh",
-    avatarChar: "JD",
-    avatarColor: "bg-teal-700",
-    subject: "Giải tích nâng cao",
-    requestedDate: "Oct 24, 2023",
-    status: "pending",
-  },
-  {
-    id: "req-2",
-    studentName: "Trần Ngọc Mai",
-    avatarChar: "SR",
-    avatarColor: "bg-emerald-700",
-    subject: "Sinh học phân tử",
-    requestedDate: "Oct 25, 2023",
-    status: "pending",
-  },
-  {
-    id: "req-3",
-    studentName: "Lê Minh Trí",
-    avatarChar: "LM",
-    avatarColor: "bg-indigo-700",
-    subject: "Vật lý lượng tử",
-    requestedDate: "Oct 26, 2023",
-    status: "pending",
-  },
-];
-
-const INITIAL_SCHEDULE: ScheduleItem[] = [
-  {
-    id: "sch-1",
-    time: "09:00",
-    period: "AM",
-    title: "Buổi học Giải tích II",
-    detailType: "students",
-    detailValue: "12 học viên đã đăng ký",
-    status: "active",
-  },
-  {
-    id: "sch-2",
-    time: "13:30",
-    period: "PM",
-    title: "Học 1-1: Nguyễn Hoàng",
-    detailType: "virtual",
-    detailValue: "Phòng học trực tuyến B",
-    status: "active",
-  },
-  {
-    id: "sch-3",
-    time: "16:00",
-    period: "PM",
-    title: "Giờ hỗ trợ",
-    detailType: "location",
-    detailValue: "Phòng 4B",
-    status: "past",
-  },
-];
 
 const INITIAL_SYSTEM_USERS: SystemUser[] = [
   {
@@ -230,8 +168,6 @@ export default function App({ user, onLogout }: AppProps) {
   const [searchValue, setSearchValue] = useState("");
 
   // Custom mock database tables binded in React
-  const [requests, setRequests] = useState<StudentRequest[]>(INITIAL_REQUESTS);
-  const [schedule, setSchedule] = useState<ScheduleItem[]>(INITIAL_SCHEDULE);
   const [users, setUsers] = useState<SystemUser[]>(INITIAL_SYSTEM_USERS);
   const [profileSettings, setProfileSettings] = useState<AppProfileSettings>({
     ...INITIAL_PROFILE_SETTINGS,
@@ -296,29 +232,6 @@ export default function App({ user, onLogout }: AppProps) {
     feedback.info("Phòng học trực tuyến sẽ được kết nối khi module video/audio thật sẵn sàng.");
   };
 
-  // Tutor specific handlers
-  const handleAcceptRequest = (id: string) => {
-    setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status: "approved" as const } : r)));
-    // Append to schedule or students list!
-    const target = requests.find((r) => r.id === id);
-    if (target) {
-      const newSch: ScheduleItem = {
-        id: `sch-${Date.now()}`,
-        time: "11:00",
-        period: "AM",
-        title: `1-on-1: ${target.studentName}`,
-        detailType: "virtual",
-        detailValue: `Virtual Room - ${target.subject}`,
-        status: "active",
-      };
-      setSchedule((prev) => [...prev, newSch]);
-    }
-  };
-
-  const handleRejectRequest = (id: string) => {
-    setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status: "rejected" as const } : r)));
-  };
-
   // Admin specific CRUD handlers
   const handleAddUser = (user: Omit<SystemUser, "id" | "joinedDate">) => {
     const newUser: SystemUser = {
@@ -357,10 +270,6 @@ export default function App({ user, onLogout }: AppProps) {
           return (
             <TutorDashboard
               userName={user.fullName}
-              requests={requests}
-              schedule={schedule}
-              onAcceptRequest={handleAcceptRequest}
-              onRejectRequest={handleRejectRequest}
               onNavigate={handleNavigate}
             />
           );

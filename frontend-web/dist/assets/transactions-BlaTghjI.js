@@ -1,4 +1,4 @@
-import{l as e,w as t,x as n,y as r}from"./wui-text-BTwUa-zK.js";import"./index-BFjhqnz2.js";var i=t`
+import{l as e,w as t,x as n,y as r}from"./wui-text-BTwUa-zK.js";import"./index-OEU7OJik.js";var i=t`
   :host > wui-flex:first-child {
     height: 500px;
     overflow-y: auto;

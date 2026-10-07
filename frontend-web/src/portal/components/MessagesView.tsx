@@ -197,7 +197,6 @@ export function MessagesView({ embeddedInStudentPage = false }: MessagesViewProp
   const [pendingMedia, setPendingMedia] = useState<PendingMedia | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
-  const messageEndRef = useRef<HTMLDivElement | null>(null);
   const scrollFrameRef = useRef<HTMLDivElement | null>(null);
   const shouldScrollToBottom = useRef(true);
   const activeConversationIdRef = useRef<string | null>(activeConversationId);
@@ -236,13 +235,15 @@ export function MessagesView({ embeddedInStudentPage = false }: MessagesViewProp
     revokePending(pendingMedia);
   }, [pendingMedia, revokePending]);
 
-  const setConversationInRoute = useCallback((id: string | null) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      if (id) next.set("conversation", id);
-      else next.delete("conversation");
-      return next;
-    });
+  const setConversationInRoute = useCallback((id: string | null, options: { replace?: boolean } = {}) => {
+    const next = new URLSearchParams(window.location.search);
+    const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+    if (pathname === "/dashboard" && !next.get("tab")) {
+      next.set("tab", "messages");
+    }
+    if (id) next.set("conversation", id);
+    else next.delete("conversation");
+    setSearchParams(next, { replace: Boolean(options.replace) });
   }, [setSearchParams]);
 
   const markActiveRead = useCallback(async (conversationId: string) => {
@@ -284,7 +285,7 @@ export function MessagesView({ embeddedInStudentPage = false }: MessagesViewProp
             ? routeConversation
             : data[0]?.id || null;
       setActiveConversationId(nextActive);
-      setConversationInRoute(nextActive);
+      setConversationInRoute(nextActive, { replace: !routeConversation || routeConversation !== nextActive });
       if (!nextActive) setMessages([]);
     } catch (err) {
       setError(safeErrorMessage(err));
@@ -337,7 +338,9 @@ export function MessagesView({ embeddedInStudentPage = false }: MessagesViewProp
   }, [activeConversationId, loadMessages]);
 
   useEffect(() => {
-    if (shouldScrollToBottom.current) messageEndRef.current?.scrollIntoView({ behavior: "auto" });
+    if (shouldScrollToBottom.current && scrollFrameRef.current) {
+      scrollFrameRef.current.scrollTop = scrollFrameRef.current.scrollHeight;
+    }
   }, [messages]);
 
   useEffect(() => {
@@ -476,7 +479,7 @@ export function MessagesView({ embeddedInStudentPage = false }: MessagesViewProp
   const blankOrTooLong = (!inputText.trim() && !pendingMedia) || inputText.trim().length > CHAT_MESSAGE_MAX_LENGTH;
 
   return (
-    <div className={`font-sans flex border border-brand-border/30 rounded-[8px] bg-white overflow-hidden shadow-sm ${embeddedInStudentPage ? "h-[calc(100vh-7.5rem)] min-h-[560px]" : "h-[calc(100vh-8rem)] min-h-[560px]"}`}>
+    <div className={`font-sans flex min-h-0 border border-brand-border/30 rounded-[8px] bg-white overflow-hidden shadow-sm ${embeddedInStudentPage ? "h-[calc(100vh-7.5rem)] min-h-[560px]" : "h-[calc(100vh-8rem)] min-h-[560px]"}`}>
       <div className={`${activeConversation ? "hidden md:flex" : "flex"} w-full md:w-80 border-r border-brand-border/30 flex-col shrink-0 bg-brand-low/5`}>
         <div className="p-4 border-b border-brand-border/20 space-y-4">
           <div className="flex items-center justify-between">
@@ -597,7 +600,6 @@ export function MessagesView({ embeddedInStudentPage = false }: MessagesViewProp
                   </div>
                 );
               })}
-              <div ref={messageEndRef} />
             </div>
 
             <footer className="p-3 sm:p-4 bg-white border-t border-brand-border/20 shrink-0">
