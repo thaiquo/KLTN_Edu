@@ -144,3 +144,4 @@ CREATE INDEX idx_teaching_levels_active ON teaching_levels (active);
 CREATE INDEX idx_subject_requests_status ON subject_requests (status);
 CREATE INDEX idx_subject_requests_user ON subject_requests (requested_by_user_id);
 CREATE INDEX idx_tutor_subjects_user ON tutor_subjects (user_id);
+

@@ -198,3 +198,4 @@ SELECT setval(
     COALESCE((SELECT MAX(id) FROM subjects), 1),
     TRUE
 );
+

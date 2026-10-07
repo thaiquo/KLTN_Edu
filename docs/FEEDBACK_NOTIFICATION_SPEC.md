@@ -230,7 +230,7 @@ These are target events derived from current project scope and docs. They are no
 | `MESSAGE_RECEIVED` | `IMPLEMENTED` | Notification Service chat domain | Recipient | Sender local send state | `CHAT_MESSAGE` Bell summary outside Messages; suppressed inside active Messages | `/ws/chat` is consumed by Web Messages; `/ws/notifications` updates Bell summaries | Bell implemented for outside-Messages recipients | `/messages?conversation={id}` or `/dashboard?tab=messages&conversation={id}` | Message persistence/API/WebSocket and Student/Tutor Web Messages are connected; mobile remains pending. |
 | `COMPLAINT_CREATED` | `PLANNED` | Complaint/support domain owner TBD | Staff/Admin or counterparty as applicable | Confirm when sensitive, then toast | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Complaint/support module not implemented. |
 | `COMPLAINT_RESOLVED` | `PLANNED` | Complaint/support domain owner TBD | Reporter and affected users | Important success when current user resolves | Yes | Recommended | Yes | `TBD / FUTURE ROUTE` | Complaint/support module not implemented. |
-| `MATCHING_READY` | `PLANNED` | AI Matching domain owner TBD | Student/Tutor depending matching flow | Toast only when generated from explicit action | Optional | Recommended only for long-running jobs | Optional | `/matching` | AI Matching service not implemented. |
+| `MATCHING_READY` | `PLANNED` | AI Matching domain owner TBD | Student depending matching flow | Toast only when generated from explicit action | Optional | Recommended only for long-running jobs | Optional | Tutor/Class Marketplace modal result area | Current AI matching returns immediate modal results; no standalone `/matching` route is active. |
 
 ## 13. Current Implemented Feature Matrix
 
@@ -256,7 +256,7 @@ These are target events derived from current project scope and docs. They are no
 | Contract/Web3 | Contract/payment/escrow/dispute | `IMPLEMENTED + LIMITED` | Core flow is implemented; dispute V1 is limited to `BOTH_PRESENT`, and notification coverage is partial. Financial UI must wait for authoritative backend/on-chain confirmation. |
 | Messaging | Messages | `IMPLEMENTED` Web / `NOT_IMPLEMENTED` Mobile | Backend persistence/API/realtime and Student/Tutor Web Messages exist; mobile remains pending. |
 | Notification | Persistent notifications and Bell center | `PARTIAL` | Backend Notification Service has persistence, REST list/unread/read APIs, JWT-cookie ownership checks, a limited Rabbit consumer slice, raw WebSocket delivery for persisted notification creation, and frontend Bell cache synchronization. |
-| AI Matching | Matching/recommendations | `PLANNED` | AI Service has only a health skeleton; matching, embeddings, ranking and recommendation are not implemented. |
+| AI Matching | Matching/recommendations | `PARTIAL` | AI Service implements tutor/class analyze-ground-match flows with deterministic fallback and Qdrant semantic retrieval foundation; production RAG/evaluation and broad notification behavior remain future work. |
 
 ## 14. Feedback Matrix
 
@@ -478,7 +478,7 @@ Current route targets that may be used:
 | `/messages` | `IMPLEMENTED` Web | Student Web Messages uses backend chat REST/WebSocket and accepts `?conversation={id}` deep links from Bell and marketplace/profile chat entry points. |
 | `/contracts` | `IMPLEMENTED` | Shared real contract view uses Contract Service APIs; blockchain state is confirmed-event driven. |
 | `/payments` | `IMPLEMENTED` | Redirects to `/student/wallet`, which provides the current funding/wallet/settlement view. |
-| `/matching` | `PLANNED` | Student shell exists; AI service missing. |
+| Tutor/Class Marketplace AI modal | `IMPLEMENTED/PARTIAL` | AI matching/search entry point is embedded in Marketplace modals; there is no active standalone `/matching` route. |
 | `/dashboard` | `IMPLEMENTED` | Tutor/Staff/Admin portal shell depending role. |
 | `/tutor/teaching-registrations` | `IMPLEMENTED` | Tutor teaching registration page. |
 | `/staff/tutors` | `IMPLEMENTED` | Staff/Admin review UI. |

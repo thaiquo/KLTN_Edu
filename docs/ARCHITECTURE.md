@@ -29,7 +29,7 @@ Các business service ──JPA/Flyway──> PostgreSQL kltn_db
 | `account-service` | Identity/account | User, role, active role, refresh session, OTP, Student/Tutor profile, TutorApplication/TutorDocument, địa chỉ ví, email, S3. | IMPLEMENTED |
 | `learning-service` | Learning marketplace | Catalog, TutorSubject/registration, availability, classroom/schedule/chapter, enrollment, rolling session, attendance, homework. | IMPLEMENTED cho flow chính Web |
 | `contract-service` | Contract/payment/escrow | Agreement, acceptance, document artifact, payment, settlement, dispute/evidence, blockchain transaction/outbox/event cursor. | IMPLEMENTED cho flow chính; có giới hạn V1/ops |
-| `notification-service` | Notification và chat | Notification persistence, Rabbit consumers, Bell REST/WebSocket, conversation/message persistence, chat REST/WebSocket. | Notification IMPLEMENTED theo event đã nối; Chat backend IMPLEMENTED, Web còn mock |
+| `notification-service` | Notification and chat | Notification persistence, Rabbit consumers, Bell REST/WebSocket, conversation/message persistence, chat REST/WebSocket. | Notification and Web chat IMPLEMENTED for current core flows; some coverage remains partial |
 | `ai-service` | AI matching boundary | Health, Deterministic Matching V1, Gemini analyzer/grounding, Qdrant semantic retrieval foundation. | PARTIAL; Hybrid Matching V2/RAG NOT_IMPLEMENTED |
 
 Không tạo thêm service hoặc chuyển domain owner nếu chưa có quyết định kiến trúc mới.
@@ -40,7 +40,7 @@ Không tạo thêm service hoặc chuyển domain owner nếu chưa có quyết 
 
 `frontend-web` dùng React/Vite, React Router, TanStack Query, Tailwind, ethers.js và Reown AppKit. Web là client chính và có màn hình theo năm actor.
 
-`/payments` hiện redirect về `/student/wallet`; `MyWalletView` được dùng cho lịch sử escrow/wallet. Portal vẫn còn một số state/demo data, rõ nhất là Messages UI chưa nối API chat đã có.
+`/payments` currently redirects to `/student/wallet`; `MyWalletView` is used for escrow/wallet history. Portal still has some state/demo data, but Student/Tutor Messages UI now uses the real chat API.
 
 ### Mobile
 
@@ -85,7 +85,7 @@ Các service hiện dùng chung một PostgreSQL database vật lý `kltn_db`, n
 | Service | Số migration hiện thấy | Nhóm bảng tiêu biểu |
 | --- | ---: | --- |
 | Account | 13 | users, roles, refresh_sessions, OTP, students, tutors, tutor applications/documents. |
-| Learning | 37 | catalog, registrations, class_rooms, schedules/chapters, enrollment_requests, class_sessions, session_attendances, learning_termination_stops, classroom_materials, session_files. |
+| Learning | 7 compact migrations | catalog, registrations, class_rooms, schedules/chapters, enrollment_requests, class_sessions, session_attendances, learning_termination_stops, classroom_materials, session_files. |
 | Contract | 16 | contract_agreement/acceptance/artifact, escrow_payment, session_settlement, dispute/evidence, blockchain_transaction, processed_event/outbox/cursor, termination_cases/items. |
 | Notification | 2 | notifications, conversations, chat_messages. |
 
@@ -140,8 +140,8 @@ Application service được chạy bằng Maven/PowerShell script, chưa đư�
 
 - Một blockchain operator instance; chưa có distributed signer coordination.
 - Một RPC endpoint cấu hình chính; chưa có multi-RPC automatic failover.
-- AI service đã có Matching V1 và Qdrant semantic retrieval foundation; chưa có Hybrid Matching V2, Spring AI hoặc production semantic ranking pipeline.
-- Web chat chưa nối backend chat.
+- AI service has Matching V1, Gemini analyzer/grounding, embeddings, and Qdrant semantic retrieval foundation; production RAG/evaluation remains incomplete.
+- Web chat is connected to backend chat for Student/Tutor Messages; mobile chat parity remains incomplete.
 - Mobile chưa feature-complete.
 - Reviewer notification phụ thuộc producer cung cấp recipient id đáng tin cậy.
 - Không có Eureka runtime module có source; root Maven không dùng Eureka.

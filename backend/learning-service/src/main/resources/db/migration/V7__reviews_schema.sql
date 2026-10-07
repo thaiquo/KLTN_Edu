@@ -15,3 +15,4 @@ CREATE TABLE tutor_reviews (
 CREATE INDEX idx_tutor_reviews_tutor ON tutor_reviews(tutor_id);
 CREATE INDEX idx_tutor_reviews_classroom ON tutor_reviews(classroom_id);
 CREATE INDEX idx_tutor_reviews_student ON tutor_reviews(student_id);
+

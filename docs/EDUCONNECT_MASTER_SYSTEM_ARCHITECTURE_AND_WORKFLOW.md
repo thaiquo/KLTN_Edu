@@ -68,7 +68,7 @@ PostgreSQL 16 | RabbitMQ 3.13 | Gotenberg 8
 
 - Notification database, unread/list/read APIs, Rabbit consumers và `/ws/notifications`.
 - Chat conversation/message database, participant authorization, REST và `/ws/chat`.
-- Web Bell dùng API thật; Web Messages hiện còn mock nên chat chưa hoàn chỉnh end-to-end.
+- Web Bell uses real APIs; Web Messages uses real chat REST/WebSocket for Student/Tutor, while mobile parity remains pending.
 
 ### AI Service
 

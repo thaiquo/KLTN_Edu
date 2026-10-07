@@ -1,4 +1,4 @@
-﻿CREATE TABLE class_rooms (
+CREATE TABLE class_rooms (
     id BIGSERIAL PRIMARY KEY,
     tutor_subject_registration_id BIGINT NOT NULL REFERENCES tutor_subject_registrations(id),
     level_id BIGINT NOT NULL REFERENCES catalog_levels(id),
@@ -21,8 +21,13 @@
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
     total_sessions INTEGER NOT NULL,
+    termination_cutoff_session INTEGER,
     syllabus_mode VARCHAR(20) NOT NULL DEFAULT 'FORM',
     syllabus_file_url VARCHAR(1000),
+    syllabus_file_key VARCHAR(500),
+    syllabus_file_name VARCHAR(255),
+    syllabus_file_size BIGINT,
+    syllabus_content_type VARCHAR(100),
     join_mode VARCHAR(30) NOT NULL DEFAULT 'OPEN_REQUEST',
     join_key VARCHAR(50),
     status VARCHAR(30) NOT NULL DEFAULT 'PENDING_APPROVAL',
@@ -84,6 +89,8 @@ CREATE TABLE enrollment_requests (
     student_name VARCHAR(255),
     student_phone VARCHAR(50),
     student_wallet VARCHAR(42),
+    student_date_of_birth DATE,
+    student_address VARCHAR(500),
     agreement_id VARCHAR(36),
     status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
     join_key VARCHAR(50),
@@ -132,48 +139,29 @@ CROSS JOIN (VALUES ('ONLINE'), ('OFFLINE')) AS modes(mode)
 WHERE status = 'APPROVED'
 ON CONFLICT (user_id, teaching_mode) DO NOTHING;
 
-CREATE TABLE class_sessions (
+CREATE TABLE learning_termination_stop (
+    agreement_id VARCHAR(36) PRIMARY KEY,
+    classroom_id BIGINT NOT NULL REFERENCES class_rooms(id),
+    student_id BIGINT NOT NULL,
+    cutoff_session INTEGER NOT NULL,
+    closed BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX learning_termination_student ON learning_termination_stop(classroom_id, student_id);
+
+CREATE TABLE classroom_materials (
     id BIGSERIAL PRIMARY KEY,
     class_room_id BIGINT NOT NULL REFERENCES class_rooms(id) ON DELETE CASCADE,
-    sequence_number INTEGER NOT NULL,
-    topic VARCHAR(255),
-    session_date DATE NOT NULL,
-    start_time VARCHAR(5) NOT NULL,
-    end_time VARCHAR(5) NOT NULL,
-    assignment_title VARCHAR(255),
-    assignment_description TEXT,
-    assignment_file_url VARCHAR(1000),
-    status VARCHAR(30) NOT NULL DEFAULT 'SCHEDULED',
-    settlement_dispatched BOOLEAN NOT NULL DEFAULT FALSE,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    external_url VARCHAR(1000),
+    file_name VARCHAR(255) NOT NULL,
+    file_key VARCHAR(500) NOT NULL,
+    file_size BIGINT,
+    content_type VARCHAR(100),
+    uploaded_by_email VARCHAR(255) NOT NULL,
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP(6),
-    CONSTRAINT ck_class_session_status CHECK (status IN ('SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
-    CONSTRAINT uq_class_session_sequence UNIQUE (class_room_id, sequence_number)
+    updated_at TIMESTAMP(6)
 );
 
-CREATE INDEX idx_class_sessions_room_date ON class_sessions(class_room_id, session_date);
-CREATE INDEX idx_class_sessions_status ON class_sessions(status);
-
-CREATE TABLE session_attendances (
-    id BIGSERIAL PRIMARY KEY,
-    session_id BIGINT NOT NULL REFERENCES class_sessions(id) ON DELETE CASCADE,
-    student_id BIGINT NOT NULL,
-    student_email VARCHAR(255),
-    student_name VARCHAR(255),
-    tutor_id BIGINT NOT NULL,
-    tutor_checked BOOLEAN NOT NULL DEFAULT FALSE,
-    tutor_checked_at TIMESTAMP(6),
-    student_checked BOOLEAN NOT NULL DEFAULT FALSE,
-    student_checked_at TIMESTAMP(6),
-    final_outcome VARCHAR(40),
-    submission_text TEXT,
-    submission_file_url VARCHAR(1000),
-    submitted_at TIMESTAMP(6),
-    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP(6),
-    CONSTRAINT ck_session_attendance_outcome CHECK (final_outcome IS NULL OR final_outcome IN ('BOTH_PRESENT', 'STUDENT_ABSENT_TUTOR_PRESENT', 'TUTOR_ABSENT')),
-    CONSTRAINT uq_session_student_att UNIQUE (session_id, student_id)
-);
-
-CREATE INDEX idx_session_attendances_session ON session_attendances(session_id);
-CREATE INDEX idx_session_attendances_student ON session_attendances(student_id);
+CREATE INDEX idx_classroom_materials_class_room_id ON classroom_materials(class_room_id);

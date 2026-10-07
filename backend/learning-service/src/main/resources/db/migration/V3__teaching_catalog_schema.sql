@@ -1,4 +1,4 @@
-﻿CREATE TABLE program_types (
+CREATE TABLE program_types (
     id BIGSERIAL PRIMARY KEY,
     code VARCHAR(30) NOT NULL UNIQUE,
     name VARCHAR(120) NOT NULL,
@@ -162,82 +162,131 @@ CREATE INDEX idx_tutor_registrations_subject_status ON tutor_subject_registratio
 CREATE INDEX idx_registration_levels_level ON tutor_subject_registration_levels(level_id, registration_id);
 CREATE INDEX idx_registration_proposed_levels_registration ON tutor_subject_registration_proposed_levels(registration_id);
 CREATE INDEX idx_catalog_suggestions_review ON catalog_subject_suggestions(status, created_at);
-INSERT INTO program_types(code, name, description, order_index) VALUES
-('ACADEMIC', 'Học thuật / Theo cấp học', 'Chương trình chính quy theo cấp học', 1),
-('SKILL', 'Kỹ năng / Chứng chỉ / Nghề nghiệp', 'Kỹ năng, chứng chỉ và nghề nghiệp không phụ thuộc cấp học', 2);
 
-INSERT INTO education_levels(code, name, order_index) VALUES
-('PRIMARY', 'Tiểu học', 1),
-('SECONDARY', 'THCS', 2),
-('HIGH_SCHOOL', 'THPT', 3),
-('UNIVERSITY', 'Đại học / Cao đẳng', 4);
+-- Keep the normalized teaching catalog internally consistent even when data is
+-- imported or maintained outside the application service layer.
 
-INSERT INTO catalog_categories(program_type_id, education_level_id, code, name, order_index)
-SELECT pt.id, el.id, seed.code, seed.name, seed.order_index
-FROM (VALUES
-    ('PRIMARY','PRIMARY_FOUNDATION','Kiến thức nền tảng',1),
-    ('SECONDARY','SECONDARY_NATURAL','Khoa học tự nhiên',1),
-    ('SECONDARY','SECONDARY_LANGUAGE','Ngôn ngữ',2),
-    ('HIGH_SCHOOL','HIGH_SCHOOL_NATURAL','Khoa học tự nhiên',1),
-    ('HIGH_SCHOOL','HIGH_SCHOOL_SOCIAL','Khoa học xã hội',2),
-    ('HIGH_SCHOOL','HIGH_SCHOOL_LANGUAGE','Ngôn ngữ',3),
-    ('UNIVERSITY','UNIVERSITY_IT','Công nghệ thông tin',1),
-    ('UNIVERSITY','UNIVERSITY_ECONOMICS','Kinh tế',2)
-) AS seed(level_code, code, name, order_index)
-JOIN program_types pt ON pt.code='ACADEMIC'
-JOIN education_levels el ON el.code=seed.level_code;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_catalog_category_academic_code_ci
+    ON catalog_categories(program_type_id, education_level_id, lower(code))
+    WHERE education_level_id IS NOT NULL;
 
-INSERT INTO catalog_categories(program_type_id, education_level_id, code, name, order_index)
-SELECT pt.id, NULL, seed.code, seed.name, seed.order_index
-FROM (VALUES
-    ('LANGUAGE_CERT','Ngoại ngữ & Chứng chỉ',1),
-    ('IT_TECH','CNTT & Công nghệ',2),
-    ('DESIGN','Thiết kế đồ họa',3),
-    ('SOFT_SKILL','Kỹ năng mềm',4),
-    ('MUSIC','Âm nhạc',5)
-) AS seed(code, name, order_index)
-JOIN program_types pt ON pt.code='SKILL';
+CREATE UNIQUE INDEX IF NOT EXISTS uk_catalog_category_skill_code_ci
+    ON catalog_categories(program_type_id, lower(code))
+    WHERE education_level_id IS NULL;
 
-INSERT INTO catalog_subjects(category_id, code, name, order_index)
-SELECT c.id, seed.code, seed.name, seed.order_index
-FROM (VALUES
-    ('HIGH_SCHOOL_NATURAL','MATHEMATICS','Toán',1),
-    ('HIGH_SCHOOL_NATURAL','PHYSICS','Vật lý',2),
-    ('HIGH_SCHOOL_NATURAL','CHEMISTRY','Hóa học',3),
-    ('HIGH_SCHOOL_SOCIAL','LITERATURE','Ngữ văn',1),
-    ('HIGH_SCHOOL_LANGUAGE','ENGLISH','Tiếng Anh',1),
-    ('UNIVERSITY_IT','PROGRAMMING_C','Lập trình C',1),
-    ('LANGUAGE_CERT','TOEIC','TOEIC',1),
-    ('LANGUAGE_CERT','IELTS','IELTS',2),
-    ('IT_TECH','SPRING_BOOT','Spring Boot',1),
-    ('DESIGN','PHOTOSHOP','Adobe Photoshop',1),
-    ('MUSIC','GUITAR','Guitar',1)
-) AS seed(category_code, code, name, order_index)
-JOIN catalog_categories c ON c.code=seed.category_code;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_catalog_subject_category_code_ci
+    ON catalog_subjects(category_id, lower(code));
 
-INSERT INTO catalog_levels(subject_id, code, name, level_type, order_index)
-SELECT s.id, seed.code, seed.name, seed.level_type, seed.order_index
-FROM (VALUES
-    ('MATHEMATICS','GRADE_10','Lớp 10','GRADE',1),
-    ('MATHEMATICS','GRADE_11','Lớp 11','GRADE',2),
-    ('MATHEMATICS','GRADE_12','Lớp 12','GRADE',3),
-    ('PHYSICS','GRADE_10','Lớp 10','GRADE',1),
-    ('PHYSICS','GRADE_11','Lớp 11','GRADE',2),
-    ('PHYSICS','GRADE_12','Lớp 12','GRADE',3),
-    ('CHEMISTRY','GRADE_10','Lớp 10','GRADE',1),
-    ('CHEMISTRY','GRADE_11','Lớp 11','GRADE',2),
-    ('CHEMISTRY','GRADE_12','Lớp 12','GRADE',3),
-    ('LITERATURE','GRADE_10','Lớp 10','GRADE',1),
-    ('ENGLISH','GRADE_10','Lớp 10','GRADE',1),
-    ('PROGRAMMING_C','UNIVERSITY_BEGINNER','Sinh viên năm 1 / Cơ bản','UNIVERSITY_LEVEL',1),
-    ('TOEIC','TOEIC_500','TOEIC 500+','CERTIFICATE_TARGET',1),
-    ('TOEIC','TOEIC_750','TOEIC 750+','CERTIFICATE_TARGET',2),
-    ('IELTS','IELTS_5_5','IELTS 5.5+','CERTIFICATE_TARGET',1),
-    ('SPRING_BOOT','BEGINNER','Cơ bản','SKILL_LEVEL',1),
-    ('SPRING_BOOT','PROJECT','Project Mentoring','COACHING_LEVEL',2),
-    ('PHOTOSHOP','BEGINNER','Cơ bản','SKILL_LEVEL',1),
-    ('PHOTOSHOP','RETOUCH','Retouch ảnh','SKILL_LEVEL',2),
-    ('GUITAR','BEGINNER','Người mới bắt đầu','SKILL_LEVEL',1),
-    ('GUITAR','ACCOMPANIMENT','Guitar đệm hát','SKILL_LEVEL',2)
-) AS seed(subject_code, code, name, level_type, order_index)
-JOIN catalog_subjects s ON s.code=seed.subject_code;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_catalog_level_subject_code_ci
+    ON catalog_levels(subject_id, lower(code));
+
+ALTER TABLE tutor_subject_registrations
+    ADD CONSTRAINT ck_registration_subject_or_proposal
+    CHECK (subject_id IS NOT NULL OR proposed_subject_name IS NOT NULL);
+
+CREATE OR REPLACE FUNCTION validate_catalog_category_branch()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    program_code VARCHAR(30);
+BEGIN
+    SELECT code INTO program_code FROM program_types WHERE id = NEW.program_type_id;
+    IF program_code = 'ACADEMIC' AND NEW.education_level_id IS NULL THEN
+        RAISE EXCEPTION 'Academic catalog category requires an education level';
+    END IF;
+    IF program_code = 'SKILL' AND NEW.education_level_id IS NOT NULL THEN
+        RAISE EXCEPTION 'Skill catalog category must not have an education level';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_catalog_category_branch
+BEFORE INSERT OR UPDATE OF program_type_id, education_level_id
+ON catalog_categories
+FOR EACH ROW EXECUTE FUNCTION validate_catalog_category_branch();
+
+CREATE OR REPLACE FUNCTION validate_registration_catalog_scope()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    category_program_type_id BIGINT;
+    category_education_level_id BIGINT;
+    subject_category_id BIGINT;
+BEGIN
+    SELECT program_type_id, education_level_id
+      INTO category_program_type_id, category_education_level_id
+      FROM catalog_categories
+     WHERE id = NEW.category_id;
+
+    IF NEW.program_type_id IS DISTINCT FROM category_program_type_id
+       OR NEW.education_level_id IS DISTINCT FROM category_education_level_id THEN
+        RAISE EXCEPTION 'Registration program and education level must match its category';
+    END IF;
+
+    IF NEW.subject_id IS NOT NULL THEN
+        SELECT category_id INTO subject_category_id FROM catalog_subjects WHERE id = NEW.subject_id;
+        IF subject_category_id IS DISTINCT FROM NEW.category_id THEN
+            RAISE EXCEPTION 'Registration subject must belong to its category';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_registration_catalog_scope
+BEFORE INSERT OR UPDATE OF program_type_id, education_level_id, category_id, subject_id
+ON tutor_subject_registrations
+FOR EACH ROW EXECUTE FUNCTION validate_registration_catalog_scope();
+
+CREATE OR REPLACE FUNCTION validate_registration_level_scope()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    registration_subject_id BIGINT;
+    registration_tutor_email VARCHAR(255);
+    registration_status VARCHAR(20);
+    level_subject_id BIGINT;
+BEGIN
+    SELECT subject_id, tutor_email, status
+      INTO registration_subject_id, registration_tutor_email, registration_status
+      FROM tutor_subject_registrations
+     WHERE id = NEW.registration_id;
+    SELECT subject_id INTO level_subject_id FROM catalog_levels WHERE id = NEW.level_id;
+
+    IF registration_subject_id IS NULL OR level_subject_id IS DISTINCT FROM registration_subject_id THEN
+        RAISE EXCEPTION 'Registration level must belong to the registration subject';
+    END IF;
+
+    IF registration_status IN ('DRAFT', 'PENDING', 'APPROVED') THEN
+        PERFORM pg_advisory_xact_lock(hashtextextended(lower(registration_tutor_email) || ':' || registration_subject_id, 0));
+        IF EXISTS (
+            SELECT 1
+              FROM tutor_subject_registration_levels existing_level
+              JOIN tutor_subject_registrations existing_registration
+                ON existing_registration.id = existing_level.registration_id
+             WHERE existing_level.level_id = NEW.level_id
+               AND existing_registration.id <> NEW.registration_id
+               AND lower(existing_registration.tutor_email) = lower(registration_tutor_email)
+               AND existing_registration.subject_id = registration_subject_id
+               AND existing_registration.status IN ('DRAFT', 'PENDING', 'APPROVED')
+        ) THEN
+            RAISE EXCEPTION 'Tutor already has an active registration for this subject and level';
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_registration_level_scope
+BEFORE INSERT OR UPDATE OF registration_id, level_id
+ON tutor_subject_registration_levels
+FOR EACH ROW EXECUTE FUNCTION validate_registration_level_scope();
+
+COMMENT ON TABLE subjects IS 'Legacy V1 catalog. New teaching flows must use catalog_subjects.';
+COMMENT ON TABLE subject_requests IS 'Legacy V1 proposal flow. New proposals are stored with tutor_subject_registrations.';
+COMMENT ON TABLE catalog_subject_suggestions IS 'Deprecated standalone proposal flow retained temporarily for data compatibility.';
+
