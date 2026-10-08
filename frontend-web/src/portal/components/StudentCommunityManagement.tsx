@@ -20,7 +20,9 @@ import {
   MapPin,
   Video,
   Clock,
-  Send
+  Send,
+  Reply,
+  X
 } from 'lucide-react';
 import communityApi from '../../api/community';
 import { useFeedback } from '../../components/feedback/useFeedback';
@@ -66,6 +68,7 @@ export function StudentCommunityManagement({
   const [commentsMap, setCommentsMap] = useState<Record<number, any[]>>({});
   const [loadingCommentsPostId, setLoadingCommentsPostId] = useState<number | null>(null);
   const [commentInputs, setCommentInputs] = useState<Record<number, string>>({});
+  const [replyingToMap, setReplyingToMap] = useState<Record<number, any>>({});
   const [submittingCommentPostId, setSubmittingCommentPostId] = useState<number | null>(null);
 
   // Action toast status message
@@ -111,7 +114,14 @@ export function StudentCommunityManagement({
         setPosts(current => current.filter(post => Number(post.id) !== postId));
       } else if (detail?.type === 'COMMUNITY_POST_UPDATED') {
         setPosts(current => current.map(post => Number(post.id) === postId
-          ? { ...post, status: detail.payload?.status || post.status }
+          ? {
+              ...post,
+              status: detail.payload?.status || post.status,
+              likeCount: detail.payload?.likeCount ?? post.likeCount,
+              commentCount: detail.payload?.commentCount ?? post.commentCount,
+              viewCount: detail.payload?.viewCount ?? post.viewCount,
+              poll: detail.payload?.poll || post.poll
+            }
           : post));
       }
     };
@@ -197,6 +207,24 @@ export function StudentCommunityManagement({
     }
   };
 
+  const handleReplyTo = (postId: number, comment: any) => {
+    setReplyingToMap(prev => ({ ...prev, [postId]: comment }));
+    const targetName = comment.userName || 'thành viên';
+    const mention = `@${targetName} `;
+    setCommentInputs(prev => {
+      const current = prev[postId] || '';
+      return current.includes(`@${targetName}`) ? prev : { ...prev, [postId]: `${mention}${current}`.trim() + ' ' };
+    });
+  };
+
+  const handleCancelReply = (postId: number) => {
+    setReplyingToMap(prev => {
+      const copy = { ...prev };
+      delete copy[postId];
+      return copy;
+    });
+  };
+
   // Handle Add Comment
   const handleAddComment = async (postId: number) => {
     const text = commentInputs[postId]?.trim();
@@ -204,12 +232,18 @@ export function StudentCommunityManagement({
 
     setSubmittingCommentPostId(postId);
     try {
-      const created = await communityApi.addComment(postId, text);
+      const created = await communityApi.addComment(postId, {
+        commentText: text,
+        replyToUserId: replyingToMap[postId]?.userId,
+        replyToUserRole: replyingToMap[postId]?.userRole,
+        replyToUserName: replyingToMap[postId]?.userName
+      });
       setCommentsMap(prev => ({
         ...prev,
         [postId]: [...(prev[postId] || []), created]
       }));
       setCommentInputs(prev => ({ ...prev, [postId]: '' }));
+      handleCancelReply(postId);
       setPosts(prev => prev.map(p => p.id === postId ? { ...p, commentCount: (p.commentCount || 0) + 1 } : p));
       showToast('success', 'Đã gửi phản hồi thành công.');
     } catch (err: any) {
@@ -633,6 +667,15 @@ export function StudentCommunityManagement({
                             {comments.map(c => {
                               const isTutor = c.userRole === 'TUTOR';
                               const isStudent = c.userRole === 'STUDENT';
+                              const renderCommentText = (text: string) => {
+                                if (!text) return null;
+                                return text.split(/(@[^\s]+)/g).map((part, index) => (
+                                  part.startsWith('@')
+                                    ? <span key={index} className="font-bold text-indigo-600 bg-indigo-50/80 px-1 py-0.5 rounded">{part}</span>
+                                    : part
+                                ));
+                              };
+
                               return (
                                 <div key={c.id} className="flex items-start gap-2.5 bg-white p-3 rounded-2xl border border-slate-200/80 shadow-2xs">
                                   <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-slate-200 to-slate-300 text-slate-700 font-bold text-xs flex items-center justify-center flex-shrink-0 mt-0.5">
@@ -657,11 +700,37 @@ export function StudentCommunityManagement({
                                         {new Date(c.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                                       </span>
                                     </div>
-                                    <p className="text-xs text-slate-700 leading-relaxed break-words">{c.commentText}</p>
+                                    <p className="text-xs text-slate-700 leading-relaxed break-words">{renderCommentText(c.commentText)}</p>
+                                    <div className="flex items-center gap-2 mt-1.5 pt-1 border-t border-slate-50">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleReplyTo(post.id, c)}
+                                        className="font-bold text-indigo-600 hover:text-indigo-800 transition flex items-center gap-1 cursor-pointer text-[11px]"
+                                      >
+                                        <Reply className="w-3 h-3" />
+                                        <span>Trả lời</span>
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                               );
                             })}
+                          </div>
+                        )}
+
+                        {replyingToMap[post.id] && (
+                          <div className="flex items-center justify-between gap-2 px-3 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-[11px] text-indigo-700">
+                            <span>
+                              Đang trả lời <strong className="font-bold">@{replyingToMap[post.id].userName || 'thành viên'}</strong>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCancelReply(post.id)}
+                              className="p-1 rounded-lg hover:bg-indigo-100 transition"
+                              aria-label="Hủy trả lời"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         )}
 
@@ -677,7 +746,7 @@ export function StudentCommunityManagement({
                                 handleAddComment(post.id);
                               }
                             }}
-                            placeholder="Gửi phản hồi hoặc trao đổi thêm..."
+                            placeholder={replyingToMap[post.id] ? `Trả lời @${replyingToMap[post.id].userName || 'thành viên'}...` : "Gửi phản hồi hoặc trao đổi thêm..."}
                             className="flex-1 px-3.5 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                           />
                           <button

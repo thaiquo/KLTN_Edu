@@ -104,9 +104,17 @@ public class CommunityPostService {
         }
         if (keyword != null && !keyword.isBlank()) {
             String pattern = "%" + keyword.trim().toLowerCase(Locale.ROOT) + "%";
-            spec = spec.and((root, query, builder) -> builder.or(
-                    builder.like(builder.lower(root.get("title")), pattern),
-                    builder.like(builder.lower(root.get("content")), pattern)));
+            spec = spec.and((root, query, builder) -> {
+                var titlePred = builder.like(builder.lower(root.get("title")), pattern);
+                var contentPred = builder.like(builder.lower(root.get("content")), pattern);
+                var authorPred = builder.like(builder.lower(root.get("authorName")), pattern);
+                var eduPred = builder.like(builder.lower(root.get("educationLevel")), pattern);
+                var subjectJoin = root.join("subject", jakarta.persistence.criteria.JoinType.LEFT);
+                var subjectPred = builder.like(builder.lower(subjectJoin.get("name")), pattern);
+                var classJoin = root.join("linkedClass", jakarta.persistence.criteria.JoinType.LEFT);
+                var classPred = builder.like(builder.lower(classJoin.get("name")), pattern);
+                return builder.or(titlePred, contentPred, authorPred, eduPred, subjectPred, classPred);
+            });
         }
         Page<CommunityPost> posts = postRepository.findAll(spec, pageable);
         return posts.map(post -> mapToSummaryDto(post, currentUserId));
@@ -608,21 +616,23 @@ public class CommunityPostService {
 
         if (likeOpt.isPresent()) {
             interactionRepository.delete(likeOpt.get());
-            post.setLikeCount(Math.max(0, post.getLikeCount() - 1));
+            post.setLikeCount(Math.max(0, safeCount(post.getLikeCount()) - 1));
             postRepository.save(post);
+            publishPostUpdated(post);
             return false;
         } else {
             PostInteraction like = new PostInteraction();
             like.setPost(post);
             like.setUserId(principal.userId());
             like.setUserRole(role);
-            like.setUserName(fullName != null && !fullName.isBlank() ? fullName : principal.email());
-            like.setUserAvatar(avatar != null && !avatar.isBlank() ? avatar : null);
+            like.setUserName(resolveInteractionUserName(fullName, principal.email()));
+            like.setUserAvatar(resolveInteractionAvatar(avatar));
             like.setInteractionType(InteractionType.LIKE);
             interactionRepository.save(like);
 
-            post.setLikeCount(post.getLikeCount() + 1);
+            post.setLikeCount(safeCount(post.getLikeCount()) + 1);
             postRepository.save(post);
+            publishPostUpdated(post);
             return true;
         }
     }
@@ -666,7 +676,7 @@ public class CommunityPostService {
         interaction.setPost(post);
         interaction.setUserId(principal.userId());
         interaction.setUserRole(role);
-        interaction.setUserName(principal.email());
+        interaction.setUserName(resolveInteractionUserName(null, principal.email()));
         interaction.setInteractionType(InteractionType.BOOKMARK);
         interactionRepository.save(interaction);
         return true;
@@ -699,7 +709,16 @@ public class CommunityPostService {
                 .build());
     }
 
-    public CommentDto addComment(Long postId, String commentText, LearningUserPrincipal principal, String fullName, String avatar) {
+    public CommentDto addComment(
+            Long postId,
+            String commentText,
+            LearningUserPrincipal principal,
+            String fullName,
+            String avatar,
+            Long replyToUserId,
+            String replyToUserRole,
+            String replyToUserName
+    ) {
         if (principal == null || principal.userId() == null) {
             throw new BadRequestException("Vui lòng đăng nhập để bình luận");
         }
@@ -716,14 +735,16 @@ public class CommunityPostService {
         comment.setPost(post);
         comment.setUserId(principal.userId());
         comment.setUserRole(role);
-        comment.setUserName(fullName != null && !fullName.isBlank() ? fullName : principal.email());
-        comment.setUserAvatar(avatar != null && !avatar.isBlank() ? avatar : null);
+        comment.setUserName(resolveInteractionUserName(fullName, principal.email()));
+        comment.setUserAvatar(resolveInteractionAvatar(avatar));
         comment.setInteractionType(InteractionType.COMMENT);
         comment.setCommentText(commentText.trim());
         PostInteraction saved = interactionRepository.save(comment);
 
-        post.setCommentCount(post.getCommentCount() + 1);
+        post.setCommentCount(safeCount(post.getCommentCount()) + 1);
         postRepository.save(post);
+        publishPostUpdated(post);
+        publishCommentNotifications(post, saved, principal.userId(), replyToUserId, replyToUserRole);
 
         return CommentDto.builder()
                 .id(saved.getId())
@@ -734,6 +755,93 @@ public class CommunityPostService {
                 .commentText(saved.getCommentText())
                 .createdAt(saved.getCreatedAt())
                 .build();
+    }
+
+    private void publishCommentNotifications(
+            CommunityPost post,
+            PostInteraction comment,
+            Long actorUserId,
+            Long replyToUserId,
+            String replyToUserRole
+    ) {
+        if (post == null || comment == null || actorUserId == null) {
+            return;
+        }
+        if (replyToUserId != null && !Objects.equals(replyToUserId, actorUserId)) {
+            publishCommunityInteractionNotification(
+                    "COMMUNITY_POST_REPLIED",
+                    post,
+                    comment,
+                    actorUserId,
+                    replyToUserId,
+                    resolveTargetRole(replyToUserRole, post.getAuthorRole()));
+        }
+        if (post.getAuthorId() != null
+                && !Objects.equals(post.getAuthorId(), actorUserId)
+                && !Objects.equals(post.getAuthorId(), replyToUserId)) {
+            publishCommunityInteractionNotification(
+                    "COMMUNITY_POST_COMMENTED",
+                    post,
+                    comment,
+                    actorUserId,
+                    post.getAuthorId(),
+                    resolveTargetRole(post.getAuthorRole(), null));
+        }
+    }
+
+    private void publishCommunityInteractionNotification(
+            String eventType,
+            CommunityPost post,
+            PostInteraction comment,
+            Long actorUserId,
+            Long recipientUserId,
+            String targetRole
+    ) {
+        eventPublisher.publishCommunityPostInteraction(
+                eventType,
+                post.getId(),
+                comment.getId(),
+                recipientUserId,
+                actorUserId,
+                comment.getUserName(),
+                post.getTitle(),
+                comment.getCommentText(),
+                targetRole);
+    }
+
+    private String resolveTargetRole(String role, String fallbackRole) {
+        String normalized = role == null ? "" : role.trim().toUpperCase(Locale.ROOT);
+        if (!"STUDENT".equals(normalized) && !"TUTOR".equals(normalized)) {
+            normalized = fallbackRole == null ? "" : fallbackRole.trim().toUpperCase(Locale.ROOT);
+        }
+        return "TUTOR".equals(normalized) ? "TUTOR" : "STUDENT";
+    }
+
+    private int safeCount(Integer count) {
+        return count != null && count > 0 ? count : 0;
+    }
+
+    private String resolveInteractionUserName(String displayName, String fallbackEmail) {
+        String value = normalizeOptional(displayName);
+        if (value == null) {
+            value = normalizeOptional(fallbackEmail);
+        }
+        if (value == null) {
+            value = "Người dùng";
+        }
+        return truncate(value, 100);
+    }
+
+    private String resolveInteractionAvatar(String avatar) {
+        String value = normalizeOptional(avatar);
+        return value != null && value.length() <= 255 ? value : null;
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 
     /**
@@ -1426,8 +1534,8 @@ public class CommunityPostService {
             throw new BadRequestException("Vui lòng đăng nhập để " + action);
         }
         String role = principal.activeRole() == null ? "" : principal.activeRole().trim().toUpperCase(Locale.ROOT);
-        if (role.isBlank()) {
-            role = "USER";
+        if (!"STUDENT".equals(role) && !"TUTOR".equals(role)) {
+            throw new ForbiddenException("Chỉ học viên hoặc gia sư mới được phép " + action);
         }
         return role;
     }
@@ -1572,20 +1680,40 @@ public class CommunityPostService {
     }
 
     private Subject resolveSubjectForClass(ClassRoom classRoom, Long requestedSubjectId) {
+        Subject requestedSubject = null;
         if (requestedSubjectId != null) {
-            return subjectRepository.findById(requestedSubjectId)
+            requestedSubject = subjectRepository.findById(requestedSubjectId)
                     .filter(Subject::isActive)
-                    .orElse(null);
+                    .orElseThrow(() -> new BadRequestException("Môn học không tồn tại hoặc đã ngừng hoạt động"));
         }
+
+        Subject classSubject = null;
+        String classSubjectName = null;
         if (classRoom != null && classRoom.getTutorSubjectRegistration() != null) {
             CatalogSubject catSub = classRoom.getTutorSubjectRegistration().getSubject();
             if (catSub != null && catSub.getName() != null) {
-                return subjectRepository.findByNameContainingIgnoreCaseAndActiveTrueOrderByNameAsc(
+                classSubjectName = catSub.getName().trim();
+                classSubject = subjectRepository.findByNameContainingIgnoreCaseAndActiveTrueOrderByNameAsc(
                         catSub.getName().trim(), PageRequest.of(0, 1)
                 ).stream().findFirst().orElse(null);
             }
         }
-        return null;
+
+        if (requestedSubject != null && classSubjectName != null
+                && !subjectNamesCompatible(requestedSubject.getName(), classSubjectName)) {
+            throw new BadRequestException("Môn học gắn bài giới thiệu phải khớp với môn của lớp học");
+        }
+        return classSubject != null ? classSubject : requestedSubject;
+    }
+
+    private boolean subjectNamesCompatible(String requestedName, String classSubjectName) {
+        String requested = normalizeText(requestedName);
+        String classSubject = normalizeText(classSubjectName);
+        return !requested.isBlank()
+                && !classSubject.isBlank()
+                && (requested.equals(classSubject)
+                || requested.contains(classSubject)
+                || classSubject.contains(requested));
     }
 
     private void applyStandardPollOptions(CreatePollRequest poll) {
@@ -1668,6 +1796,9 @@ public class CommunityPostService {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("postId", post.getId());
         payload.put("status", post.getStatus().name());
+        payload.put("likeCount", safeCount(post.getLikeCount()));
+        payload.put("commentCount", safeCount(post.getCommentCount()));
+        payload.put("viewCount", safeCount(post.getViewCount()));
         if (post.getPoll() != null) {
             payload.put("poll", mapToPollSummaryDto(post.getPoll(), null));
         }

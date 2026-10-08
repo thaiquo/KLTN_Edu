@@ -14,16 +14,18 @@ import {
   RefreshCw,
   Layers,
   ArrowRight,
-  Bookmark
+  Bookmark,
+  X
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import communityApi from '../../api/community';
-import { subjectApi } from '../../api/subjects';
 import PostCard from '../../components/community/PostCard';
 import CreatePostModal from '../../components/community/CreatePostModal';
 import { HomeHeader } from '../../components/home/HomeHeader';
 import { HomeFooter } from '../../components/home/HomeFooter';
+import { useFeedback } from '../../components/feedback/useFeedback';
+import { extractCommunityPostId } from '../../utils/shareLinks';
 
 const StudentCommunityManagement = React.lazy(() =>
   import('../../portal/components/StudentCommunityManagement').then(m => ({ default: m.StudentCommunityManagement }))
@@ -51,10 +53,7 @@ export function CommunityFeedPage({
   
   // Filters
   const [activeTab, setActiveTab] = useState('ALL');
-  const [selectedSubjectId, setSelectedSubjectId] = useState('');
-  const [selectedMode, setSelectedMode] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
-  const [subjects, setSubjects] = useState([]);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
@@ -73,24 +72,16 @@ export function CommunityFeedPage({
     setIsCreateModalOpen(true);
   }, [authenticated, requireAuth]);
 
-  // Fetch subjects
-  useEffect(() => {
-    subjectApi.list()
-      .then(res => setSubjects(res.data || res || []))
-      .catch(err => console.error('Lỗi tải danh mục môn:', err));
-  }, []);
-
-  const loadPosts = useCallback(async (resetPage = false) => {
+  const loadPosts = useCallback(async (resetPage = false, overrideKeyword = undefined) => {
     setLoading(true);
     setError(null);
     try {
       const targetPage = resetPage ? 0 : page;
+      const kw = overrideKeyword !== undefined ? overrideKeyword : searchKeyword;
       const params = {
         page: targetPage,
         size: 10,
-        keyword: searchKeyword.trim() || undefined,
-        subjectId: selectedSubjectId ? Number(selectedSubjectId) : undefined,
-        learningMode: selectedMode || undefined,
+        keyword: kw.trim() || undefined,
         postType: !['ALL', 'SAVED'].includes(activeTab) ? activeTab : undefined
       };
       const res = activeTab === 'SAVED'
@@ -107,7 +98,16 @@ export function CommunityFeedPage({
     } finally {
       setLoading(false);
     }
-  }, [activeTab, selectedSubjectId, selectedMode, searchKeyword, page]);
+  }, [activeTab, searchKeyword, page]);
+
+  const feedback = useFeedback();
+  const [deepLinkedPostId, setDeepLinkedPostId] = useState(null);
+  const [checkedDeepLinkPostId, setCheckedDeepLinkPostId] = useState(null);
+
+  const targetPostId = React.useMemo(
+    () => extractCommunityPostId(location),
+    [location.search, location.hash]
+  );
 
   useEffect(() => {
     if (!authenticated && ['SAVED', 'MINE'].includes(activeTab)) {
@@ -117,12 +117,55 @@ export function CommunityFeedPage({
 
   useEffect(() => {
     loadPosts(true);
-  }, [activeTab, selectedSubjectId, selectedMode]);
+  }, [activeTab]);
 
   useEffect(() => {
-    if (!posts.length || !window.location.hash) return;
+    if (!targetPostId) return;
+
+    if (mainTab !== 'explore') {
+      setMainTab('explore');
+    }
+
+    const postInList = posts.find(p => String(p.id) === String(targetPostId));
+    if (postInList) {
+      setDeepLinkedPostId(targetPostId);
+      const timer = setTimeout(() => {
+        document.getElementById(`post-${targetPostId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+
+    if (checkedDeepLinkPostId !== targetPostId) {
+      setCheckedDeepLinkPostId(targetPostId);
+      communityApi.getPostDetail(targetPostId)
+        .then((detail) => {
+          if (detail && detail.id) {
+            setPosts(prev => [detail, ...prev.filter(p => String(p.id) !== String(targetPostId))]);
+            setDeepLinkedPostId(targetPostId);
+            setTimeout(() => {
+              document.getElementById(`post-${targetPostId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 200);
+          }
+        })
+        .catch((err) => {
+          console.warn('Lỗi lấy bài viết chia sẻ:', err);
+          feedback.warning('Bài viết này không tồn tại hoặc đã bị xóa khỏi bảng tin cộng đồng.');
+        });
+    }
+  }, [targetPostId, posts, mainTab, checkedDeepLinkPostId]);
+
+  useEffect(() => {
+    if (!deepLinkedPostId) return;
+    const timer = setTimeout(() => {
+      setDeepLinkedPostId(null);
+    }, 4500);
+    return () => clearTimeout(timer);
+  }, [deepLinkedPostId]);
+
+  useEffect(() => {
+    if (!posts.length || !window.location.hash || targetPostId) return;
     document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [posts]);
+  }, [posts, targetPostId]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -379,46 +422,38 @@ export function CommunityFeedPage({
         {/* Content Layout: Clean Streamlined Feed */}
         <div className="max-w-4xl mx-auto space-y-4">
           
-          {/* Search & Filter Bar */}
-          <form onSubmit={handleSearchSubmit} className="bg-white p-3.5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[200px]">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          {/* Search Bar duy nhất: Tìm kiếm từ khóa môn học, lớp, yêu cầu... */}
+          <form onSubmit={handleSearchSubmit} className="bg-white p-2.5 sm:p-3 rounded-2xl border border-slate-200/80 shadow-sm flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={searchKeyword}
                 onChange={e => setSearchKeyword(e.target.value)}
-                placeholder="Tìm theo từ khóa (Môn học, lớp, kỹ năng, gia sư...)"
-                className="w-full pl-9 pr-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition"
+                placeholder="Tìm kiếm bài viết (Môn học, lớp học, chủ đề, gia sư, học viên...)"
+                className="w-full pl-10 pr-9 py-2.5 text-xs sm:text-sm bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition placeholder:text-slate-400 font-medium"
               />
+              {searchKeyword && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchKeyword('');
+                    loadPosts(true, '');
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-200/60 transition cursor-pointer"
+                  title="Xóa từ khóa tìm kiếm"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
-
-            <select
-              value={selectedSubjectId}
-              onChange={e => setSelectedSubjectId(e.target.value)}
-              className="px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 font-medium"
-            >
-              <option value="">Tất cả môn</option>
-              {subjects.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-
-            <select
-              value={selectedMode}
-              onChange={e => setSelectedMode(e.target.value)}
-              className="px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 font-medium"
-            >
-              <option value="">Tất cả hình thức</option>
-              <option value="ONLINE">Trực tuyến (Online)</option>
-              <option value="OFFLINE">Trực tiếp (Offline)</option>
-            </select>
 
             <button
               type="submit"
-              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition shadow-sm cursor-pointer flex items-center gap-1.5"
+              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs sm:text-sm transition shadow-sm cursor-pointer flex items-center gap-1.5 flex-shrink-0"
             >
-              <Search className="w-3.5 h-3.5" />
-              <span>Tìm</span>
+              <Search className="w-4 h-4" />
+              <span>Tìm kiếm</span>
             </button>
           </form>
 
@@ -456,13 +491,12 @@ export function CommunityFeedPage({
                   type="button"
                   onClick={() => {
                     setActiveTab('ALL');
-                    setSelectedSubjectId('');
-                    setSelectedMode('');
                     setSearchKeyword('');
+                    loadPosts(true, '');
                   }}
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition cursor-pointer"
                 >
-                  Đặt lại bộ lọc
+                  Đặt lại tìm kiếm
                 </button>
               ) : (
                 <button
@@ -487,6 +521,7 @@ export function CommunityFeedPage({
                 onCommentAdded={handleCommentAdded}
                 onPostDeleted={handlePostDeleted}
                 onVoteSuccess={handleVoteSuccess}
+                isHighlighted={String(post.id) === String(deepLinkedPostId)}
               />
             ))
           )}

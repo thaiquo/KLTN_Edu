@@ -266,8 +266,9 @@ Controller: `CommunityPostController` in `learning-service` (prefix `/api/commun
 
 | Method | Endpoint | Status | Scope / Authorization |
 | --- | --- | --- | --- |
-| `GET` | `/api/community/posts` | Implemented | Public; supports `postType`, `status`, `subjectId`, `learningMode`, `keyword`, `page`, `size`. Excludes `HIDDEN` posts by default. |
-| `GET` | `/api/community/posts/{id}` | Implemented | Public; returns post summary/detail including poll, total option selections (`totalVotes`), distinct voters (`participantCount`), and linked class fields when present. |
+| `GET` | `/api/community/posts` | Implemented | Public; supports `postType`, `status`, `subjectId`, `learningMode`, `keyword`, `page`, `size`. Mặc định sắp xếp theo thời gian tạo mới nhất (`createdAt DESC`). Tìm kiếm `keyword` đa chiều (tiêu đề, nội dung, tác giả, cấp học, tên môn học `subject.name`, tên lớp `linkedClass.name`). Loại trừ bài `HIDDEN` theo mặc định. |
+| `GET` | `/api/community/posts/{id}` | Implemented | Public; returns post summary/detail including poll, total option selections (`totalVotes`), distinct voters (`participantCount`), and linked class fields when present. Tăng `viewCount`. Trả về 404 nếu bài viết đã bị ẩn/xóa (`HIDDEN`). |
+| `GET` | `/api/community/posts/{id}/likes` | Implemented | Public/Authenticated; trả về danh sách chi tiết các tài khoản đã thích bài viết (`userId`, `userRole`, `userName`, `userAvatar`, `createdAt`) phục vụ popup xem người thích cho tác giả gia sư và thành viên. |
 | `GET` | `/api/community/posts/bookmarked` | Implemented | Authenticated; returns the current user's saved visible posts. |
 | `POST` | `/api/community/posts` | Implemented | Authenticated; Tutor may publish an announcement, a poll on an approved subject/level, or share an eligible class. Student may publish search/group posts. Poll requires at least 2 distinct schedule options and enough options for `sessionsPerWeek`. |
 | `PUT` | `/api/community/posts/{id}` | Implemented | Author only in service logic. |
@@ -278,13 +279,23 @@ Controller: `CommunityPostController` in `learning-service` (prefix `/api/commun
 | `POST` | `/api/community/posts/{id}/reactions` | Implemented | Active role `STUDENT` or `TUTOR`; toggles LIKE. |
 | `POST` | `/api/community/posts/{id}/bookmarks` | Implemented | Active role `STUDENT` or `TUTOR`; toggles BOOKMARK with one bookmark per user/post. |
 | `GET` | `/api/community/posts/{id}/comments` | Implemented | Public; returns visible comments for the post. |
-| `POST` | `/api/community/posts/{id}/comments` | Implemented | Active role `STUDENT` or `TUTOR`; adds comment to post. |
+| `POST` | `/api/community/posts/{id}/comments` | Implemented | Active role `STUDENT` or `TUTOR`; adds comment to post. Optional `replyToUserId`, `replyToUserRole`, and `replyToUserName` identify the comment being replied to for mention notification. |
 | `GET` | `/api/community/posts/{postId}/class-suggestion` | Implemented | Tutor-author only. Evaluates combinations of the 21 day/period cells, prioritizes the complete weekly schedule that the largest shared Student cohort voted for, then uses aggregate demand as a tie-breaker. It intersects candidates with the Tutor's private net availability and occupied classes, and returns editable schedules, participant/matching counts and suggested capacity without creating a class or exposing the complete availability calendar. |
 | `POST` | `/api/community/posts/{postId}/convert-to-class` | Implemented | Tutor-author only; accepts an OPEN or CLOSED poll without a vote quorum. The current client sends a complete validated `classRequest` from the shared class wizard; legacy `selectedOptionIds`/`customSchedules` remain accepted for compatibility. Creates a `PENDING_APPROVAL` class through `ClassRoomService`, marks the post CONVERTED, and emits one persistent notification event per distinct voter. |
 
 Frontend source currently calls `/api/community` through `frontend-web/src/api/community.js`; do not document or implement `/api/learning/community` unless the route is deliberately changed across gateway, backend and client.
 
-Community writes publish `COMMUNITY_POLL_UPDATED`, `COMMUNITY_POST_UPDATED`, and `COMMUNITY_POST_DELETED` through `/ws/learning` after transaction commit. Poll events contain public aggregate statistics only; another Student's private selected option ids are never broadcast.
+Community writes publish `COMMUNITY_POLL_UPDATED`, `COMMUNITY_POST_UPDATED`, and `COMMUNITY_POST_DELETED` through `/ws/learning` after transaction commit. `COMMUNITY_POST_UPDATED` includes public counters such as `likeCount`, `commentCount`, and `viewCount` so open Student/Tutor views can reconcile counts. Poll events contain public aggregate statistics only; another Student's private selected option ids are never broadcast.
+
+Community comment/reply writes also publish a durable RabbitMQ notification event for the post author or the replied user when the recipient is not the actor. Notification Service persists `COMMUNITY_POST_COMMENTED` and `COMMUNITY_POST_REPLIED` Bell notifications with `referenceType=COMMUNITY_POST` and `referenceId={postId}`.
+
+## 3.10 Public Class Sharing & Deep Link API status
+
+Controller: `PublicClassRoomController` in `learning-service` (prefix `/api/learning/public/classes`).
+
+| Method | Endpoint | Status | Scope / Authorization |
+| --- | --- | --- | --- |
+| `GET` | `/api/learning/public/classes/{id}/share` | Implemented | Public; lấy thông tin lớp học phục vụ mở liên kết chia sẻ ngoài (`/classes/{id}`). Kiểm tra nghiêm ngặt điều kiện lớp còn tuyển sinh: `status === PUBLISHED`, ngày khai giảng chưa qua (`startDate >= today`), chưa có `cutoffDate` (chưa bị thanh lý/hủy) và chưa đầy sĩ số (`currentEnrollment < maxStudents`). Trả về HTTP 404 nếu lớp không tồn tại hoặc đã hết hạn tuyển sinh. |
 
 ## 4. API Status Principle
 

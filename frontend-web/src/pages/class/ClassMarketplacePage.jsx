@@ -1,16 +1,18 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useParams } from 'react-router-dom';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import {
   BookOpen, Calendar, Clock, DollarSign, Eye, Filter, Globe, Key, MapPin,
   Search, SlidersHorizontal, Users, Video, ShieldCheck, ArrowRight,
-  AlertTriangle, CheckCircle2
+  AlertTriangle, CheckCircle2, Share2
 } from 'lucide-react';
 import { classApi } from '../../api/classes';
 import { teachingCatalogApi } from '../../api/teachingRegistrations';
 import { HomeHeader } from '../../components/home/HomeHeader';
 import { PublicClassDetailModal } from './PublicClassDetailModal';
 import { useAuth } from '../../hooks/useAuth';
+import { useFeedback } from '../../components/feedback/useFeedback';
+import { buildClassShareUrl, copyToClipboard } from '../../utils/shareLinks';
 import { checkClassScheduleConflict, formatDayOfWeek, formatTimeSlot } from '../../utils/scheduleUtils';
 
 const VIETNAMESE_DAYS = [
@@ -24,7 +26,10 @@ const VIETNAMESE_DAYS = [
 ];
 
 export function ClassMarketplacePage() {
-  const [searchParams] = useSearchParams();
+  const { classId: routeClassId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const feedback = useFeedback();
+  const [checkedClassId, setCheckedClassId] = useState(null);
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -58,13 +63,47 @@ export function ClassMarketplacePage() {
   // Selected Class Modal
   const [selectedClass, setSelectedClass] = useState(null);
 
+  const targetClassId = useMemo(() => {
+    return routeClassId || searchParams.get('id');
+  }, [routeClassId, searchParams]);
+
   useEffect(() => {
-    const classId = searchParams.get('id');
-    if (!classId) return;
-    classApi.getPublicClassById(classId)
-      .then(setSelectedClass)
-      .catch(() => setSelectedClass(null));
-  }, [searchParams]);
+    if (!targetClassId) return;
+    if (checkedClassId === targetClassId) return;
+
+    setCheckedClassId(targetClassId);
+    classApi.getShareableClassById(targetClassId)
+      .then((data) => {
+        setSelectedClass(data);
+        if (data && data.id) {
+          setClassList(prev => prev.some(c => String(c.id) === String(data.id)) ? prev : [data, ...prev]);
+        }
+      })
+      .catch((err) => {
+        console.warn('Lỗi mở liên kết lớp học:', err);
+        setSelectedClass(null);
+        feedback.warning('Lớp học này hiện không còn nhận học viên hoặc liên kết chia sẻ đã hết hiệu lực.');
+      });
+  }, [targetClassId, checkedClassId]);
+
+  useEffect(() => {
+    if (!targetClassId || selectedClass) return;
+    const timer = setTimeout(() => {
+      document.getElementById(`class-${targetClassId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [targetClassId, selectedClass]);
+
+  const handleCloseDetailModal = useCallback(() => {
+    setSelectedClass(null);
+    if (routeClassId) {
+      navigate('/classes', { replace: true });
+    } else if (searchParams.get('id')) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('id');
+      setSearchParams(nextParams, { replace: true });
+    }
+  }, [routeClassId, searchParams, navigate, setSearchParams]);
 
   // Load student schedule if active role is STUDENT
   useEffect(() => {
@@ -475,7 +514,12 @@ export function ClassMarketplacePage() {
                 return (
                   <article 
                     key={cls.id} 
-                    className="flex flex-col justify-between rounded-[22px] border border-slate-200 bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,.06)] transition-all hover:-translate-y-1 hover:border-brand-primary/40 hover:shadow-[0_24px_56px_rgba(15,23,42,.1)] group cursor-pointer"
+                    id={`class-${cls.id}`} 
+                    className={`flex flex-col justify-between rounded-[22px] border bg-white p-5 shadow-[0_18px_42px_rgba(15,23,42,.06)] transition-all hover:-translate-y-1 hover:border-brand-primary/40 hover:shadow-[0_24px_56px_rgba(15,23,42,.1)] group cursor-pointer ${
+                      String(cls.id) === String(targetClassId)
+                        ? 'border-indigo-500 ring-2 ring-indigo-500 shadow-xl'
+                        : 'border-slate-200'
+                    }`}
                     onClick={() => setSelectedClass(cls)}
                   >
                     <div className="space-y-3">
@@ -591,6 +635,25 @@ export function ClassMarketplacePage() {
                         )}
                       </div>
 
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              const shareUrl = buildClassShareUrl(cls.id);
+                              await copyToClipboard(shareUrl);
+                              feedback.success('Đã sao chép liên kết lớp học vào bộ nhớ tạm!');
+                            } catch {
+                              feedback.error('Không thể sao chép liên kết lớp học.');
+                            }
+                          }}
+                          className="p-2.5 rounded-xl border border-slate-200 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 transition-all cursor-pointer shadow-2xs"
+                          title="Chia sẻ liên kết lớp học"
+                        >
+                          <Share2 className="w-4 h-4" />
+                        </button>
+
                       <button
                         type="button"
                         onClick={(e) => {
@@ -602,6 +665,7 @@ export function ClassMarketplacePage() {
                         <Eye className="w-3.5 h-3.5 text-white" />
                         <span>Xem chi tiết</span>
                       </button>
+                      </div>
                     </div>
                   </article>
                 );
@@ -615,7 +679,7 @@ export function ClassMarketplacePage() {
       {selectedClass && (
         <PublicClassDetailModal
           classRoom={selectedClass}
-          onClose={() => setSelectedClass(null)}
+          onClose={handleCloseDetailModal}
           onRefreshClass={loadClasses}
         />
       )}

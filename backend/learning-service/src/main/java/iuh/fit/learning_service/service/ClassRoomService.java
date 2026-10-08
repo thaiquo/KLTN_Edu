@@ -637,6 +637,30 @@ public class ClassRoomService {
     }
 
     @Transactional(readOnly = true)
+    public ClassRoomDtos.ClassRoomResponse getShareablePublicClassById(Long id) {
+        ClassRoom classRoom = classRoomRepository.findByIdWithDetails(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + id));
+        if (!isAcceptingPublicShareLink(classRoom)) {
+            throw new ResourceNotFoundException("Classroom share link is no longer available");
+        }
+        return toResponse(classRoom, false);
+    }
+
+    private boolean isAcceptingPublicShareLink(ClassRoom classRoom) {
+        if (classRoom == null || classRoom.getId() == null) return false;
+        if (classRoom.getStatus() != ClassRoomStatus.PUBLISHED) return false;
+        if (classRoom.getTerminationCutoffSession() != null) return false;
+        if (classRoom.getStartDate() == null || classRoom.getStartDate().isBefore(LocalDate.now())) return false;
+        if (classRoom.getMaxStudents() == null || classRoom.getMaxStudents() <= 0) return false;
+        long acceptedCount = enrollmentRequestRepository != null
+                ? enrollmentRequestRepository.countByClassRoomIdAndStatusIn(
+                        classRoom.getId(),
+                        List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED))
+                : 0;
+        return acceptedCount < classRoom.getMaxStudents();
+    }
+
+    @Transactional(readOnly = true)
     public ClassRoomDtos.VerifyJoinKeyResponse verifyJoinKey(Long id, String joinKey) {
         ClassRoom classRoom = classRoomRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + id));

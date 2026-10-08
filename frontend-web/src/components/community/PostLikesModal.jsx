@@ -18,7 +18,7 @@ export function PostLikesModal({ isOpen, onClose, postId, postTitle }) {
       })
       .catch((err) => {
         console.error('Lỗi lấy danh sách người thích bài viết:', err);
-        setError('Chưa thể tải danh sách người thích lúc này. Máy chủ đang cập nhật dịch vụ.');
+        setError(err?.message || err?.response?.data?.message || 'Chưa thể tải danh sách người thích lúc này.');
       })
       .finally(() => {
         setLoading(false);

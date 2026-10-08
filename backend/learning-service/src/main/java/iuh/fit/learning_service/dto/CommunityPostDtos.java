@@ -202,6 +202,9 @@ public class CommunityPostDtos {
 
         private String userName;
         private String userAvatar;
+        private Long replyToUserId;
+        private String replyToUserRole;
+        private String replyToUserName;
     }
 
     @Data

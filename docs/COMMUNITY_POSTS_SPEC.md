@@ -83,12 +83,27 @@ Base path thật trong source: **`/api/community`**.
 | `PUT` | `/api/community/polls/{pollId}/votes` | Implemented | Luồng Web ưu tiên: thay toàn bộ lựa chọn của Student trong một transaction; click trên lịch chỉ sửa bản nháp local và nút Lưu mới ghi DB một lần. |
 | `DELETE` | `/api/community/polls/{pollId}/vote` | Implemented | Authenticated; hủy vote của chính mình. |
 | `POST` | `/api/community/posts/{id}/reactions` | Implemented | Active role `STUDENT` hoặc `TUTOR`; toggle like. |
+| `GET` | `/api/community/posts/{id}/likes` | Implemented | Public/Authenticated; trả về danh sách chi tiết người thích bài viết (`userId`, `userRole`, `userName`, `userAvatar`, `createdAt`) phục vụ popup xem lượt thích cho tác giả/thành viên. |
 | `POST` | `/api/community/posts/{id}/bookmarks` | Implemented | Active role `STUDENT` hoặc `TUTOR`; toggle bookmark. |
 | `GET` | `/api/community/posts/{id}/comments` | Implemented | Public; xem danh sách bình luận công khai. |
 | `POST` | `/api/community/posts/{id}/comments` | Implemented, cần moderation | Active role `STUDENT` hoặc `TUTOR`. |
 | `POST` | `/api/community/posts/{postId}/convert-to-class` | Implemented | Tutor author; nhận poll `OPEN` hoặc `CLOSED`, kể cả hết hạn, không yêu cầu quorum; tái sử dụng `ClassRoomService`; gửi persistent notification cho từng voter. |
 
 Không dùng `/api/learning/community/...` cho frontend hiện tại trừ khi có quyết định đổi route và cập nhật gateway/client đồng bộ.
+
+## 5.1 Quy tắc Tìm kiếm, Sắp xếp và Liên kết Chia sẻ (Deep Link)
+
+- **Sắp xếp mặc định**: Mặc định luôn sắp xếp bài đăng mới nhất theo thời gian (`createdAt DESC`), đảm bảo bài vừa đăng hiển thị ngay trên đầu bảng tin.
+- **Tìm kiếm từ khóa (`keyword`)**: Loại bỏ các dropdown lọc môn/hình thức tĩnh bị lệch danh mục; thay bằng thanh tìm kiếm từ khóa duy nhất. Backend `searchPosts` tự động match đa chiều qua: `title`, `content`, `authorName`, `educationLevel`, tên môn học `subject.name` và tên lớp gắn kèm `linkedClass.name`.
+- **Liên kết chia sẻ Bài viết (`/community?postId={id}#post-{id}`)**:
+  - Khi người nhận mở liên kết, hệ thống tự động tìm và cuộn mượt (smooth scroll) đến bài viết kèm hiệu ứng highlight nhận diện.
+  - Nếu bài viết không nằm ở trang 1 của feed, tự động gọi `getPostDetail(postId)` để chèn lên đầu bảng tin.
+  - Nếu bài viết đã bị xóa hoặc ẩn (`status === HIDDEN`), backend trả về 404, frontend hiển thị thông báo dịu mắt liên kết không còn hiệu lực.
+- **Liên kết chia sẻ Lớp học (`/classes/{id}`)**:
+  - Dùng endpoint riêng `GET /api/learning/public/classes/{id}/share` kiểm tra điều kiện lớp còn tuyển sinh: `status === PUBLISHED`, chưa quá ngày khai giảng (`startDate >= today`), chưa cutoff thanh lý và còn chỗ trống (`acceptedStudents < maxStudents`).
+  - Khi mở link hợp lệ: Tự động mở Modal chi tiết lớp học (`PublicClassDetailModal`) và highlight thẻ lớp trên marketplace.
+  - Nếu lớp đã khóa, dừng tuyển hoặc đủ sĩ số: Backend trả về 404, frontend thông báo lớp học không còn nhận học viên.
+- **Xem danh sách người thích bài viết**: Tác giả Gia sư và người xem có thể bấm trực tiếp vào số lượt thích trên bài viết hoặc tab quản lý bài đăng để mở popup `PostLikesModal` xem chi tiết danh sách tài khoản đã thả tim.
 
 ## 6. Phase 2 implementation đã chốt
 

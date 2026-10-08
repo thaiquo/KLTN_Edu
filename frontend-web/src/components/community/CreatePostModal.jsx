@@ -332,7 +332,7 @@ Học viên quan tâm vui lòng xem chi tiết lớp học bên dưới và gử
           setError('Vui lòng chọn lớp đang tuyển sinh để giới thiệu');
           return;
         }
-        finalSubjectId = selectedClass.registration?.subject?.id || selectedClass.subjectId || null;
+        finalSubjectId = null;
         finalEducationLevel = selectedClass.level?.name || selectedClass.registration?.educationLevelName || '';
         finalLearningMode = selectedClass.learningMode || 'ONLINE';
         finalTargetPrice = selectedClass.pricePerSession ? Number(selectedClass.pricePerSession) : null;

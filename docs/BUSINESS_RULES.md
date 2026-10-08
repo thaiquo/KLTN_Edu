@@ -219,10 +219,27 @@ Hệ thống vẫn có business flow hợp lệ khi AI chưa triển khai; khi �
 
 ## 9. Community Class Share and Interaction
 
-- Tutor chỉ được gắn lớp của chính mình khi lớp đang `PUBLISHED`, chưa có cutoff thanh lý và có ngày khai giảng sau ngày hiện tại. Bài giới thiệu cũ được giữ làm lịch sử, nhưng thẻ lớp tự chuyển sang trạng thái đóng tuyển sinh khi lớp không còn thỏa điều kiện; không còn điều hướng sang luồng gửi yêu cầu.
+- Tutor chỉ được gắn lớp của chính mình khi lớp đang `PUBLISHED`, chưa có cutoff thanh lý và có ngày khai giảng sau ngày hiện tại (`startDate >= today`). Bài giới thiệu cũ được giữ làm lịch sử, nhưng thẻ lớp tự chuyển sang trạng thái đóng tuyển sinh khi lớp không còn thỏa điều kiện; không còn điều hướng sang luồng gửi yêu cầu.
 - Chỉ active role `STUDENT` hoặc `TUTOR` được like, bookmark và comment bài cộng đồng. Guest chỉ đọc nội dung công khai; Staff/Admin giám sát qua các phân hệ quản trị, không dùng tương tác cộng đồng.
+- Tác giả Gia sư và người xem có thể mở popup xem danh sách chi tiết các tài khoản đã thích bài viết (họ tên, avatar, vai trò `STUDENT`/`TUTOR`, thời gian thích).
 
-## 10. Change Policy
+## 10. Deep Link, Share Validity & Feed Discovery
+
+- **Sao chép liên kết chia sẻ (Share Link)**:
+  - Cho phép người dùng (Học viên, Gia sư) sao chép đường dẫn chia sẻ bài viết (`/community?postId={id}`) hoặc lớp học (`/classes/{id}`) để gửi qua tin nhắn hoặc chia sẻ ra bên ngoài.
+- **Kiểm soát hiệu lực liên kết Lớp học**:
+  - Endpoint chia sẻ `/api/learning/public/classes/{id}/share` kiểm tra nghiêm ngặt điều kiện tuyển sinh: lớp phải đang `PUBLISHED`, ngày khai giảng chưa qua (`startDate >= today`), chưa có `cutoffDate` (chưa bị thanh lý hoặc hủy) và chưa đủ sĩ số (`currentEnrollment < maxStudents`).
+  - Khi mở liên kết hợp lệ: Hệ thống điều hướng đến đúng lớp học trên Marketplace, tự động mở Modal chi tiết lớp học (`PublicClassDetailModal`) và áp dụng viền màu nổi bật (highlight).
+  - Khi lớp học không còn hiệu lực (đã khóa, dừng tuyển, đã bắt đầu học hoặc đủ học viên): Backend trả về 404, frontend hiển thị thông báo dịu mắt "Lớp học này hiện không còn nhận học viên hoặc liên kết đã hết hiệu lực".
+- **Kiểm soát hiệu lực liên kết Bài viết**:
+  - Khi mở liên kết bài viết hợp lệ: Bảng tin cộng đồng tự động tìm kiếm, cuộn mượt (smooth scroll) đến bài viết và kích hoạt hiệu ứng viền sáng tím nổi bật. Nếu bài viết không nằm ở trang đầu feed, hệ thống tự động tải chi tiết bài viết đó và chèn lên đầu trang.
+  - Khi bài viết bị xóa hoặc ẩn (`status === HIDDEN`): Backend trả về 404, frontend hiển thị thông báo liên kết bài viết không còn hiệu lực.
+- **Tìm kiếm và sắp xếp Bảng tin cộng đồng**:
+  - Loại bỏ các dropdown lọc môn học và hình thức tĩnh trên giao diện Bảng tin do danh mục môn học cố định không khớp với danh mục thực tế.
+  - Thay thế bằng thanh tìm kiếm từ khóa (`keyword`) duy nhất: Backend tự động so khớp đa chiều qua tiêu đề, nội dung bài viết, tên tác giả, cấp học, tên môn học (`subject.name`) và tên lớp học liên kết (`linkedClass.name`).
+  - Mặc định luôn sắp xếp bài đăng mới nhất theo thời gian (`createdAt DESC`), đảm bảo bài viết vừa đăng luôn xuất hiện đầu tiên trên bảng tin.
+
+## 11. Change Policy
 
 Business rules có thể thay đổi trong quá trình phát triển. Khi người dùng xác nhận business rule mới:
 

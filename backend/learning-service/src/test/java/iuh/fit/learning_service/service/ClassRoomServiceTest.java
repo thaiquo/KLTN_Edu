@@ -3,7 +3,9 @@ package iuh.fit.learning_service.service;
 import iuh.fit.learning_service.entity.ClassRoom;
 import iuh.fit.learning_service.entity.TutorAuthorizationState;
 import iuh.fit.learning_service.enums.ClassRoomStatus;
+import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 import iuh.fit.learning_service.exception.ConflictException;
+import iuh.fit.learning_service.exception.ResourceNotFoundException;
 import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.repository.CatalogLevelRepository;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
@@ -19,6 +21,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Optional;
+import java.time.LocalDate;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -151,6 +155,59 @@ class ClassRoomServiceTest {
         var response = service.getPublicClassById(77L);
 
         assertThat(response.meetingLink()).isNull();
+    }
+
+    @Test
+    void shareablePublicClassReturnsPublishedRecruitingClass() {
+        ClassRoom classRoom = classRoom("tutor@example.com", ClassRoomStatus.PUBLISHED);
+        classRoom.setId(77L);
+        classRoom.setName("Math 10");
+        classRoom.setStartDate(LocalDate.now().plusDays(7));
+        classRoom.setMaxStudents(3);
+        classRoom.setMeetingLink("https://meet.example/private-room");
+
+        when(classRoomRepository.findByIdWithDetails(77L)).thenReturn(Optional.of(classRoom));
+        when(enrollmentRequestRepository.countByClassRoomIdAndStatusIn(
+                77L,
+                List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED)
+        )).thenReturn(1L);
+
+        var response = service.getShareablePublicClassById(77L);
+
+        assertThat(response.id()).isEqualTo(77L);
+        assertThat(response.meetingLink()).isNull();
+    }
+
+    @Test
+    void shareablePublicClassRejectsLockedClass() {
+        ClassRoom classRoom = classRoom("tutor@example.com", ClassRoomStatus.LOCKED);
+        classRoom.setId(77L);
+        classRoom.setName("Math 10");
+        classRoom.setStartDate(LocalDate.now().plusDays(7));
+        classRoom.setMaxStudents(3);
+
+        when(classRoomRepository.findByIdWithDetails(77L)).thenReturn(Optional.of(classRoom));
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.getShareablePublicClassById(77L));
+    }
+
+    @Test
+    void shareablePublicClassRejectsFullClass() {
+        ClassRoom classRoom = classRoom("tutor@example.com", ClassRoomStatus.PUBLISHED);
+        classRoom.setId(77L);
+        classRoom.setName("Math 10");
+        classRoom.setStartDate(LocalDate.now().plusDays(7));
+        classRoom.setMaxStudents(2);
+
+        when(classRoomRepository.findByIdWithDetails(77L)).thenReturn(Optional.of(classRoom));
+        when(enrollmentRequestRepository.countByClassRoomIdAndStatusIn(
+                77L,
+                List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED)
+        )).thenReturn(2L);
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.getShareablePublicClassById(77L));
     }
 
     @Test

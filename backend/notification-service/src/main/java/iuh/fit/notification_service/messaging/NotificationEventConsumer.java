@@ -7,6 +7,7 @@ import iuh.fit.notification_service.messaging.event.EnrollmentNotificationEvent;
 import iuh.fit.notification_service.messaging.event.HomeworkNotificationEvent;
 import iuh.fit.notification_service.messaging.event.TeachingRegistrationReviewedEvent;
 import iuh.fit.notification_service.messaging.event.CommunityPostConvertedEvent;
+import iuh.fit.notification_service.messaging.event.CommunityPostInteractionEvent;
 import iuh.fit.notification_service.messaging.event.TutorApplicationSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApprovedEvent;
 import iuh.fit.notification_service.messaging.event.TutorRejectedEvent;
@@ -297,6 +298,47 @@ public class NotificationEventConsumer {
                 "Khảo sát đã được chuyển thành lớp học",
                 message,
                 "STUDENT",
+                "COMMUNITY_POST",
+                String.valueOf(event.postId())
+        ));
+    }
+
+    @RabbitListener(queues = NotificationRabbitConfig.COMMUNITY_POST_INTERACTION_QUEUE)
+    public void onCommunityPostInteraction(CommunityPostInteractionEvent event) {
+        if (event == null
+                || !StringUtils.hasText(event.eventId())
+                || event.recipientUserId() == null
+                || event.postId() == null
+                || event.commentId() == null
+                || (!"COMMUNITY_POST_COMMENTED".equals(event.eventType())
+                && !"COMMUNITY_POST_REPLIED".equals(event.eventType()))) {
+            log.warn("Skipping invalid community post interaction notification event");
+            return;
+        }
+
+        String actorName = safeReason(event.actorName());
+        String postTitle = safeReason(event.postTitle());
+        String commentPreview = safeReason(event.commentPreview());
+        String title = "COMMUNITY_POST_REPLIED".equals(event.eventType())
+                ? "Có phản hồi mới trong bảng tin"
+                : "Có bình luận mới trong bảng tin";
+        String message = StringUtils.hasText(actorName)
+                ? actorName + " đã " + ("COMMUNITY_POST_REPLIED".equals(event.eventType()) ? "trả lời bạn" : "bình luận trên bài viết của bạn")
+                : ("COMMUNITY_POST_REPLIED".equals(event.eventType()) ? "Có người đã trả lời bạn" : "Có người đã bình luận trên bài viết của bạn");
+        if (StringUtils.hasText(postTitle)) {
+            message += ": \"" + postTitle + "\"";
+        }
+        if (StringUtils.hasText(commentPreview)) {
+            message += ". Nội dung: \"" + commentPreview + "\"";
+        }
+
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                event.eventType(),
+                title,
+                message,
+                StringUtils.hasText(event.targetRole()) ? event.targetRole().trim().toUpperCase() : null,
                 "COMMUNITY_POST",
                 String.valueOf(event.postId())
         ));

@@ -2,12 +2,13 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpen, Calendar, Clock, DollarSign, Globe, Info, Key, MapPin,
-  Users, Video, X, UserRound, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle, XCircle, AlertTriangle
+  Users, Video, X, UserRound, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle, XCircle, AlertTriangle, Share2
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useFeedback } from '../../components/feedback/useFeedback';
 import { ContractDocumentModal } from '../../components/contract/ContractDocumentModal';
 import { checkClassScheduleConflict } from '../../utils/scheduleUtils';
+import { buildClassShareUrl, copyToClipboard } from '../../utils/shareLinks';
 
 const VIETNAMESE_DAYS = [
   { value: 2, label: 'T2' },
@@ -52,6 +53,20 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const location = useLocation();
   const { user } = useAuth();
   const feedback = useFeedback();
+
+  const [copiedShare, setCopiedShare] = React.useState(false);
+  const handleShareClass = async () => {
+    if (!classRoom?.id) return;
+    try {
+      const shareUrl = buildClassShareUrl(classRoom.id);
+      await copyToClipboard(shareUrl);
+      setCopiedShare(true);
+      feedback.success('Đã sao chép liên kết lớp học vào bộ nhớ tạm!');
+      setTimeout(() => setCopiedShare(false), 2500);
+    } catch {
+      feedback.error('Không thể sao chép liên kết lớp học.');
+    }
+  };
 
   const [myRequest, setMyRequest] = React.useState(null);
   const [openContractDoc, setOpenContractDoc] = React.useState(false);
@@ -224,6 +239,16 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
               {classRoom.name}
             </h2>
           </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleShareClass}
+              className="p-2 rounded-2xl border border-slate-200 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+              title="Chia sẻ liên kết lớp học"
+            >
+              <Share2 className="w-4 h-4 text-indigo-600" />
+              <span className="hidden sm:inline">{copiedShare ? 'Đã sao chép!' : 'Chia sẻ lớp'}</span>
+            </button>
           <button
             type="button"
             onClick={onClose}
@@ -231,6 +256,7 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
           >
             <X className="w-5 h-5" />
           </button>
+          </div>
         </div>
 
         {/* Tutor Owner Card Info Banner */}

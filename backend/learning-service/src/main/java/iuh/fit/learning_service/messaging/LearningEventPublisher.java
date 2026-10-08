@@ -7,6 +7,7 @@ import iuh.fit.learning_service.messaging.event.EnrollmentNotificationEvent;
 import iuh.fit.learning_service.messaging.event.HomeworkNotificationEvent;
 import iuh.fit.learning_service.messaging.event.TeachingRegistrationReviewedEvent;
 import iuh.fit.learning_service.messaging.event.CommunityPostConvertedEvent;
+import iuh.fit.learning_service.messaging.event.CommunityPostInteractionEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -136,6 +137,49 @@ public class LearningEventPublisher {
                         postTitle,
                         classTitle,
                         tutorName,
+                        "COMMUNITY_POST",
+                        String.valueOf(postId))
+        );
+    }
+
+    public void publishCommunityPostInteraction(
+            String eventType,
+            Long postId,
+            Long commentId,
+            Long recipientUserId,
+            Long actorUserId,
+            String actorName,
+            String postTitle,
+            String commentPreview,
+            String targetRole
+    ) {
+        if (postId == null || commentId == null || recipientUserId == null || eventType == null) {
+            log.warn(
+                    "Skipping community interaction notification eventType={} postId={} commentId={} recipientUserId={}",
+                    eventType,
+                    postId,
+                    commentId,
+                    recipientUserId);
+            return;
+        }
+        String normalizedType = eventType.trim().toUpperCase();
+        String eventId = "community-post-interaction:" + normalizedType + ":" + postId + ":" + commentId + ":" + recipientUserId;
+        publishAfterCommit(
+                LearningRabbitConfig.EXCHANGE,
+                LearningRabbitConfig.COMMUNITY_POST_INTERACTION_ROUTING_KEY,
+                new CommunityPostInteractionEvent(
+                        eventId,
+                        normalizedType,
+                        LocalDateTime.now(),
+                        "learning-service",
+                        postId,
+                        commentId,
+                        recipientUserId,
+                        actorUserId,
+                        actorName,
+                        postTitle,
+                        commentPreview,
+                        targetRole,
                         "COMMUNITY_POST",
                         String.valueOf(postId))
         );

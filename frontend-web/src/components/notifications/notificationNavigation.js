@@ -53,8 +53,14 @@ export function getNotificationTarget(notification, activeRole) {
     return target('/tutor/teaching-registrations');
   }
 
-  if (type === 'COMMUNITY_POST_CONVERTED_TO_CLASS') {
+  if (type === 'COMMUNITY_POST_CONVERTED_TO_CLASS'
+      || type === 'COMMUNITY_POST_COMMENTED'
+      || type === 'COMMUNITY_POST_REPLIED'
+      || referenceType === 'COMMUNITY_POST') {
     const postId = notification?.referenceId;
+    if (role === 'TUTOR' || role === 'STAFF' || role === 'ADMIN') {
+      return target(postId ? `/dashboard?tab=community#post-${encodeURIComponent(postId)}` : '/dashboard?tab=community', 'community');
+    }
     return target(postId ? `/community#post-${encodeURIComponent(postId)}` : '/community');
   }
 

@@ -31,6 +31,7 @@ public class NotificationRabbitConfig {
     public static final String HOMEWORK_SUBMITTED_QUEUE = "notification.homework-submitted";
     public static final String HOMEWORK_GRADED_QUEUE = "notification.homework-graded";
     public static final String COMMUNITY_POST_CONVERTED_QUEUE = "notification.community-post-converted";
+    public static final String COMMUNITY_POST_INTERACTION_QUEUE = "notification.community-post-interaction";
 
     public static final String TUTOR_APPLICATION_SUBMITTED_ROUTING_KEY = "account.tutor-application.submitted";
     public static final String TUTOR_APPROVED_ROUTING_KEY = "account.tutor.approved";
@@ -46,6 +47,7 @@ public class NotificationRabbitConfig {
     public static final String HOMEWORK_SUBMITTED_ROUTING_KEY = "learning.homework.submitted";
     public static final String HOMEWORK_GRADED_ROUTING_KEY = "learning.homework.graded";
     public static final String COMMUNITY_POST_CONVERTED_ROUTING_KEY = "learning.community-post.converted";
+    public static final String COMMUNITY_POST_INTERACTION_ROUTING_KEY = "learning.community-post.interaction";
 
     @Bean
     DirectExchange eduEventsExchange() {
@@ -123,6 +125,11 @@ public class NotificationRabbitConfig {
     }
 
     @Bean
+    Queue notificationCommunityPostInteractionQueue() {
+        return new Queue(COMMUNITY_POST_INTERACTION_QUEUE, true);
+    }
+
+    @Bean
     Binding notificationTutorApplicationSubmittedBinding(Queue notificationTutorApplicationSubmittedQueue, DirectExchange eduEventsExchange) {
         return BindingBuilder.bind(notificationTutorApplicationSubmittedQueue).to(eduEventsExchange).with(TUTOR_APPLICATION_SUBMITTED_ROUTING_KEY);
     }
@@ -195,6 +202,16 @@ public class NotificationRabbitConfig {
         return BindingBuilder.bind(notificationCommunityPostConvertedQueue)
                 .to(eduEventsExchange)
                 .with(COMMUNITY_POST_CONVERTED_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding notificationCommunityPostInteractionBinding(
+            Queue notificationCommunityPostInteractionQueue,
+            DirectExchange eduEventsExchange
+    ) {
+        return BindingBuilder.bind(notificationCommunityPostInteractionQueue)
+                .to(eduEventsExchange)
+                .with(COMMUNITY_POST_INTERACTION_ROUTING_KEY);
     }
 
     @Bean

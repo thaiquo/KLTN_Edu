@@ -310,6 +310,8 @@ These are target events derived from current project scope and docs. They are no
 | `CLASS_SUBMITTED` | `PARTIAL` | Learning Service | Staff/Admin | Planned persistent notification | Implemented | `STAFF`/`ADMIN` | `/staff/tutors` |
 | `CLASS_REVIEWED` | `IMPLEMENTED` | Learning Service | Tutor | Backend persistent notification and Bell REST UI implemented for approved/rejected events | Implemented through learning realtime and Notification Service WebSocket | `TUTOR` | `/dashboard` or Portal `my-classes` |
 | `COMMUNITY_POST_CONVERTED_TO_CLASS` | `IMPLEMENTED` | Learning Service | Each Student who voted | Idempotent persistent notification keyed by post, class and recipient | Implemented through Notification Service WebSocket | `STUDENT` | `/community#post-{postId}` while the linked class awaits review |
+| `COMMUNITY_POST_COMMENTED` | `IMPLEMENTED` | Learning Service | Post author, excluding the actor | Idempotent persistent notification keyed by post, comment and recipient | Implemented through Notification Service WebSocket; counts also refresh through `/ws/learning` | Post author role | `/community#post-{postId}` |
+| `COMMUNITY_POST_REPLIED` | `IMPLEMENTED` | Learning Service | Replied user, excluding the actor | Idempotent persistent notification keyed by post, comment and recipient | Implemented through Notification Service WebSocket; counts also refresh through `/ws/learning` | Replied user role | `/community#post-{postId}` |
 | `ENROLLMENT_REQUESTED` | `IMPLEMENTED` | Learning Service | Tutor | Persistent notification implemented | Implemented through Notification Service WebSocket | `TUTOR` | `/dashboard` |
 | `ENROLLMENT_ACCEPTED` | `IMPLEMENTED` | Learning Service | Student | Persistent notification implemented | Implemented through Notification Service WebSocket | `STUDENT` | `/my-classes` |
 | `ENROLLMENT_REJECTED` | `IMPLEMENTED` | Learning Service | Student | Persistent notification implemented | Implemented through Notification Service WebSocket | `STUDENT` | `/my-classes` |
@@ -344,7 +346,8 @@ These are target events derived from current project scope and docs. They are no
 | `SUBJECT_REQUEST_REVIEWED` | `IMPLEMENTED` | Requester can update proposal state promptly; `/ws/notifications` also syncs Bell for persisted requester notifications. |
 | `CLASS_SUBMITTED` | `IMPLEMENTED` | Staff queue refresh benefits from realtime. |
 | Enrollment request/create/accept/reject/cancel | `IMPLEMENTED` | Student/Tutor request state benefits from prompt updates; Notification WebSocket and frontend `realtime:event` refresh are implemented for the current enrollment flow. |
-| Community post delete/status update | `IMPLEMENTED` | `/ws/learning` broadcasts after commit so Student and Tutor feeds remove or update the same post without a page reload. No Bell notification is required for ordinary community CRUD. |
+| Community post delete/status/count update | `IMPLEMENTED` | `/ws/learning` broadcasts after commit so Student and Tutor feeds remove or update the same post and reconcile public counters without a page reload. Ordinary create/edit/delete still does not create Bell notifications. |
+| Community post comment/reply | `IMPLEMENTED` | `/ws/learning` updates public counters; RabbitMQ creates Bell notifications for the post author or replied user when the recipient is not the actor. |
 | Community poll aggregate update | `IMPLEMENTED` | A Student saves all draft selections in one REST write; `/ws/learning` then broadcasts public aggregate counts to Tutor/Student views. Private per-user selected option ids are not broadcast. |
 | Homework assignment/submission/grading | `PLANNED` | Learning workflow benefits from prompt updates. |
 

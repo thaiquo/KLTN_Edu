@@ -29,10 +29,12 @@ import {
   ChevronUp,
   Reply,
   X,
+  Share2,
   User as UserIcon
 } from 'lucide-react';
 import communityApi from '../../api/community';
 import { useAuth } from '../../hooks/useAuth';
+import { buildCommunityPostShareUrl, copyToClipboard } from '../../utils/shareLinks';
 import { useFeedback } from '../../components/feedback/useFeedback';
 import { CreatePostModal } from '../../components/community/CreatePostModal';
 import { ConvertPostToClassModal } from '../../components/community/ConvertPostToClassModal';
@@ -145,6 +147,9 @@ export function TutorCommunityManagement({
           ? {
               ...post,
               status: detail.payload?.status || post.status,
+              likeCount: detail.payload?.likeCount ?? post.likeCount,
+              commentCount: detail.payload?.commentCount ?? post.commentCount,
+              viewCount: detail.payload?.viewCount ?? post.viewCount,
               poll: detail.payload?.poll || post.poll
             }
           : post));
@@ -265,7 +270,10 @@ export function TutorCommunityManagement({
       const created = await communityApi.addComment(postId, {
         commentText: text,
         userName: user?.fullName || user?.email,
-        userAvatar: user?.avatarUrl || user?.avatar
+        userAvatar: user?.avatarUrl || user?.avatar,
+        replyToUserId: replyingToMap[postId]?.userId,
+        replyToUserRole: replyingToMap[postId]?.userRole,
+        replyToUserName: replyingToMap[postId]?.userName
       });
       setCommentsMap(prev => ({
         ...prev,
@@ -714,6 +722,24 @@ export function TutorCommunityManagement({
                             <span>{post.postType === 'TUTOR_POLL' ? 'Kết thúc vote' : 'Đóng bài'}</span>
                           </button>
                         )}
+
+                        {/* Share Link Button */}
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              const shareUrl = buildCommunityPostShareUrl(post.id);
+                              await copyToClipboard(shareUrl);
+                              feedback.success('Đã sao chép liên kết bài viết vào bộ nhớ tạm!');
+                            } catch {
+                              feedback.error('Không thể sao chép liên kết bài viết.');
+                            }
+                          }}
+                          className="p-1.5 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
+                          title="Chia sẻ liên kết bài viết"
+                        >
+                          <Share2 className="w-4 h-4" />
+                        </button>
 
                         {/* Edit Button */}
                         <button

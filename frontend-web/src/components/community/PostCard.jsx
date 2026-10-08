@@ -33,8 +33,9 @@ import ConvertPostToClassModal from './ConvertPostToClassModal';
 import { PollWeeklyCalendar } from './PollWeeklyCalendar';
 import PostLikesModal from './PostLikesModal';
 import { PostCommentsModal } from './PostCommentsModal';
+import { buildCommunityPostShareUrl, copyToClipboard } from '../../utils/shareLinks';
 
-export function PostCard({ post: initialPost, currentUserId, userRole, authenticated, onRequireAuth, onVoteSuccess, onLikeToggle, onBookmarkToggle, onCommentAdded, onPostDeleted }) {
+export function PostCard({ post: initialPost, currentUserId, userRole, authenticated, onRequireAuth, onVoteSuccess, onLikeToggle, onBookmarkToggle, onCommentAdded, onPostDeleted, isHighlighted }) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const feedback = useFeedback();
@@ -86,7 +87,15 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
       }
 
       if (detail?.type === 'COMMUNITY_POST_UPDATED') {
-        setPost(current => ({ ...current, status: detail.payload?.status || current.status }));
+        setPost(current => ({
+          ...current,
+          status: detail.payload?.status || current.status,
+          commentCount: detail.payload?.commentCount ?? current.commentCount,
+          viewCount: detail.payload?.viewCount ?? current.viewCount
+        }));
+        if (detail.payload?.likeCount !== undefined) {
+          setLikeCount(detail.payload.likeCount);
+        }
         if (detail.payload?.poll) {
           setPoll(current => ({
             ...current,
@@ -111,14 +120,22 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
     && !post.linkedClassId
     && poll;
   const canViewLinkedClass = Boolean(post.linkedClassId && (post.linkedClassAcceptingEnrollment === true || post.linkedClassStatus === 'PUBLISHED'));
-  const canInteractWithPosts = Boolean(authenticated);
+  const canInteractWithPosts = Boolean(authenticated && ['STUDENT', 'TUTOR'].includes(String(userRole || '').toUpperCase()));
   const showLoginRequired = (message) => {
     feedback.info({ title: 'Cần đăng nhập', message });
+  };
+
+  const showInteractionNotAllowed = () => {
+    feedback.warning('Chỉ tài khoản Học viên hoặc Gia sư mới được tương tác với bài đăng cộng đồng.');
   };
 
   const handleLike = async () => {
     if (!authenticated) {
       showLoginRequired('Vui lòng đăng nhập để thả tim bài viết.');
+      return;
+    }
+    if (!canInteractWithPosts) {
+      showInteractionNotAllowed();
       return;
     }
     try {
@@ -137,6 +154,10 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
   const handleBookmark = async () => {
     if (!authenticated) {
       showLoginRequired('Vui lòng đăng nhập để lưu bài viết.');
+      return;
+    }
+    if (!canInteractWithPosts) {
+      showInteractionNotAllowed();
       return;
     }
     try {
@@ -215,8 +236,12 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
   const handleAddComment = async (e) => {
     e.preventDefault();
     if (!newComment.trim() || isSubmittingComment) return;
-    if (!canInteractWithPosts) {
+    if (!authenticated) {
       showLoginRequired('Vui lòng đăng nhập để bình luận trên bảng tin.');
+      return;
+    }
+    if (!canInteractWithPosts) {
+      showInteractionNotAllowed();
       return;
     }
     setIsSubmittingComment(true);
@@ -224,7 +249,10 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
       const created = await communityApi.addComment(post.id, {
         commentText: newComment.trim(),
         userName: user?.fullName || user?.email,
-        userAvatar: user?.avatarUrl || user?.avatar
+        userAvatar: user?.avatarUrl || user?.avatar,
+        replyToUserId: replyingTo?.userId,
+        replyToUserRole: replyingTo?.userRole,
+        replyToUserName: replyingTo?.userName
       });
       setComments(prev => [...prev, created]);
       setPost(prev => ({
@@ -241,10 +269,16 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
     }
   };
 
-  const handleShare = () => {
-    navigator.clipboard.writeText(window.location.origin + '/community#' + post.id);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const handleShare = async () => {
+    try {
+      const shareUrl = buildCommunityPostShareUrl(post.id);
+      await copyToClipboard(shareUrl);
+      setCopied(true);
+      feedback.success('Đã sao chép liên kết bài viết vào bộ nhớ tạm!');
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      feedback.error('Không thể sao chép liên kết bài viết.');
+    }
   };
 
   const handleDeletePost = async () => {
@@ -330,7 +364,11 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
   return (
     <article 
       id={`post-${post.id}`}
-      className="bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden mb-6"
+      className={`bg-white rounded-3xl border transition-all duration-300 overflow-hidden mb-6 ${
+        isHighlighted
+          ? 'border-indigo-500 ring-2 ring-indigo-500/80 shadow-xl'
+          : 'border-slate-200/80 shadow-sm hover:shadow-md'
+      }`}
     >
       {/* Header */}
       <div className="p-5 pb-3">
@@ -569,14 +607,19 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
               <button
                 type="button"
                 onClick={() => setIsLikesModalOpen(true)}
-                className={`py-1.5 px-2.5 font-bold transition text-xs border-l cursor-pointer ${
+                className={`py-1.5 px-2.5 font-bold transition text-xs border-l flex items-center gap-1 cursor-pointer ${
                   isLiked
                     ? 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-rose-100'
                     : 'text-slate-600 bg-slate-50 border-slate-200 hover:bg-slate-100'
                 }`}
                 title="Bấm để xem danh sách người đã thích bài viết"
               >
-                {likeCount}
+                <span>{likeCount}</span>
+                {isTutorAuthor && (
+                  <span className="text-[10px] text-rose-500 font-bold underline">
+                    Xem
+                  </span>
+                )}
               </button>
             )}
           </div>
@@ -727,7 +770,7 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
           </div>
 
           {/* Comment Input / Guest Login Call-to-action */}
-          {authenticated ? (
+          {canInteractWithPosts ? (
             <div>
               {replyingTo && (
                 <div className="flex items-center justify-between px-3 py-1.5 mb-2 rounded-xl bg-indigo-50/90 border border-indigo-100 text-xs text-indigo-900 animate-in fade-in duration-100">
@@ -765,6 +808,10 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
                   <span>Gửi</span>
                 </button>
               </form>
+            </div>
+          ) : authenticated ? (
+            <div className="text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+              Chỉ Học viên và Gia sư được bình luận trực tiếp trên bảng tin cộng đồng.
             </div>
           ) : (
             <div className="flex items-center justify-between p-3 rounded-2xl bg-indigo-50/70 border border-indigo-100 text-xs">

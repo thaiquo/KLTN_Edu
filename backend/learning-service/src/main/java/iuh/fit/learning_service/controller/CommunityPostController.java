@@ -202,7 +202,15 @@ public class CommunityPostController {
     ) {
         LearningUserPrincipal principal = extractPrincipal(authentication);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(postService.addComment(id, request.getCommentText(), principal, request.getUserName(), request.getUserAvatar()));
+                .body(postService.addComment(
+                        id,
+                        request.getCommentText(),
+                        principal,
+                        request.getUserName(),
+                        request.getUserAvatar(),
+                        request.getReplyToUserId(),
+                        request.getReplyToUserRole(),
+                        request.getReplyToUserName()));
     }
 
     @PostMapping("/posts/{id}/convert-to-class")

@@ -35,6 +35,7 @@ export function PostCommentsModal({
   const [replyingTo, setReplyingTo] = useState(null);
   const inputRef = useRef(null);
   const commentListEndRef = useRef(null);
+  const canComment = Boolean(authenticated && ['STUDENT', 'TUTOR'].includes(String(userRole || '').toUpperCase()));
 
   // Load comments when modal opens
   useEffect(() => {
@@ -74,6 +75,10 @@ export function PostCommentsModal({
       onRequireAuth?.();
       return;
     }
+    if (!canComment) {
+      feedback.warning('Chỉ tài khoản Học viên hoặc Gia sư mới được bình luận trên bảng tin cộng đồng.');
+      return;
+    }
     setReplyingTo(comment);
     const mention = `@${comment.userName || 'user'} `;
     if (!newComment.startsWith(mention)) {
@@ -101,12 +106,20 @@ export function PostCommentsModal({
       return;
     }
 
+    if (!canComment) {
+      feedback.warning('Chỉ tài khoản Học viên hoặc Gia sư mới được bình luận trên bảng tin cộng đồng.');
+      return;
+    }
+
     try {
       setIsSubmitting(true);
       const created = await communityApi.addComment(post.id, {
         commentText: newComment.trim(),
         userName: currentUser?.fullName || currentUser?.email,
-        userAvatar: currentUser?.avatarUrl || currentUser?.avatar
+        userAvatar: currentUser?.avatarUrl || currentUser?.avatar,
+        replyToUserId: replyingTo?.userId,
+        replyToUserRole: replyingTo?.userRole,
+        replyToUserName: replyingTo?.userName
       });
 
       setComments(prev => [...prev, created]);
@@ -305,7 +318,7 @@ export function PostCommentsModal({
 
         {/* Sticky Input Footer */}
         <div className="p-3 sm:p-4 bg-white border-t border-slate-100">
-          {authenticated ? (
+          {canComment ? (
             <div>
               {replyingTo && (
                 <div className="flex items-center justify-between px-3 py-1.5 mb-2 rounded-xl bg-indigo-50/90 border border-indigo-100 text-xs text-indigo-900 animate-in fade-in duration-100">
@@ -347,6 +360,11 @@ export function PostCommentsModal({
                   <span>Gửi</span>
                 </button>
               </form>
+            </div>
+          ) : authenticated ? (
+            <div className="flex items-center gap-2 p-3 rounded-2xl bg-slate-50 border border-slate-100 text-xs text-slate-600">
+              <MessageCircle className="w-4 h-4 text-slate-400 flex-shrink-0" />
+              <span>Chỉ Học viên và Gia sư được tham gia bình luận trên bảng tin cộng đồng.</span>
             </div>
           ) : (
             <div className="flex items-center justify-between p-3 rounded-2xl bg-indigo-50/80 border border-indigo-100 text-xs">

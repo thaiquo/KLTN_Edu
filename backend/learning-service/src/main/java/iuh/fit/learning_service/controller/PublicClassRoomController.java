@@ -52,6 +52,11 @@ public class PublicClassRoomController {
         return service.getPublicClassById(id);
     }
 
+    @GetMapping("/{id}/share")
+    public ClassRoomDtos.ClassRoomResponse getShareablePublicClassById(@PathVariable Long id) {
+        return service.getShareablePublicClassById(id);
+    }
+
     @PostMapping("/{id}/verify-key")
     public ResponseEntity<ClassRoomDtos.VerifyJoinKeyResponse> verifyJoinKey(
             @PathVariable Long id,

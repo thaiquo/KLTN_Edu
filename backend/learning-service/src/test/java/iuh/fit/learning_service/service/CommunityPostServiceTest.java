@@ -405,6 +405,37 @@ class CommunityPostServiceTest {
     }
 
     @Test
+    void createPost_TutorClassShare_RejectsSubjectThatDoesNotMatchLinkedClass() {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setPostType(PostType.TUTOR_CLASS_SHARE);
+        request.setTitle("Lớp Hóa 10 còn chỗ");
+        request.setContent("Các em có thể gửi yêu cầu tham gia trực tiếp.");
+        request.setLinkedClassId(14L);
+        request.setSubjectId(99L);
+
+        Subject math = new Subject();
+        math.setId(99L);
+        math.setName("Toán");
+        math.setActive(true);
+
+        ClassRoom classRoom = new ClassRoom();
+        classRoom.setId(14L);
+        classRoom.setTutorEmail("tutor@edu.vn");
+        classRoom.setStatus(iuh.fit.learning_service.enums.ClassRoomStatus.PUBLISHED);
+        classRoom.setStartDate(LocalDate.now().plusDays(3));
+        classRoom.setTutorSubjectRegistration(approvedRegistration("Hóa học"));
+
+        when(classRoomRepository.findByIdWithDetails(14L)).thenReturn(Optional.of(classRoom));
+        when(subjectRepository.findById(99L)).thenReturn(Optional.of(math));
+        when(subjectRepository.findByNameContainingIgnoreCaseAndActiveTrueOrderByNameAsc(eq("Hóa học"), any(PageRequest.class)))
+                .thenReturn(List.of());
+
+        assertThrows(BadRequestException.class, () ->
+                postService.createPost(request, tutorPrincipal, "Thầy Hưng", null));
+        verify(postRepository, never()).save(any());
+    }
+
+    @Test
     void createPost_TutorPoll_ForbiddenForStudent() {
         CreatePostRequest request = new CreatePostRequest();
         request.setPostType(PostType.TUTOR_POLL);
@@ -826,25 +857,64 @@ class CommunityPostServiceTest {
     }
 
     @Test
-    void communityInteractions_AllowAuthenticatedUsersWithAnyRole() {
+    void communityInteractions_RejectStaffRole() {
         LearningUserPrincipal staffPrincipal = new LearningUserPrincipal("staff@edu.vn", 303L, "STAFF");
+
+        assertThrows(ForbiddenException.class, () ->
+                postService.toggleLike(1L, staffPrincipal, "Staff Member", null));
+        assertThrows(ForbiddenException.class, () ->
+                postService.addComment(1L, "Nội dung phản hồi", staffPrincipal, "Staff Member", null, null, null, null));
+        assertThrows(ForbiddenException.class, () ->
+                postService.toggleBookmark(1L, staffPrincipal));
+
+        verifyNoInteractions(postRepository, interactionRepository);
+    }
+
+    @Test
+    void addComment_TutorCanReplyOnStudentPostWithNullLegacyCounter() {
         CommunityPost post = new CommunityPost();
         post.setId(1L);
+        post.setAuthorId(studentPrincipal.userId());
+        post.setAuthorRole("STUDENT");
         post.setStatus(PostStatus.OPEN);
-        post.setLikeCount(0);
-        post.setCommentCount(0);
+        post.setCommentCount(null);
+        String longAvatar = "https://cdn.example.com/avatar/" + "x".repeat(260);
+        String longDisplayName = "Gia sư ".repeat(30);
         when(postRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(post));
-        when(interactionRepository.findByPostIdAndUserIdAndInteractionType(1L, 303L, InteractionType.LIKE))
+        when(interactionRepository.save(any(PostInteraction.class))).thenAnswer(invocation -> {
+            PostInteraction saved = invocation.getArgument(0);
+            saved.setId(88L);
+            return saved;
+        });
+
+        CommentDto result = postService.addComment(1L, "Gia sư có thể hỗ trợ lộ trình này.", tutorPrincipal, longDisplayName, longAvatar, 1L, "STUDENT", "Học viên A");
+
+        assertThat(result.getUserRole()).isEqualTo("TUTOR");
+        assertThat(result.getCommentText()).isEqualTo("Gia sư có thể hỗ trợ lộ trình này.");
+        assertThat(result.getUserName()).hasSize(100);
+        assertThat(result.getUserAvatar()).isNull();
+        assertThat(post.getCommentCount()).isEqualTo(1);
+        verify(postRepository).save(post);
+    }
+
+    @Test
+    void toggleLike_StudentCanLikeTutorPostWithNullLegacyCounter() {
+        CommunityPost post = new CommunityPost();
+        post.setId(1L);
+        post.setAuthorId(tutorPrincipal.userId());
+        post.setAuthorRole("TUTOR");
+        post.setStatus(PostStatus.OPEN);
+        post.setLikeCount(null);
+        when(postRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(post));
+        when(interactionRepository.findByPostIdAndUserIdAndInteractionType(1L, studentPrincipal.userId(), InteractionType.LIKE))
                 .thenReturn(Optional.empty());
-        when(interactionRepository.save(any(PostInteraction.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(interactionRepository.save(any(PostInteraction.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        boolean liked = postService.toggleLike(1L, staffPrincipal, "Staff Member", null);
-        org.assertj.core.api.Assertions.assertThat(liked).isTrue();
-        org.assertj.core.api.Assertions.assertThat(post.getLikeCount()).isEqualTo(1);
+        boolean liked = postService.toggleLike(1L, studentPrincipal, "Học viên A", null);
 
-        CommentDto comment = postService.addComment(1L, "Nội dung phản hồi", staffPrincipal, "Staff Member", null);
-        org.assertj.core.api.Assertions.assertThat(comment.getUserName()).isEqualTo("Staff Member");
-        org.assertj.core.api.Assertions.assertThat(comment.getUserRole()).isEqualTo("STAFF");
+        assertThat(liked).isTrue();
+        assertThat(post.getLikeCount()).isEqualTo(1);
+        verify(postRepository).save(post);
     }
 
     @Test
