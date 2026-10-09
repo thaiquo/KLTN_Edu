@@ -1,6 +1,7 @@
 package iuh.fit.ai_service.client;
 
 import iuh.fit.ai_service.dto.ClassMatchingDtos.PublicClassSemanticSourceResponse;
+import iuh.fit.ai_service.dto.ClassMatchingDtos.PublicClassSearchPage;
 import iuh.fit.ai_service.dto.ClassMatchingDtos.PublicClassSource;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TeachingMode;
 import org.springframework.beans.factory.annotation.Value;
@@ -56,6 +57,28 @@ public class LearningPublicClassClient {
                 .retrieve()
                 .body(PublicClassSemanticSourceResponse.class);
         return response == null || response.content() == null ? List.of() : response.content();
+    }
+
+    public PublicClassSearchPage searchPublicClasses(Long subjectId, TeachingMode teachingMode, Boolean availableOnly, int previewSize) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(learningServiceUrl)
+                .path("/api/public/classes")
+                .queryParam("page", 0)
+                .queryParam("size", Math.max(0, previewSize))
+                .queryParam("sort", "newest");
+        if (subjectId != null) {
+            builder.queryParam("subjectId", subjectId);
+        }
+        if (teachingMode != null) {
+            builder.queryParam("teachingMode", teachingMode.name());
+        }
+        if (availableOnly != null) {
+            builder.queryParam("availableOnly", availableOnly);
+        }
+        URI uri = builder.build().toUri();
+        return restClient.get()
+                .uri(uri)
+                .retrieve()
+                .body(PublicClassSearchPage.class);
     }
 
     private String stripTrailingSlash(String value) {

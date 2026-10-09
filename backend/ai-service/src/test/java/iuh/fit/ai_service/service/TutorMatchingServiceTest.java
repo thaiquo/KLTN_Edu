@@ -215,7 +215,10 @@ class TutorMatchingServiceTest {
                 .rating(0.0, 0L)
                 .build();
 
-        var result = service(List.of(candidate)).match(defaultRequest()).results().getFirst();
+        TutorMatchingRequest request = requestBuilder()
+                .tutorPreferences(List.of("Ưu tiên gia sư có đánh giá tốt"))
+                .build();
+        var result = service(List.of(candidate)).match(request).results().getFirst();
 
         assertThat(result.scoreBreakdown().ratingConfidence().normalizedScore()).isEqualTo(0.58);
         assertThat(result.missingData()).contains("reviews");
@@ -232,7 +235,10 @@ class TutorMatchingServiceTest {
                 .rating(4.8, 30L)
                 .build();
 
-        TutorMatchingResponse response = service(List.of(singlePerfect, manyStrong)).match(defaultRequest());
+        TutorMatchingRequest request = requestBuilder()
+                .tutorPreferences(List.of("Ưu tiên gia sư có đánh giá tốt"))
+                .build();
+        TutorMatchingResponse response = service(List.of(singlePerfect, manyStrong)).match(request);
 
         assertThat(response.results().getFirst().tutorId()).isEqualTo(2L);
         assertThat(response.results().getFirst().scoreBreakdown().ratingConfidence().weightedScore())
@@ -250,7 +256,8 @@ class TutorMatchingServiceTest {
 
         var result = service(List.of(candidate)).match(offlineRequest("79", null)).results().getFirst();
 
-        assertThat(result.missingData()).contains("tutorAvailability", "tutorLocation", "reviews", "experienceYears", "tutorTuition");
+        assertThat(result.missingData()).contains("tutorAvailability", "tutorLocation", "tutorTuition");
+        assertThat(result.missingData()).doesNotContain("reviews", "experienceYears");
         assertThat(result.matchPercentage()).isBetween(0, 100);
     }
 
@@ -284,19 +291,28 @@ class TutorMatchingServiceTest {
     @Test
     void scoreBreakdownWeightsAreConsistentWithFinalPercentage() {
         var result = service(List.of(candidate(1L))).match(defaultRequest()).results().getFirst();
-        BigDecimal sum = result.scoreBreakdown().schedule().weightedScore()
-                .add(result.scoreBreakdown().budget().weightedScore())
-                .add(result.scoreBreakdown().location().weightedScore())
-                .add(result.scoreBreakdown().experience().weightedScore())
-                .add(result.scoreBreakdown().ratingConfidence().weightedScore());
+        BigDecimal sum = result.scoreBreakdown().criteria().stream()
+                .map(item -> item.contribution())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         assertThat(result.scoreBreakdown().rawScore()).isEqualByComparingTo(sum);
-        assertThat(result.scoreBreakdown().weights())
-                .containsEntry("schedule", 30)
-                .containsEntry("budget", 25)
-                .containsEntry("location", 20)
-                .containsEntry("experience", 12)
-                .containsEntry("ratingConfidence", 13);
+        assertThat(result.scoreBreakdown().weights()).containsKeys("subjectLevel", "schedule", "budget", "specialty");
+        assertThat(result.scoreBreakdown().weights().values().stream().mapToInt(Integer::intValue).sum()).isEqualTo(100);
+    }
+
+    @Test
+    void scoreBreakdownUsesVietnameseDiacriticsInVisibleText() {
+        TutorMatchingRequest request = requestBuilder()
+                .tutorPreferences(List.of("Ưu tiên gia sư có đánh giá tốt", "Tối thiểu 3 năm kinh nghiệm"))
+                .build();
+
+        var result = service(List.of(candidate(1L))).match(request).results().getFirst();
+
+        assertThat(result.scoreBreakdown().criteria()).extracting("label")
+                .contains("Môn học và trình độ", "Kinh nghiệm", "Độ tin cậy đánh giá", "Mục tiêu và chủ đề cần cải thiện");
+        assertThat(result.scoreBreakdown().criteria()).extracting("policy")
+                .allSatisfy(policy -> assertThat((String) policy)
+                        .doesNotContain("Gia su", "hoc phi", "lich", "ngu nghia", "muc tieu"));
     }
 
     @Test
@@ -304,8 +320,25 @@ class TutorMatchingServiceTest {
         var result = service(List.of(candidate(1L))).match(offlineRequest("79", "26734")).results().getFirst();
 
         assertThat(result.matchingReasons()).hasSizeGreaterThanOrEqualTo(3);
-        assertThat(result.matchingReasons()).anySatisfy(reason -> assertThat(reason).contains("OFFLINE"));
+        assertThat(result.matchingReasons()).anySatisfy(reason -> assertThat(reason).contains("khu vực"));
         assertThat(result.scoreBreakdown().location().normalizedScore()).isEqualTo(1.0);
+    }
+
+    @Test
+    void absentOptionalCriteriaAreNotPartOfDynamicDenominator() {
+        TutorMatchingRequest request = requestBuilder()
+                .budgetMin(null)
+                .budgetMax(null)
+                .preferredSchedules(List.of())
+                .learningGoal(null)
+                .build();
+
+        var result = service(List.of(candidate(1L))).match(request).results().getFirst();
+
+        assertThat(result.scoreBreakdown().criteria()).extracting("criterion").containsExactly("subjectLevel");
+        assertThat(result.matchPercentage()).isEqualTo(100);
+        assertThat(result.scoreBreakdown().budget().weight()).isZero();
+        assertThat(result.scoreBreakdown().schedule().weight()).isZero();
     }
 
     private TutorMatchingService service(List<TutorCandidate> candidates) {
@@ -353,14 +386,14 @@ class TutorMatchingServiceTest {
         return new SubjectCapability(
                 1000L + subjectId,
                 subjectId,
-                "ToÃ¡n",
+                "Toán",
                 30L,
-                "Tá»± nhiÃªn",
-                List.of(new Level(levelId, "Lá»›p 12")),
+                "Tự nhiên",
+                List.of(new Level(levelId, "Lớp 12")),
                 5,
                 BigDecimal.valueOf(200_000),
                 BigDecimal.valueOf(250_000),
-                "Ã”n thi vÃ  cá»§ng cá»‘ kiáº¿n thá»©c"
+                "Ôn thi và củng cố kiến thức"
         );
     }
 
@@ -368,14 +401,14 @@ class TutorMatchingServiceTest {
         return new SubjectCapability(
                 1000L,
                 SUBJECT_ID,
-                "ToÃ¡n",
+                "Toán",
                 30L,
-                "Tá»± nhiÃªn",
-                List.of(new Level(LEVEL_ID, "Lá»›p 12")),
+                "Tự nhiên",
+                List.of(new Level(LEVEL_ID, "Lớp 12")),
                 5,
                 tuitionMin,
                 tuitionMax,
-                "Ã”n thi vÃ  cá»§ng cá»‘ kiáº¿n thá»©c"
+                "Ôn thi và củng cố kiến thức"
         );
     }
 
@@ -383,10 +416,10 @@ class TutorMatchingServiceTest {
         return new SubjectCapability(
                 1000L,
                 SUBJECT_ID,
-                "ToÃ¡n",
+                "Toán",
                 30L,
-                "Tá»± nhiÃªn",
-                List.of(new Level(LEVEL_ID, "Lá»›p 12")),
+                "Tự nhiên",
+                List.of(new Level(LEVEL_ID, "Lớp 12")),
                 null,
                 null,
                 null,
@@ -401,6 +434,8 @@ class TutorMatchingServiceTest {
         private String provinceCode;
         private String communeCode;
         private List<PreferredScheduleRequest> preferredSchedules = List.of(schedule(2, "18:00", "20:00"));
+        private String learningGoal = "Muốn học chắc kiến thức nền";
+        private List<String> tutorPreferences = List.of();
 
         RequestBuilder teachingMode(TeachingMode teachingMode) {
             this.teachingMode = teachingMode;
@@ -422,6 +457,26 @@ class TutorMatchingServiceTest {
             return this;
         }
 
+        RequestBuilder budgetMin(BigDecimal budgetMin) {
+            this.budgetMin = budgetMin;
+            return this;
+        }
+
+        RequestBuilder budgetMax(BigDecimal budgetMax) {
+            this.budgetMax = budgetMax;
+            return this;
+        }
+
+        RequestBuilder learningGoal(String learningGoal) {
+            this.learningGoal = learningGoal;
+            return this;
+        }
+
+        RequestBuilder tutorPreferences(List<String> tutorPreferences) {
+            this.tutorPreferences = tutorPreferences;
+            return this;
+        }
+
         TutorMatchingRequest build() {
             return new TutorMatchingRequest(
                     SUBJECT_ID,
@@ -432,9 +487,9 @@ class TutorMatchingServiceTest {
                     provinceCode,
                     communeCode,
                     preferredSchedules,
-                    "Muá»‘n há»c cháº¯c kiáº¿n thá»©c ná»n",
+                    learningGoal,
                     List.of(),
-                    List.of()
+                    tutorPreferences
             );
         }
     }
@@ -443,7 +498,7 @@ class TutorMatchingServiceTest {
         private final Long id;
         private String name;
         private boolean approved = true;
-        private SafeLocation location = new SafeLocation("79", "TP. Há»“ ChÃ­ Minh", "26734", "PhÆ°á»ng 1", null);
+        private SafeLocation location = new SafeLocation("79", "TP. Hồ Chí Minh", "26734", "Phường 1", null);
         private Set<String> teachingModes = new LinkedHashSet<>(Set.of("ONLINE", "OFFLINE"));
         private SubjectCapability capability = TutorMatchingServiceTest.this.capability(SUBJECT_ID, LEVEL_ID);
         private List<AvailabilitySlot> availability = List.of(slot(2, "17:00", "21:00"));

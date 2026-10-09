@@ -140,6 +140,7 @@ public final class TutorMatchingDtos {
             int matchPercentage,
             ScoreBreakdown scoreBreakdown,
             List<String> matchingReasons,
+            List<String> mismatchReasons,
             List<String> missingData,
             List<String> relaxedCriteria
     ) {
@@ -185,7 +186,22 @@ public final class TutorMatchingDtos {
             ScoreComponent ratingConfidence,
             SemanticScoreComponent semantic,
             BigDecimal rawScore,
-            Map<String, Integer> weights
+            Map<String, Integer> weights,
+            List<CriterionScore> criteria,
+            BigDecimal totalWeight
+    ) {
+    }
+
+    public record CriterionScore(
+            String criterion,
+            String label,
+            String requested,
+            String evidence,
+            int weight,
+            double normalizedScore,
+            BigDecimal contribution,
+            String status,
+            String policy
     ) {
     }
 

@@ -212,6 +212,7 @@ export function ClassMarketplacePage() {
   useEffect(() => {
     if (authLoading || !sessionRestored) return;
     const params = new URLSearchParams();
+    const detailClassId = new URLSearchParams(location.search).get('classId');
     Object.entries(filters).forEach(([key, value]) => {
       if (key === 'weekdays' && Array.isArray(value) && value.length > 0) params.set(key, value.join(','));
       else if (value === true) params.set(key, 'true');
@@ -219,8 +220,9 @@ export function ClassMarketplacePage() {
     });
     if (page > 1) params.set('page', String(page));
     if (sort !== 'newest') params.set('sort', sort);
+    if (detailClassId) params.set('classId', detailClassId);
     setSearchParams(params, { replace: true });
-  }, [authLoading, filters, page, sessionRestored, sort, setSearchParams]);
+  }, [authLoading, filters, location.search, page, sessionRestored, sort, setSearchParams]);
 
   useEffect(() => {
     if (authLoading || !sessionRestored) return;
@@ -238,6 +240,18 @@ export function ClassMarketplacePage() {
   }, [authLoading, loadClasses, sessionRestored]);
 
   useRealtimeRefresh(['CLASS_REVIEWED', 'CLASS_MUTATED'], loadClasses);
+
+  useEffect(() => {
+    if (!sessionRestored) return;
+    const classId = new URLSearchParams(location.search).get('classId');
+    if (!classId || !/^\d+$/.test(classId)) return;
+    if (selectedClass && String(selectedClass.id) === classId) return;
+    setDetailLoadingId(Number(classId));
+    classApi.getPublicClassById(classId)
+      .then((detail) => setSelectedClass(detail))
+      .catch(() => setSelectedClass(null))
+      .finally(() => setDetailLoadingId(null));
+  }, [location.search, selectedClass, sessionRestored]);
 
   const hasFilter = useMemo(() => {
     return Object.values(filters).some((value) => Array.isArray(value) ? value.length > 0 : Boolean(value)) || sort !== 'newest';
@@ -324,6 +338,15 @@ export function ClassMarketplacePage() {
       setSelectedClass(classRoom);
     } finally {
       setDetailLoadingId(null);
+    }
+  }
+
+  function closeClassDetail() {
+    setSelectedClass(null);
+    if (searchParams.get('classId')) {
+      const next = new URLSearchParams(searchParams);
+      next.delete('classId');
+      setSearchParams(next, { replace: true });
     }
   }
 
@@ -549,7 +572,7 @@ export function ClassMarketplacePage() {
       {selectedClass && (
         <PublicClassDetailModal
           classRoom={selectedClass}
-          onClose={() => setSelectedClass(null)}
+          onClose={closeClassDetail}
           onRefreshClass={loadClasses}
         />
       )}

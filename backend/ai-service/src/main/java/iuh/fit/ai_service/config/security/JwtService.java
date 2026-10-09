@@ -35,6 +35,21 @@ public class JwtService {
         return claims(token).get("activeRole", String.class);
     }
 
+    public Long extractUserId(String token) {
+        Object userId = claims(token).get("userId");
+        if (userId instanceof Number number) {
+            return number.longValue();
+        }
+        if (userId instanceof String text && !text.isBlank()) {
+            try {
+                return Long.parseLong(text);
+            } catch (NumberFormatException exception) {
+                return null;
+            }
+        }
+        return null;
+    }
+
     public List<String> extractRoles(String token) {
         Object roles = claims(token).get("roles");
         if (roles instanceof List<?> rawRoles) {

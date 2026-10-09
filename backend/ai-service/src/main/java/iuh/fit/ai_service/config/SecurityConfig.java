@@ -33,6 +33,7 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+                        .ignoringRequestMatchers("/api/ai/chat")
                 )
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .formLogin(formLogin -> formLogin.disable())
@@ -45,6 +46,7 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/ai/health").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/ai/chat").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/ai/matching/analyze").hasRole("STUDENT")
                         .requestMatchers(HttpMethod.POST, "/api/ai/matching/ground").hasRole("STUDENT")
@@ -53,6 +55,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/ai/classes/ground").hasRole("STUDENT")
                         .requestMatchers(HttpMethod.POST, "/api/ai/classes/match").hasRole("STUDENT")
                         .requestMatchers("/api/ai/semantic/**").hasAnyRole("STAFF", "ADMIN")
+                        .requestMatchers("/api/ai/admin/chatbot-knowledge/**").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)

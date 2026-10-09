@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { AuthProvider } from './store/AuthContext';
 import { RealtimeProvider } from './realtime/RealtimeProvider';
 import { useAuth } from './hooks/useAuth';
+import { AiChatWidget } from './components/ai-chat/AiChatWidget';
 import { ChangePasswordPage } from './pages/ChangePasswordPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { HomePage } from './pages/HomePage';
@@ -294,6 +295,7 @@ export default function App() {
 
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          <AiChatWidget />
         </RealtimeProvider>
       </AuthProvider>
     </BrowserRouter>

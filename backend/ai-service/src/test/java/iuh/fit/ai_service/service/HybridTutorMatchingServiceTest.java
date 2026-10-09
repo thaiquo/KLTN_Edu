@@ -40,7 +40,7 @@ class HybridTutorMatchingServiceTest {
                 .containsExactlyElementsOf(v1.results().stream().map(result -> result.tutorId()).toList());
         assertThat(hybrid.results()).extracting("matchPercentage")
                 .containsExactlyElementsOf(v1.results().stream().map(result -> result.matchPercentage()).toList());
-        assertThat(semantic.calls).isEqualTo(1);
+        assertThat(semantic.calls).isZero();
     }
 
     @Test
@@ -107,14 +107,16 @@ class HybridTutorMatchingServiceTest {
         TutorMatchingResponse hybrid = hybridService(candidates, semantic).match(semanticRequest());
 
         assertThat(v1.results()).extracting("tutorId").containsExactly(1L, 2L, 3L, 4L);
-        assertThat(hybrid.results()).extracting("tutorId").containsExactly(1L, 3L, 2L, 4L);
-        assertThat(hybrid.results().get(1).scoreBreakdown().semantic().rankBoost()).isGreaterThan(BigDecimal.ZERO);
+        assertThat(hybrid.results()).extracting("tutorId").containsExactly(3L, 1L, 2L, 4L);
+        assertThat(hybrid.results().getFirst().scoreBreakdown().semantic().used()).isTrue();
+        assertThat(hybrid.results().getFirst().scoreBreakdown().criteria()).anySatisfy(criterion -> {
+            assertThat(criterion.criterion()).isEqualTo("specialty");
+            assertThat(criterion.policy()).contains("Ngữ nghĩa");
+        });
         assertThat(hybrid.results().getLast().tutorId()).isEqualTo(4L);
         assertThat(hybrid.results()).allSatisfy(result -> assertThat(result.matchPercentage()).isBetween(0, 100));
-        assertThat(hybrid.results()).allSatisfy(result -> assertThat(result.matchPercentage())
-                .isNotEqualTo((int) Math.round(result.scoreBreakdown().semantic().normalizedSignal() == null
-                        ? -1.0
-                        : result.scoreBreakdown().semantic().normalizedSignal() * 100)));
+        assertThat(hybrid.results()).allSatisfy(result -> assertThat(result.scoreBreakdown().criteria())
+                .anySatisfy(criterion -> assertThat(criterion.criterion()).isEqualTo("specialty")));
     }
 
     @Test

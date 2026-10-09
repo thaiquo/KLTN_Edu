@@ -8,7 +8,6 @@ import com.google.genai.types.Content;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.Part;
-import com.google.genai.types.ThinkingConfig;
 import iuh.fit.ai_service.dto.ClassRequirementAnalysisDtos.ClassGeminiRequirementExtraction;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.Budget;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.GeminiRequirementExtraction;
@@ -85,10 +84,6 @@ public class GeminiService implements RequirementExtractionClient, ClassRequirem
         GenerateContentConfig config = GenerateContentConfig.builder()
                 .temperature(0.0f)
                 .maxOutputTokens(64)
-                .thinkingConfig(ThinkingConfig.builder()
-                        .includeThoughts(false)
-                        .thinkingBudget(0)
-                        .build())
                 .build();
         String content;
         try (Client client = Client.builder().apiKey(apiKey).build()) {

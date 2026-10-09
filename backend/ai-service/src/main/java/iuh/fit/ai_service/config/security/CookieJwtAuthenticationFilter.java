@@ -1,5 +1,6 @@
 package iuh.fit.ai_service.config.security;
 
+import iuh.fit.ai_service.chatbot.security.AiAuthenticatedPrincipal;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -41,12 +42,14 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
             }
             String email = jwtService.extractEmail(token);
             String activeRole = jwtService.extractActiveRole(token);
+            Long userId = jwtService.extractUserId(token);
             List<String> roles = jwtService.extractRoles(token);
 
             if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
                 List<SimpleGrantedAuthority> authorities = authoritiesForActiveRole(activeRole, roles);
+                AiAuthenticatedPrincipal principal = new AiAuthenticatedPrincipal(userId, email, activeRole, roles);
                 UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(email, null, authorities);
+                        new UsernamePasswordAuthenticationToken(principal, null, authorities);
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
