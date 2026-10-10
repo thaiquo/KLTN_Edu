@@ -45,6 +45,8 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
   const [isLiked, setIsLiked] = useState(initialPost.isLiked || false);
   const [likeCount, setLikeCount] = useState(initialPost.likeCount || 0);
   const [isBookmarked, setIsBookmarked] = useState(initialPost.isBookmarked || false);
+  const [isAuthorFollowed, setIsAuthorFollowed] = useState(initialPost.isAuthorFollowed || false);
+  const [isFollowingLoading, setIsFollowingLoading] = useState(false);
   const [poll, setPoll] = useState(initialPost.poll);
   const [isVoting, setIsVoting] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -63,6 +65,7 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
     setIsLiked(initialPost.isLiked || false);
     setLikeCount(initialPost.likeCount || 0);
     setIsBookmarked(initialPost.isBookmarked || false);
+    setIsAuthorFollowed(initialPost.isAuthorFollowed || false);
     setPoll(initialPost.poll);
   }, [initialPost]);
 
@@ -167,6 +170,33 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
       feedback.success(newStatus ? 'Đã lưu bài viết vào danh sách quan tâm.' : 'Đã bỏ lưu bài viết.');
     } catch (err) {
       feedback.error(err.message || err.response?.data?.message || 'Không thể lưu bài viết');
+    }
+  };
+
+  const handleToggleFollow = async () => {
+    if (!authenticated) {
+      showLoginRequired('Vui lòng đăng nhập để theo dõi gia sư.');
+      return;
+    }
+    if (userRole !== 'STUDENT') {
+      feedback.warning('Chỉ tài khoản Học viên mới có thể theo dõi gia sư.');
+      return;
+    }
+    setIsFollowingLoading(true);
+    try {
+      if (isAuthorFollowed) {
+        await communityApi.unfollowTutor(post.authorId);
+        setIsAuthorFollowed(false);
+        feedback.success(`Đã hủy theo dõi gia sư ${post.authorName || ''}`);
+      } else {
+        await communityApi.followTutor(post.authorId);
+        setIsAuthorFollowed(true);
+        feedback.success(`Đã theo dõi gia sư ${post.authorName || ''}`);
+      }
+    } catch (err) {
+      feedback.error(err.message || err.response?.data?.message || 'Không thể thực hiện thao tác theo dõi.');
+    } finally {
+      setIsFollowingLoading(false);
     }
   };
 
@@ -391,12 +421,31 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
               </span>
             </div>
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h4 className="font-bold text-slate-900 text-sm md:text-base hover:text-indigo-600 cursor-pointer">
                   {post.authorName || 'Người dùng'}
                 </h4>
                 {post.authorRole === 'TUTOR' && (
-                  <CheckCircle2 className="w-4 h-4 text-indigo-500" />
+                  <CheckCircle2 className="w-4 h-4 text-indigo-500 shrink-0" />
+                )}
+                {post.authorRole === 'TUTOR' && isAuthorFollowed && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                    ⭐ Đang theo dõi
+                  </span>
+                )}
+                {post.authorRole === 'TUTOR' && userRole === 'STUDENT' && !isAuthor && (
+                  <button
+                    type="button"
+                    disabled={isFollowingLoading}
+                    onClick={handleToggleFollow}
+                    className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border transition cursor-pointer ${
+                      isAuthorFollowed
+                        ? 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200'
+                        : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                    }`}
+                  >
+                    {isFollowingLoading ? '...' : isAuthorFollowed ? 'Bỏ theo dõi' : '+ Theo dõi'}
+                  </button>
                 )}
               </div>
               <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">

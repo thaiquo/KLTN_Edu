@@ -69,6 +69,24 @@ export function TutorCommunityManagement({
   const [likesModalPostId, setLikesModalPostId] = useState<number | null>(null);
   const [replyingToMap, setReplyingToMap] = useState<Record<number, any>>({});
 
+  // Follower count for tutor
+  const [followerCount, setFollowerCount] = useState<number>(0);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let active = true;
+    async function loadFollowers() {
+      try {
+        const res = await communityApi.getTutorFollowStatus(user.id);
+        if (active && res) {
+          setFollowerCount(res.followerCount || 0);
+        }
+      } catch {}
+    }
+    loadFollowers();
+    return () => { active = false; };
+  }, [user?.id]);
+
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<any | null>(null);
@@ -416,7 +434,7 @@ export function TutorCommunityManagement({
       {activeMainTab === 'mine' && (
         <div className="space-y-6">
           {/* Quick Statistics KPI Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
             <div className="p-4 rounded-2xl bg-white border border-brand-border/30 shadow-sm flex items-center justify-between">
               <div>
                 <p className="text-[11px] font-bold text-brand-text-variant uppercase tracking-wider">Tổng bài đăng</p>
@@ -449,11 +467,21 @@ export function TutorCommunityManagement({
 
             <div className="p-4 rounded-2xl bg-white border border-brand-border/30 shadow-sm flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-bold text-brand-text-variant uppercase tracking-wider">Tổng lượt vote ca học</p>
+                <p className="text-[11px] font-bold text-brand-text-variant uppercase tracking-wider">Lượt vote ca học</p>
                 <h3 className="text-xl md:text-2xl font-black text-purple-600 mt-0.5">{stats.totalVotes}</h3>
               </div>
               <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
                 <Users className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white border border-brand-border/30 shadow-sm flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-bold text-brand-text-variant uppercase tracking-wider">Người theo dõi</p>
+                <h3 className="text-xl md:text-2xl font-black text-amber-600 mt-0.5">{followerCount}</h3>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                <Sparkles className="w-5 h-5" />
               </div>
             </div>
           </div>

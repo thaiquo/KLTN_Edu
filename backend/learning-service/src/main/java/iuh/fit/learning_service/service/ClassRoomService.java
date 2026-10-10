@@ -854,6 +854,7 @@ public class ClassRoomService {
                 levelBrief,
                 c.getTutorEmail(),
                 c.getTutorProfileId(),
+                resolveTutorUserId(c),
                 c.getTutorFullName(),
                 c.getName(),
                 c.getDescription(),

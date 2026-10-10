@@ -1,5 +1,7 @@
 # EduConnect - Community Posts & Smart Polling
 
+Follow/feed refinement note (2026-10-09): `tutorUserId` is the Tutor account user id, not `tutorProfileId`; Student can follow only an APPROVED Tutor projection in `TutorAuthorizationState`. The normal `/api/community/posts` feed remains public, but authenticated users with followed tutors get followed Tutor posts first and then `createdAt DESC`; `followingOnly=true` is the strict followed-tutor-only filter.
+
 > Ngày rà soát: **2026-10-05**  
 > Trạng thái nguồn hiện tại: **PHASE 1 & PHASE 2 IMPLEMENTED / PHASE 3 AI PLANNED**  
 > Phân hệ phụ trách: `learning-service` sở hữu bài đăng, poll, vote, reaction, comment và liên kết `ClassRoom`; `notification-service` nhận sự kiện thông báo; `frontend-web` hiển thị và thao tác bảng tin; `ai-service` để sau.
@@ -10,21 +12,26 @@ Tài liệu này đã được đồng bộ với code thật. Mọi endpoint, p
 
 ### Đã có trong code (Phase 1 & Phase 2)
 
-- Migrations: `V38` tạo schema Community, `V39` siết toàn vẹn dữ liệu, `V40` loại các index bị trùng chức năng, `V41` bổ sung bookmark, `V42` mở rộng loại bài Tutor, `V43` cho phép Student chọn nhiều option và `V44` chuẩn hóa ba buổi khảo sát.
-- Backend entities/repositories: `CommunityPost`, `PostPoll`, `PostPollOption`, `PostPollVote`, `PostInteraction` và repository tương ứng.
+- Migrations: `V38` tạo schema Community, `V39` siết toàn vẹn dữ liệu, `V40` loại các index bị trùng chức năng, `V41` bổ sung bookmark, `V42` mở rộng loại bài Tutor, `V43` cho phép Student chọn nhiều option, `V44` chuẩn hóa ba buổi khảo sát và `V45` tạo bảng `tutor_follows` hỗ trợ theo dõi 1 chiều Học viên -> Gia sư.
+- Backend entities/repositories: `CommunityPost`, `PostPoll`, `PostPollOption`, `PostPollVote`, `PostInteraction`, `TutorFollow` và repository tương ứng.
 - Backend controller: `CommunityPostController` với base path thật là **`/api/community`**.
-- Backend service: `CommunityPostService` đã hỗ trợ:
+- Backend service: `CommunityPostService` & `TutorFollowService` đã hỗ trợ:
   * search/detail, create/update post;
   * Siết phân quyền: `TUTOR_POLL` chỉ dành cho Tutor (ít nhất 2 option); bài tìm gia sư/học nhóm dành cho Student;
+  * Theo dõi 1 chiều: Học viên (`STUDENT`) theo dõi/hủy theo dõi Gia sư (`TUTOR`) qua `PUT/DELETE /api/community/tutors/{tutorUserId}/follow` (Idempotent), kiểm tra trạng thái và số followers qua `/follow-status`, `/following-tutors` và `/followers`;
+  * Bảng tin ưu tiên cá nhân hóa: trả về `isAuthorFollowed: boolean`, hỗ trợ lọc `followingOnly=true` trên `/api/community/posts` và gắn badge `⭐ Đang theo dõi`;
   * vote/unvote poll (chỉ Student mới được vote);
   * like/unlike, list/add comment và lưu/bỏ lưu bài viết;
   * Xóa bài viết an toàn (chuyển sang `status = HIDDEN`);
   * Smart Class Conversion: `POST /api/community/posts/{postId}/convert-to-class` tạo `ClassRoom` và `ClassSchedule` từ option bình chọn, gắn `linked_class_id`, đổi status bài post sang `CONVERTED`, đóng poll và phát sự kiện realtime cho học viên đã vote.
-- Security: feed/search/detail và đọc comments là public; vote chỉ dành cho active role `STUDENT`, còn like/bookmark/comment chỉ dành cho active role `STUDENT` hoặc `TUTOR`; thao tác ghi áp dụng cookie JWT và CSRF theo `SecurityConfig`.
-- Frontend API client: `frontend-web/src/api/community.js` (đã hỗ trợ đầy đủ các hàm bao gồm `convertPostToClass`).
-- Frontend UI: `/community` và `/feed` redirect về `/community`; Portal của cả Gia sư (`TutorCommunityManagement`) và Học viên (`StudentCommunityManagement`) đều chuẩn hóa 2 tab: **"1. Khám phá Bảng tin (Cộng đồng)"** (xem bài viết của người khác, không lặp nút tạo bài, không xúi tạo bài khi rỗng) và **"2. Quản lý bài đăng của tôi"** (KPI thống kê, theo dõi bình luận, sửa/xóa/đóng bài viết, mở lớp); feed công khai có tab bài đã lưu và chặn tương tác của khách chưa đăng nhập.
-- UI đã có nút **"Mở lớp từ bài này"** cho Gia sư sở hữu bài poll, modal chọn ca học và banner lớp học đã mở.
-- Unit tests: `CommunityPostServiceTest.java` bao phủ happy path và các nhánh role, validation, soft-delete, multi-option vote, ownership, eligibility lớp chia sẻ và duplicate/closed conversion.
+- Security: feed/search/detail và đọc comments là public; vote & follow chỉ dành cho active role `STUDENT`, còn like/bookmark/comment chỉ dành cho active role `STUDENT` hoặc `TUTOR`; thao tác ghi áp dụng cookie JWT và CSRF theo `SecurityConfig`.
+- Frontend API client: `frontend-web/src/api/community.js` (hỗ trợ đầy đủ các hàm follow, unfollow, getTutorFollowStatus, getFollowingTutors, followingOnly filter và convertPostToClass).
+- Frontend UI:
+  * `/community` có Tab **"⭐ Gia sư đang theo dõi"** (`followingOnly=true`), Tab Tất cả và Tab Bài đã lưu;
+  * `PostCard.jsx` hiển thị badge `⭐ Đang theo dõi` và nút bấm Theo dõi/Bỏ theo dõi nhanh cho Học viên;
+  * `TutorMarketplacePage.jsx` và `PublicTutorProfilePage.jsx` hiển thị chỉ số Followers và nút Theo dõi gia sư;
+  * Portal Học viên (`StudentCommunityManagement`) có Tab **"3. Gia sư đang theo dõi"**; Portal Gia sư (`TutorCommunityManagement`) có KPI **"Người theo dõi"**.
+- Unit tests: `TutorFollowServiceTest.java` và `CommunityPostServiceTest.java` bao phủ happy path, idempotency, role check, self-follow validation, follower count, and feed following filters (53 tests PASS 100%).
 
 ### Hướng phát triển tiếp theo (Phase 3 AI)
 
@@ -73,9 +80,14 @@ Base path thật trong source: **`/api/community`**.
 
 | Method | Endpoint | Trạng thái | Ghi chú |
 | --- | --- | --- | --- |
-| `GET` | `/api/community/posts` | Implemented | Public; filter `postType`, `status`, `subjectId`, `learningMode`, `keyword`, `page`, `size`. |
+| `GET` | `/api/community/posts` | Implemented | Public; filter `postType`, `status`, `subjectId`, `learningMode`, `keyword`, `followingOnly`, `page`, `size`. |
 | `GET` | `/api/community/posts/{id}` | Implemented | Public; tăng `viewCount`. |
 | `GET` | `/api/community/posts/bookmarked` | Implemented | Authenticated; phân trang các bài chính người dùng đã lưu. |
+| `PUT` | `/api/community/tutors/{tutorUserId}/follow` | Implemented | Active role `STUDENT`; theo dõi gia sư (Idempotent), trả về `FollowStatusResponse`. |
+| `DELETE` | `/api/community/tutors/{tutorUserId}/follow` | Implemented | Active role `STUDENT`; hủy theo dõi gia sư (Idempotent). |
+| `GET` | `/api/community/tutors/{tutorUserId}/follow-status` | Implemented | Public/Authenticated; kiểm tra trạng thái follow và tổng số followers. |
+| `GET` | `/api/community/following-tutors` | Implemented | Active role `STUDENT`; lấy danh sách các gia sư đang theo dõi. |
+| `GET` | `/api/community/tutors/{tutorUserId}/followers` | Implemented | Tutor owner / Staff / Admin; phân trang danh sách followers. |
 | `POST` | `/api/community/posts` | Implemented | Active role đúng loại bài; poll validate sâu ngày, giờ, hạn và option. |
 | `PUT` | `/api/community/posts/{id}` | Implemented | Author only; chỉ sửa post `OPEN`. |
 | `DELETE` | `/api/community/posts/{id}` | Implemented | Author/Admin; soft-delete sang `HIDDEN`, không còn đọc công khai bằng list/detail/comment. |

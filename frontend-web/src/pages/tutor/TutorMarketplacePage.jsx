@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowRight, BookOpen, Filter, Search, ShieldCheck, X } from 'lucide-react';
+import { ArrowRight, BookOpen, Filter, Search, ShieldCheck, X, Users, Sparkles } from 'lucide-react';
 import { tutorApi } from '../../api/tutors';
+import { communityApi } from '../../api/community';
+import { useAuth } from '../../hooks/useAuth';
+import { useFeedback } from '../../components/feedback/useFeedback';
 import { HomeHeader } from '../../components/home/HomeHeader';
 
 export function TutorMarketplacePage() {
@@ -137,6 +140,57 @@ export function TutorMarketplacePage() {
 }
 
 function TutorMarketplaceCard({ tutor }) {
+  const { user, authenticated } = useAuth();
+  const feedback = useFeedback();
+  const [followStatus, setFollowStatus] = useState({ isFollowed: false, followerCount: 0 });
+  const [followLoading, setFollowLoading] = useState(false);
+
+  useEffect(() => {
+    if (!tutor?.userId) return;
+    let active = true;
+    async function loadFollow() {
+      try {
+        const res = await communityApi.getTutorFollowStatus(tutor.userId);
+        if (active && res) setFollowStatus(res);
+      } catch {}
+    }
+    loadFollow();
+    return () => { active = false; };
+  }, [tutor?.userId]);
+
+  const handleToggleFollow = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!authenticated) {
+      feedback.info({ title: 'Cần đăng nhập', message: 'Vui lòng đăng nhập để theo dõi gia sư.' });
+      return;
+    }
+    if (user?.activeRole !== 'STUDENT' && user?.role !== 'STUDENT') {
+      feedback.warning('Chỉ tài khoản Học viên mới có thể theo dõi gia sư.');
+      return;
+    }
+    if (String(user?.id) === String(tutor?.userId)) {
+      feedback.warning('Bạn không thể tự theo dõi chính mình.');
+      return;
+    }
+    setFollowLoading(true);
+    try {
+      if (followStatus.isFollowed) {
+        const res = await communityApi.unfollowTutor(tutor.userId);
+        setFollowStatus(res || { isFollowed: false, followerCount: Math.max(0, followStatus.followerCount - 1) });
+        feedback.success(`Đã hủy theo dõi gia sư ${tutor.fullName}`);
+      } else {
+        const res = await communityApi.followTutor(tutor.userId);
+        setFollowStatus(res || { isFollowed: true, followerCount: followStatus.followerCount + 1 });
+        feedback.success(`Đã theo dõi gia sư ${tutor.fullName}`);
+      }
+    } catch (err) {
+      feedback.error(err.message || 'Không thể theo dõi gia sư.');
+    } finally {
+      setFollowLoading(false);
+    }
+  };
+
   const lowestRateSubject = getLowestRateSubject(tutor.subjects || []);
   const visibleSubjects = (tutor.subjects || []).slice(0, 3);
   const remaining = Math.max((tutor.subjects || []).length - visibleSubjects.length, 0);
@@ -150,9 +204,14 @@ function TutorMarketplaceCard({ tutor }) {
             {getInitials(fullName)}
           </span>
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <h3 className="truncate font-display text-xl font-extrabold text-slate-950">{fullName}</h3>
               <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+              {followStatus.followerCount > 0 && (
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 flex items-center gap-1">
+                  <Users size={11} /> {followStatus.followerCount}
+                </span>
+              )}
             </div>
             <p className="mt-0.5 line-clamp-2 text-xs font-semibold leading-5 text-slate-500">
               {tutor.bio || 'Gia sư đã qua xác minh hồ sơ trên Kết Nối Học.'}
@@ -184,12 +243,29 @@ function TutorMarketplaceCard({ tutor }) {
           </strong>
         </div>
 
-        <Link
-          to={`/tutors/${tutor.id}`}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-[14px] bg-slate-900 px-4 py-3 text-xs font-black text-white transition-colors hover:bg-brand-primary shadow-sm"
-        >
-          <span>Xem hồ sơ và các lớp đang publish</span> <ArrowRight size={15} />
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            to={`/tutors/${tutor.id}`}
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-[14px] bg-slate-900 px-4 py-3 text-xs font-black text-white transition-colors hover:bg-brand-primary shadow-sm"
+          >
+            <span>Xem hồ sơ</span> <ArrowRight size={15} />
+          </Link>
+          {authenticated && (user?.activeRole === 'STUDENT' || user?.role === 'STUDENT') && String(user?.id) !== String(tutor?.userId) && (
+            <button
+              type="button"
+              disabled={followLoading}
+              onClick={handleToggleFollow}
+              title={followStatus.isFollowed ? 'Bỏ theo dõi gia sư' : 'Theo dõi gia sư'}
+              className={`px-3.5 py-3 rounded-[14px] text-xs font-bold transition border cursor-pointer ${
+                followStatus.isFollowed
+                  ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200'
+                  : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+              }`}
+            >
+              {followLoading ? '...' : followStatus.isFollowed ? '✓ Đang theo dõi' : '+ Theo dõi'}
+            </button>
+          )}
+        </div>
       </div>
     </article>
   );

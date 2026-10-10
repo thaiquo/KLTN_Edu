@@ -42,6 +42,7 @@ public class CommunityPostService {
     private final CatalogLevelRepository levelRepository;
     private final ClassRoomService classRoomService;
     private final EnrollmentRequestRepository enrollmentRequestRepository;
+    private final TutorFollowRepository tutorFollowRepository;
     private final LearningEventPublisher eventPublisher;
     private final RealtimeEventHub realtimeEventHub;
 
@@ -58,6 +59,7 @@ public class CommunityPostService {
             CatalogLevelRepository levelRepository,
             ClassRoomService classRoomService,
             EnrollmentRequestRepository enrollmentRequestRepository,
+            TutorFollowRepository tutorFollowRepository,
             LearningEventPublisher eventPublisher,
             RealtimeEventHub realtimeEventHub
     ) {
@@ -73,6 +75,7 @@ public class CommunityPostService {
         this.levelRepository = levelRepository;
         this.classRoomService = classRoomService;
         this.enrollmentRequestRepository = enrollmentRequestRepository;
+        this.tutorFollowRepository = tutorFollowRepository;
         this.eventPublisher = eventPublisher;
         this.realtimeEventHub = realtimeEventHub;
     }
@@ -87,12 +90,63 @@ public class CommunityPostService {
             Pageable pageable,
             Long currentUserId
     ) {
+        return searchPosts(postType, status, subjectId, learningMode, keyword, false, pageable, currentUserId);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<PostSummaryDto> searchPosts(
+            PostType postType,
+            PostStatus status,
+            Long subjectId,
+            LearningMode learningMode,
+            String keyword,
+            Boolean followingOnly,
+            Pageable pageable,
+            Long currentUserId
+    ) {
         if (status == PostStatus.HIDDEN) {
             return Page.empty(pageable);
         }
-        Specification<CommunityPost> spec = (root, query, builder) -> status == null
-                ? builder.notEqual(root.get("status"), PostStatus.HIDDEN)
-                : builder.equal(root.get("status"), status);
+
+        List<Long> followedTutorIds = currentUserId != null
+                ? tutorFollowRepository.findFollowedTutorUserIdsByStudentUserId(currentUserId)
+                : Collections.emptyList();
+
+        if (Boolean.TRUE.equals(followingOnly)) {
+            if (currentUserId == null || followedTutorIds.isEmpty()) {
+                return Page.empty(pageable);
+            }
+        }
+
+        boolean prioritizeFollowedTutors = currentUserId != null
+                && !Boolean.TRUE.equals(followingOnly)
+                && !followedTutorIds.isEmpty();
+
+        Specification<CommunityPost> spec = (root, query, builder) -> {
+            if (prioritizeFollowedTutors
+                    && query != null
+                    && query.getResultType() != Long.class
+                    && query.getResultType() != long.class) {
+                var followedTutorPriority = builder.<Integer>selectCase()
+                        .when(builder.and(
+                                builder.equal(builder.upper(root.get("authorRole")), "TUTOR"),
+                                root.get("authorId").in(followedTutorIds)
+                        ), 1)
+                        .otherwise(0);
+                query.orderBy(builder.desc(followedTutorPriority), builder.desc(root.get("createdAt")));
+            }
+            return status == null
+                    ? builder.notEqual(root.get("status"), PostStatus.HIDDEN)
+                    : builder.equal(root.get("status"), status);
+        };
+
+        if (Boolean.TRUE.equals(followingOnly)) {
+            spec = spec.and((root, query, builder) -> builder.and(
+                    builder.equal(builder.upper(root.get("authorRole")), "TUTOR"),
+                    root.get("authorId").in(followedTutorIds)
+            ));
+        }
+
         if (postType != null) {
             spec = spec.and((root, query, builder) -> builder.equal(root.get("postType"), postType));
         }
@@ -116,8 +170,11 @@ public class CommunityPostService {
                 return builder.or(titlePred, contentPred, authorPred, eduPred, subjectPred, classPred);
             });
         }
-        Page<CommunityPost> posts = postRepository.findAll(spec, pageable);
-        return posts.map(post -> mapToSummaryDto(post, currentUserId));
+        Pageable effectivePageable = prioritizeFollowedTutors && pageable.isPaged()
+                ? PageRequest.of(pageable.getPageNumber(), pageable.getPageSize())
+                : pageable;
+        Page<CommunityPost> posts = postRepository.findAll(spec, effectivePageable);
+        return posts.map(post -> mapToSummaryDto(post, currentUserId, followedTutorIds));
     }
 
     @Transactional(readOnly = true)
@@ -1816,6 +1873,13 @@ public class CommunityPostService {
     }
 
     private PostSummaryDto mapToSummaryDto(CommunityPost post, Long currentUserId) {
+        List<Long> followedTutorIds = currentUserId != null
+                ? tutorFollowRepository.findFollowedTutorUserIdsByStudentUserId(currentUserId)
+                : Collections.emptyList();
+        return mapToSummaryDto(post, currentUserId, followedTutorIds);
+    }
+
+    private PostSummaryDto mapToSummaryDto(CommunityPost post, Long currentUserId, List<Long> followedTutorIds) {
         Boolean isLiked = false;
         Boolean isBookmarked = false;
         if (currentUserId != null) {
@@ -1824,6 +1888,11 @@ public class CommunityPostService {
             isBookmarked = interactionRepository.existsByPostIdAndUserIdAndInteractionType(
                     post.getId(), currentUserId, InteractionType.BOOKMARK);
         }
+
+        boolean isAuthorFollowed = currentUserId != null
+                && "TUTOR".equalsIgnoreCase(post.getAuthorRole())
+                && followedTutorIds != null
+                && followedTutorIds.contains(post.getAuthorId());
 
         PollSummaryDto pollDto = null;
         if (post.getPoll() != null) {
@@ -1873,6 +1942,7 @@ public class CommunityPostService {
                 .viewCount(post.getViewCount() != null ? post.getViewCount() : 0)
                 .isLiked(isLiked)
                 .isBookmarked(isBookmarked)
+                .isAuthorFollowed(isAuthorFollowed)
                 .poll(pollDto)
                 .createdAt(post.getCreatedAt())
                 .updatedAt(post.getUpdatedAt())

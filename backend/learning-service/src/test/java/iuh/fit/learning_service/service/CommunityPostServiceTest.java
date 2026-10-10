@@ -25,6 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -87,6 +88,9 @@ class CommunityPostServiceTest {
 
     @Mock
     private LearningEventPublisher eventPublisher;
+
+    @Mock
+    private TutorFollowRepository tutorFollowRepository;
 
     @InjectMocks
     private CommunityPostService postService;
@@ -1289,5 +1293,59 @@ class CommunityPostServiceTest {
             registration.setLevels(List.of(level));
         }
         return registration;
+    }
+
+    @Test
+    void searchPosts_WithFollowingOnly_EmptyWhenNoFollowedTutors() {
+        when(tutorFollowRepository.findFollowedTutorUserIdsByStudentUserId(202L)).thenReturn(List.of());
+        var result = postService.searchPosts(null, null, null, null, null, true, PageRequest.of(0, 10), 202L);
+        assertThat(result.getContent()).isEmpty();
+        verify(postRepository, never()).findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class));
+    }
+
+    @Test
+    void searchPosts_MarksIsAuthorFollowed_WhenPostAuthorIsInFollowedList() {
+        CommunityPost post = new CommunityPost();
+        post.setId(10L);
+        post.setTitle("Test bài viết gia sư");
+        post.setContent("Nội dung bài viết");
+        post.setAuthorId(101L);
+        post.setAuthorRole("TUTOR");
+        post.setAuthorName("Thầy Nguyễn Văn A");
+        post.setPostType(PostType.TUTOR_ANNOUNCEMENT);
+        post.setStatus(PostStatus.OPEN);
+
+        when(tutorFollowRepository.findFollowedTutorUserIdsByStudentUserId(202L)).thenReturn(List.of(101L));
+        when(postRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(post), PageRequest.of(0, 10), 1));
+
+        var result = postService.searchPosts(null, null, null, null, null, false, PageRequest.of(0, 10), 202L);
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).getIsAuthorFollowed()).isTrue();
+    }
+
+    @Test
+    void searchPosts_PrioritizesFollowedTutorPosts_InAllFeed() {
+        CommunityPost post = new CommunityPost();
+        post.setId(10L);
+        post.setTitle("Tutor update");
+        post.setContent("Content");
+        post.setAuthorId(101L);
+        post.setAuthorRole("TUTOR");
+        post.setAuthorName("Tutor A");
+        post.setPostType(PostType.TUTOR_ANNOUNCEMENT);
+        post.setStatus(PostStatus.OPEN);
+
+        when(tutorFollowRepository.findFollowedTutorUserIdsByStudentUserId(202L)).thenReturn(List.of(101L));
+        when(postRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(post), PageRequest.of(0, 10), 1));
+
+        postService.searchPosts(null, null, null, null, null, false,
+                PageRequest.of(0, 10, org.springframework.data.domain.Sort.by("createdAt").descending()), 202L);
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(postRepository).findAll(any(org.springframework.data.jpa.domain.Specification.class), pageableCaptor.capture());
+        assertThat(pageableCaptor.getValue().getSort().isUnsorted()).isTrue();
     }
 }

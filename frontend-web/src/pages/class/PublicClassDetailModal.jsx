@@ -9,6 +9,7 @@ import { useFeedback } from '../../components/feedback/useFeedback';
 import { ContractDocumentModal } from '../../components/contract/ContractDocumentModal';
 import { checkClassScheduleConflict } from '../../utils/scheduleUtils';
 import { buildClassShareUrl, copyToClipboard } from '../../utils/shareLinks';
+import { communityApi } from '../../api/community';
 
 const VIETNAMESE_DAYS = [
   { value: 2, label: 'T2' },
@@ -51,10 +52,12 @@ function checkProfileCompletion(user) {
 export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user } = useAuth();
+  const { user, authenticated } = useAuth();
   const feedback = useFeedback();
 
   const [copiedShare, setCopiedShare] = React.useState(false);
+  const [followStatus, setFollowStatus] = React.useState({ isFollowed: false, followerCount: 0 });
+  const [followLoading, setFollowLoading] = React.useState(false);
   const handleShareClass = async () => {
     if (!classRoom?.id) return;
     try {
@@ -93,6 +96,23 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
     }
   }, [user]);
 
+  React.useEffect(() => {
+    if (!classRoom?.tutorUserId) return;
+    let active = true;
+
+    communityApi.getTutorFollowStatus(classRoom.tutorUserId)
+      .then((res) => {
+        if (active && res) {
+          setFollowStatus(res);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, [classRoom?.tutorUserId]);
+
   const scheduleConflict = React.useMemo(() => {
     if (user?.activeRole !== 'STUDENT') return null;
     return checkClassScheduleConflict(classRoom, studentSchedule?.recurringSchedules);
@@ -125,6 +145,40 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
 
   const realFullName = classRoom.tutorFullName || 'Chưa đồng bộ tên giảng viên';
   const tutorProfileId = classRoom.tutorProfileId;
+  const tutorUserId = classRoom.tutorUserId;
+
+  const handleToggleFollow = async () => {
+    if (!tutorUserId) return;
+    if (!authenticated) {
+      feedback.info({ title: 'Cần đăng nhập', message: 'Vui lòng đăng nhập để theo dõi gia sư.' });
+      return;
+    }
+    if (user?.activeRole !== 'STUDENT' && user?.role !== 'STUDENT') {
+      feedback.warning('Chỉ tài khoản Học viên mới có thể theo dõi gia sư.');
+      return;
+    }
+    if (String(user?.id) === String(tutorUserId)) {
+      feedback.warning('Bạn không thể tự theo dõi chính mình.');
+      return;
+    }
+
+    setFollowLoading(true);
+    try {
+      if (followStatus.isFollowed) {
+        const res = await communityApi.unfollowTutor(tutorUserId);
+        setFollowStatus(res || { isFollowed: false, followerCount: Math.max(0, followStatus.followerCount - 1) });
+        feedback.success(`Đã hủy theo dõi gia sư ${realFullName}`);
+      } else {
+        const res = await communityApi.followTutor(tutorUserId);
+        setFollowStatus(res || { isFollowed: true, followerCount: followStatus.followerCount + 1 });
+        feedback.success(`Đã theo dõi gia sư ${realFullName}`);
+      }
+    } catch (err) {
+      feedback.error(err?.message || 'Không thể thực hiện thao tác theo dõi.');
+    } finally {
+      setFollowLoading(false);
+    }
+  };
 
   const handleEnrollSubmit = async (e) => {
     if (e) e.preventDefault();
@@ -272,25 +326,44 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
                   <ShieldCheck className="w-3 h-3" /> Đã xác minh
                 </span>
               </div>
-              <p className="text-xs text-slate-300 font-semibold">Gia sư đã được xác minh trên Kết Nối Học</p>
+              <p className="text-xs text-slate-300 font-semibold">
+                Gia sư đã được xác minh trên Kết Nối Học
+                {tutorUserId ? ` • ${followStatus.followerCount || 0} người theo dõi` : ''}
+              </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            disabled={!tutorProfileId}
-            onClick={() => {
-              onClose();
-              if (tutorProfileId) {
-                navigate(`/tutors/${tutorProfileId}`);
-              }
-            }}
-            className="px-4 py-2 bg-white text-slate-900 hover:bg-slate-100 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shrink-0 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <UserRound className="w-3.5 h-3.5 text-brand-primary" />
-            <span>{tutorProfileId ? 'Xem trang Gia sư & Các lớp khác' : 'Chưa có liên kết hồ sơ gia sư'}</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {authenticated && (user?.activeRole === 'STUDENT' || user?.role === 'STUDENT') && tutorUserId && String(user?.id) !== String(tutorUserId) && (
+              <button
+                type="button"
+                disabled={followLoading}
+                onClick={handleToggleFollow}
+                className={`px-4 py-2 rounded-xl text-xs font-black transition-all shadow-sm disabled:cursor-not-allowed disabled:opacity-60 ${
+                  followStatus.isFollowed
+                    ? 'bg-amber-100 text-amber-900 hover:bg-rose-100 hover:text-rose-700'
+                    : 'bg-indigo-500 text-white hover:bg-indigo-400'
+                }`}
+              >
+                {followLoading ? 'Đang xử lý...' : followStatus.isFollowed ? '✓ Đang theo dõi' : '+ Theo dõi'}
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={!tutorProfileId}
+              onClick={() => {
+                onClose();
+                if (tutorProfileId) {
+                  navigate(`/tutors/${tutorProfileId}`);
+                }
+              }}
+              className="px-4 py-2 bg-white text-slate-900 hover:bg-slate-100 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <UserRound className="w-3.5 h-3.5 text-brand-primary" />
+              <span>{tutorProfileId ? 'Xem trang Gia sư & Các lớp khác' : 'Chưa có liên kết hồ sơ gia sư'}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
         {/* Profile Incomplete Warning Banner */}

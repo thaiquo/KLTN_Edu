@@ -2,10 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, BookOpen, Calendar, Clock, Eye, Filter, GraduationCap,
-  MapPin, Search, ShieldCheck, UserRound, Video, Globe
+  MapPin, Search, ShieldCheck, UserRound, Video, Globe, Users, Sparkles
 } from 'lucide-react';
 import { tutorApi } from '../../api/tutors';
 import { classApi } from '../../api/classes';
+import { communityApi } from '../../api/community';
+import { useAuth } from '../../hooks/useAuth';
+import { useFeedback } from '../../components/feedback/useFeedback';
 import { HomeHeader } from '../../components/home/HomeHeader';
 import { PublicClassDetailModal } from '../class/PublicClassDetailModal';
 
@@ -23,9 +26,16 @@ export function PublicTutorProfilePage() {
   const { id } = useParams();
   const navigate = useNavigate();
 
+  const { user, authenticated } = useAuth();
+  const feedback = useFeedback();
+
   const [tutor, setTutor] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Follow states
+  const [followStatus, setFollowStatus] = useState({ isFollowed: false, followerCount: 0 });
+  const [followLoading, setFollowLoading] = useState(false);
 
   // Classes taught by this tutor
   const [tutorClasses, setTutorClasses] = useState([]);
@@ -55,6 +65,59 @@ export function PublicTutorProfilePage() {
       active = false;
     };
   }, [id]);
+
+  // Load follow status
+  useEffect(() => {
+    if (!tutor?.userId) return;
+    let active = true;
+
+    async function loadFollowStatus() {
+      try {
+        const res = await communityApi.getTutorFollowStatus(tutor.userId);
+        if (active && res) {
+          setFollowStatus(res);
+        }
+      } catch (err) {
+        console.error('Không thể tải trạng thái theo dõi:', err);
+      }
+    }
+
+    loadFollowStatus();
+    return () => {
+      active = false;
+    };
+  }, [tutor?.userId]);
+
+  const handleToggleFollow = async () => {
+    if (!authenticated) {
+      feedback.info({ title: 'Cần đăng nhập', message: 'Vui lòng đăng nhập để theo dõi gia sư.' });
+      return;
+    }
+    if (user?.activeRole !== 'STUDENT' && user?.role !== 'STUDENT') {
+      feedback.warning('Chỉ tài khoản Học viên mới có thể theo dõi gia sư.');
+      return;
+    }
+    if (String(user?.id) === String(tutor?.userId)) {
+      feedback.warning('Bạn không thể tự theo dõi chính mình.');
+      return;
+    }
+    setFollowLoading(true);
+    try {
+      if (followStatus.isFollowed) {
+        const res = await communityApi.unfollowTutor(tutor.userId);
+        setFollowStatus(res || { isFollowed: false, followerCount: Math.max(0, followStatus.followerCount - 1) });
+        feedback.success(`Đã hủy theo dõi gia sư ${tutor.fullName}`);
+      } else {
+        const res = await communityApi.followTutor(tutor.userId);
+        setFollowStatus(res || { isFollowed: true, followerCount: followStatus.followerCount + 1 });
+        feedback.success(`Đã theo dõi gia sư ${tutor.fullName}`);
+      }
+    } catch (err) {
+      feedback.error(err.message || 'Không thể thực hiện thao tác theo dõi.');
+    } finally {
+      setFollowLoading(false);
+    }
+  };
 
   // Load published classes taught by this tutor.
   useEffect(() => {
@@ -131,6 +194,9 @@ export function PublicTutorProfilePage() {
                         <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-extrabold text-emerald-700 border border-emerald-200">
                           <ShieldCheck size={14} /> Đã xác minh
                         </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-xs font-extrabold text-blue-700 border border-blue-200">
+                          <Users size={14} /> {followStatus.followerCount || 0} người theo dõi
+                        </span>
                       </div>
                       <p className="mt-2 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-500">
                         <GraduationCap size={17} />
@@ -145,11 +211,28 @@ export function PublicTutorProfilePage() {
                     </div>
                   </div>
 
-                  <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-5 py-4">
-                    <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-slate-400">Học phí 1:1 tham khảo</p>
-                    <strong className="mt-1 block font-display text-2xl font-extrabold text-slate-950">
-                      {lowestRateSubject ? `Từ ${formatMoney(lowestRateSubject.oneToOneHourlyRate)}/giờ` : 'Liên hệ'}
-                    </strong>
+                  <div className="flex flex-col items-end gap-2.5">
+                    <div className="rounded-[18px] border border-slate-200 bg-slate-50 px-5 py-4 text-right">
+                      <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-slate-400">Học phí 1:1 tham khảo</p>
+                      <strong className="mt-1 block font-display text-2xl font-extrabold text-slate-950">
+                        {lowestRateSubject ? `Từ ${formatMoney(lowestRateSubject.oneToOneHourlyRate)}/giờ` : 'Liên hệ'}
+                      </strong>
+                    </div>
+
+                    {authenticated && (user?.activeRole === 'STUDENT' || user?.role === 'STUDENT') && String(user?.id) !== String(tutor?.userId) && (
+                      <button
+                        type="button"
+                        disabled={followLoading}
+                        onClick={handleToggleFollow}
+                        className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-extrabold transition-all cursor-pointer shadow-sm ${
+                          followStatus.isFollowed
+                            ? 'bg-slate-100 text-slate-700 border border-slate-300 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200'
+                            : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                        }`}
+                      >
+                        {followLoading ? 'Đang xử lý...' : followStatus.isFollowed ? '✓ Đang theo dõi' : '+ Theo dõi gia sư'}
+                      </button>
+                    )}
                   </div>
                 </div>
 

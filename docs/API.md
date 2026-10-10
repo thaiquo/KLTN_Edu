@@ -25,8 +25,9 @@ from confirmed financial data. See [runtime semantics](ESCROW_HARDENING_2026-09-
 | Teaching Catalog | `learning-service` | Program type, education level, subject category/group/subject/level catalog. |
 | Tutor Expertise | `learning-service` | Tutor subject registrations and tutor subject data. |
 | Availability | `learning-service` | Tutor availability management. |
-| Class/Classroom | `learning-service` | Tutor class management, public class search/detail, staff/admin class monitoring. |
+| Class/Classroom | `learning-service` | Tutor class management, public class search/detail, staff/admin class monitoring; public class responses expose `tutorProfileId` for profile routing and `tutorUserId` for user-owned actions such as follow. |
 | Enrollment/Join Request | `learning-service` | Student class enrollment requests and tutor accept/reject flows. |
+| Community & Tutor Follow | `learning-service` | Community posts, polling, poll votes, reactions, comments, smart class conversion, and 1-way Student-to-APPROVED-Tutor Follow (`PUT/DELETE/GET /api/community/tutors/{tutorUserId}/follow`) with followed Tutor posts prioritized in the authenticated all-feed. |
 | Contract/Escrow/Settlement | `contract-service` | Contract agreement, signing, document, payment submission, transaction, settlement, dispute, expiry, cancellation/refund, and blockchain workflow APIs. Funding/session/lifecycle state transitions require confirmed blockchain events where Solidity emits authoritative events. Deployment/runtime hardening remains partial end-to-end. |
 | Notification | `notification-service` | Persistent user notifications, unread count, mark one read, mark all read, and limited realtime notification delivery for the authenticated recipient account. |
 | Chat | `notification-service` | Conversation/message persistence, participant-scoped REST APIs and raw WebSocket delivery. Web Portal integration is still partial. |

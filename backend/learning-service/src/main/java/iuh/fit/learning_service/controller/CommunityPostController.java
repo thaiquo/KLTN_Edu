@@ -17,7 +17,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import iuh.fit.learning_service.dto.TutorFollowDtos.*;
+import iuh.fit.learning_service.service.TutorFollowService;
 import org.springframework.validation.annotation.Validated;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/community")
@@ -25,9 +29,11 @@ import org.springframework.validation.annotation.Validated;
 public class CommunityPostController {
 
     private final CommunityPostService postService;
+    private final TutorFollowService tutorFollowService;
 
-    public CommunityPostController(CommunityPostService postService) {
+    public CommunityPostController(CommunityPostService postService, TutorFollowService tutorFollowService) {
         this.postService = postService;
+        this.tutorFollowService = tutorFollowService;
     }
 
     private LearningUserPrincipal extractPrincipal(Authentication auth) {
@@ -49,13 +55,14 @@ public class CommunityPostController {
             @RequestParam(required = false) Long subjectId,
             @RequestParam(required = false) LearningMode learningMode,
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Boolean followingOnly,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "10") @Min(1) @Max(100) int size,
             Authentication authentication
     ) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
         Long currentUserId = extractUserId(authentication);
-        return ResponseEntity.ok(postService.searchPosts(postType, status, subjectId, learningMode, keyword, pageable, currentUserId));
+        return ResponseEntity.ok(postService.searchPosts(postType, status, subjectId, learningMode, keyword, followingOnly, pageable, currentUserId));
     }
 
     @GetMapping("/posts/{id}")
@@ -230,5 +237,52 @@ public class CommunityPostController {
             Authentication authentication
     ) {
         return postService.getClassSuggestion(id, extractPrincipal(authentication));
+    }
+
+    @PutMapping("/tutors/{tutorUserId}/follow")
+    public ResponseEntity<FollowStatusResponse> followTutor(
+            @PathVariable Long tutorUserId,
+            Authentication authentication
+    ) {
+        LearningUserPrincipal principal = extractPrincipal(authentication);
+        return ResponseEntity.ok(tutorFollowService.followTutor(tutorUserId, principal));
+    }
+
+    @DeleteMapping("/tutors/{tutorUserId}/follow")
+    public ResponseEntity<FollowStatusResponse> unfollowTutor(
+            @PathVariable Long tutorUserId,
+            Authentication authentication
+    ) {
+        LearningUserPrincipal principal = extractPrincipal(authentication);
+        return ResponseEntity.ok(tutorFollowService.unfollowTutor(tutorUserId, principal));
+    }
+
+    @GetMapping("/tutors/{tutorUserId}/follow-status")
+    public ResponseEntity<FollowStatusResponse> getFollowStatus(
+            @PathVariable Long tutorUserId,
+            Authentication authentication
+    ) {
+        Long currentUserId = extractUserId(authentication);
+        return ResponseEntity.ok(tutorFollowService.getFollowStatus(tutorUserId, currentUserId));
+    }
+
+    @GetMapping("/following-tutors")
+    public ResponseEntity<List<FollowingTutorSummaryDto>> getFollowingTutors(
+            Authentication authentication
+    ) {
+        LearningUserPrincipal principal = extractPrincipal(authentication);
+        return ResponseEntity.ok(tutorFollowService.getFollowingTutors(principal));
+    }
+
+    @GetMapping("/tutors/{tutorUserId}/followers")
+    public ResponseEntity<Page<FollowerSummaryDto>> getTutorFollowers(
+            @PathVariable Long tutorUserId,
+            @RequestParam(defaultValue = "0") @Min(0) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
+            Authentication authentication
+    ) {
+        Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
+        LearningUserPrincipal principal = extractPrincipal(authentication);
+        return ResponseEntity.ok(tutorFollowService.getFollowers(tutorUserId, pageable, principal));
     }
 }
