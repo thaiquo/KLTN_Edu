@@ -13,7 +13,8 @@ import {
   MapPin,
   RefreshCw,
   PlusCircle,
-  ArrowRight
+  ArrowRight,
+  Target
 } from 'lucide-react';
 import communityApi from '../../api/community';
 import { useFeedback } from '../feedback/useFeedback';
@@ -457,7 +458,7 @@ Học viên quan tâm vui lòng xem chi tiết lớp học bên dưới và gử
               <p className="text-xs text-slate-500">
                 {userRole === 'TUTOR'
                   ? 'Chia sẻ thông báo, khảo sát mở lớp hoặc giới thiệu lớp đang tuyển sinh'
-                  : 'Đăng nhu cầu tìm gia sư hoặc tìm bạn học nhóm'}
+                  : 'Đăng nhu cầu tìm gia sư để kết nối với các gia sư phù hợp'}
               </p>
             </div>
           </div>
@@ -480,54 +481,41 @@ Học viên quan tâm vui lòng xem chi tiết lớp học bên dưới và gử
 
           <div>
             <label className="block text-xs font-bold text-slate-700 mb-2">Loại bài đăng</label>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {userRole === 'TUTOR' ? TUTOR_POST_TYPES.map(item => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.type}
-                    type="button"
-                    disabled={Boolean(editingPost)}
-                    onClick={() => setPostType(item.type)}
-                    className={`p-3 rounded-xl border text-left transition disabled:cursor-not-allowed disabled:opacity-80 ${postType === item.type
-                        ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 ring-2 ring-indigo-500/20'
-                        : 'border-slate-200 hover:border-slate-300 text-slate-700'
-                      }`}
-                  >
-                    <div className="flex items-center gap-1.5 text-xs font-bold">
-                      <Icon className="w-3.5 h-3.5" />
-                      <span>{item.label}</span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">{item.hint}</p>
-                  </button>
-                );
-              }) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setPostType('STUDENT_FIND_TUTOR')}
-                    className={`p-3 rounded-xl border text-left transition ${postType === 'STUDENT_FIND_TUTOR'
-                        ? 'border-blue-600 bg-blue-50/70 text-blue-950 ring-2 ring-blue-500/20'
-                        : 'border-slate-200 hover:border-slate-300 text-slate-700'
-                      }`}
-                  >
-                    <p className="text-xs font-bold">Tìm gia sư</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">Đăng nhu cầu học cá nhân</p>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPostType('STUDENT_GROUP_STUDY')}
-                    className={`p-3 rounded-xl border text-left transition ${postType === 'STUDENT_GROUP_STUDY'
-                        ? 'border-emerald-600 bg-emerald-50/70 text-emerald-950 ring-2 ring-emerald-500/20'
-                        : 'border-slate-200 hover:border-slate-300 text-slate-700'
-                      }`}
-                  >
-                    <p className="text-xs font-bold">Tìm bạn học chung</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">Gom nhóm cùng học</p>
-                  </button>
-                </>
-              )}
-            </div>
+            {userRole === 'TUTOR' ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {TUTOR_POST_TYPES.map(item => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.type}
+                      type="button"
+                      disabled={Boolean(editingPost)}
+                      onClick={() => setPostType(item.type)}
+                      className={`p-3 rounded-xl border text-left transition disabled:cursor-not-allowed disabled:opacity-80 ${postType === item.type
+                          ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 ring-2 ring-indigo-500/20'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                        }`}
+                    >
+                      <div className="flex items-center gap-1.5 text-xs font-bold">
+                        <Icon className="w-3.5 h-3.5" />
+                        <span>{item.label}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">{item.hint}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="p-3.5 bg-indigo-50/80 rounded-2xl border border-indigo-100 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold text-sm shrink-0 shadow-sm">
+                  <Target className="w-4.5 h-4.5" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-indigo-950">Bài đăng Tìm gia sư</h4>
+                  <p className="text-[11px] text-indigo-700 mt-0.5">Mô tả rõ môn học, lớp học và yêu cầu để kết nối trực tiếp với gia sư phù hợp.</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Phân hệ Gia sư - Giới thiệu lớp có sẵn (TUTOR_CLASS_SHARE) */}

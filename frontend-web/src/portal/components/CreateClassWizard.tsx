@@ -186,7 +186,7 @@ function computeNetFreeIntervals(rawSlots: SavedSlot[], occupiedSlots: OccupiedS
     let slotCounter = 1;
     const baseDayLabel = VIETNAMESE_DAYS.find(d => d.value === Number(dayNum))?.label || (Number(dayNum) === 8 || Number(dayNum) === 1 ? "Chủ nhật" : `Thứ ${dayNum}`);
 
-    for (const raw of dayRawSlots) {
+    for (const [rawIndex, raw] of dayRawSlots.entries()) {
       let curr = timeToMinutes(raw.startTime);
       const winEnd = timeToMinutes(raw.endTime);
 
@@ -203,7 +203,7 @@ function computeNetFreeIntervals(rawSlots: SavedSlot[], occupiedSlots: OccupiedS
             const hasMultipleOnDay = dayRawSlots.length > 1 || dayOccupied.length > 0;
             const slotName = hasMultipleOnDay ? `${baseDayLabel} (Khung ${slotCounter})` : baseDayLabel;
             result.push({
-              id: `free-${dayNum}-${curr}-${segEnd}`,
+              id: `free-${dayNum}-${rawIndex}-${curr}-${segEnd}`,
               dayOfWeek: dayNum,
               dayLabel: baseDayLabel,
               slotName: `${slotName}: ${minutesToTime(curr)} - ${minutesToTime(segEnd)}`,
@@ -221,7 +221,7 @@ function computeNetFreeIntervals(rawSlots: SavedSlot[], occupiedSlots: OccupiedS
         const hasMultipleOnDay = dayRawSlots.length > 1 || dayOccupied.length > 0;
         const slotName = hasMultipleOnDay ? `${baseDayLabel} (Khung ${slotCounter})` : baseDayLabel;
         result.push({
-          id: `free-${dayNum}-${curr}-${winEnd}`,
+          id: `free-${dayNum}-${rawIndex}-${curr}-${winEnd}`,
           dayOfWeek: dayNum,
           dayLabel: baseDayLabel,
           slotName: `${slotName}: ${minutesToTime(curr)} - ${minutesToTime(winEnd)}`,
@@ -245,6 +245,7 @@ export function CreateClassWizard({ onBack, onSuccess, sourcePostId, initialDraf
   const [availableSlots, setAvailableSlots] = useState<SavedSlot[]>([]);
   const [occupiedSlots, setOccupiedSlots] = useState<OccupiedSlot[]>([]);
   const [tutorProfile, setTutorProfile] = useState<any>(null);
+  const [readiness, setReadiness] = useState<{ ready: boolean; message: string } | null>(null);
   const [tutorTeachingModes, setTutorTeachingModes] = useState<Array<"ONLINE" | "OFFLINE">>(["ONLINE", "OFFLINE"]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -294,14 +295,16 @@ export function CreateClassWizard({ onBack, onSuccess, sourcePostId, initialDraf
     async function loadData() {
       setLoading(true);
       try {
-        const [regs, dbSlots, myClasses, profile, application] = await Promise.all([
+        const [regs, dbSlots, myClasses, profile, application, createReadiness] = await Promise.all([
           teachingRegistrationApi.mine().catch(() => []),
           classApi.getAvailability().catch(() => []),
           classApi.getMyClasses().catch(() => []),
           tutorApi.getProfile().catch(() => null),
-          tutorApplicationApi.getMyTutorApplication().catch(() => null)
+          tutorApplicationApi.getMyTutorApplication().catch(() => null),
+          classApi.getCreateReadiness().catch(() => null)
         ]);
         setTutorProfile(profile);
+        setReadiness(createReadiness);
         const modes = Array.isArray((application as any)?.teachingModes) && (application as any).teachingModes.length > 0
           ? (application as any).teachingModes.filter((mode: string) => mode === "ONLINE" || mode === "OFFLINE")
           : ["ONLINE", "OFFLINE"];
@@ -806,6 +809,24 @@ export function CreateClassWizard({ onBack, onSuccess, sourcePostId, initialDraf
       <div className="bg-white border border-brand-border/30 rounded-3xl p-12 text-center max-w-4xl mx-auto my-8">
         <div className="animate-spin w-8 h-8 border-4 border-brand-primary border-t-transparent rounded-full mx-auto mb-4" />
         <p className="text-xs font-bold text-slate-500">Đang tải danh mục môn học và lịch rảnh...</p>
+      </div>
+    );
+  }
+
+  if (readiness && !readiness.ready) {
+    return (
+      <div className="bg-white border border-brand-border/30 rounded-3xl p-12 text-center max-w-2xl mx-auto my-8 space-y-4">
+        <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+          <AlertCircle className="w-8 h-8" />
+        </div>
+        <h3 className="font-display font-black text-lg text-slate-900">Chưa đủ điều kiện tạo lớp</h3>
+        <p className="text-xs text-slate-500 leading-relaxed max-w-md mx-auto">{readiness.message}</p>
+        <button
+          onClick={onBack}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand-primary text-white text-xs font-bold hover:bg-brand-primary/90 transition-all"
+        >
+          <ArrowLeft className="w-4 h-4" /> Quay lại
+        </button>
       </div>
     );
   }

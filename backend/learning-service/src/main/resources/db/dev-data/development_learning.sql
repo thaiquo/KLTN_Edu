@@ -3,9 +3,9 @@
 -- Run account-service dev data first because this seed maps tutors by account users/tutors.
 
 INSERT INTO tutor_authorization_states (user_id, status, tutor_profile_id, source_event_id, updated_at)
-SELECT app_user.id, 'APPROVED', tutor.id, 'dev-dataset-v1:' || LOWER(app_user.email), CURRENT_TIMESTAMP
+SELECT app_user.id, 'APPROVED', tutor_profile.id, 'dev-dataset-v1:' || LOWER(app_user.email), CURRENT_TIMESTAMP
 FROM users app_user
-JOIN tutors tutor ON tutor.user_id = app_user.id
+JOIN tutor_profiles tutor_profile ON tutor_profile.user_id = app_user.id
 WHERE LOWER(app_user.email) IN (
     'tutor1@gmail.com', 'tutor2@gmail.com', 'tutor3@gmail.com', 'tutor4@gmail.com', 'tutor5@gmail.com',
     'tutor6@gmail.com', 'tutor7@gmail.com', 'tutor8@gmail.com', 'tutor9@gmail.com', 'tutor10@gmail.com',
@@ -86,14 +86,14 @@ resolved_registration AS (
     SELECT
         seed.*,
         app_user.id AS user_id,
-        tutor.id AS tutor_profile_id,
+        tutor_profile.id AS tutor_profile_id,
         subject.id AS subject_id,
         category.id AS category_id,
         category.program_type_id,
         category.education_level_id
     FROM registration_seed seed
     JOIN users app_user ON LOWER(app_user.email) = seed.email
-    JOIN tutors tutor ON tutor.user_id = app_user.id
+    JOIN tutor_profiles tutor_profile ON tutor_profile.user_id = app_user.id
     JOIN catalog_categories category ON category.code = seed.category_code AND category.active = TRUE
     JOIN catalog_subjects subject ON subject.category_id = category.id AND subject.code = seed.subject_code AND subject.active = TRUE
 ),
@@ -298,12 +298,12 @@ resolved_historical_class AS (
     SELECT
         seed.*,
         app_user.full_name AS tutor_full_name,
-        tutor.id AS tutor_profile_id,
+        tutor_profile.id AS tutor_profile_id,
         registration.id AS registration_id,
         level.id AS level_id
     FROM historical_class_seed seed
     JOIN users app_user ON LOWER(app_user.email) = seed.email
-    JOIN tutors tutor ON tutor.user_id = app_user.id
+    JOIN tutor_profiles tutor_profile ON tutor_profile.user_id = app_user.id
     JOIN catalog_categories category ON category.code = seed.category_code AND category.active = TRUE
     JOIN catalog_subjects subject ON subject.category_id = category.id AND subject.code = seed.subject_code AND subject.active = TRUE
     JOIN catalog_levels level ON level.subject_id = subject.id AND level.code = seed.level_code AND level.active = TRUE
@@ -318,7 +318,8 @@ INSERT INTO class_rooms (
     max_students, max_pending_requests, price_per_session, total_price,
     sessions_per_week, duration_per_session_minutes, duration_value, duration_unit,
     start_date, end_date, total_sessions, syllabus_mode, syllabus_file_url,
-    join_mode, join_key, status, reject_reason, reviewed_by_email, reviewed_at, created_at, updated_at
+    join_mode, join_key, status, reject_reason, reviewed_by_email, reviewed_at, created_at, updated_at,
+    public_share_id
 )
 SELECT
     registration_id,
@@ -351,7 +352,8 @@ SELECT
     'ngocquocthai.004@gmail.com',
     TIMESTAMP '2026-06-05 09:00:00',
     start_date::timestamp + TIME '08:00',
-    TIMESTAMP '2026-06-05 09:00:00'
+    TIMESTAMP '2026-06-05 09:00:00',
+    gen_random_uuid()
 FROM resolved_historical_class seed
 WHERE NOT EXISTS (
     SELECT 1
@@ -407,12 +409,12 @@ resolved_public_class AS (
     SELECT
         seed.*,
         app_user.full_name AS tutor_full_name,
-        tutor.id AS tutor_profile_id,
+        tutor_profile.id AS tutor_profile_id,
         registration.id AS registration_id,
         level.id AS level_id
     FROM public_class_seed seed
     JOIN users app_user ON LOWER(app_user.email) = seed.email
-    JOIN tutors tutor ON tutor.user_id = app_user.id
+    JOIN tutor_profiles tutor_profile ON tutor_profile.user_id = app_user.id
     JOIN catalog_categories category ON category.code = seed.category_code AND category.active = TRUE
     JOIN catalog_subjects subject ON subject.category_id = category.id AND subject.code = seed.subject_code AND subject.active = TRUE
     JOIN catalog_levels level ON level.subject_id = subject.id AND level.code = seed.level_code AND level.active = TRUE
@@ -466,7 +468,8 @@ INSERT INTO class_rooms (
     max_students, max_pending_requests, price_per_session, total_price,
     sessions_per_week, duration_per_session_minutes, duration_value, duration_unit,
     start_date, end_date, total_sessions, syllabus_mode, syllabus_file_url,
-    join_mode, join_key, status, reject_reason, reviewed_by_email, reviewed_at, created_at, updated_at
+    join_mode, join_key, status, reject_reason, reviewed_by_email, reviewed_at, created_at, updated_at,
+    public_share_id
 )
 SELECT
     registration_id,
@@ -499,7 +502,8 @@ SELECT
     'ngocquocthai.004@gmail.com',
     TIMESTAMP '2026-10-10 09:00:00',
     TIMESTAMP '2026-10-10 09:00:00',
-    CURRENT_TIMESTAMP
+    CURRENT_TIMESTAMP,
+    gen_random_uuid()
 FROM resolved_public_class seed
 WHERE NOT EXISTS (
     SELECT 1

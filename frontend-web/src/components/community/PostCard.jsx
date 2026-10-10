@@ -34,6 +34,7 @@ import { PollWeeklyCalendar } from './PollWeeklyCalendar';
 import PostLikesModal from './PostLikesModal';
 import { PostCommentsModal } from './PostCommentsModal';
 import { buildCommunityPostShareUrl, copyToClipboard } from '../../utils/shareLinks';
+import { ShareResourceDialog } from '../sharing/ShareResourceDialog';
 
 export function PostCard({ post: initialPost, currentUserId, userRole, authenticated, onRequireAuth, onVoteSuccess, onLikeToggle, onBookmarkToggle, onCommentAdded, onPostDeleted, isHighlighted }) {
   const navigate = useNavigate();
@@ -55,6 +56,7 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
   const [newComment, setNewComment] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
   const [isLikesModalOpen, setIsLikesModalOpen] = useState(false);
   const [isCommentsModalOpen, setIsCommentsModalOpen] = useState(false);
@@ -300,8 +302,12 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
   };
 
   const handleShare = async () => {
+    if (post.publicShareId) {
+      setShareDialogOpen(true);
+      return;
+    }
     try {
-      const shareUrl = buildCommunityPostShareUrl(post.id);
+      const shareUrl = `${window.location.origin}/community?postId=${post.id}#post-${post.id}`;
       await copyToClipboard(shareUrl);
       setCopied(true);
       feedback.success('Đã sao chép liên kết bài viết vào bộ nhớ tạm!');
@@ -369,16 +375,11 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
           dot: 'bg-emerald-500'
         };
       case 'STUDENT_FIND_TUTOR':
+      case 'STUDENT_GROUP_STUDY':
         return {
           label: 'Học viên tìm gia sư',
           bg: 'bg-blue-50 text-blue-700 border-blue-200',
           dot: 'bg-blue-500'
-        };
-      case 'STUDENT_GROUP_STUDY':
-        return {
-          label: 'Tìm bạn học nhóm',
-          bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-          dot: 'bg-emerald-500'
         };
       default:
         return {
@@ -913,6 +914,15 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
           setComments(prev => [...prev, newCommentObj]);
           onCommentAdded?.(postId, newCommentObj);
         }}
+      />
+      <ShareResourceDialog
+        open={shareDialogOpen}
+        onClose={() => setShareDialogOpen(false)}
+        resourceType="COMMUNITY_POST"
+        publicShareId={post.publicShareId}
+        title={post.title}
+        shareUrl={post.publicShareId ? buildCommunityPostShareUrl(post.publicShareId) : `${window.location.origin}/community?postId=${post.id}`}
+        authenticated={authenticated}
       />
     </article>
   );

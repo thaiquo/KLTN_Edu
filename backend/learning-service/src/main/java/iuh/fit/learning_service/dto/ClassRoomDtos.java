@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 public final class ClassRoomDtos {
     private ClassRoomDtos() {}
@@ -137,6 +138,7 @@ public final class ClassRoomDtos {
 
     public record ClassRoomResponse(
             Long id,
+            UUID publicShareId,
             Long tutorSubjectRegistrationId,
             RegistrationBrief registration,
             LevelBrief level,
@@ -184,6 +186,7 @@ public final class ClassRoomDtos {
 
     public record PublicClassCardResponse(
             Long id,
+            UUID publicShareId,
             Long tutorSubjectRegistrationId,
             RegistrationBrief registration,
             LevelBrief level,
@@ -273,5 +276,12 @@ public final class ClassRoomDtos {
             long closedCount,
             long rejectedCount,
             long draftCount
+    ) {}
+
+    public record TutorClassReadinessResponse(
+            boolean ready,
+            String message,
+            long approvedRegistrationCount,
+            List<String> teachingModes
     ) {}
 }

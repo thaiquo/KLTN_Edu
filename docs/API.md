@@ -87,6 +87,7 @@ Tutor/account related APIs include `/api/tutors`, `/api/tutors/search-v2`, `/api
 | `GET` | `/api/public/classes` | Public class search. |
 | `GET` | `/api/public/classes/{id}` | Public class detail. |
 | `GET` | `/api/public/classes/{id}/share` | Shareable class detail for `/classes/{id}`. |
+| `GET` | `/api/public/classes/shared/{publicShareId}` | Public class detail resolved from an opaque share UUID; only `PUBLISHED` classes are returned. |
 | `POST` | `/api/public/classes/{id}/verify-key` | Verify join key. |
 | `GET` | `/api/public/classes/semantic-source` | Public-safe class source for AI indexing/validation. |
 | `POST` | `/api/classes/{classId}/enroll` | Student enroll/request join. |
@@ -107,6 +108,7 @@ Community belongs to Learning Service and is exposed through `/api/community`.
 | --- | --- | --- |
 | `GET` | `/api/community/posts` | Feed/list; supports `postType`, `status`, `subjectId`, `learningMode`, `keyword`, `followingOnly`, `page`, `size`; authenticated all-feed prioritizes followed Tutors. |
 | `GET` | `/api/community/posts/{id}` | Post detail and view count. |
+| `GET` | `/api/community/posts/shared/{publicShareId}` | Public post detail resolved from an opaque share UUID; hidden posts return not found. |
 | `GET` | `/api/community/posts/mine` | Current user's posts. |
 | `GET` | `/api/community/posts/bookmarked` | Current user's bookmarks. |
 | `POST` | `/api/community/posts` | Create Student/Tutor post. |
@@ -190,9 +192,10 @@ Human Student-Tutor chat API:
 | `POST` | `/api/chat/conversations/{id}/read` | Mark conversation read. |
 | `POST` | `/api/chat/messages` | Send text message. |
 | `POST multipart` | `/api/chat/conversations/{id}/attachments` | Send 1-5 images or exactly 1 video. |
+| `POST` | `/api/chat/conversations/{id}/shared-resources` | Send `{resourceType, resourcePublicId, caption?}` as a validated structured Class/Post chat card. |
 | WebSocket | `/ws/chat` | Push `NEW_MESSAGE` frames to authenticated participants. |
 
-Chat attachments are private S3 objects with metadata/presigned URLs in API responses; WebSocket frames carry metadata, not binary files.
+Chat attachments are private S3 objects with metadata/presigned URLs in API responses; WebSocket frames carry metadata, not binary files. Shared-resource messages persist only the resource type and public UUID; Learning Service remains the source of truth for current visibility and card content.
 
 ## 10. AI Matching APIs
 

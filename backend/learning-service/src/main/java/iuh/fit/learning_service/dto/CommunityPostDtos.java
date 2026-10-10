@@ -23,6 +23,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.UUID;
 
 public class CommunityPostDtos {
 
@@ -105,6 +106,7 @@ public class CommunityPostDtos {
     @AllArgsConstructor
     public static class PostSummaryDto {
         private Long id;
+        private UUID publicShareId;
         private Long authorId;
         private String authorRole;
         private String authorName;

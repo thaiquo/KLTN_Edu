@@ -4,13 +4,16 @@ import iuh.fit.account_service.client.LearningTutorSearchDataClient;
 import iuh.fit.account_service.dto.learning.LearningTutorSearchDataResponse;
 import iuh.fit.account_service.dto.tutor.TutorSearchResponseV2;
 import iuh.fit.account_service.entity.Tutor;
+import iuh.fit.account_service.entity.TutorProfile;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.exception.BadRequestException;
 import iuh.fit.account_service.exception.ResourceNotFoundException;
 import iuh.fit.account_service.repository.TutorRepository;
+import iuh.fit.account_service.repository.TutorProfileRepository;
 import iuh.fit.account_service.service.storage.FileStorageService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
@@ -27,15 +30,19 @@ public class PublicTutorSearchV2Service {
     private static final int MAX_PAGE_SIZE = 50;
 
     private final TutorRepository tutorRepository;
+    private final TutorProfileRepository tutorProfileRepository;
     private final LearningTutorSearchDataClient learningClient;
     private final FileStorageService fileStorageService;
 
+    @Autowired
     public PublicTutorSearchV2Service(
             TutorRepository tutorRepository,
+            TutorProfileRepository tutorProfileRepository,
             LearningTutorSearchDataClient learningClient,
             FileStorageService fileStorageService
     ) {
         this.tutorRepository = tutorRepository;
+        this.tutorProfileRepository = tutorProfileRepository;
         this.learningClient = learningClient;
         this.fileStorageService = fileStorageService;
     }
@@ -77,7 +84,9 @@ public class PublicTutorSearchV2Service {
             return emptyPage(normalizedPage, normalizedSize);
         }
 
-        List<Long> tutorProfileIds = accountCandidates.stream().map(Tutor::getId).toList();
+        Map<Long, Tutor> tutorsByProfileId = accountCandidates.stream()
+                .collect(LinkedHashMap::new, (map, tutor) -> map.put(canonicalTutorProfileId(tutor), tutor), Map::putAll);
+        List<Long> tutorProfileIds = tutorsByProfileId.keySet().stream().toList();
         Map<Long, LearningTutorSearchDataResponse> learningByProfileId = new LinkedHashMap<>();
         learningClient.searchData(
                 tutorProfileIds,
@@ -96,9 +105,9 @@ public class PublicTutorSearchV2Service {
                 normalizeOptional(endTime)
         ).forEach(item -> learningByProfileId.put(item.getTutorProfileId(), item));
 
-        List<TutorSearchResponseV2> responses = accountCandidates.stream()
-                .filter(tutor -> learningByProfileId.containsKey(tutor.getId()))
-                .map(tutor -> toResponse(tutor, learningByProfileId.get(tutor.getId())))
+        List<TutorSearchResponseV2> responses = tutorsByProfileId.entrySet().stream()
+                .filter(entry -> learningByProfileId.containsKey(entry.getKey()))
+                .map(entry -> toResponse(entry.getValue(), entry.getKey(), learningByProfileId.get(entry.getKey())))
                 .sorted(comparator(sort, hasCapabilityContext(programTypeId, educationLevelId, categoryId, subjectId)))
                 .toList();
 
@@ -119,10 +128,20 @@ public class PublicTutorSearchV2Service {
 
     @Transactional(readOnly = true)
     public TutorSearchResponseV2 detail(Long tutorProfileId) {
-        Tutor tutor = tutorRepository.findAllPublicTutors().stream()
-                .filter(candidate -> candidate.getId().equals(tutorProfileId))
-                .findFirst()
-                .orElseThrow(() -> new ResourceNotFoundException("Tutor profile not found"));
+        Tutor tutor;
+        try {
+            TutorProfile profile = tutorProfileRepository.findByIdAndActiveTrue(tutorProfileId).orElse(null);
+            tutor = profile == null
+                    ? tutorRepository.findAllPublicTutors().stream()
+                    .filter(candidate -> candidate.getId().equals(tutorProfileId))
+                    .findFirst()
+                    .orElseThrow(() -> new ResourceNotFoundException("Tutor profile not found"))
+                    : tutorRepository.findByUserId(profile.getUser().getId())
+                    .filter(candidate -> candidate.getUser().isEmailVerified())
+                    .orElseThrow(() -> new ResourceNotFoundException("Tutor profile not found"));
+        } catch (ResourceNotFoundException exception) {
+            throw exception;
+        }
 
         LearningTutorSearchDataResponse learning = learningClient.searchData(
                         List.of(tutorProfileId),
@@ -144,7 +163,13 @@ public class PublicTutorSearchV2Service {
                 .findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("Tutor public learning profile not found"));
 
-        return toResponse(tutor, learning);
+        return toResponse(tutor, tutorProfileId, learning);
+    }
+
+    private Long canonicalTutorProfileId(Tutor tutor) {
+        return tutorProfileRepository.findByUserId(tutor.getUser().getId())
+                .map(TutorProfile::getId)
+                .orElse(tutor.getId());
     }
 
     private boolean matchesAccountFilters(Tutor tutor, String keyword, String provinceCode, String province,
@@ -171,10 +196,10 @@ public class PublicTutorSearchV2Service {
         return !StringUtils.hasText(commune) || contains(user.getCommune(), commune.trim().toLowerCase(Locale.ROOT));
     }
 
-    private TutorSearchResponseV2 toResponse(Tutor tutor, LearningTutorSearchDataResponse learning) {
+    private TutorSearchResponseV2 toResponse(Tutor tutor, Long tutorProfileId, LearningTutorSearchDataResponse learning) {
         User user = tutor.getUser();
         return new TutorSearchResponseV2(
-                tutor.getId(),
+                tutorProfileId,
                 user.getId(),
                 user.getFullName(),
                 resolveAvatarUrl(user.getAvatarKey()),

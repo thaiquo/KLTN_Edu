@@ -33,6 +33,7 @@ import {
 } from "../../api/chatApi";
 import { ApiError, isForbidden, isUnauthorized } from "../../api/client";
 import { useAuth } from "../../hooks/useAuth";
+import { SharedResourceCard } from "../../components/sharing/SharedResourceCard";
 
 const PAGE_SIZE = 30;
 const NEAR_BOTTOM_PX = 96;
@@ -45,8 +46,10 @@ interface ChatRealtimePayload {
   messageId: string;
   conversationId: string;
   senderUserId: number;
-  type?: "TEXT" | "IMAGE" | "VIDEO";
+  type?: "TEXT" | "IMAGE" | "VIDEO" | "SHARED_RESOURCE";
   content: string;
+  sharedResourceType?: "CLASS" | "COMMUNITY_POST" | null;
+  sharedResourcePublicId?: string | null;
   attachments?: ChatAttachmentDto[];
   createdAt: string;
   read?: boolean;
@@ -94,7 +97,7 @@ function attachmentsOf(message: Pick<ChatMessageDto, "attachments"> | Pick<ChatR
 
 function messageType(message: Pick<ChatMessageDto, "type" | "attachments"> | Pick<ChatRealtimePayload, "type" | "attachments">) {
   const type = String(message.type || "").toUpperCase();
-  if (type === "IMAGE" || type === "VIDEO") return type;
+  if (type === "IMAGE" || type === "VIDEO" || type === "SHARED_RESOURCE") return type;
   const first = attachmentsOf(message)[0];
   if (first?.contentType?.startsWith("image/")) return "IMAGE";
   if (first?.contentType?.startsWith("video/")) return "VIDEO";
@@ -108,6 +111,7 @@ function messagePreview(message: Pick<ChatMessageDto, "type" | "content" | "atta
     return count === 1 ? "Đã gửi 1 hình ảnh" : `Đã gửi ${count} hình ảnh`;
   }
   if (type === "VIDEO") return "Đã gửi một video";
+  if (type === "SHARED_RESOURCE") return "Đã chia sẻ một nội dung";
   return message.content || "Tin nhắn mới";
 }
 
@@ -355,6 +359,8 @@ export function MessagesView({ embeddedInStudentPage = false }: MessagesViewProp
         senderId: Number(payload.senderUserId),
         type: payload.type || "TEXT",
         content: payload.content,
+        sharedResourceType: payload.sharedResourceType,
+        sharedResourcePublicId: payload.sharedResourcePublicId,
         attachments: payload.attachments || [],
         createdAt: payload.createdAt,
         isRead: Boolean(payload.read)
@@ -704,16 +710,51 @@ function MediaDraft({ media, onRemove, onClear }: { media: PendingMedia; onRemov
   );
 }
 
+function renderMessageText(content: string, ownMessage: boolean) {
+  if (!content) return null;
+  const urlRegex = /(https?:\/\/[^\s]+|\/classes\/\d+)/g;
+  const parts = content.split(urlRegex);
+  return parts.map((part, index) => {
+    if (/^(https?:\/\/[^\s]+|\/classes\/\d+)$/.test(part)) {
+      return (
+        <a
+          key={index}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`underline font-bold break-all hover:opacity-80 ${
+            ownMessage ? "text-indigo-100" : "text-indigo-600"
+          }`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {part}
+        </a>
+      );
+    }
+    return part;
+  });
+}
+
 function MessageBubble({ message, ownMessage }: { message: ChatMessageDto; ownMessage: boolean }) {
   const type = messageType(message);
   const attachments = attachmentsOf(message);
   const hasCaption = Boolean(message.content?.trim());
   const mediaFrameClass = ownMessage ? "border-white/20 bg-white/10" : "border-brand-border/20 bg-brand-low/40";
 
+  if (type === "SHARED_RESOURCE" && message.sharedResourceType && message.sharedResourcePublicId) {
+    return (
+      <SharedResourceCard
+        resourceType={message.sharedResourceType}
+        publicShareId={message.sharedResourcePublicId}
+        caption={message.content}
+      />
+    );
+  }
+
   if (type === "TEXT") {
     return (
       <div className={`whitespace-pre-wrap break-words p-4 rounded-2xl shadow-sm text-sm leading-relaxed border ${ownMessage ? "bg-brand-primary text-white border-brand-primary/10 rounded-br-sm" : "bg-white text-brand-text border-brand-border/20 rounded-bl-sm"}`}>
-        {message.content}
+        {renderMessageText(message.content, ownMessage)}
       </div>
     );
   }
@@ -730,7 +771,7 @@ function MessageBubble({ message, ownMessage }: { message: ChatMessageDto; ownMe
         <span className="truncate">{type === "IMAGE" ? messagePreview(message) : attachments[0]?.fileName || "Video"}</span>
         {type === "VIDEO" && attachments[0]?.size ? <span className="shrink-0">({formatFileSize(attachments[0].size)})</span> : null}
       </div>
-      {hasCaption && <p className="whitespace-pre-wrap break-words px-2 pb-1 text-sm leading-relaxed">{message.content}</p>}
+      {hasCaption && <p className="whitespace-pre-wrap break-words px-2 pb-1 text-sm leading-relaxed">{renderMessageText(message.content, ownMessage)}</p>}
     </div>
   );
 }

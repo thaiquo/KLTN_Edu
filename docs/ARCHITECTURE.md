@@ -30,9 +30,9 @@ Gateway routes the current REST families and WebSocket paths: `/api/auth`, `/api
 | Service | Owns | Notes |
 | --- | --- | --- |
 | `account-service` | Authentication, users/roles, active role, Student/Tutor profiles, Tutor application identity data, geography reference data, internal active Staff/Admin notification recipient lookup. | Browser auth uses HttpOnly JWT cookies. Internal recipient lookup is service-token protected. |
-| `learning-service` | Teaching catalog, tutor authorization/subjects, tutor availability, public Tutor/Class learning data, classrooms, enrollment, sessions, attendance, homework, reviews, Community posts/polls/interactions/bookmarks, Tutor Follow, post-to-class behavior. | Community schema is in Learning Flyway V8; Tutor Follow is in V9. |
+| `learning-service` | Teaching catalog, tutor authorization/subjects, tutor availability, public Tutor/Class learning data, classrooms, enrollment, sessions, attendance, homework, reviews, Community posts/polls/interactions/bookmarks, Tutor Follow, post-to-class behavior. | Community is in V8, Tutor Follow in V9, Tutor profile normalization in V10 and opaque public share UUIDs in V11. |
 | `contract-service` | E-contract, EIP-712 signing, final PDF/artifacts, escrow/payment lifecycle, blockchain reconciliation, settlement, disputes, termination governance, termination outbox, Contract -> Learning lifecycle events. | Contract is the source of truth for termination governance. |
-| `notification-service` | Persisted Bell notifications, Rabbit consumers, notification WebSocket, human Student-Tutor messaging, chat attachments metadata, chat REST/WebSocket. | Human messaging is not the AI chatbot. |
+| `notification-service` | Persisted Bell notifications, Rabbit consumers, notification WebSocket, human Student-Tutor messaging, chat attachments metadata, structured resource references, chat REST/WebSocket. | Human messaging is not the AI chatbot; Learning remains source of truth for shared Class/Post cards. |
 | `ai-service` | Tutor Matching, Class Matching, Gemini analysis/grounding, Qdrant semantic retrieval, Matching V3 explainable scoring, AI chatbot, chatbot RAG, public lookup/count tools, authenticated Student/Tutor read-only chatbot tools. | Matching and chatbot stay inside AI Service. |
 | `api-gateway` | Edge routing, credentialed CORS, cookie forwarding, REST/WebSocket proxying. | Gateway is not an identity authority. |
 | `frontend-web` | Marketplaces, portals/dashboard, Community UI, contract/termination UI, human Messages, shared global AI chatbot widget. | AI Matching is integrated into Tutor/Class marketplace and chatbot flows, not a standalone `/matching` product route. |
@@ -54,7 +54,9 @@ Human Messaging belongs to `notification-service`.
 - Student <-> approved Tutor direct conversations.
 - REST APIs under `/api/chat/**`.
 - Realtime frames on `/ws/chat`.
-- Message history, unread/read state and image/video attachment metadata are persisted by Notification Service.
+- Message history, unread/read state, image/video attachment metadata and logical Class/Post share references are persisted by Notification Service.
+- A `SHARED_RESOURCE` message stores only `resourceType`, opaque `publicShareId` and an optional caption. Notification Service validates availability through Learning's public-safe UUID endpoint before accepting the message.
+- Messages UI resolves card content from Learning whenever it renders or opens the card, so hidden/deleted/non-public resources become unavailable without copying stale business data into Notification Service.
 
 AI chatbot belongs to `ai-service`.
 
@@ -133,12 +135,12 @@ Each service owns its data model even when local development uses the same Postg
 
 | Service | Current migration baseline | Representative data |
 | --- | --- | --- |
-| Account | Account chain through V15 in current source/history | users, roles, refresh sessions, OTP, students, tutors, tutor applications/documents. |
-| Learning | Compact V1..V9 | legacy compatibility, normalized catalog, tutor registrations, classrooms, sessions/homework/materials, reviews, Community posts/polls and Tutor Follow. |
+| Account | Compact V1..V2 | users, roles, refresh sessions, OTP, students, tutors, tutor profiles and tutor applications/documents. |
+| Learning | Compact V1..V11 | legacy compatibility, normalized catalog, tutor registrations, classrooms, sessions/homework/materials, reviews, Community/Tutor Follow, Tutor profile reference normalization and public share UUIDs. |
 | Contract | Continuous V1..V19 | agreements, acceptances, artifacts, escrow payments, settlements, disputes/evidence, blockchain transactions/events, termination governance/outbox. |
-| Notification | V1..V2 | notifications, conversations, chat messages and chat attachments. |
+| Notification | V1..V6 | notifications, direct conversations, text/media messages, child attachments and structured Class/Post share references. |
 
-Older high-numbered Learning migrations are not active post-merge migrations. Community is represented by compact Learning V8.
+Older high-numbered Learning migrations are not active post-merge migrations. Community is represented by compact Learning V8 and new changes must continue from V11 without rewriting applied files.
 
 ## 10. Storage and Documents
 

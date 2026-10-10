@@ -1,10 +1,9 @@
-export function buildCommunityPostShareUrl(postId) {
-  const encodedId = encodeURIComponent(String(postId));
-  return `${window.location.origin}/community?postId=${encodedId}#post-${encodedId}`;
+export function buildCommunityPostShareUrl(publicShareId) {
+  return `${window.location.origin}/share/posts/${encodeURIComponent(String(publicShareId))}`;
 }
 
-export function buildClassShareUrl(classId) {
-  return `${window.location.origin}/classes/${encodeURIComponent(String(classId))}`;
+export function buildClassShareUrl(publicShareId) {
+  return `${window.location.origin}/share/classes/${encodeURIComponent(String(publicShareId))}`;
 }
 
 export function extractCommunityPostId(location) {

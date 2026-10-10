@@ -22,6 +22,7 @@ import iuh.fit.learning_service.service.TutorFollowService;
 import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/community")
@@ -72,6 +73,14 @@ public class CommunityPostController {
     ) {
         Long currentUserId = extractUserId(authentication);
         return ResponseEntity.ok(postService.getPostDetail(id, currentUserId));
+    }
+
+    @GetMapping("/posts/shared/{publicShareId}")
+    public ResponseEntity<PostSummaryDto> getSharedPost(
+            @PathVariable UUID publicShareId,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(postService.getSharedPost(publicShareId, extractUserId(authentication)));
     }
 
     @GetMapping("/posts/mine")

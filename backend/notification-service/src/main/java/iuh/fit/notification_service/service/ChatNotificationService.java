@@ -114,6 +114,7 @@ public class ChatNotificationService {
                         : sender + " đã gửi " + count + " hình ảnh";
             }
             case VIDEO -> sender + " đã gửi một video";
+            case SHARED_RESOURCE -> sender + " đã chia sẻ một nội dung với bạn";
             case TEXT -> sender + " đã gửi cho bạn một tin nhắn";
         };
     }

@@ -7,6 +7,7 @@ import iuh.fit.account_service.entity.Tutor;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.exception.ResourceNotFoundException;
 import iuh.fit.account_service.repository.TutorRepository;
+import iuh.fit.account_service.repository.TutorProfileRepository;
 import iuh.fit.account_service.service.storage.FileStorageService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,15 +26,17 @@ import static org.mockito.Mockito.when;
 
 class PublicTutorSearchV2ServiceTest {
     private TutorRepository tutorRepository;
+    private TutorProfileRepository tutorProfileRepository;
     private LearningTutorSearchDataClient learningClient;
     private PublicTutorSearchV2Service service;
 
     @BeforeEach
     void setUp() {
         tutorRepository = mock(TutorRepository.class);
+        tutorProfileRepository = mock(TutorProfileRepository.class);
         learningClient = mock(LearningTutorSearchDataClient.class);
         FileStorageService fileStorageService = mock(FileStorageService.class);
-        service = new PublicTutorSearchV2Service(tutorRepository, learningClient, fileStorageService);
+        service = new PublicTutorSearchV2Service(tutorRepository, tutorProfileRepository, learningClient, fileStorageService);
     }
 
     @Test

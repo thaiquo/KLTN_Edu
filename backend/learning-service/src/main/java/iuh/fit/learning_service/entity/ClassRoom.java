@@ -14,6 +14,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -24,6 +25,9 @@ public class ClassRoom {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "public_share_id", nullable = false, unique = true, updatable = false)
+    private UUID publicShareId;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "tutor_subject_registration_id", nullable = false)
@@ -144,6 +148,9 @@ public class ClassRoom {
     @PrePersist
     void onCreate() {
         LocalDateTime now = LocalDateTime.now();
+        if (publicShareId == null) {
+            publicShareId = UUID.randomUUID();
+        }
         createdAt = now;
         updatedAt = now;
         if (maxPendingRequests == null && maxStudents != null) {

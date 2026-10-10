@@ -25,8 +25,10 @@ export interface ChatMessageDto {
   senderEmail?: string;
   recipientId?: number;
   recipientEmail?: string;
-  type?: 'TEXT' | 'IMAGE' | 'VIDEO';
+  type?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'SHARED_RESOURCE';
   content: string;
+  sharedResourceType?: "CLASS" | "COMMUNITY_POST" | null;
+  sharedResourcePublicId?: string | null;
   attachments?: ChatAttachmentDto[];
   isRead?: boolean;
   createdAt: string;
@@ -100,6 +102,18 @@ export const chatApi = {
     return apiRequest(`/api/chat/conversations/${conversationId}/attachments`, {
       method: 'POST',
       body: formData
+    });
+  },
+
+  sendSharedResource(
+    conversationId: string,
+    resourceType: "CLASS" | "COMMUNITY_POST",
+    resourcePublicId: string,
+    caption?: string
+  ): Promise<ChatMessageDto> {
+    return apiRequest(`/api/chat/conversations/${conversationId}/shared-resources`, {
+      method: 'POST',
+      body: JSON.stringify({ resourceType, resourcePublicId, caption: caption?.trim() || '' })
     });
   },
 

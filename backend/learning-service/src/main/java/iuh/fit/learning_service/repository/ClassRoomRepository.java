@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Repository
 public interface ClassRoomRepository extends JpaRepository<ClassRoom, Long> {
@@ -22,6 +23,13 @@ public interface ClassRoomRepository extends JpaRepository<ClassRoom, Long> {
            "LEFT JOIN FETCH c.level " +
            "WHERE c.id = :id")
     Optional<ClassRoom> findByIdWithDetails(@Param("id") Long id);
+
+    @Query("SELECT c FROM ClassRoom c " +
+           "LEFT JOIN FETCH c.tutorSubjectRegistration r " +
+           "LEFT JOIN FETCH r.subject " +
+           "LEFT JOIN FETCH c.level " +
+           "WHERE c.publicShareId = :publicShareId")
+    Optional<ClassRoom> findByPublicShareIdWithDetails(@Param("publicShareId") UUID publicShareId);
 
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM ClassRoom c WHERE c.id = :id")

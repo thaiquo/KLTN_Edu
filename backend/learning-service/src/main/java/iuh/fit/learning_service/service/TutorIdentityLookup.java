@@ -71,19 +71,6 @@ public class TutorIdentityLookup {
             return Optional.empty();
         }
 
-        Optional<Long> byTutors = tableExists("tutors")
-                ? queryLong("""
-                        SELECT tutor.id
-                        FROM tutors tutor
-                        JOIN users account_user ON account_user.id = tutor.user_id
-                        WHERE lower(account_user.email) = ?
-                        LIMIT 1
-                        """, normalizedEmail)
-                : Optional.empty();
-        if (byTutors.isPresent()) {
-            return byTutors;
-        }
-
         return tableExists("tutor_profiles")
                 ? queryLong("""
                         SELECT tutor_profile.id

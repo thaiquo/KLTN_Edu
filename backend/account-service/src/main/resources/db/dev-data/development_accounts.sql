@@ -82,7 +82,7 @@ WITH admin_seed(email, full_name, phone, password_hash) AS (
             'ngocquocthai.004@gmail.com',
             'Huỳnh Ngọc Quốc Thái',
             '038705790',
-            '$2a$10$K5SOFrLbhxEFzWKmSIcLUutXP4Kp4mQwzxIjmWW.MrXqwcuDEJ6H2'
+            '$2a$10$BSpVj1b63nwZFTVMRjtgKOOF/JtZimoOMaj1Iz2Hb/avpzuXLEmwW'
         )
 )
 INSERT INTO users (
@@ -125,7 +125,7 @@ FROM (
             'ngocquocthai.004@gmail.com',
             'Huỳnh Ngọc Quốc Thái',
             '038705790',
-            '$2a$10$K5SOFrLbhxEFzWKmSIcLUutXP4Kp4mQwzxIjmWW.MrXqwcuDEJ6H2'
+            '$2a$10$BSpVj1b63nwZFTVMRjtgKOOF/JtZimoOMaj1Iz2Hb/avpzuXLEmwW'
         )
 ) AS seed(email, full_name, phone, password_hash)
 WHERE LOWER(target_user.email) = LOWER(seed.email);

@@ -3,7 +3,7 @@ import {
   GraduationCap, Plus, Calendar, Clock, DollarSign, Users, 
   Video, MapPin, AlertCircle, AlertTriangle, CheckCircle2, XCircle, Search, 
   ChevronRight, Trash2, Eye, FileText, Sparkles, Key, Lock, Settings2, Globe, EyeOff, Copy, Check, Info, Layers, RefreshCw,
-  UploadCloud, BookOpen, Loader2
+  UploadCloud, BookOpen, Loader2, Share2
 } from "lucide-react";
 import { classApi } from "../../api/classes";
 import { contractsApi } from "../../api/contractsApi";
@@ -13,7 +13,10 @@ import { CreateClassWizard } from "./CreateClassWizard";
 import { useFeedback } from "../../components/feedback/useFeedback";
 import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
 import { useTutorApplication } from "../../hooks/useTutorApplication";
+import { useAuth } from "../../hooks/useAuth";
 import { ClassroomMaterialsSection } from "../../components/classroom/ClassroomMaterialsSection";
+import { ShareResourceDialog } from "../../components/sharing/ShareResourceDialog";
+import { buildClassShareUrl } from "../../utils/shareLinks";
 
 const terminationStatusLabel: Record<string, string> = {
   HOLD_PENDING: 'Đang đồng bộ tạm dừng',
@@ -36,6 +39,7 @@ interface ChapterItem {
 
 interface ClassRoomItem {
   id: number;
+  publicShareId?: string;
   name: string;
   description: string;
   registration?: {
@@ -88,8 +92,10 @@ const VIETNAMESE_DAYS = [
 
 export function TutorClassManagement() {
   const feedback = useFeedback();
+  const { authenticated } = useAuth();
   const [viewMode, setViewMode] = useState<"list" | "create">("list");
   const [classes, setClasses] = useState<ClassRoomItem[]>([]);
+  const [shareClass, setShareClass] = useState<ClassRoomItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<string>("ALL");
   const [searchKeyword, setSearchKeyword] = useState("");
@@ -324,6 +330,18 @@ export function TutorClassManagement() {
     } catch (err: any) {
       feedback.error(err?.message || "Không thể xóa lớp học.");
     }
+  };
+
+  const handleShareClass = (cls: ClassRoomItem) => {
+    if (cls.status !== "PUBLISHED") {
+      feedback.warning("Chỉ có thể chia sẻ lớp học đang mở bán công khai.");
+      return;
+    }
+    if (!cls.publicShareId) {
+      feedback.error("Lớp học chưa có mã chia sẻ. Vui lòng khởi động lại learning-service để cập nhật dữ liệu.");
+      return;
+    }
+    setShareClass(cls);
   };
 
   // Open Unified Detail Modal
@@ -847,10 +865,23 @@ export function TutorClassManagement() {
                 </span>
 
                 <div className="flex items-center gap-2">
+                  {/* Share button for PUBLISHED class */}
+                  {cls.status === "PUBLISHED" && (
+                    <button
+                      type="button"
+                      onClick={() => handleShareClass(cls)}
+                      className="px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-300 transition-all flex items-center gap-1.5 text-xs font-bold shadow-2xs cursor-pointer"
+                      title="Sao chép liên kết lớp học để gửi cho học viên"
+                    >
+                      <Share2 className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Chia sẻ</span>
+                    </button>
+                  )}
+
                   {/* Primary Unified Action: Xem chi tiết & Cài đặt */}
                   <button
                     onClick={() => openDetailModal(cls, "OVERVIEW")}
-                    className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 text-xs font-bold hover:bg-slate-100 hover:border-slate-300 transition-all flex items-center gap-1.5"
+                    className="px-3.5 py-1.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 text-xs font-bold hover:bg-slate-100 hover:border-slate-300 transition-all flex items-center gap-1.5 cursor-pointer"
                     title="Xem chi tiết, chỉnh sửa & cài đặt"
                   >
                     <Eye className="w-3.5 h-3.5 text-brand-primary" />
@@ -903,12 +934,25 @@ export function TutorClassManagement() {
                   Môn: <strong className="text-brand-primary">{detailModalClass.registration?.subjectName}</strong> &bull; Cấp độ: <strong>{detailModalClass.level?.name}</strong>
                 </p>
               </div>
-              <button 
-                onClick={() => setDetailModalClass(null)}
-                className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 font-bold"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                {detailModalClass.status === "PUBLISHED" && (
+                  <button
+                    type="button"
+                    onClick={() => handleShareClass(detailModalClass)}
+                    className="px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold text-xs flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                    title="Sao chép liên kết lớp học để gửi cho học viên"
+                  >
+                    <Share2 className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Chia sẻ lớp</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setDetailModalClass(null)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 font-bold"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {/* Modal Navigation Tabs */}
@@ -1007,6 +1051,35 @@ export function TutorClassManagement() {
             {/* ========================================================= */}
             {modalTab === "OVERVIEW" && (
               <div className="space-y-4 text-xs">
+                {/* Published Share Link Box */}
+                {detailModalClass.status === "PUBLISHED" && (
+                  <div className="p-3.5 bg-indigo-50/80 border border-indigo-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs text-indigo-950 flex items-center gap-1.5">
+                          <Globe className="w-3.5 h-3.5 text-indigo-600" />
+                          Lớp đang mở bán công khai
+                        </span>
+                        {detailModalClass.joinMode === "INVITE_KEY" && detailModalClass.joinKey && (
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                            Mã mời: {detailModalClass.joinKey}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-indigo-700 font-medium">
+                        Bạn có thể sao chép liên kết lớp học này gửi qua tin nhắn cho học viên để các bạn vào xem và đăng ký.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleShareClass(detailModalClass)}
+                      className="px-3 py-1.5 rounded-xl bg-indigo-600 text-white font-bold text-xs hover:bg-indigo-700 transition flex items-center gap-1.5 shrink-0 shadow-sm cursor-pointer"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>{detailModalClass.joinMode === "INVITE_KEY" && detailModalClass.joinKey ? "Sao chép link & mã" : "Sao chép liên kết"}</span>
+                    </button>
+                  </div>
+                )}
                 {/* Pending Termination Banner if any */}
                 {(() => {
                   const currentPendingTerm = terminationCases.find(
@@ -1940,6 +2013,30 @@ export function TutorClassManagement() {
               if (detailModalClass) loadRequestsForClass(detailModalClass.id);
               feedback.success("Đã gửi đề xuất dừng giảng dạy & hủy lớp học kèm chữ ký số xác thực thành công!");
             }}
+          />
+        );
+      })()}
+
+      {shareClass?.publicShareId && (() => {
+        const shareUrl = buildClassShareUrl(shareClass.publicShareId);
+        const inviteCaption = shareClass.joinMode === "INVITE_KEY" && shareClass.joinKey
+          ? `Mã mời tham gia lớp: ${shareClass.joinKey}`
+          : undefined;
+        const copyText = inviteCaption
+          ? `Tham gia lớp học "${shareClass.name}" tại: ${shareUrl}\n${inviteCaption}`
+          : shareUrl;
+
+        return (
+          <ShareResourceDialog
+            open
+            onClose={() => setShareClass(null)}
+            resourceType="CLASS"
+            publicShareId={shareClass.publicShareId}
+            title={shareClass.name}
+            shareUrl={shareUrl}
+            authenticated={authenticated}
+            caption={inviteCaption}
+            copyText={copyText}
           />
         );
       })()}

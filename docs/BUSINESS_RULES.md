@@ -225,19 +225,27 @@ Hệ thống vẫn có business flow hợp lệ khi AI chưa triển khai; khi �
 
 ## 10. Deep Link, Share Validity & Feed Discovery
 
-- **Sao chép liên kết chia sẻ (Share Link)**:
-  - Cho phép người dùng (Học viên, Gia sư) sao chép đường dẫn chia sẻ bài viết (`/community?postId={id}`) hoặc lớp học (`/classes/{id}`) để gửi qua tin nhắn hoặc chia sẻ ra bên ngoài.
-- **Kiểm soát hiệu lực liên kết Lớp học**:
-  - Endpoint chia sẻ `/api/learning/public/classes/{id}/share` kiểm tra nghiêm ngặt điều kiện tuyển sinh: lớp phải đang `PUBLISHED`, ngày khai giảng chưa qua (`startDate >= today`), chưa có `cutoffDate` (chưa bị thanh lý hoặc hủy) và chưa đủ sĩ số (`currentEnrollment < maxStudents`).
-  - Khi mở liên kết hợp lệ: Hệ thống điều hướng đến đúng lớp học trên Marketplace, tự động mở Modal chi tiết lớp học (`PublicClassDetailModal`) và áp dụng viền màu nổi bật (highlight).
-  - Khi lớp học không còn hiệu lực (đã khóa, dừng tuyển, đã bắt đầu học hoặc đủ học viên): Backend trả về 404, frontend hiển thị thông báo dịu mắt "Lớp học này hiện không còn nhận học viên hoặc liên kết đã hết hiệu lực".
-- **Kiểm soát hiệu lực liên kết Bài viết**:
-  - Khi mở liên kết bài viết hợp lệ: Bảng tin cộng đồng tự động tìm kiếm, cuộn mượt (smooth scroll) đến bài viết và kích hoạt hiệu ứng viền sáng tím nổi bật. Nếu bài viết không nằm ở trang đầu feed, hệ thống tự động tải chi tiết bài viết đó và chèn lên đầu trang.
-  - Khi bài viết bị xóa hoặc ẩn (`status === HIDDEN`): Backend trả về 404, frontend hiển thị thông báo liên kết bài viết không còn hiệu lực.
+- **Liên kết chia sẻ (Share Link)**:
+  - Liên kết được tạo mới dùng UUID: bài viết `/share/posts/{publicShareId}`, lớp học `/share/classes/{publicShareId}`; không dùng khóa chính số trong URL chia sẻ.
+  - Người dùng có thể sao chép URL hoặc gửi danh thiếp trực tiếp vào cuộc trò chuyện Student-Tutor đã tồn tại.
+- **Hiệu lực chia sẻ Lớp học**:
+  - Endpoint UUID chỉ trả lớp đang `PUBLISHED`; lớp `PRIVATE`, `LOCKED`, `CLOSED`, `CANCELLED` hoặc trạng thái khác được xem là không khả dụng.
+  - Lớp đủ sĩ số vẫn được xem thông tin công khai, nhưng thao tác đăng ký phải tuân theo sức chứa, thời gian và vòng đời hiện tại.
+  - Meeting link và join key không được trả từ endpoint đọc danh thiếp công khai. Với lớp `INVITE_KEY`, Tutor có thể gửi mã mời dưới dạng caption riêng trong tin nhắn.
+- **Hiệu lực chia sẻ Bài viết**:
+  - Bài hợp lệ mở lại bằng `CommunityFeedPage`/`PostCard`; bài bị xóa hoặc `HIDDEN` trả 404 và danh thiếp chuyển sang không khả dụng.
 - **Tìm kiếm và sắp xếp Bảng tin cộng đồng**:
   - Loại bỏ các dropdown lọc môn học và hình thức tĩnh trên giao diện Bảng tin do danh mục môn học cố định không khớp với danh mục thực tế.
   - Thay thế bằng thanh tìm kiếm từ khóa (`keyword`) duy nhất: Backend tự động so khớp đa chiều qua tiêu đề, nội dung bài viết, tên tác giả, cấp học, tên môn học (`subject.name`) và tên lớp học liên kết (`linkedClass.name`).
   - Mặc định luôn sắp xếp bài đăng mới nhất theo thời gian (`createdAt DESC`), đảm bảo bài viết vừa đăng luôn xuất hiện đầu tiên trên bảng tin.
+
+### Structured Share Cards (2026-10-10)
+
+- Class and Community Post share URLs use a stable, opaque `publicShareId` UUID. Internal numeric primary keys remain database implementation details and are not used in newly generated share URLs.
+- Human chat stores a logical reference (`resourceType`, `publicShareId`) rather than copying class/post business data into Notification Service.
+- Learning Service is the source of truth whenever a share card is sent, loaded or opened. A non-public class or hidden/deleted post renders as unavailable and cannot be opened.
+- A `PUBLISHED` class remains viewable when full so students can inspect its public details; enrollment controls are disabled according to current capacity and lifecycle rules.
+- Opening a class card reuses `ClassMarketplacePage` and `PublicClassDetailModal`. Opening a post card reuses `CommunityFeedPage` and `PostCard`.
 
 ## 11. 1-Way Tutor Follow & Personalized Priority Feed
 

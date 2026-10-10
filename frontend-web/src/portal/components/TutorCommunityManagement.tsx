@@ -34,10 +34,11 @@ import {
 } from 'lucide-react';
 import communityApi from '../../api/community';
 import { useAuth } from '../../hooks/useAuth';
-import { buildCommunityPostShareUrl, copyToClipboard } from '../../utils/shareLinks';
+import { buildCommunityPostShareUrl } from '../../utils/shareLinks';
 import { useFeedback } from '../../components/feedback/useFeedback';
 import { CreatePostModal } from '../../components/community/CreatePostModal';
 import { ConvertPostToClassModal } from '../../components/community/ConvertPostToClassModal';
+import { ShareResourceDialog } from '../../components/sharing/ShareResourceDialog';
 import { CommunityFeedPage } from '../../pages/community/CommunityFeedPage';
 import { PollWeeklyCalendar } from '../../components/community/PollWeeklyCalendar';
 import PostLikesModal from '../../components/community/PostLikesModal';
@@ -55,7 +56,7 @@ export function TutorCommunityManagement({
 }: TutorCommunityManagementProps) {
   // Main Tabs: 'explore' (default) | 'mine'
   const [activeMainTab, setActiveMainTab] = useState<'explore' | 'mine'>(initialTab);
-  const { user } = useAuth();
+  const { user, authenticated } = useAuth();
   const feedback = useFeedback();
 
   // 'mine' tab state
@@ -67,6 +68,7 @@ export function TutorCommunityManagement({
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [likesModalPostId, setLikesModalPostId] = useState<number | null>(null);
+  const [sharePost, setSharePost] = useState<any | null>(null);
   const [replyingToMap, setReplyingToMap] = useState<Record<number, any>>({});
 
   // Follower count for tutor
@@ -754,14 +756,12 @@ export function TutorCommunityManagement({
                         {/* Share Link Button */}
                         <button
                           type="button"
-                          onClick={async () => {
-                            try {
-                              const shareUrl = buildCommunityPostShareUrl(post.id);
-                              await copyToClipboard(shareUrl);
-                              feedback.success('Đã sao chép liên kết bài viết vào bộ nhớ tạm!');
-                            } catch {
-                              feedback.error('Không thể sao chép liên kết bài viết.');
+                          onClick={() => {
+                            if (!post.publicShareId) {
+                              feedback.error('Bài viết chưa có mã chia sẻ. Vui lòng khởi động lại learning-service để cập nhật dữ liệu.');
+                              return;
                             }
+                            setSharePost(post);
                           }}
                           className="p-1.5 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
                           title="Chia sẻ liên kết bài viết"
@@ -995,6 +995,18 @@ export function TutorCommunityManagement({
         postId={likesModalPostId || 0}
         postTitle={posts.find(p => p.id === likesModalPostId)?.title}
       />
+
+      {sharePost?.publicShareId && (
+        <ShareResourceDialog
+          open
+          onClose={() => setSharePost(null)}
+          resourceType="COMMUNITY_POST"
+          publicShareId={sharePost.publicShareId}
+          title={sharePost.title || sharePost.content?.trim().slice(0, 80) || 'Bài viết cộng đồng'}
+          shareUrl={buildCommunityPostShareUrl(sharePost.publicShareId)}
+          authenticated={authenticated}
+        />
+      )}
     </div>
   );
 }

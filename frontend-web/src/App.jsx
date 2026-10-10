@@ -213,7 +213,9 @@ export default function App() {
             <Route path="/tutors/:id" element={<PublicTutorProfilePage />} />
             <Route path="/classes" element={<ClassMarketplacePage />} />
             <Route path="/classes/:classId" element={<ClassMarketplacePage />} />
+            <Route path="/share/classes/:publicShareId" element={<ClassMarketplacePage />} />
             <Route path="/community" element={<CommunityFeedPage />} />
+            <Route path="/share/posts/:publicShareId" element={<CommunityFeedPage />} />
             <Route path="/feed" element={<Navigate to="/community" replace />} />
 
             {/* Student */}

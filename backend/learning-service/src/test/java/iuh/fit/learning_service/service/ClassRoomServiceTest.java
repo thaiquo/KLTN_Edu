@@ -42,6 +42,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -343,6 +344,38 @@ class ClassRoomServiceTest {
     }
 
     @Test
+    void publicShareIdReturnsPublishedClassEvenWhenEnrollmentIsFull() {
+        UUID publicShareId = UUID.randomUUID();
+        ClassRoom classRoom = classRoom("tutor@example.com", ClassRoomStatus.PUBLISHED);
+        classRoom.setId(77L);
+        classRoom.setPublicShareId(publicShareId);
+        classRoom.setName("Math 10");
+        classRoom.setMaxStudents(1);
+        classRoom.setMeetingLink("https://meet.example/private-room");
+        when(classRoomRepository.findByPublicShareIdWithDetails(publicShareId)).thenReturn(Optional.of(classRoom));
+        when(enrollmentRequestRepository.countByClassRoomIdAndStatusIn(
+                77L, List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED)))
+                .thenReturn(1L);
+
+        var response = service.getPublicClassByShareId(publicShareId);
+
+        assertThat(response.publicShareId()).isEqualTo(publicShareId);
+        assertThat(response.availableSlots()).isZero();
+        assertThat(response.meetingLink()).isNull();
+        assertThat(response.joinKey()).isNull();
+    }
+
+    @Test
+    void publicShareIdRejectsNonPublishedClass() {
+        UUID publicShareId = UUID.randomUUID();
+        ClassRoom classRoom = classRoom("tutor@example.com", ClassRoomStatus.PRIVATE);
+        classRoom.setPublicShareId(publicShareId);
+        when(classRoomRepository.findByPublicShareIdWithDetails(publicShareId)).thenReturn(Optional.of(classRoom));
+
+        assertThrows(ResourceNotFoundException.class, () -> service.getPublicClassByShareId(publicShareId));
+    }
+
+    @Test
     void shareablePublicClassRejectsLockedClass() {
         ClassRoom classRoom = classRoom("tutor@example.com", ClassRoomStatus.LOCKED);
         classRoom.setId(77L);
@@ -420,6 +453,32 @@ class ClassRoomServiceTest {
 
         assertThat(response.tutorProfileId()).isEqualTo(88L);
         assertThat(registration.getTutorProfileId()).isEqualTo(88L);
+    }
+
+    @Test
+    void legacyRegistrationProfileIdIsRepairedFromCanonicalTutorProfile() {
+        TutorSubjectRegistration registration = registration();
+        registration.setTutorProfileId(32L);
+        TutorAuthorizationState state = new TutorAuthorizationState();
+        state.setUserId(99L);
+        state.setTutorProfileId(33L);
+        state.setStatus("APPROVED");
+        state.getTeachingModes().add(TeachingMode.ONLINE);
+
+        when(registrationRepository.findById(10L)).thenReturn(Optional.of(registration));
+        when(tutorIdentityLookup.tutorProfileId("tutor@example.com")).thenReturn(Optional.of(33L));
+        when(tutorAuthorizationStateRepository.findByTutorProfileId(33L)).thenReturn(Optional.of(state));
+        lenient().when(levelRepository.findById(20L)).thenReturn(Optional.of(registration.getLevels().get(0)));
+        lenient().when(availabilityRepository.findByTutorEmailIgnoreCaseOrderByDayOfWeekAscStartTimeAsc("tutor@example.com"))
+                .thenReturn(List.of(new TutorAvailability("tutor@example.com", 5, "00:00", "23:59")));
+        lenient().when(classRoomRepository.findByTutorEmailWithDetails("tutor@example.com")).thenReturn(List.of());
+        lenient().when(classRoomRepository.save(any(ClassRoom.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var response = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "18:00", "19:30", LocalDate.of(2026, 10, 1)));
+
+        assertThat(response.tutorProfileId()).isEqualTo(33L);
+        assertThat(registration.getTutorProfileId()).isEqualTo(33L);
+        verify(registrationRepository).save(registration);
     }
 
     @Test

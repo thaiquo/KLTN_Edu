@@ -17,6 +17,9 @@ class DevelopmentStaffSeedMigrationTest {
                 "tanthinh@gmail.com",
                 "quocthai@gmail.com",
                 "tanquoc@gmail.com",
+                "ngocquocthai.004@gmail.com",
+                "038705790",
+                "$2a$10$BSpVj1b63nwZFTVMRjtgKOOF/JtZimoOMaj1Iz2Hb/avpzuXLEmwW",
                 "role_row.role <> 'STAFF'",
                 "INSERT INTO user_roles (user_id, role)",
                 "'STAFF'"

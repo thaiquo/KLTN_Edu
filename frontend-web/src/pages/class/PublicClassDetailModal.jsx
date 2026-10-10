@@ -10,6 +10,7 @@ import { ContractDocumentModal } from '../../components/contract/ContractDocumen
 import { checkClassScheduleConflict } from '../../utils/scheduleUtils';
 import { buildClassShareUrl, copyToClipboard } from '../../utils/shareLinks';
 import { communityApi } from '../../api/community';
+import { ShareResourceDialog } from '../../components/sharing/ShareResourceDialog';
 
 const VIETNAMESE_DAYS = [
   { value: 2, label: 'T2' },
@@ -56,12 +57,17 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const feedback = useFeedback();
 
   const [copiedShare, setCopiedShare] = React.useState(false);
+  const [shareDialogOpen, setShareDialogOpen] = React.useState(false);
   const [followStatus, setFollowStatus] = React.useState({ isFollowed: false, followerCount: 0 });
   const [followLoading, setFollowLoading] = React.useState(false);
   const handleShareClass = async () => {
     if (!classRoom?.id) return;
+    if (classRoom.publicShareId) {
+      setShareDialogOpen(true);
+      return;
+    }
     try {
-      const shareUrl = buildClassShareUrl(classRoom.id);
+      const shareUrl = `${window.location.origin}/classes/${classRoom.id}`;
       await copyToClipboard(shareUrl);
       setCopiedShare(true);
       feedback.success('Đã sao chép liên kết lớp học vào bộ nhớ tạm!');
@@ -84,7 +90,7 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const enrollmentOpen = classRoom?.status === 'PUBLISHED'
     && classRoom?.terminationCutoffSession == null
     && classRoom?.startDate
-    && new Date(`${classRoom.startDate}T00:00:00`).getTime() > new Date().setHours(0, 0, 0, 0);
+    && new Date(`${classRoom.startDate}T00:00:00`).getTime() >= new Date().setHours(0, 0, 0, 0);
 
   React.useEffect(() => {
     if (user?.activeRole === 'STUDENT') {
@@ -823,6 +829,15 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
           }}
         />
       )}
+      <ShareResourceDialog
+        open={shareDialogOpen}
+        onClose={() => setShareDialogOpen(false)}
+        resourceType="CLASS"
+        publicShareId={classRoom.publicShareId}
+        title={classRoom.name}
+        shareUrl={classRoom.publicShareId ? buildClassShareUrl(classRoom.publicShareId) : `${window.location.origin}/classes/${classRoom.id}`}
+        authenticated={authenticated}
+      />
     </div>
   );
 }

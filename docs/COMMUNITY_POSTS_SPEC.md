@@ -2,7 +2,7 @@
 
 Follow/feed refinement note (2026-10-09): `tutorUserId` is the Tutor account user id, not `tutorProfileId`; Student can follow only an APPROVED Tutor projection in `TutorAuthorizationState`. The normal `/api/community/posts` feed remains public, but authenticated users with followed tutors get followed Tutor posts first and then `createdAt DESC`; `followingOnly=true` is the strict followed-tutor-only filter.
 
-> Ngày rà soát: **2026-10-05**  
+> Ngày rà soát: **2026-10-10**  
 > Trạng thái nguồn hiện tại: **COMMUNITY, SMART POLLING & TUTOR FOLLOW IMPLEMENTED**
 > Phân hệ phụ trách: `learning-service` sở hữu bài đăng, poll, vote, reaction, comment và liên kết `ClassRoom`; `notification-service` nhận sự kiện thông báo; `frontend-web` hiển thị và thao tác bảng tin; `ai-service` để sau.
 
@@ -12,7 +12,7 @@ Tài liệu này đã được đồng bộ với code thật. Mọi endpoint, p
 
 ### Đã có trong code (Phase 1 & Phase 2)
 
-- Compact migrations: `V8` tạo schema Community cuối cùng và `V9` tạo bảng `tutor_follows` hỗ trợ theo dõi 1 chiều Học viên -> Gia sư.
+- Compact migrations: `V8` tạo schema Community, `V9` tạo bảng `tutor_follows`, `V10` chuẩn hóa tham chiếu Tutor profile và `V11` bổ sung `public_share_id` UUID cho lớp/bài viết.
 - Backend entities/repositories: `CommunityPost`, `PostPoll`, `PostPollOption`, `PostPollVote`, `PostInteraction`, `TutorFollow` và repository tương ứng.
 - Backend controller: `CommunityPostController` với base path thật là **`/api/community`**.
 - Backend service: `CommunityPostService` & `TutorFollowService` đã hỗ trợ:
@@ -56,9 +56,9 @@ AI Matching và chatbot đã thuộc `ai-service`; Community feed hiện chỉ d
 
 - `learning-service` là chủ sở hữu dữ liệu Community Post/Poll/Vote/Interaction và liên kết lớp học.
 - `learning-service` vẫn là chủ sở hữu `ClassRoom`; convert-to-class phải tái sử dụng rule tạo lớp hiện có, không tạo domain lớp học trùng ở service khác.
-- `notification-service` chỉ nhận event/thông điệp đã được learning-service quyết định, rồi persist Bell notification và đẩy WebSocket.
+- `notification-service` nhận event đã được learning-service quyết định để persist Bell/WebSocket; riêng danh thiếp chat, service gọi endpoint public-safe của Learning để xác thực UUID trước khi lưu tham chiếu.
 - `frontend-web` chỉ gọi REST API; không tự dựng trạng thái lớp học giả sau khi convert.
-- `ai-service` chưa có implementation matching/RAG/vector cho community feed.
+- `ai-service` đã có matching/RAG/vector cho các luồng AI riêng, nhưng Community feed hiện không dùng semantic ranking; feed chỉ ưu tiên theo Tutor Follow xác định.
 
 ## 4. Database hiện có
 
@@ -107,14 +107,17 @@ Không dùng `/api/learning/community/...` cho frontend hiện tại trừ khi c
 
 - **Sắp xếp mặc định**: Mặc định luôn sắp xếp bài đăng mới nhất theo thời gian (`createdAt DESC`), đảm bảo bài vừa đăng hiển thị ngay trên đầu bảng tin.
 - **Tìm kiếm từ khóa (`keyword`)**: Loại bỏ các dropdown lọc môn/hình thức tĩnh bị lệch danh mục; thay bằng thanh tìm kiếm từ khóa duy nhất. Backend `searchPosts` tự động match đa chiều qua: `title`, `content`, `authorName`, `educationLevel`, tên môn học `subject.name` và tên lớp gắn kèm `linkedClass.name`.
-- **Liên kết chia sẻ Bài viết (`/community?postId={id}#post-{id}`)**:
-  - Khi người nhận mở liên kết, hệ thống tự động tìm và cuộn mượt (smooth scroll) đến bài viết kèm hiệu ứng highlight nhận diện.
-  - Nếu bài viết không nằm ở trang 1 của feed, tự động gọi `getPostDetail(postId)` để chèn lên đầu bảng tin.
-  - Nếu bài viết đã bị xóa hoặc ẩn (`status === HIDDEN`), backend trả về 404, frontend hiển thị thông báo dịu mắt liên kết không còn hiệu lực.
-- **Liên kết chia sẻ Lớp học (`/classes/{id}`)**:
-  - Dùng endpoint riêng `GET /api/learning/public/classes/{id}/share` kiểm tra điều kiện lớp còn tuyển sinh: `status === PUBLISHED`, chưa quá ngày khai giảng (`startDate >= today`), chưa cutoff thanh lý và còn chỗ trống (`acceptedStudents < maxStudents`).
-  - Khi mở link hợp lệ: Tự động mở Modal chi tiết lớp học (`PublicClassDetailModal`) và highlight thẻ lớp trên marketplace.
-  - Nếu lớp đã khóa, dừng tuyển hoặc đủ sĩ số: Backend trả về 404, frontend thông báo lớp học không còn nhận học viên.
+- **Chia sẻ Bài viết (`/share/posts/{publicShareId}`)**:
+  - URL mới dùng UUID ổn định, không đưa khóa chính số vào liên kết được tạo mới.
+  - `GET /api/community/posts/shared/{publicShareId}` tải trạng thái hiện tại; bài `HIDDEN` hoặc đã xóa trả 404.
+  - Khi hợp lệ, frontend tái sử dụng `CommunityFeedPage` và `PostCard`, cuộn/highlight đúng bài.
+- **Chia sẻ Lớp học (`/share/classes/{publicShareId}`)**:
+  - `GET /api/learning/public/classes/shared/{publicShareId}` chỉ trả lớp `PUBLISHED` và không lộ meeting link/join key.
+  - Lớp đã đủ chỗ vẫn xem được chi tiết công khai; quyền đăng ký được quyết định riêng theo sức chứa và vòng đời lớp.
+  - Khi hợp lệ, frontend tái sử dụng `ClassMarketplacePage` và `PublicClassDetailModal`.
+- **Danh thiếp trong chat**:
+  - Notification Service lưu `resourceType`, `publicShareId` và caption tùy chọn, không snapshot dữ liệu lớp/bài viết.
+  - Trước khi gửi và khi hiển thị/mở, trạng thái được đối chiếu lại với Learning Service; tài nguyên không còn công khai hiển thị là không khả dụng.
 - **Xem danh sách người thích bài viết**: Tác giả Gia sư và người xem có thể bấm trực tiếp vào số lượt thích trên bài viết hoặc tab quản lý bài đăng để mở popup `PostLikesModal` xem chi tiết danh sách tài khoản đã thả tim.
 
 ## 6. Phase 2 implementation đã chốt
@@ -131,8 +134,8 @@ Không dùng `/api/learning/community/...` cho frontend hiện tại trừ khi c
 
 ## 7. Kiểm chứng bắt buộc
 
-- Chạy full test của `learning-service` và `notification-service`.
-- Chạy production build của `frontend-web`.
+- Full test 2026-10-10: `learning-service` 201 PASS; `notification-service` 74 PASS.
+- Frontend `npx tsc --noEmit` PASS và production build PASS.
 - Khi kiểm thử runtime, RabbitMQ và cả hai service phải chạy phiên bản source mới.
 
 ## 8. Không làm trong scope này

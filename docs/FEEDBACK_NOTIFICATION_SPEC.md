@@ -21,7 +21,7 @@ This spec covers:
 - TanStack Query invalidation.
 - Current and future event behavior.
 
-This spec is documentation only. Current source includes persistent Notification/Bell APIs, limited notification WebSocket delivery, a persisted Chat REST/WebSocket backend, and Web Messages integration for Student/Tutor chat. Entries marked `PLANNED` remain future requirements only.
+This spec is documentation only. Current source includes persistent Notification/Bell APIs, limited notification WebSocket delivery, a persisted Chat REST/WebSocket backend, media attachments, structured Class/Post share cards, and Web Messages integration for Student/Tutor chat. Entries marked `PLANNED` remain future requirements only.
 
 ## 2. Status Model
 
@@ -66,8 +66,8 @@ Do not replace REST with WebSocket. WebSocket is delivery, not source of truth.
 | Student Bell | `frontend-web/src/components/home/HomeHeader.jsx` | `IMPLEMENTED` | Uses shared REST Bell dropdown with real unread count, latest notifications, read state, mark-one-read, and mark-all-read. |
 | Portal Bell | `frontend-web/src/portal/components/Header.tsx` | `IMPLEMENTED` | Uses shared REST Bell dropdown for Tutor/Staff/Admin with the same account-wide notification source. |
 | Notification service | `backend/notification-service` | `PARTIAL` | Backend persistence, REST read/unread API, JWT-cookie security, RabbitMQ consumers, event idempotency, and raw WebSocket delivery exist for a limited event slice. |
-| Chat backend | `backend/notification-service` | `IMPLEMENTED` | Conversation/message persistence, participant checks, read marking, REST and `/ws/chat` exist. |
-| Chat Web UI | `frontend-web/src/portal/components/MessagesView.tsx` | `IMPLEMENTED` | Loads real conversations/history for Student `/messages` and Tutor Portal `messages`, sends text plus grouped image or one-video messages, marks read state, consumes `/ws/chat` metadata frames through the Gateway, suppresses chat Bell notifications while Messages is active through chat-view context, and does not send binary data over WebSocket. |
+| Chat backend | `backend/notification-service` | `IMPLEMENTED` | Conversation/message persistence, participant checks, read marking, text/media/structured-resource messages, REST and `/ws/chat` exist. Structured resources are validated against Learning before persistence. |
+| Chat Web UI | `frontend-web/src/portal/components/MessagesView.tsx` | `IMPLEMENTED` | Loads real conversations/history for Student `/messages` and Tutor Portal `messages`, sends text, grouped images, one video or a Class/Post card, marks read state, consumes `/ws/chat` metadata frames, suppresses chat Bell notifications while Messages is active, and resolves share-card content dynamically from Learning. |
 | TutorApplication cache | `frontend-web/src/hooks/useTutorApplication.js` | `IMPLEMENTED` | TanStack Query key `["tutorApplication", "me"]`. |
 
 Future frontend code must not create browser `alert()`, browser `confirm()`, or arbitrary local toast systems for normal action feedback. Use `useFeedback()` unless a business-input modal is required.
@@ -294,7 +294,7 @@ These are target events derived from current project scope and docs. They are no
 | Contract | Sign contract | `PARTIAL` | `FINANCIAL_CRITICAL` when tied to payment | Yes | Important Success Modal after authoritative state | Blocking error/toast | Yes | Required when implemented |
 | Contract | Request/review/force termination | `IMPLEMENTED` | `FINANCIAL_CRITICAL` | Yes for party request and Admin approval | Case status/progress UI | Blocking case error/toast | Durable delivery for affected parties and reviewers | Party notifications realtime; reviewer queue polls REST |
 | Payment | Fund escrow | `PARTIAL` | `FINANCIAL_CRITICAL` | Yes | Progress UI, then Important Success Modal after confirmation | Blocking error/toast | Yes after confirmation | Required after confirmation |
-| Messaging | Send message | `PARTIAL` | `NORMAL_WRITE` | No | Local send state | Inline/toast | Optional Bell summary | Backend realtime implemented; Web integration pending |
+| Messaging | Send text/media/resource message | `IMPLEMENTED` Web | `NORMAL_WRITE` | No | Local send state | Inline/toast | Bell summary outside active Messages | REST/WebSocket Web integration implemented; mobile pending |
 | AI Matching | Generate matching | `PLANNED` | `IMPORTANT_WRITE` for long-running generation | Optional | Toast or result-ready state | Toast/inline | Optional | Recommended only for long-running jobs |
 
 ## 15. Notification Event Matrix
@@ -456,7 +456,7 @@ Do not treat wallet signature, transaction hash creation, or frontend optimistic
 
 ## 21. Messaging Rules
 
-Messaging backend persistence/API is implemented in Notification Service. It stores conversations/messages, checks participants, marks received messages read, stores chat image/video bytes in private S3 with PostgreSQL metadata, supports one `IMAGE` message with 1-5 images or one `VIDEO` message with exactly one video, and pushes `NEW_MESSAGE` metadata on `/ws/chat`. Grouped image messages count as one chat message/read-unread item and one Bell notification when the recipient is outside Messages. Web Messages loads/sends through this backend for Student `/messages` and Tutor Portal `messages`; Tutor Marketplace/Public Tutor Profile can create or reuse direct conversations and deep-link into Messages. Mobile remains pending.
+Messaging backend persistence/API is implemented in Notification Service. It stores conversations/messages, checks participants, marks received messages read, stores chat image/video bytes in private S3 with PostgreSQL metadata, supports one `IMAGE` message with 1-5 images, one `VIDEO` message with exactly one video, or one `SHARED_RESOURCE` reference to a Class/Community Post UUID, and pushes `NEW_MESSAGE` metadata on `/ws/chat`. A shared-resource send is accepted only after Learning confirms the resource is currently public; rendering/opening resolves current data again so revoked content becomes unavailable. Grouped image and structured-resource messages each count as one chat message/read-unread item and one Bell notification when the recipient is outside Messages. Web Messages loads/sends through this backend for Student `/messages` and Tutor Portal `messages`; Tutor Marketplace/Public Tutor Profile can create or reuse direct conversations and deep-link into Messages. Mobile remains pending.
 
 Future message send flow:
 

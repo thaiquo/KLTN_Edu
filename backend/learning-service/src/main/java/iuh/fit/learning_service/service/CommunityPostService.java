@@ -214,6 +214,13 @@ public class CommunityPostService {
         return mapToSummaryDto(post, currentUserId);
     }
 
+    public PostSummaryDto getSharedPost(UUID publicShareId, Long currentUserId) {
+        CommunityPost post = postRepository.findByPublicShareId(publicShareId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shared community post not found"));
+        ensurePostVisible(post);
+        return mapToSummaryDto(post, currentUserId);
+    }
+
     public PostSummaryDto createPost(CreatePostRequest request, LearningUserPrincipal principal, String fullName, String avatar) {
         if (principal == null || principal.userId() == null) {
             throw new BadRequestException("Vui lòng đăng nhập để tạo bài viết");
@@ -1912,6 +1919,7 @@ public class CommunityPostService {
 
         return PostSummaryDto.builder()
                 .id(post.getId())
+                .publicShareId(post.getPublicShareId())
                 .authorId(post.getAuthorId())
                 .authorRole(post.getAuthorRole())
                 .authorName(post.getAuthorName())

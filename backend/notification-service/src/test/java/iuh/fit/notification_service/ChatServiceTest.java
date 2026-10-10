@@ -2,12 +2,15 @@ package iuh.fit.notification_service;
 
 import iuh.fit.notification_service.client.AccountChatIdentityClient;
 import iuh.fit.notification_service.client.AccountChatIdentityClient.ChatIdentity;
+import iuh.fit.notification_service.client.LearningSharedResourceClient;
 import iuh.fit.notification_service.config.security.NotificationPrincipal;
 import iuh.fit.notification_service.dto.SendMessageRequest;
+import iuh.fit.notification_service.dto.SendSharedResourceRequest;
 import iuh.fit.notification_service.dto.StartDirectConversationRequest;
 import iuh.fit.notification_service.entity.ChatMessage;
 import iuh.fit.notification_service.entity.ChatMessageType;
 import iuh.fit.notification_service.entity.Conversation;
+import iuh.fit.notification_service.entity.SharedResourceType;
 import iuh.fit.notification_service.realtime.ChatWebSocketHandler;
 import iuh.fit.notification_service.repository.ChatMessageRepository;
 import iuh.fit.notification_service.repository.ConversationRepository;
@@ -45,6 +48,7 @@ class ChatServiceTest {
     private ChatAttachmentStorage attachmentStorage;
     private ChatAttachmentPolicy attachmentPolicy;
     private ChatNotificationService chatNotificationService;
+    private LearningSharedResourceClient sharedResourceClient;
     private ChatService chatService;
 
     @BeforeEach
@@ -60,8 +64,9 @@ class ChatServiceTest {
                 40L * 1024L * 1024L
         ));
         chatNotificationService = mock(ChatNotificationService.class);
+        sharedResourceClient = mock(LearningSharedResourceClient.class);
         chatService = new ChatService(conversationRepository, messageRepository, chatWebSocketHandler, accountClient,
-                attachmentStorage, attachmentPolicy, chatNotificationService);
+                attachmentStorage, attachmentPolicy, chatNotificationService, sharedResourceClient);
     }
 
     @Test
@@ -175,6 +180,32 @@ class ChatServiceTest {
         assertThat(result.getContent()).isEqualTo("Xin chao");
         verify(chatWebSocketHandler).pushChatMessage(any());
         verify(chatNotificationService).publishAfterCommit(any(ChatMessage.class), eq("Student 1"), eq("TUTOR"));
+    }
+
+    @Test
+    void participantCanSendValidatedSharedClassCard() {
+        var conversation = conversation(1L, "student@test.com", 2L, "tutor@test.com");
+        UUID publicShareId = UUID.randomUUID();
+        when(conversationRepository.findById(conversation.getId())).thenReturn(Optional.of(conversation));
+        when(accountClient.getIdentity(1L)).thenReturn(studentIdentity(1L));
+        when(accountClient.getIdentity(2L)).thenReturn(approvedTutorIdentity(2L));
+        when(messageRepository.save(any(ChatMessage.class))).thenAnswer(invocation -> {
+            ChatMessage message = invocation.getArgument(0);
+            message.setId(UUID.randomUUID());
+            message.setCreatedAt(OffsetDateTime.now());
+            return message;
+        });
+
+        var result = chatService.sendSharedResource(
+                principal(1L, "student@test.com", "STUDENT"),
+                conversation.getId(),
+                new SendSharedResourceRequest(SharedResourceType.CLASS, publicShareId, "Lớp này phù hợp với bạn"));
+
+        assertThat(result.getType()).isEqualTo("SHARED_RESOURCE");
+        assertThat(result.getSharedResourceType()).isEqualTo("CLASS");
+        assertThat(result.getSharedResourcePublicId()).isEqualTo(publicShareId);
+        verify(sharedResourceClient).requireAvailable(SharedResourceType.CLASS, publicShareId);
+        verify(chatWebSocketHandler).pushChatMessage(any());
     }
 
     @Test

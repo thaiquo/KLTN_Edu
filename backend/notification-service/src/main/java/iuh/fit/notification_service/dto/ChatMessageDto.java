@@ -20,6 +20,8 @@ public class ChatMessageDto {
     private String recipientEmail;
     private String type;
     private String content;
+    private String sharedResourceType;
+    private UUID sharedResourcePublicId;
     private List<ChatAttachmentDto> attachments;
     private boolean isRead;
     private OffsetDateTime createdAt;

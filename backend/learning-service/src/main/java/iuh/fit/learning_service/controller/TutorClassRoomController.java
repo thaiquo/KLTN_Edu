@@ -35,6 +35,11 @@ public class TutorClassRoomController {
         return service.getMyClassStats(authentication.getName());
     }
 
+    @GetMapping("/readiness")
+    public ClassRoomDtos.TutorClassReadinessResponse getCreateReadiness(Authentication authentication) {
+        return service.getTutorClassReadiness(authentication.getName());
+    }
+
     @GetMapping("/{id}")
     public ClassRoomDtos.ClassRoomResponse getClassById(
             Authentication authentication,

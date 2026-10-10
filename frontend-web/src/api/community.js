@@ -18,6 +18,7 @@ export const communityApi = {
   },
 
   getPostDetail: (id) => apiRequest(`/api/community/posts/${id}`),
+  getSharedPost: (publicShareId) => apiRequest(`/api/community/posts/shared/${publicShareId}`),
 
   /**
    * @param {{ status?: string, page?: number, size?: number }} [params]

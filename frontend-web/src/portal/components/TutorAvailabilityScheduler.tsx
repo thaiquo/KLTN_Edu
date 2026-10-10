@@ -139,7 +139,7 @@ function toIsoDate(date: Date): string {
 function computeNetFreeIntervals(rawSlots: AvailabilitySlot[], occupiedSlots: OccupiedClassSlot[]): NetFreeSegment[] {
   const result: NetFreeSegment[] = [];
 
-  for (const raw of rawSlots) {
+  for (const [rawIndex, raw] of rawSlots.entries()) {
     const dayOccupied = occupiedSlots
       .filter(o => o.dayOfWeek === raw.dayOfWeek)
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -158,7 +158,7 @@ function computeNetFreeIntervals(rawSlots: AvailabilitySlot[], occupiedSlots: Oc
         const segEnd = Math.min(occStart, winEnd);
         if (segEnd > curr) {
           result.push({
-            id: `net-${raw.dayOfWeek}-${curr}-${segEnd}`,
+            id: `net-${raw.dayOfWeek}-${rawIndex}-${curr}-${segEnd}`,
             dayOfWeek: raw.dayOfWeek,
             startTime: minutesToTime(curr),
             endTime: minutesToTime(segEnd),
@@ -171,7 +171,7 @@ function computeNetFreeIntervals(rawSlots: AvailabilitySlot[], occupiedSlots: Oc
 
     if (curr < winEnd) {
       result.push({
-        id: `net-${raw.dayOfWeek}-${curr}-${winEnd}`,
+        id: `net-${raw.dayOfWeek}-${rawIndex}-${curr}-${winEnd}`,
         dayOfWeek: raw.dayOfWeek,
         startTime: minutesToTime(curr),
         endTime: minutesToTime(winEnd),

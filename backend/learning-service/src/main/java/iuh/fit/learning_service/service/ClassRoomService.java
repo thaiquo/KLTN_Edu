@@ -122,6 +122,35 @@ public class ClassRoomService {
     }
 
     @Transactional(readOnly = true)
+    public ClassRoomDtos.TutorClassReadinessResponse getTutorClassReadiness(String tutorEmail) {
+        Long tutorProfileId = tutorIdentityLookup.tutorProfileId(tutorEmail).orElse(null);
+        if (tutorProfileId == null) {
+            return new ClassRoomDtos.TutorClassReadinessResponse(
+                    false, "Hồ sơ gia sư chưa được tạo hoặc chưa đồng bộ.", 0, List.of());
+        }
+
+        TutorAuthorizationState state = tutorAuthorizationStateRepository.findByTutorProfileId(tutorProfileId).orElse(null);
+        if (state == null || !"APPROVED".equalsIgnoreCase(state.getStatus())) {
+            return new ClassRoomDtos.TutorClassReadinessResponse(
+                    false, "Hồ sơ gia sư chưa được Admin phê duyệt.", 0, List.of());
+        }
+
+        long approvedRegistrations = registrationRepository.findByTutorEmailIgnoreCaseOrderByCreatedAtDesc(tutorEmail).stream()
+                .filter(registration -> registration.getStatus() == TutorSubjectRegistrationStatus.APPROVED)
+                .count();
+        List<TeachingMode> modes = state.getTeachingModes() == null || state.getTeachingModes().isEmpty()
+                ? List.of(TeachingMode.ONLINE, TeachingMode.OFFLINE)
+                : new ArrayList<>(state.getTeachingModes());
+        List<String> modeNames = modes.stream().map(Enum::name).toList();
+        if (approvedRegistrations == 0) {
+            return new ClassRoomDtos.TutorClassReadinessResponse(
+                    false, "Chưa có môn/cấp độ giảng dạy được Admin duyệt.", 0, modeNames);
+        }
+        return new ClassRoomDtos.TutorClassReadinessResponse(
+                true, "Hồ sơ đủ điều kiện tạo lớp.", approvedRegistrations, modeNames);
+    }
+
+    @Transactional(readOnly = true)
     public List<ClassRoomDtos.ClassRoomResponse> getMyEnrolledClasses(String studentEmail) {
         List<EnrollmentRequest> requests = enrollmentRequestRepository.findByStudentEmailWithDetails(studentEmail);
         List<Long> classIds = requests.stream()
@@ -934,6 +963,16 @@ public class ClassRoomService {
         return toResponse(classRoom, false);
     }
 
+    @Transactional(readOnly = true)
+    public ClassRoomDtos.ClassRoomResponse getPublicClassByShareId(UUID publicShareId) {
+        ClassRoom classRoom = classRoomRepository.findByPublicShareIdWithDetails(publicShareId)
+                .orElseThrow(() -> new ResourceNotFoundException("Shared classroom not found"));
+        if (classRoom.getStatus() != ClassRoomStatus.PUBLISHED) {
+            throw new ResourceNotFoundException("Classroom is no longer public");
+        }
+        return toResponse(classRoom, false);
+    }
+
     private boolean isAcceptingPublicShareLink(ClassRoom classRoom) {
         if (classRoom == null || classRoom.getId() == null) return false;
         if (classRoom.getStatus() != ClassRoomStatus.PUBLISHED) return false;
@@ -1055,11 +1094,14 @@ public class ClassRoomService {
 
     private Long resolveTutorProfileId(TutorSubjectRegistration registration, String tutorEmail) {
         Long tutorProfileId = registration.getTutorProfileId();
-        if (tutorProfileId == null) {
-            java.util.Optional<Long> resolvedProfileId = tutorIdentityLookup.tutorProfileId(tutorEmail);
-            if (resolvedProfileId != null && resolvedProfileId.isPresent()) {
-                tutorProfileId = resolvedProfileId.get();
+        java.util.Optional<Long> resolvedProfileId = tutorIdentityLookup.tutorProfileId(tutorEmail);
+        if (resolvedProfileId != null && resolvedProfileId.isPresent()) {
+            // The registration may contain a legacy Tutor.id. Always prefer the
+            // canonical TutorProfile.id used by authorization and public APIs.
+            tutorProfileId = resolvedProfileId.get();
+            if (!tutorProfileId.equals(registration.getTutorProfileId())) {
                 registration.setTutorProfileId(tutorProfileId);
+                registrationRepository.save(registration);
             }
         }
         if (tutorProfileId == null) {
@@ -1139,6 +1181,7 @@ public class ClassRoomService {
                 .toList();
         return new ClassRoomDtos.PublicClassCardResponse(
                 response.id(),
+                response.publicShareId(),
                 response.tutorSubjectRegistrationId(),
                 response.registration(),
                 response.level(),
@@ -1272,6 +1315,7 @@ public class ClassRoomService {
 
         return new ClassRoomDtos.ClassRoomResponse(
                 c.getId(),
+                c.getPublicShareId(),
                 c.getTutorSubjectRegistration() != null ? c.getTutorSubjectRegistration().getId() : null,
                 regBrief,
                 levelBrief,

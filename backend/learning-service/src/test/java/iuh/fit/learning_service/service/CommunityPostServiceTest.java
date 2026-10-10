@@ -34,6 +34,7 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -946,6 +947,29 @@ class CommunityPostServiceTest {
         verify(postRepository).incrementViewCount(1L);
         verify(postRepository, never()).findById(1L);
         verify(postRepository, never()).save(any());
+    }
+
+    @Test
+    void sharedPostResolvesByPublicIdAndRejectsHiddenContent() {
+        UUID publicShareId = UUID.randomUUID();
+        CommunityPost visible = new CommunityPost();
+        visible.setId(20L);
+        visible.setPublicShareId(publicShareId);
+        visible.setAuthorId(101L);
+        visible.setAuthorRole("TUTOR");
+        visible.setAuthorName("Tutor A");
+        visible.setTitle("Public post");
+        visible.setContent("Content");
+        visible.setPostType(PostType.TUTOR_ANNOUNCEMENT);
+        visible.setStatus(PostStatus.OPEN);
+        when(postRepository.findByPublicShareId(publicShareId)).thenReturn(Optional.of(visible));
+
+        PostSummaryDto result = postService.getSharedPost(publicShareId, null);
+
+        assertThat(result.getPublicShareId()).isEqualTo(publicShareId);
+
+        visible.setStatus(PostStatus.HIDDEN);
+        assertThrows(ResourceNotFoundException.class, () -> postService.getSharedPost(publicShareId, null));
     }
 
     @Test

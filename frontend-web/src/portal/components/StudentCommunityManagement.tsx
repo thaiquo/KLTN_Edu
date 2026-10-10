@@ -318,7 +318,7 @@ export function StudentCommunityManagement({
             <h1 className="text-xl md:text-2xl font-black text-brand-text">Bảng tin & Kết nối Cộng đồng</h1>
           </div>
           <p className="text-xs text-brand-text-variant mt-1">
-            Khám phá bài đăng của gia sư, tham gia khảo sát mở lớp hoặc quản lý các bài tìm gia sư/học nhóm của bạn.
+            Khám phá bài đăng của gia sư, tham gia khảo sát mở lớp hoặc quản lý các bài tìm gia sư của bạn.
           </p>
         </div>
 
@@ -525,7 +525,7 @@ export function StudentCommunityManagement({
               </div>
               <h3 className="text-base font-bold text-slate-800">Chưa có bài đăng nào</h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 mb-5">
-                Hãy đăng bài tìm gia sư hoặc tìm bạn học nhóm để kết nối với các gia sư và bạn học trên EduConnect.
+                Hãy đăng bài tìm gia sư để kết nối với các gia sư phù hợp trên EduConnect.
               </p>
               <button
                 type="button"
@@ -542,8 +542,7 @@ export function StudentCommunityManagement({
           ) : (
             <div className="space-y-5">
               {filteredPosts.map(post => {
-                const isFindTutor = post.postType === 'STUDENT_FIND_TUTOR';
-                const isGroupStudy = post.postType === 'STUDENT_GROUP_STUDY';
+                const isFindTutor = post.postType === 'STUDENT_FIND_TUTOR' || post.postType === 'STUDENT_GROUP_STUDY';
                 const isExpanded = expandedCommentsPostId === post.id;
                 const comments = commentsMap[post.id] || [];
 
@@ -560,12 +559,6 @@ export function StudentCommunityManagement({
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
                               <Target className="w-3.5 h-3.5" />
                               Tìm gia sư
-                            </span>
-                          )}
-                          {isGroupStudy && (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-50 text-purple-700 border border-purple-200">
-                              <Users className="w-3.5 h-3.5" />
-                              Tìm bạn học nhóm
                             </span>
                           )}
 

@@ -65,6 +65,8 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         messagePayload.put("senderUserId", message.getSenderId());
         messagePayload.put("type", message.getType());
         messagePayload.put("content", message.getContent());
+        messagePayload.put("sharedResourceType", message.getSharedResourceType());
+        messagePayload.put("sharedResourcePublicId", message.getSharedResourcePublicId());
         messagePayload.put("attachments", message.getAttachments());
         messagePayload.put("createdAt", message.getCreatedAt());
         messagePayload.put("read", message.isRead());

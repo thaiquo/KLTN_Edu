@@ -6,6 +6,7 @@ import iuh.fit.notification_service.dto.ChatMessageDto;
 import iuh.fit.notification_service.dto.ConversationDto;
 import iuh.fit.notification_service.dto.MarkReadResponse;
 import iuh.fit.notification_service.dto.SendMessageRequest;
+import iuh.fit.notification_service.dto.SendSharedResourceRequest;
 import iuh.fit.notification_service.dto.StartDirectConversationRequest;
 import iuh.fit.notification_service.service.ChatService;
 import jakarta.validation.Valid;
@@ -56,6 +57,14 @@ public class ChatController {
             @AuthenticationPrincipal NotificationPrincipal principal,
             @Valid @RequestBody SendMessageRequest request) {
         return ResponseEntity.ok(chatService.sendMessage(principal, request));
+    }
+
+    @PostMapping("/conversations/{id}/shared-resources")
+    public ResponseEntity<ChatMessageDto> sendSharedResource(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal NotificationPrincipal principal,
+            @Valid @RequestBody SendSharedResourceRequest request) {
+        return ResponseEntity.ok(chatService.sendSharedResource(principal, id, request));
     }
 
     @PostMapping("/conversations/{id}/attachments")

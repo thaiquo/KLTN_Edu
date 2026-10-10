@@ -7,6 +7,7 @@ export const classApi = {
     return apiRequest(`/api/learning/tutor/classes${params}`);
   },
   getMyClassStats: () => apiRequest('/api/learning/tutor/classes/stats'),
+  getCreateReadiness: () => apiRequest('/api/learning/tutor/classes/readiness'),
   getClassById: (id) => apiRequest(`/api/learning/tutor/classes/${id}`),
   createClass: (payload) => apiRequest('/api/learning/tutor/classes', {
     method: 'POST',
@@ -83,6 +84,7 @@ export const classApi = {
   },
   getPublicClassById: (id) => apiRequest(`/api/learning/public/classes/${id}`),
   getShareableClassById: (id) => apiRequest(`/api/learning/public/classes/${id}/share`),
+  getPublicClassByShareId: (publicShareId) => apiRequest(`/api/learning/public/classes/shared/${publicShareId}`),
   verifyJoinKey: (id, joinKey) => apiRequest(`/api/learning/public/classes/${id}/verify-key`, {
     method: 'POST',
     body: JSON.stringify({ joinKey })

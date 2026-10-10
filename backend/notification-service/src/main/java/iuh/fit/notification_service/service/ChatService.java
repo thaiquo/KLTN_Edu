@@ -2,6 +2,7 @@ package iuh.fit.notification_service.service;
 
 import iuh.fit.notification_service.client.AccountChatIdentityClient;
 import iuh.fit.notification_service.client.AccountChatIdentityClient.ChatIdentity;
+import iuh.fit.notification_service.client.LearningSharedResourceClient;
 import iuh.fit.notification_service.config.security.NotificationPrincipal;
 import iuh.fit.notification_service.dto.ChatAttachmentDto;
 import iuh.fit.notification_service.dto.ChatMessageDto;
@@ -9,11 +10,13 @@ import iuh.fit.notification_service.dto.ChatMessagePageDto;
 import iuh.fit.notification_service.dto.ConversationDto;
 import iuh.fit.notification_service.dto.MarkReadResponse;
 import iuh.fit.notification_service.dto.SendMessageRequest;
+import iuh.fit.notification_service.dto.SendSharedResourceRequest;
 import iuh.fit.notification_service.dto.StartDirectConversationRequest;
 import iuh.fit.notification_service.entity.ChatAttachment;
 import iuh.fit.notification_service.entity.ChatMessage;
 import iuh.fit.notification_service.entity.ChatMessageType;
 import iuh.fit.notification_service.entity.Conversation;
+import iuh.fit.notification_service.entity.SharedResourceType;
 import iuh.fit.notification_service.realtime.ChatWebSocketHandler;
 import iuh.fit.notification_service.repository.ChatMessageRepository;
 import iuh.fit.notification_service.repository.ConversationRepository;
@@ -49,6 +52,7 @@ public class ChatService {
     private final ChatAttachmentStorage attachmentStorage;
     private final ChatAttachmentPolicy attachmentPolicy;
     private final ChatNotificationService chatNotificationService;
+    private final LearningSharedResourceClient sharedResourceClient;
 
     public ChatService(ConversationRepository conversationRepository,
                        ChatMessageRepository messageRepository,
@@ -56,7 +60,8 @@ public class ChatService {
                        AccountChatIdentityClient accountClient,
                        ChatAttachmentStorage attachmentStorage,
                        ChatAttachmentPolicy attachmentPolicy,
-                       ChatNotificationService chatNotificationService) {
+                       ChatNotificationService chatNotificationService,
+                       LearningSharedResourceClient sharedResourceClient) {
         this.conversationRepository = conversationRepository;
         this.messageRepository = messageRepository;
         this.chatWebSocketHandler = chatWebSocketHandler;
@@ -64,6 +69,7 @@ public class ChatService {
         this.attachmentStorage = attachmentStorage;
         this.attachmentPolicy = attachmentPolicy;
         this.chatNotificationService = chatNotificationService;
+        this.sharedResourceClient = sharedResourceClient;
     }
 
     @Transactional
@@ -101,6 +107,51 @@ public class ChatService {
                 .recipientId(recipientId)
                 .recipientEmail(recipientEmail)
                 .content(content)
+                .isRead(false)
+                .build();
+
+        ChatMessage saved = messageRepository.save(message);
+        conversation.setLastMessage(previewText(saved));
+        conversation.setLastMessageTime(saved.getCreatedAt());
+        conversation.setUpdatedAt(OffsetDateTime.now());
+        conversationRepository.save(conversation);
+
+        ChatMessageDto dto = toMessageDto(saved);
+        chatWebSocketHandler.pushChatMessage(dto);
+        publishChatNotificationQuietly(
+                saved,
+                participantContext.sender().fullName(),
+                counterpartRole(participantContext.recipient()));
+        return dto;
+    }
+
+    @Transactional
+    public ChatMessageDto sendSharedResource(
+            NotificationPrincipal principal,
+            UUID conversationId,
+            SendSharedResourceRequest request
+    ) {
+        requirePrincipal(principal);
+        if (request == null || request.resourceType() == null || request.resourcePublicId() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Thông tin tài nguyên chia sẻ không hợp lệ");
+        }
+        Conversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conversation not found"));
+        requireParticipant(conversation, principal.userId());
+        ParticipantContext participantContext = requireCanSend(principal, conversation);
+        sharedResourceClient.requireAvailable(request.resourceType(), request.resourcePublicId());
+
+        boolean firstParticipant = principal.userId().equals(conversation.getParticipant1Id());
+        ChatMessage message = ChatMessage.builder()
+                .conversationId(conversation.getId())
+                .senderId(principal.userId())
+                .senderEmail(principal.email())
+                .recipientId(firstParticipant ? conversation.getParticipant2Id() : conversation.getParticipant1Id())
+                .recipientEmail(firstParticipant ? conversation.getParticipant2Email() : conversation.getParticipant1Email())
+                .type(ChatMessageType.SHARED_RESOURCE)
+                .content(normalizeOptionalCaption(request.caption()))
+                .sharedResourceType(request.resourceType())
+                .sharedResourcePublicId(request.resourcePublicId())
                 .isRead(false)
                 .build();
 
@@ -412,6 +463,8 @@ public class ChatService {
                 .recipientEmail(message.getRecipientEmail())
                 .type((message.getType() == null ? ChatMessageType.TEXT : message.getType()).name())
                 .content(message.getContent())
+                .sharedResourceType(message.getSharedResourceType() != null ? message.getSharedResourceType().name() : null)
+                .sharedResourcePublicId(message.getSharedResourcePublicId())
                 .attachments(attachments)
                 .isRead(message.isRead())
                 .createdAt(message.getCreatedAt())
@@ -420,7 +473,7 @@ public class ChatService {
 
     private List<ChatAttachmentDto> toAttachmentDtos(ChatMessage message) {
         ChatMessageType type = message.getType() == null ? ChatMessageType.TEXT : message.getType();
-        if (type == ChatMessageType.TEXT) {
+        if (type == ChatMessageType.TEXT || type == ChatMessageType.SHARED_RESOURCE) {
             return List.of();
         }
         if (message.getAttachments() != null && !message.getAttachments().isEmpty()) {
@@ -452,6 +505,9 @@ public class ChatService {
         return switch (type) {
             case IMAGE -> imagePreviewText(message);
             case VIDEO -> "Đã gửi một video";
+            case SHARED_RESOURCE -> message.getSharedResourceType() == SharedResourceType.CLASS
+                    ? "Đã chia sẻ một lớp học"
+                    : "Đã chia sẻ một bài viết";
             case TEXT -> message.getContent();
         };
     }

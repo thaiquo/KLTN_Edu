@@ -56,7 +56,7 @@ const DEFAULT_FILTERS = {
 export function ClassMarketplacePage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { classId: routeClassId } = useParams();
+  const { classId: routeClassId, publicShareId } = useParams();
   const feedback = useFeedback();
   const { authenticated, user, loading: authLoading } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -247,6 +247,18 @@ export function ClassMarketplacePage() {
 
   useEffect(() => {
     if (!sessionRestored) return;
+    if (publicShareId) {
+      if (selectedClass?.publicShareId === publicShareId) return;
+      setDetailLoadingId(publicShareId);
+      classApi.getPublicClassByShareId(publicShareId)
+        .then((detail) => setSelectedClass(detail))
+        .catch(() => {
+          setSelectedClass(null);
+          feedback.warning('Lớp học này không tồn tại hoặc không còn được công khai.');
+        })
+        .finally(() => setDetailLoadingId(null));
+      return;
+    }
     const params = new URLSearchParams(location.search);
     const classId = routeClassId || params.get('classId') || params.get('id');
     if (!classId || !/^\d+$/.test(classId)) return;
@@ -256,7 +268,7 @@ export function ClassMarketplacePage() {
       .then((detail) => setSelectedClass(detail))
       .catch(() => setSelectedClass(null))
       .finally(() => setDetailLoadingId(null));
-  }, [location.search, routeClassId, selectedClass, sessionRestored]);
+  }, [feedback, location.search, publicShareId, routeClassId, selectedClass, sessionRestored]);
 
   const hasFilter = useMemo(() => {
     return Object.values(filters).some((value) => Array.isArray(value) ? value.length > 0 : Boolean(value)) || sort !== 'newest';
@@ -348,7 +360,7 @@ export function ClassMarketplacePage() {
 
   function closeClassDetail() {
     setSelectedClass(null);
-    if (routeClassId) {
+    if (routeClassId || publicShareId) {
       navigate('/classes', { replace: true });
       return;
     }
@@ -362,7 +374,7 @@ export function ClassMarketplacePage() {
 
   async function shareClass(classRoom) {
     try {
-      await copyToClipboard(buildClassShareUrl(classRoom.id));
+      await copyToClipboard(buildClassShareUrl(classRoom.publicShareId || classRoom.id));
       feedback.success('Đã sao chép liên kết lớp học vào bộ nhớ tạm.');
     } catch {
       feedback.error('Không thể sao chép liên kết lớp học.');

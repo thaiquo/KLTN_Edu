@@ -10,6 +10,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -21,6 +22,9 @@ public class CommunityPost {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "public_share_id", nullable = false, unique = true, updatable = false)
+    private UUID publicShareId;
 
     @Column(name = "author_id", nullable = false)
     private Long authorId;
@@ -90,6 +94,7 @@ public class CommunityPost {
     @PrePersist
     public void prePersist() {
         LocalDateTime now = LocalDateTime.now();
+        if (publicShareId == null) publicShareId = UUID.randomUUID();
         if (createdAt == null) createdAt = now;
         if (updatedAt == null) updatedAt = now;
         if (likeCount == null) likeCount = 0;

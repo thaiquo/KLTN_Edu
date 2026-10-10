@@ -17,7 +17,7 @@ import {
   Bookmark,
   X
 } from 'lucide-react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import communityApi from '../../api/community';
 import PostCard from '../../components/community/PostCard';
@@ -43,6 +43,7 @@ export function CommunityFeedPage({
   const { user, authenticated } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const { publicShareId } = useParams();
   const [mainTab, setMainTab] = useState(() => {
     const searchParams = new URLSearchParams(location.search);
     return searchParams.get('tab') === 'mine' ? 'mine' : 'explore';
@@ -104,11 +105,28 @@ export function CommunityFeedPage({
   const feedback = useFeedback();
   const [deepLinkedPostId, setDeepLinkedPostId] = useState(null);
   const [checkedDeepLinkPostId, setCheckedDeepLinkPostId] = useState(null);
+  const [checkedSharedPostId, setCheckedSharedPostId] = useState(null);
 
   const targetPostId = React.useMemo(
     () => extractCommunityPostId(location),
     [location.search, location.hash]
   );
+
+  useEffect(() => {
+    if (loading || !publicShareId || checkedSharedPostId === publicShareId) return;
+    setCheckedSharedPostId(publicShareId);
+    setMainTab('explore');
+    communityApi.getSharedPost(publicShareId)
+      .then((detail) => {
+        if (!detail?.id) return;
+        setPosts((prev) => [detail, ...prev.filter((post) => post.id !== detail.id)]);
+        setDeepLinkedPostId(String(detail.id));
+        window.setTimeout(() => {
+          document.getElementById(`post-${detail.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 200);
+      })
+      .catch(() => feedback.warning('Bài viết này không tồn tại hoặc đã bị xóa khỏi bảng tin cộng đồng.'));
+  }, [checkedSharedPostId, feedback, loading, publicShareId]);
 
   useEffect(() => {
     if (!authenticated && ['SAVED', 'MINE', 'FOLLOWING'].includes(activeTab)) {
@@ -228,7 +246,7 @@ export function CommunityFeedPage({
                   Cộng đồng Học tập & Kết nối
                 </h1>
                 <p className="mt-2 text-xs sm:text-sm text-slate-500 leading-relaxed">
-                  Khảo sát khung giờ học để gom lớp hiệu quả. Học viên dễ dàng tìm gia sư phù hợp hoặc lập nhóm học chung để chia sẻ học phí.
+                  Khảo sát khung giờ học để gom lớp hiệu quả và kết nối học viên với các gia sư phù hợp trên EduConnect.
                 </p>
               </div>
 
@@ -350,16 +368,6 @@ export function CommunityFeedPage({
               </button>
             )}
             <button
-              onClick={() => setActiveTab('TUTOR_ANNOUNCEMENT')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'TUTOR_ANNOUNCEMENT'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <span>📢 Gia sư chia sẻ</span>
-            </button>
-            <button
               onClick={() => setActiveTab('TUTOR_POLL')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
                 activeTab === 'TUTOR_POLL'
@@ -368,16 +376,6 @@ export function CommunityFeedPage({
               }`}
             >
               <span>📊 Gia sư khảo sát</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('TUTOR_CLASS_SHARE')}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'TUTOR_CLASS_SHARE'
-                  ? 'bg-indigo-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:bg-slate-100'
-              }`}
-            >
-              <span>🎓 Lớp đang tuyển</span>
             </button>
             <button
               onClick={() => setActiveTab('STUDENT_FIND_TUTOR')}
@@ -390,25 +388,25 @@ export function CommunityFeedPage({
               <span>🎯 Học viên tìm gia sư</span>
             </button>
             <button
-              onClick={() => setActiveTab('STUDENT_GROUP_STUDY')}
+              onClick={() => setActiveTab('TUTOR_CLASS_SHARE')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                activeTab === 'STUDENT_GROUP_STUDY'
+                activeTab === 'TUTOR_CLASS_SHARE'
                   ? 'bg-indigo-600 text-white shadow-sm'
                   : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
-              <Users className="w-3.5 h-3.5" />
-              <span>👥 Tìm bạn học nhóm</span>
+              <span>🎓 Lớp đang tuyển</span>
             </button>
-            {authenticated && !hideMineTab && (
-              <button
-                onClick={() => setMainTab('mine')}
-                className="px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer text-slate-600 hover:bg-slate-100"
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>Quản lý bài đăng của tôi</span>
-              </button>
-            )}
+            <button
+              onClick={() => setActiveTab('TUTOR_ANNOUNCEMENT')}
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                activeTab === 'TUTOR_ANNOUNCEMENT'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              <span>📢 Gia sư chia sẻ</span>
+            </button>
             {authenticated && (
               <button
                 onClick={() => setActiveTab('SAVED')}

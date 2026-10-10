@@ -1,6 +1,6 @@
 # EduConnect — Tổng quan dự án
 
-> Cập nhật theo source và dữ liệu kiểm chứng ngày **2026-09-29**.  
+> Cập nhật theo source và dữ liệu kiểm chứng ngày **2026-10-10**.  
 > Đây là trang bắt đầu để đọc dự án. Trạng thái chi tiết nằm ở [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 ## 1. Mục tiêu
@@ -10,7 +10,7 @@ EduConnect là nền tảng kết nối Học viên và Gia sư, hỗ trợ tìm
 Hai năng lực kỹ thuật nổi bật:
 
 - Blockchain/Smart Contract bảo toàn tiền ký quỹ và thực hiện payout/refund minh bạch trên Sepolia.
-- AI Matching hỗ trợ tìm kiếm/xếp hạng; hiện có Deterministic Matching V1, Gemini requirement analyzer, catalog/location grounding, Tutor Marketplace integration và Qdrant semantic retrieval foundation, chưa có Hybrid Matching V2, RAG hoặc production semantic ranking.
+- AI Matching hỗ trợ tìm kiếm/xếp hạng Tutor/Class; hiện có Gemini requirement analyzer, catalog/location grounding, Qdrant semantic retrieval, Hybrid/Matching V3 explainability và chatbot RAG/tool foundation. Production evaluation và runtime smoke với dịch vụ ngoài vẫn cần được thực hiện riêng.
 
 ## 2. Kiến trúc được xác nhận
 
@@ -23,7 +23,7 @@ EduConnect dùng **Service-Based Architecture**, không gọi là Microservices 
 | `learning-service` | 8082 | Danh mục, chuyên môn/lịch rảnh, lớp, enrollment, lịch học, buổi học, điểm danh, bài tập, lưu trữ S3 (tài liệu lớp, file buổi học, bài nộp học viên, giáo trình). |
 | `contract-service` | 8083 | Hợp đồng, EIP-712, DOCX/PDF, escrow, transaction pipeline, settlement, dispute, evidence, chấm dứt hợp đồng đơn phương & đề xuất hủy lớp. |
 | `notification-service` | 8084 | Notification lưu bền, Bell REST/WebSocket; chat persistence/API/WebSocket. |
-| `ai-service` | 8085 | Health, Student-only Matching V1, Gemini natural-language analyzer, catalog/location grounding, Tutor Marketplace integration và Qdrant semantic retrieval foundation; Hybrid Matching V2 chưa triển khai. |
+| `ai-service` | 8085 | Tutor/Class Matching, Gemini natural-language analyzer, catalog/location grounding, Qdrant semantic retrieval, Matching V3 explainability và chatbot RAG/tools. |
 | `frontend-web` | 5173 | React/Vite cho Guest, Student, Tutor, Staff, Admin. |
 | `mobile-app` | Expo | Đăng ký/đăng nhập/home cơ bản; chưa tương đương Web. |
 
@@ -92,13 +92,13 @@ Tỷ lệ được tính theo base unit của USDC; Tutor và Platform được 
 
 ## 8. Trạng thái ngắn gọn
 
-Audit note (2026-10-05): the local database has successful Flyway migrations through Account V15, Learning V40, Contract V19 and Notification V2. Learning V38-V40 adds the Community schema, database-level integrity constraints and removes redundant indexes. Contract termination notifications use an outbox and scoped internal service JWTs; source and tests cover the flow, while a running service must load the new code before its HTTP behavior changes. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and [the termination review](contract/TERMINATION_FINAL_REVIEW_2026_10_02.md).
+Audit note (2026-10-10): current compact migration lineages are Account V1..V2, Learning V1..V11, Contract V1..V19 and Notification V1..V6. Learning V8/V9 own Community and Tutor Follow, V10 normalizes Tutor profile references and V11 adds opaque public share UUIDs. Notification V6 adds validated structured Class/Community Post chat cards. Do not restore the retired high-numbered Learning migration history into this compact lineage. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and [the termination review](contract/TERMINATION_FINAL_REVIEW_2026_10_02.md).
 
 - Đã có luồng chính Web cho Account, Tutor approval, catalog/class/enrollment, session/attendance/homework, contract/escrow/settlement/dispute và notification.
 - Sepolia đã có bằng chứng funding, payout 85/15, refund 100% và refund hoàn cọc thanh lý hợp đồng 4.80 USDC thực tế; chi tiết transaction nằm trong [BLOCKCHAIN.md](BLOCKCHAIN.md).
-- Chat Student-Tutor có persistence/API/WebSocket, Web Messages đã dùng dữ liệu thật, hỗ trợ gửi nhóm 1-5 ảnh hoặc 1 video qua S3 metadata-only, và Student có thể tạo/reuse chat từ Tutor Marketplace/Public Tutor Profile; mobile chat parity chưa có.
-- AI Matching đã có flow Student trong Tutor Marketplace dựa trên Analyze -> Ground -> Matching V1 và đã có Qdrant semantic retrieval foundation; Hybrid Matching V2/RAG chưa triển khai.
-- Student post, violation/support ticket, báo cáo quản trị đầy đủ và mobile feature parity chưa có.
+- Chat Student-Tutor có persistence/API/WebSocket, Web Messages đã dùng dữ liệu thật, hỗ trợ gửi nhóm 1-5 ảnh, 1 video hoặc danh thiếp Class/Community Post tham chiếu bằng UUID; mobile chat parity chưa có.
+- AI Matching đã có luồng Tutor/Class Analyze -> Ground -> Match, Qdrant semantic retrieval, Matching V3 explainability và chatbot RAG/tools; production evaluation vẫn còn là việc vận hành tiếp theo.
+- Đã hỗ trợ Student post tìm gia sư trên Community; violation/support ticket, báo cáo quản trị nâng cao và mobile feature parity chưa có.
 - Bốn agreement legacy nạp sai bằng raw ERC-20 transfer đã được `legacy_excluded`; không tham gia KPI hoặc tự quyết toán.
 
 ## 9. Cách đọc tài liệu

@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 @RestController
 @RequestMapping("/api/public/classes")
 public class PublicClassRoomController {
@@ -93,6 +94,11 @@ public class PublicClassRoomController {
     @GetMapping("/{id}/share")
     public ClassRoomDtos.ClassRoomResponse getShareablePublicClassById(@PathVariable Long id) {
         return service.getShareablePublicClassById(id);
+    }
+
+    @GetMapping("/shared/{publicShareId}")
+    public ClassRoomDtos.ClassRoomResponse getPublicClassByShareId(@PathVariable UUID publicShareId) {
+        return service.getPublicClassByShareId(publicShareId);
     }
 
     @PostMapping("/{id}/verify-key")

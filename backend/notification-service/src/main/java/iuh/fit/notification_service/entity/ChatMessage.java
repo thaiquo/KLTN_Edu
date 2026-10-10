@@ -44,6 +44,13 @@ public class ChatMessage {
     @Builder.Default
     private ChatMessageType type = ChatMessageType.TEXT;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "shared_resource_type", length = 24)
+    private SharedResourceType sharedResourceType;
+
+    @Column(name = "shared_resource_public_id")
+    private UUID sharedResourcePublicId;
+
     @OneToMany(mappedBy = "message", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("createdAt ASC, id ASC")
     @Builder.Default

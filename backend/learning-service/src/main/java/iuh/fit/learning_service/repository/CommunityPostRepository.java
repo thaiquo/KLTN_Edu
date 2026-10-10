@@ -11,10 +11,13 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import jakarta.persistence.LockModeType;
 
 @Repository
 public interface CommunityPostRepository extends JpaRepository<CommunityPost, Long>, JpaSpecificationExecutor<CommunityPost> {
+
+    Optional<CommunityPost> findByPublicShareId(UUID publicShareId);
 
     List<CommunityPost> findByAuthorIdAndAuthorRoleOrderByCreatedAtDesc(Long authorId, String authorRole);
 

@@ -17,12 +17,12 @@
 | Service | Status | Notes |
 | --- | --- | --- |
 | `api-gateway` | IMPLEMENTED | Routes current REST and WebSocket families with credentialed CORS/cookie forwarding. |
-| `account-service` | IMPLEMENTED + TESTED | Auth, roles, active role, Student/Tutor profiles, Tutor application identity data, internal active notification recipient lookup. MERGE-FIX-A recipient tests: 3 PASS. |
-| `learning-service` | IMPLEMENTED + TESTED | Catalog, tutor authorization/registrations, availability, classes, enrollment, sessions, attendance, homework, reviews, Community, Tutor Follow, Learning termination sync. Compact Flyway V1..V9 includes the Follow schema. |
+| `account-service` | IMPLEMENTED + TESTED | Auth, roles, active role, Student/Tutor profiles, Tutor application identity data and internal notification recipient lookup. Full suite: 151 PASS. |
+| `learning-service` | IMPLEMENTED + TESTED | Catalog, tutor authorization/registrations, availability, classes, enrollment, sessions, attendance, homework, reviews, Community, Tutor Follow, public share UUIDs and Learning termination sync. Compact Flyway V1..V11; full suite: 201 PASS. |
 | `contract-service` | IMPLEMENTED/PARTIAL | Contract, signing, final PDF/artifacts, escrow, settlement, dispute, termination governance/outbox and blockchain reconciliation are implemented; production ops remains limited. Contract V17..V19 cover termination governance/outbox/classification. |
-| `notification-service` | IMPLEMENTED + TESTED | Persisted Bell notifications, event consumers, human chat REST/WebSocket, chat attachments. MERGE-FIX-A Notification tests: 73 PASS. |
-| `ai-service` | IMPLEMENTED/PARTIAL | Tutor/Class AI Matching, Gemini analyzer/grounding, Qdrant semantic retrieval, Matching V3 explainability, chatbot foundation/RAG/tools are implemented in source. Post-merge full runtime regression is still pending unless separately run. |
-| `frontend-web` | IMPLEMENTED/PARTIAL | Marketplaces, portal/dashboard, Community, contracts/termination/refund, human Messages, shared AI chatbot widget. MERGE-FIX-C utility tests: 7 PASS; production build PASS. |
+| `notification-service` | IMPLEMENTED + TESTED | Persisted Bell notifications, event consumers, human chat REST/WebSocket, media attachments and structured Class/Post cards. Full suite: 74 PASS. |
+| `ai-service` | IMPLEMENTED/PARTIAL | Tutor/Class AI Matching, Gemini analyzer/grounding, Qdrant semantic retrieval, Matching V3 explainability and chatbot RAG/tools are implemented. Full suite: 220 PASS + 4 external-runtime smoke tests skipped. |
+| `frontend-web` | IMPLEMENTED/PARTIAL | Marketplaces, portal/dashboard, Community, contracts/termination/refund, human Messages with resource cards and shared AI chatbot widget. TypeScript and production build PASS. |
 | `mobile-app` | PARTIAL | Basic auth/home exists; no Web feature parity. |
 
 ## 3. Actor Use Cases
@@ -65,10 +65,10 @@
 
 ## 5. Learning
 
-- IMPLEMENTED: compact Flyway V1..V9, with Community in V8 and Tutor Follow in V9.
+- IMPLEMENTED: compact Flyway V1..V11, with Community in V8, Tutor Follow in V9, tutor-profile normalization in V10 and public share UUIDs in V11.
 - IMPLEMENTED: teaching catalog, tutor subject registrations, subject suggestions/requests and review flows.
 - IMPLEMENTED: Tutor availability and class creation/review/visibility.
-- IMPLEMENTED: public class search/detail/share endpoints, including `/api/public/classes/{id}/share`.
+- IMPLEMENTED: public class search/detail/share endpoints, including UUID-based shared class resolution.
 - IMPLEMENTED: enrollment request lifecycle and Contract-driven activation/expiration.
 - IMPLEMENTED: rolling sessions, attendance, meeting-link gate, homework assignment/submission, classroom materials and syllabus files.
 - IMPLEMENTED: tutor/class reviews and public rating summaries.
@@ -88,7 +88,7 @@
 
 - IMPLEMENTED + TESTED: Bell notification persistence, list/count/read APIs and WebSocket delivery for supported events.
 - IMPLEMENTED + TESTED: Rabbit consumers for Account, Learning, Community and Contract notification paths covered by current tests.
-- IMPLEMENTED: human Student-Tutor direct conversations, participant authorization, text messages, grouped image messages, single-video messages, unread/read state and `/ws/chat`.
+- IMPLEMENTED: human Student-Tutor direct conversations, participant authorization, text/media messages, structured class/post share cards, unread/read state and `/ws/chat`.
 - IMPLEMENTED: chat Bell behavior with Messages-view context suppression.
 - NOT IMPLEMENTED: calls, typing/presence and mobile chat parity.
 
@@ -110,9 +110,9 @@
 - IMPLEMENTED: Class Marketplace manual search, public class detail/share, AI Class Matching results and session persistence.
 - IMPLEMENTED: Community feed/management, poll voting, comments, likes/bookmarks and post-to-class flow.
 - IMPLEMENTED: Student/Tutor/Staff/Admin portal flows for current class, contract, termination and refund surfaces.
-- IMPLEMENTED: human Messages UI using real Notification chat APIs.
+- IMPLEMENTED: human Messages UI using real Notification chat APIs, including dynamically resolved class/post share cards.
 - IMPLEMENTED: shared global AI chatbot widget.
-- MERGE-FIX-C validation: frontend source integration PASS, utility tests 7 PASS, `npm run build` PASS.
+- MERGE-FIX-C validation: frontend source integration PASS, utility tests 11 PASS, `npm run build` PASS.
 
 ## 10. Current Post-Merge Validation
 
@@ -120,14 +120,15 @@
 | --- | --- |
 | MERGE-FIX-A | Learning event integration PASS; Notification event integration PASS; Learning 183 tests PASS; Notification 73 tests PASS; Account internal recipient 3 tests PASS. |
 | MERGE-FIX-B | Learning compact Flyway V1..V8; clean DB migration PASS; JPA validate PASS; Learning 183 tests PASS. Follow extends the compact lineage with V9. |
-| MERGE-FIX-C | Frontend source integration PASS; utility tests 7 PASS; frontend build PASS. |
+| MERGE-FIX-C | Frontend source integration PASS; utility tests 11 PASS; frontend build PASS. |
+| FULL REGRESSION 2026-10-10 | Account 151 PASS; Gateway 1 PASS; Contract 206 PASS + 7 skipped; Learning 201 PASS; Notification 74 PASS; AI 220 PASS + 4 external-runtime smoke tests skipped; frontend TypeScript/build PASS. |
 
 These are merge validations, not a blanket full production end-to-end certification.
 
 ## 11. Planned / Remaining Work
 
-1. Resolve generated frontend `dist` merge artifacts in the dedicated phase.
-2. Restart all services after the merge and run browser/runtime smoke tests for Community, termination/refund notifications, AI Matching and chatbot.
+1. Restart all services after the merge and run authenticated browser/runtime smoke tests for structured sharing, Community, termination/refund notifications, AI Matching and chatbot.
+2. Run the four skipped Gemini/external-runtime AI smoke tests with required credentials and dependencies.
 3. Improve mobile parity for auth, classes, contracts, messages and AI flows.
 4. Add full violation/support ticket and reporting suite if required.
 5. Continue production operations hardening for blockchain, observability, backups and multi-RPC behavior.
