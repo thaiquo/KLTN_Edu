@@ -135,6 +135,7 @@ public class CommunityPostDtos {
         private Integer viewCount;
         private Boolean isLiked;
         private Boolean isBookmarked;
+        private Boolean isAuthorFollowed;
         private PollSummaryDto poll;
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;

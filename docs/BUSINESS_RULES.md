@@ -239,7 +239,26 @@ Hệ thống vẫn có business flow hợp lệ khi AI chưa triển khai; khi �
   - Thay thế bằng thanh tìm kiếm từ khóa (`keyword`) duy nhất: Backend tự động so khớp đa chiều qua tiêu đề, nội dung bài viết, tên tác giả, cấp học, tên môn học (`subject.name`) và tên lớp học liên kết (`linkedClass.name`).
   - Mặc định luôn sắp xếp bài đăng mới nhất theo thời gian (`createdAt DESC`), đảm bảo bài viết vừa đăng luôn xuất hiện đầu tiên trên bảng tin.
 
-## 11. Change Policy
+## 11. 1-Way Tutor Follow & Personalized Priority Feed
+
+Refinement (2026-10-09): Student follow is intentionally one-way from Student account user id to APPROVED Tutor account user id. Do not follow Student accounts, do not use `tutorProfileId` as the follow target, and do not change `community_posts.id`; feed personalization is derived from `community_posts.author_id = tutor_follows.tutor_user_id`.
+
+- **Mô hình Theo dõi 1 chiều (Student -> Tutor)**:
+  - Chỉ tài khoản có `activeRole === 'STUDENT'` mới được nhấn Theo dõi/Hủy theo dõi Gia sư.
+  - Học viên không thể tự theo dõi chính mình; gia sư được theo dõi phải tồn tại và có trạng thái giảng dạy `APPROVED`.
+  - Thao tác là idempotent (`PUT /api/community/tutors/{tutorUserId}/follow` và `DELETE /api/community/tutors/{tutorUserId}/follow`), lưu trữ cặp khóa duy nhất `(student_user_id, tutor_user_id)` trong bảng `tutor_follows`.
+- **Cá nhân hóa Bảng tin (Priority Feed)**:
+  - Bảng tin công khai vẫn dùng chung cho toàn bộ cộng đồng.
+  - Khi Học viên đã đăng nhập:
+    * Bài đăng của các Gia sư đang theo dõi được đánh dấu cờ `isAuthorFollowed = true` và hiển thị huy hiệu `⭐ Đang theo dõi`.
+    * Cung cấp Tab bộ lọc **"⭐ Gia sư đang theo dõi"** (`followingOnly = true`) để học viên chỉ xem các bài chia sẻ, khảo sát mở lớp và giới thiệu lớp từ những gia sư mình quan tâm.
+- **Điểm chạm trải nghiệm (Touchpoints)**:
+  - Trên thẻ bài viết `PostCard`: Tác giả Gia sư có nút bấm nhanh `+ Theo dõi` / `Bỏ theo dõi` cho Học viên.
+  - Trên `TutorMarketplacePage` & `PublicTutorProfilePage`: Hiển thị số lượng Followers và nút Theo dõi gia sư.
+  - Trong Portal Học viên (`StudentCommunityManagement`): Có Tab quản lý danh sách "Gia sư đang theo dõi" với thao tác hủy theo dõi và điều hướng nhanh.
+  - Trong Portal Gia sư (`TutorCommunityManagement`): Có KPI thẻ thống kê "Người theo dõi".
+
+## 12. Change Policy
 
 Business rules có thể thay đổi trong quá trình phát triển. Khi người dùng xác nhận business rule mới:
 

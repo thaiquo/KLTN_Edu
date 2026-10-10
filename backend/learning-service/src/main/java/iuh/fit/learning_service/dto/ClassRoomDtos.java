@@ -142,6 +142,7 @@ public final class ClassRoomDtos {
             LevelBrief level,
             String tutorEmail,
             Long tutorProfileId,
+            Long tutorUserId,
             String tutorFullName,
             String name,
             String description,

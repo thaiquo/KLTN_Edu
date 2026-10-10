@@ -1,4 +1,4 @@
-import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l as u,r as d,rt as f,t as p,v as m,w as h,y as g}from"./ModalController-BGYZ-tET.js";import{_,c as v,f as y,l as b,m as x,o as S,s as C,w,x as T,y as E}from"./wui-text-D7DuN2ep.js";import{n as D,t as O}from"./ref-2I786ugH.js";import{L as k,W as ee,k as A}from"./index-p1BKPkUt.js";var j=w`
+import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l as u,r as d,rt as f,t as p,v as m,w as h,y as g}from"./ModalController-BGYZ-tET.js";import{_,c as v,f as y,l as b,m as x,o as ee,s as S,w as C,x as w,y as T}from"./wui-text-D7DuN2ep.js";import{n as E,t as D}from"./ref-2I786ugH.js";import{I as O,O as k,U as A}from"./index-DFn7rbTN.js";var j=C`
   div {
     width: 100%;
   }
@@ -12,7 +12,7 @@ import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l a
       transform: translateY(-50px);
     }
   }
-`,M=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},N=600,P=360,F=64,I=class extends E{constructor(){super(),this.bodyObserver=void 0,this.unsubscribe=[],this.iframe=document.getElementById(`w3m-iframe`),this.ready=!1,this.unsubscribe.push(p.subscribeKey(`open`,e=>{e||this.onHideIframe()}),p.subscribeKey(`shake`,e=>{e?this.iframe.style.animation=`w3m-shake 500ms var(--apkt-easings-ease-out-power-2)`:this.iframe.style.animation=`none`}))}disconnectedCallback(){this.onHideIframe(),this.unsubscribe.forEach(e=>e()),this.bodyObserver?.unobserve(window.document.body)}async firstUpdated(){await this.syncTheme(),this.iframe.style.display=`block`;let e=this?.renderRoot?.querySelector(`div`);this.bodyObserver=new ResizeObserver(t=>{let n=(t?.[0]?.contentBoxSize)?.[0]?.inlineSize;this.iframe.style.height=`${N}px`,e.style.height=`${N}px`,r.state.enableEmbedded?this.updateFrameSizeForEmbeddedMode():n&&n<=430?(this.iframe.style.width=`100%`,this.iframe.style.left=`0px`,this.iframe.style.bottom=`0px`,this.iframe.style.top=`unset`,this.onShowIframe()):(this.iframe.style.width=`${P}px`,this.iframe.style.left=`calc(50% - ${P/2}px)`,this.iframe.style.top=`calc(50% - ${N/2}px + ${F/2}px)`,this.iframe.style.bottom=`unset`,this.onShowIframe())}),this.bodyObserver.observe(window.document.body)}render(){return T`<div data-ready=${this.ready} id="w3m-frame-container"></div>`}onShowIframe(){let e=window.innerWidth<=430;this.ready=!0,this.iframe.style.animation=e?`w3m-iframe-zoom-in-mobile 200ms var(--apkt-easings-ease-out-power-2)`:`w3m-iframe-zoom-in 200ms var(--apkt-easings-ease-out-power-2)`}onHideIframe(){this.iframe.style.display=`none`,this.iframe.style.animation=`w3m-iframe-fade-out 200ms var(--apkt-easings-ease-out-power-2)`}async syncTheme(){let e=m.getAuthConnector();if(e){let t=g.getSnapshot().themeMode,r=g.getSnapshot().themeVariables;await e.provider.syncTheme({themeVariables:r,w3mThemeVariables:n(r,t)})}}async updateFrameSizeForEmbeddedMode(){let e=this?.renderRoot?.querySelector(`div`);await new Promise(e=>{setTimeout(e,300)});let t=this.getBoundingClientRect();e.style.width=`100%`,this.iframe.style.left=`${t.left}px`,this.iframe.style.top=`${t.top}px`,this.iframe.style.width=`${t.width}px`,this.iframe.style.height=`${t.height}px`,this.onShowIframe()}};I.styles=j,M([C()],I.prototype,`ready`,void 0),I=M([b(`w3m-approve-transaction-view`)],I);var L=_`
+`,M=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},N=600,P=360,F=64,I=class extends T{constructor(){super(),this.bodyObserver=void 0,this.unsubscribe=[],this.iframe=document.getElementById(`w3m-iframe`),this.ready=!1,this.unsubscribe.push(p.subscribeKey(`open`,e=>{e||this.onHideIframe()}),p.subscribeKey(`shake`,e=>{e?this.iframe.style.animation=`w3m-shake 500ms var(--apkt-easings-ease-out-power-2)`:this.iframe.style.animation=`none`}))}disconnectedCallback(){this.onHideIframe(),this.unsubscribe.forEach(e=>e()),this.bodyObserver?.unobserve(window.document.body)}async firstUpdated(){await this.syncTheme(),this.iframe.style.display=`block`;let e=this?.renderRoot?.querySelector(`div`);this.bodyObserver=new ResizeObserver(t=>{let n=(t?.[0]?.contentBoxSize)?.[0]?.inlineSize;this.iframe.style.height=`${N}px`,e.style.height=`${N}px`,r.state.enableEmbedded?this.updateFrameSizeForEmbeddedMode():n&&n<=430?(this.iframe.style.width=`100%`,this.iframe.style.left=`0px`,this.iframe.style.bottom=`0px`,this.iframe.style.top=`unset`,this.onShowIframe()):(this.iframe.style.width=`${P}px`,this.iframe.style.left=`calc(50% - ${P/2}px)`,this.iframe.style.top=`calc(50% - ${N/2}px + ${F/2}px)`,this.iframe.style.bottom=`unset`,this.onShowIframe())}),this.bodyObserver.observe(window.document.body)}render(){return w`<div data-ready=${this.ready} id="w3m-frame-container"></div>`}onShowIframe(){let e=window.innerWidth<=430;this.ready=!0,this.iframe.style.animation=e?`w3m-iframe-zoom-in-mobile 200ms var(--apkt-easings-ease-out-power-2)`:`w3m-iframe-zoom-in 200ms var(--apkt-easings-ease-out-power-2)`}onHideIframe(){this.iframe.style.display=`none`,this.iframe.style.animation=`w3m-iframe-fade-out 200ms var(--apkt-easings-ease-out-power-2)`}async syncTheme(){let e=m.getAuthConnector();if(e){let t=g.getSnapshot().themeMode,r=g.getSnapshot().themeVariables;await e.provider.syncTheme({themeVariables:r,w3mThemeVariables:n(r,t)})}}async updateFrameSizeForEmbeddedMode(){let e=this?.renderRoot?.querySelector(`div`);await new Promise(e=>{setTimeout(e,300)});let t=this.getBoundingClientRect();e.style.width=`100%`,this.iframe.style.left=`${t.left}px`,this.iframe.style.top=`${t.top}px`,this.iframe.style.width=`${t.width}px`,this.iframe.style.height=`${t.height}px`,this.onShowIframe()}};I.styles=j,M([S()],I.prototype,`ready`,void 0),I=M([b(`w3m-approve-transaction-view`)],I);var L=_`
   a {
     border: none;
     border-radius: ${({borderRadius:e})=>e[20]};
@@ -131,7 +131,7 @@ import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l a
   a:disabled {
     opacity: 0.5;
   }
-`,R=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},te={sm:`md-regular`,md:`lg-regular`,lg:`lg-regular`},ne={success:`sealCheck`,error:`warning`,warning:`exclamationCircle`},z=class extends E{constructor(){super(...arguments),this.type=`success`,this.size=`md`,this.imageSrc=void 0,this.disabled=!1,this.href=``,this.text=void 0}render(){return T`
+`,R=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},te={sm:`md-regular`,md:`lg-regular`,lg:`lg-regular`},ne={success:`sealCheck`,error:`warning`,warning:`exclamationCircle`},z=class extends T{constructor(){super(...arguments),this.type=`success`,this.size=`md`,this.imageSrc=void 0,this.disabled=!1,this.href=``,this.text=void 0}render(){return w`
       <a
         rel="noreferrer"
         target="_blank"
@@ -143,13 +143,13 @@ import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l a
         ${this.imageTemplate()}
         <wui-text variant=${te[this.size]} color="inherit">${this.text}</wui-text>
       </a>
-    `}imageTemplate(){return this.imageSrc?T`<wui-image src=${this.imageSrc} size="inherit"></wui-image>`:T`<wui-icon
+    `}imageTemplate(){return this.imageSrc?w`<wui-image src=${this.imageSrc} size="inherit"></wui-image>`:w`<wui-icon
       name=${ne[this.type]}
       weight="fill"
       color="inherit"
       size="inherit"
       class="image-icon"
-    ></wui-icon>`}};z.styles=[x,y,L],R([v()],z.prototype,`type`,void 0),R([v()],z.prototype,`size`,void 0),R([v()],z.prototype,`imageSrc`,void 0),R([v({type:Boolean})],z.prototype,`disabled`,void 0),R([v()],z.prototype,`href`,void 0),R([v()],z.prototype,`text`,void 0),z=R([b(`wui-semantic-chip`)],z);var B=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},V=class extends E{render(){return T`
+    ></wui-icon>`}};z.styles=[x,y,L],R([v()],z.prototype,`type`,void 0),R([v()],z.prototype,`size`,void 0),R([v()],z.prototype,`imageSrc`,void 0),R([v({type:Boolean})],z.prototype,`disabled`,void 0),R([v()],z.prototype,`href`,void 0),R([v()],z.prototype,`text`,void 0),z=R([b(`wui-semantic-chip`)],z);var B=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},V=class extends T{render(){return w`
       <wui-flex flexDirection="column" alignItems="center" gap="5" padding="5">
         <wui-text variant="md-regular" color="primary">Follow the instructions on</wui-text>
         <wui-semantic-chip
@@ -165,11 +165,11 @@ import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l a
           You will have to reconnect for security reasons
         </wui-text>
       </wui-flex>
-    `}};V=B([b(`w3m-upgrade-wallet-view`)],V);var H=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},U=class extends E{constructor(){super(...arguments),this.loading=!1,this.switched=!1,this.text=``,this.network=d.state.activeCaipNetwork}render(){return T`
+    `}};V=B([b(`w3m-upgrade-wallet-view`)],V);var H=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},U=class extends T{constructor(){super(...arguments),this.loading=!1,this.switched=!1,this.text=``,this.network=d.state.activeCaipNetwork}render(){return w`
       <wui-flex flexDirection="column" gap="2" .padding=${[`6`,`4`,`3`,`4`]}>
         ${this.togglePreferredAccountTypeTemplate()} ${this.toggleSmartAccountVersionTemplate()}
       </wui-flex>
-    `}toggleSmartAccountVersionTemplate(){return T`
+    `}toggleSmartAccountVersionTemplate(){return w`
       <w3m-tooltip-trigger text="Changing the smart account version will reload the page">
         <wui-list-item
           icon=${this.isV6()?`arrowTop`:`arrowBottom`}
@@ -183,7 +183,7 @@ import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l a
           >
         </wui-list-item>
       </w3m-tooltip-trigger>
-    `}isV6(){return(t.get(`dapp_smart_account_version`)||`v6`)===`v6`}toggleSmartAccountVersion(){t.set(`dapp_smart_account_version`,this.isV6()?`v7`:`v6`),typeof window<`u`&&window?.location?.reload()}togglePreferredAccountTypeTemplate(){let t=this.network?.chainNamespace,n=d.checkIfSmartAccountEnabled(),r=m.getConnectorId(t);return!m.getAuthConnector()||r!==f.CONNECTOR_ID.AUTH||!n?null:(this.switched||(this.text=s(t)===e.ACCOUNT_TYPES.SMART_ACCOUNT?`Switch to your EOA`:`Switch to your Smart Account`),T`
+    `}isV6(){return(t.get(`dapp_smart_account_version`)||`v6`)===`v6`}toggleSmartAccountVersion(){t.set(`dapp_smart_account_version`,this.isV6()?`v7`:`v6`),typeof window<`u`&&window?.location?.reload()}togglePreferredAccountTypeTemplate(){let t=this.network?.chainNamespace,n=d.checkIfSmartAccountEnabled(),r=m.getConnectorId(t);return!m.getAuthConnector()||r!==f.CONNECTOR_ID.AUTH||!n?null:(this.switched||(this.text=s(t)===e.ACCOUNT_TYPES.SMART_ACCOUNT?`Switch to your EOA`:`Switch to your Smart Account`),w`
       <wui-list-item
         icon="swapHorizontal"
         ?rounded=${!0}
@@ -194,7 +194,7 @@ import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l a
       >
         <wui-text variant="lg-regular" color="primary">${this.text}</wui-text>
       </wui-list-item>
-    `)}async changePreferredAccountType(){let t=this.network?.chainNamespace,n=d.checkIfSmartAccountEnabled(),r=s(t)===e.ACCOUNT_TYPES.SMART_ACCOUNT||!n?e.ACCOUNT_TYPES.EOA:e.ACCOUNT_TYPES.SMART_ACCOUNT;m.getAuthConnector()&&(this.loading=!0,await u.setPreferredAccountType(r,t),this.text=r===e.ACCOUNT_TYPES.SMART_ACCOUNT?`Switch to your EOA`:`Switch to your Smart Account`,this.switched=!0,c.resetSend(),this.loading=!1,this.requestUpdate())}};H([C()],U.prototype,`loading`,void 0),H([C()],U.prototype,`switched`,void 0),H([C()],U.prototype,`text`,void 0),H([C()],U.prototype,`network`,void 0),U=H([b(`w3m-smart-account-settings-view`)],U);var W=_`
+    `)}async changePreferredAccountType(){let t=this.network?.chainNamespace,n=d.checkIfSmartAccountEnabled(),r=s(t)===e.ACCOUNT_TYPES.SMART_ACCOUNT||!n?e.ACCOUNT_TYPES.EOA:e.ACCOUNT_TYPES.SMART_ACCOUNT;m.getAuthConnector()&&(this.loading=!0,await u.setPreferredAccountType(r,t),this.text=r===e.ACCOUNT_TYPES.SMART_ACCOUNT?`Switch to your EOA`:`Switch to your Smart Account`,this.switched=!0,c.resetSend(),this.loading=!1,this.requestUpdate())}};H([S()],U.prototype,`loading`,void 0),H([S()],U.prototype,`switched`,void 0),H([S()],U.prototype,`text`,void 0),H([S()],U.prototype,`network`,void 0),U=H([b(`w3m-smart-account-settings-view`)],U);var W=_`
   :host {
     width: 100%;
   }
@@ -233,12 +233,12 @@ import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l a
     box-shadow: 0 0 0 4px ${({tokens:e})=>e.core.foregroundAccent040};
     background-color: ${({tokens:e})=>e.theme.foregroundSecondary};
   }
-`,G=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},K=class extends E{constructor(){super(...arguments),this.name=``,this.registered=!1,this.loading=!1,this.disabled=!1}render(){return T`
+`,G=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},K=class extends T{constructor(){super(...arguments),this.name=``,this.registered=!1,this.loading=!1,this.disabled=!1}render(){return w`
       <button ?disabled=${this.disabled}>
         <wui-text class="name" color="primary" variant="md-regular">${this.name}</wui-text>
         ${this.templateRightContent()}
       </button>
-    `}templateRightContent(){return this.loading?T`<wui-loading-spinner size="lg" color="primary"></wui-loading-spinner>`:this.registered?T`<wui-tag variant="info" size="sm">Registered</wui-tag>`:T`<wui-tag variant="success" size="sm">Available</wui-tag>`}};K.styles=[x,y,W],G([v()],K.prototype,`name`,void 0),G([v({type:Boolean})],K.prototype,`registered`,void 0),G([v({type:Boolean})],K.prototype,`loading`,void 0),G([v({type:Boolean})],K.prototype,`disabled`,void 0),K=G([b(`wui-account-name-suggestion-item`)],K);var q=_`
+    `}templateRightContent(){return this.loading?w`<wui-loading-spinner size="lg" color="primary"></wui-loading-spinner>`:this.registered?w`<wui-tag variant="info" size="sm">Registered</wui-tag>`:w`<wui-tag variant="success" size="sm">Available</wui-tag>`}};K.styles=[x,y,W],G([v()],K.prototype,`name`,void 0),G([v({type:Boolean})],K.prototype,`registered`,void 0),G([v({type:Boolean})],K.prototype,`loading`,void 0),G([v({type:Boolean})],K.prototype,`disabled`,void 0),K=G([b(`wui-account-name-suggestion-item`)],K);var q=_`
   :host {
     position: relative;
     width: 100%;
@@ -260,9 +260,9 @@ import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l a
     background-color: ${({tokens:e})=>e.theme.foregroundSecondary};
     border-radius: ${({borderRadius:e})=>e[1]};
   }
-`,J=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},Y=class extends E{constructor(){super(...arguments),this.disabled=!1,this.loading=!1}render(){return T`
+`,J=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},Y=class extends T{constructor(){super(...arguments),this.disabled=!1,this.loading=!1}render(){return w`
       <wui-input-text
-        value=${S(this.value)}
+        value=${ee(this.value)}
         ?disabled=${this.disabled}
         .value=${this.value||``}
         data-testid="wui-ens-input"
@@ -321,14 +321,14 @@ import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l a
     transform: translateY(-50%);
     right: 10px;
   }
-`,Z=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},Q=class extends E{constructor(){super(),this.formRef=O(),this.usubscribe=[],this.name=``,this.error=``,this.loading=k.state.loading,this.suggestions=k.state.suggestions,this.profileName=d.getAccountData()?.profileName,this.onDebouncedNameInputChange=a.debounce(e=>{e.length<4?this.error=`Name must be at least 4 characters long`:A.isValidReownName(e)?(this.error=``,k.getSuggestions(e)):this.error=`The value is not a valid username`}),this.usubscribe.push(k.subscribe(e=>{this.suggestions=e.suggestions,this.loading=e.loading}),d.subscribeChainProp(`accountState`,e=>{this.profileName=e?.profileName,e?.profileName&&(this.error=`You already own a name`)}))}firstUpdated(){this.formRef.value?.addEventListener(`keydown`,this.onEnterKey.bind(this))}disconnectedCallback(){super.disconnectedCallback(),this.usubscribe.forEach(e=>e()),this.formRef.value?.removeEventListener(`keydown`,this.onEnterKey.bind(this))}render(){return T`
+`,Z=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},Q=class extends T{constructor(){super(),this.formRef=D(),this.usubscribe=[],this.name=``,this.error=``,this.loading=O.state.loading,this.suggestions=O.state.suggestions,this.profileName=d.getAccountData()?.profileName,this.onDebouncedNameInputChange=a.debounce(e=>{e.length<4?this.error=`Name must be at least 4 characters long`:k.isValidReownName(e)?(this.error=``,O.getSuggestions(e)):this.error=`The value is not a valid username`}),this.usubscribe.push(O.subscribe(e=>{this.suggestions=e.suggestions,this.loading=e.loading}),d.subscribeChainProp(`accountState`,e=>{this.profileName=e?.profileName,e?.profileName&&(this.error=`You already own a name`)}))}firstUpdated(){this.formRef.value?.addEventListener(`keydown`,this.onEnterKey.bind(this))}disconnectedCallback(){super.disconnectedCallback(),this.usubscribe.forEach(e=>e()),this.formRef.value?.removeEventListener(`keydown`,this.onEnterKey.bind(this))}render(){return w`
       <wui-flex
         flexDirection="column"
         alignItems="center"
         gap="4"
         .padding=${[`1`,`3`,`4`,`3`]}
       >
-        <form ${D(this.formRef)} @submit=${this.onSubmitName.bind(this)}>
+        <form ${E(this.formRef)} @submit=${this.onSubmitName.bind(this)}>
           <wui-ens-input
             @inputChange=${this.onNameInputChange.bind(this)}
             .errorMessage=${this.error}
@@ -341,10 +341,10 @@ import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l a
         </form>
         ${this.templateSuggestions()}
       </wui-flex>
-    `}submitButtonTemplate(){let e=this.suggestions.find(e=>e.name?.split(`.`)?.[0]===this.name&&e.registered);if(this.loading)return T`<wui-loading-spinner
+    `}submitButtonTemplate(){let e=this.suggestions.find(e=>e.name?.split(`.`)?.[0]===this.name&&e.registered);if(this.loading)return w`<wui-loading-spinner
         class="input-loading-spinner"
         color="secondary"
-      ></wui-loading-spinner>`;let t=`${this.name}${f.WC_NAME_SUFFIX}`;return T`
+      ></wui-loading-spinner>`;let t=`${this.name}${f.WC_NAME_SUFFIX}`;return w`
       <wui-icon-link
         ?disabled=${!!e}
         class="input-submit-button"
@@ -354,8 +354,8 @@ import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l a
         @click=${()=>this.onSubmitName(t)}
       >
       </wui-icon-link>
-    `}onNameInputChange(e){let t=A.validateReownName(e.detail||``);this.name=t,this.onDebouncedNameInputChange(t)}onKeyDown(e){e.key.length===1&&!A.isValidReownName(e.key)&&e.preventDefault()}templateSuggestions(){return!this.name||this.name.length<4||this.error?null:T`<wui-flex flexDirection="column" gap="1" alignItems="center">
-      ${this.suggestions.map(e=>T`<wui-account-name-suggestion-item
+    `}onNameInputChange(e){let t=k.validateReownName(e.detail||``);this.name=t,this.onDebouncedNameInputChange(t)}onKeyDown(e){e.key.length===1&&!k.isValidReownName(e.key)&&e.preventDefault()}templateSuggestions(){return!this.name||this.name.length<4||this.error?null:w`<wui-flex flexDirection="column" gap="1" alignItems="center">
+      ${this.suggestions.map(e=>w`<wui-account-name-suggestion-item
             name=${e.name}
             ?registered=${e.registered}
             ?loading=${this.loading}
@@ -363,11 +363,11 @@ import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l a
             data-testid="account-name-suggestion"
             @click=${()=>this.onSubmitName(e.name)}
           ></wui-account-name-suggestion-item>`)}
-    </wui-flex>`}isAllowedToSubmit(e){let t=e.split(`.`)?.[0],n=this.suggestions.find(e=>e.name?.split(`.`)?.[0]===t&&e.registered);return!this.loading&&!this.error&&!this.profileName&&t&&k.validateName(t)&&!n}async onSubmitName(t){try{if(!this.isAllowedToSubmit(t))return;h.sendEvent({type:`track`,event:`REGISTER_NAME_INITIATED`,properties:{isSmartAccount:s(d.state.activeChain)===e.ACCOUNT_TYPES.SMART_ACCOUNT,ensName:t}}),await k.registerName(t),h.sendEvent({type:`track`,event:`REGISTER_NAME_SUCCESS`,properties:{isSmartAccount:s(d.state.activeChain)===e.ACCOUNT_TYPES.SMART_ACCOUNT,ensName:t}})}catch(n){l.showError(n.message),h.sendEvent({type:`track`,event:`REGISTER_NAME_ERROR`,properties:{isSmartAccount:s(d.state.activeChain)===e.ACCOUNT_TYPES.SMART_ACCOUNT,ensName:t,error:a.parseError(n)}})}}onEnterKey(e){if(e.key===`Enter`&&this.name&&this.isAllowedToSubmit(this.name)){let e=`${this.name}${f.WC_NAME_SUFFIX}`;this.onSubmitName(e)}}};Q.styles=X,Z([v()],Q.prototype,`errorMessage`,void 0),Z([C()],Q.prototype,`name`,void 0),Z([C()],Q.prototype,`error`,void 0),Z([C()],Q.prototype,`loading`,void 0),Z([C()],Q.prototype,`suggestions`,void 0),Z([C()],Q.prototype,`profileName`,void 0),Q=Z([b(`w3m-register-account-name-view`)],Q);var re=w`
+    </wui-flex>`}isAllowedToSubmit(e){let t=e.split(`.`)?.[0],n=this.suggestions.find(e=>e.name?.split(`.`)?.[0]===t&&e.registered);return!this.loading&&!this.error&&!this.profileName&&t&&O.validateName(t)&&!n}async onSubmitName(t){try{if(!this.isAllowedToSubmit(t))return;h.sendEvent({type:`track`,event:`REGISTER_NAME_INITIATED`,properties:{isSmartAccount:s(d.state.activeChain)===e.ACCOUNT_TYPES.SMART_ACCOUNT,ensName:t}}),await O.registerName(t),h.sendEvent({type:`track`,event:`REGISTER_NAME_SUCCESS`,properties:{isSmartAccount:s(d.state.activeChain)===e.ACCOUNT_TYPES.SMART_ACCOUNT,ensName:t}})}catch(n){l.showError(n.message),h.sendEvent({type:`track`,event:`REGISTER_NAME_ERROR`,properties:{isSmartAccount:s(d.state.activeChain)===e.ACCOUNT_TYPES.SMART_ACCOUNT,ensName:t,error:a.parseError(n)}})}}onEnterKey(e){if(e.key===`Enter`&&this.name&&this.isAllowedToSubmit(this.name)){let e=`${this.name}${f.WC_NAME_SUFFIX}`;this.onSubmitName(e)}}};Q.styles=X,Z([v()],Q.prototype,`errorMessage`,void 0),Z([S()],Q.prototype,`name`,void 0),Z([S()],Q.prototype,`error`,void 0),Z([S()],Q.prototype,`loading`,void 0),Z([S()],Q.prototype,`suggestions`,void 0),Z([S()],Q.prototype,`profileName`,void 0),Q=Z([b(`w3m-register-account-name-view`)],Q);var re=C`
   .continue-button-container {
     width: 100%;
   }
-`,ie=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},$=class extends E{render(){return T`
+`,ie=function(e,t,n,r){var i=arguments.length,a=i<3?t:r===null?r=Object.getOwnPropertyDescriptor(t,n):r,o;if(typeof Reflect==`object`&&typeof Reflect.decorate==`function`)a=Reflect.decorate(e,t,n,r);else for(var s=e.length-1;s>=0;s--)(o=e[s])&&(a=(i<3?o(a):i>3?o(t,n,a):o(t,n))||a);return i>3&&a&&Object.defineProperty(t,n,a),a},$=class extends T{render(){return w`
       <wui-flex
         flexDirection="column"
         alignItems="center"
@@ -376,13 +376,13 @@ import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l a
       >
         ${this.onboardingTemplate()} ${this.buttonsTemplate()}
         <wui-link
-          @click=${()=>{a.openHref(ee.URLS.FAQ,`_blank`)}}
+          @click=${()=>{a.openHref(A.URLS.FAQ,`_blank`)}}
         >
           Learn more
           <wui-icon color="inherit" slot="iconRight" name="externalLink"></wui-icon>
         </wui-link>
       </wui-flex>
-    `}onboardingTemplate(){return T` <wui-flex
+    `}onboardingTemplate(){return w` <wui-flex
       flexDirection="column"
       gap="6"
       alignItems="center"
@@ -399,7 +399,7 @@ import{B as e,F as t,K as n,M as r,U as i,V as a,b as o,g as s,i as c,j as l,l a
           You can now fund your account and trade crypto
         </wui-text>
       </wui-flex>
-    </wui-flex>`}buttonsTemplate(){return T`<wui-flex
+    </wui-flex>`}buttonsTemplate(){return w`<wui-flex
       .padding=${[`0`,`4`,`0`,`4`]}
       gap="3"
       class="continue-button-container"

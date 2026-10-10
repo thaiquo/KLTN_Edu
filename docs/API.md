@@ -15,7 +15,7 @@
 | API family | Owning service |
 | --- | --- |
 | Auth, account, profile, Tutor application identity data, geography | `account-service` |
-| Teaching catalog, tutor registration, availability, class, enrollment, sessions, homework, reviews, Community | `learning-service` |
+| Teaching catalog, tutor registration, availability, class, enrollment, sessions, homework, reviews, Community and Tutor Follow | `learning-service` |
 | Contract, document, escrow, settlement, dispute, termination | `contract-service` |
 | Bell notifications and human Student-Tutor chat | `notification-service` |
 | Tutor/Class AI Matching, AI chatbot, semantic maintenance | `ai-service` |
@@ -105,7 +105,7 @@ Community belongs to Learning Service and is exposed through `/api/community`.
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/community/posts` | Feed/list; supports `postType`, `status`, `subjectId`, `learningMode`, `keyword`, `page`, `size`. |
+| `GET` | `/api/community/posts` | Feed/list; supports `postType`, `status`, `subjectId`, `learningMode`, `keyword`, `followingOnly`, `page`, `size`; authenticated all-feed prioritizes followed Tutors. |
 | `GET` | `/api/community/posts/{id}` | Post detail and view count. |
 | `GET` | `/api/community/posts/mine` | Current user's posts. |
 | `GET` | `/api/community/posts/bookmarked` | Current user's bookmarks. |
@@ -123,6 +123,11 @@ Community belongs to Learning Service and is exposed through `/api/community`.
 | `POST` | `/api/community/posts/{id}/comments` | Add comment/reply. |
 | `GET` | `/api/community/posts/{id}/class-suggestion` | Tutor-author class suggestion from poll demand. |
 | `POST` | `/api/community/posts/{id}/convert-to-class` | Tutor-author post-to-class conversion. |
+| `PUT` | `/api/community/tutors/{tutorUserId}/follow` | Student follows an approved Tutor; idempotent. |
+| `DELETE` | `/api/community/tutors/{tutorUserId}/follow` | Student unfollows a Tutor; idempotent. |
+| `GET` | `/api/community/tutors/{tutorUserId}/follow-status` | Public follower count and current Student follow state. |
+| `GET` | `/api/community/following-tutors` | Current Student's followed Tutors. |
+| `GET` | `/api/community/tutors/{tutorUserId}/followers` | Role-scoped follower list for the Tutor. |
 
 Community emits Learning WebSocket updates and RabbitMQ notification events for supported interactions/conversion. Do not document `/api/learning/community` unless gateway/client/source are changed.
 

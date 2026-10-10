@@ -30,7 +30,7 @@ Gateway routes the current REST families and WebSocket paths: `/api/auth`, `/api
 | Service | Owns | Notes |
 | --- | --- | --- |
 | `account-service` | Authentication, users/roles, active role, Student/Tutor profiles, Tutor application identity data, geography reference data, internal active Staff/Admin notification recipient lookup. | Browser auth uses HttpOnly JWT cookies. Internal recipient lookup is service-token protected. |
-| `learning-service` | Teaching catalog, tutor authorization/subjects, tutor availability, public Tutor/Class learning data, classrooms, enrollment, sessions, attendance, homework, reviews, Community posts/polls/interactions/bookmarks, post-to-class behavior. | Community schema is in Learning Flyway V8. |
+| `learning-service` | Teaching catalog, tutor authorization/subjects, tutor availability, public Tutor/Class learning data, classrooms, enrollment, sessions, attendance, homework, reviews, Community posts/polls/interactions/bookmarks, Tutor Follow, post-to-class behavior. | Community schema is in Learning Flyway V8; Tutor Follow is in V9. |
 | `contract-service` | E-contract, EIP-712 signing, final PDF/artifacts, escrow/payment lifecycle, blockchain reconciliation, settlement, disputes, termination governance, termination outbox, Contract -> Learning lifecycle events. | Contract is the source of truth for termination governance. |
 | `notification-service` | Persisted Bell notifications, Rabbit consumers, notification WebSocket, human Student-Tutor messaging, chat attachments metadata, chat REST/WebSocket. | Human messaging is not the AI chatbot. |
 | `ai-service` | Tutor Matching, Class Matching, Gemini analysis/grounding, Qdrant semantic retrieval, Matching V3 explainable scoring, AI chatbot, chatbot RAG, public lookup/count tools, authenticated Student/Tutor read-only chatbot tools. | Matching and chatbot stay inside AI Service. |
@@ -134,7 +134,7 @@ Each service owns its data model even when local development uses the same Postg
 | Service | Current migration baseline | Representative data |
 | --- | --- | --- |
 | Account | Account chain through V15 in current source/history | users, roles, refresh sessions, OTP, students, tutors, tutor applications/documents. |
-| Learning | Compact V1..V8 | legacy compatibility, normalized catalog, tutor registrations, classrooms, sessions/homework/materials, reviews, Community posts/polls. |
+| Learning | Compact V1..V9 | legacy compatibility, normalized catalog, tutor registrations, classrooms, sessions/homework/materials, reviews, Community posts/polls and Tutor Follow. |
 | Contract | Continuous V1..V19 | agreements, acceptances, artifacts, escrow payments, settlements, disputes/evidence, blockchain transactions/events, termination governance/outbox. |
 | Notification | V1..V2 | notifications, conversations, chat messages and chat attachments. |
 

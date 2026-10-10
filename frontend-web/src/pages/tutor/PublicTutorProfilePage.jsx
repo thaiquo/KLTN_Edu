@@ -23,7 +23,10 @@ import {
 import { tutorApi } from '../../api/tutors';
 import { classApi } from '../../api/classes';
 import { reviewApi } from '../../api/reviews';
+import { communityApi } from '../../api/community';
 import { HomeHeader } from '../../components/home/HomeHeader';
+import { useFeedback } from '../../components/feedback/useFeedback';
+import { useAuth } from '../../hooks/useAuth';
 import { useStartTutorConversation } from '../../hooks/useStartTutorConversation';
 import { PublicClassDetailModal } from '../class/PublicClassDetailModal';
 
@@ -47,6 +50,8 @@ export function PublicTutorProfilePage() {
   const [searchParams] = useSearchParams();
   const subjectContextId = Number(searchParams.get('subjectId')) || null;
   const marketplaceReturnTo = marketplaceReturnLocation(location.state?.marketplaceReturnTo);
+  const { user, authenticated } = useAuth();
+  const feedback = useFeedback();
 
   const [tutor, setTutor] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -57,6 +62,8 @@ export function PublicTutorProfilePage() {
   const [reviewsPage, setReviewsPage] = useState(null);
   const [reviewsLoading, setReviewsLoading] = useState(false);
   const [reviewPageIndex, setReviewPageIndex] = useState(0);
+  const [followStatus, setFollowStatus] = useState({ isFollowed: false, followerCount: 0 });
+  const [followLoading, setFollowLoading] = useState(false);
   const { canShowChatAction, startTutorConversation, startingTutorUserId } = useStartTutorConversation();
 
   useEffect(() => {
@@ -82,6 +89,21 @@ export function PublicTutorProfilePage() {
       active = false;
     };
   }, [id]);
+
+  useEffect(() => {
+    if (!tutor?.userId) return;
+    let active = true;
+
+    communityApi.getTutorFollowStatus(tutor.userId)
+      .then((response) => {
+        if (active && response) setFollowStatus(response);
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, [tutor?.userId]);
 
   useEffect(() => {
     if (!tutor?.tutorId) return;
@@ -144,6 +166,35 @@ export function PublicTutorProfilePage() {
   const safeLocation = formatLocation(tutor?.location);
   const canChat = canShowChatAction(tutor?.userId);
   const startingChat = Number(startingTutorUserId) === Number(tutor?.userId);
+  const canFollow = authenticated
+    && (user?.activeRole === 'STUDENT' || user?.role === 'STUDENT')
+    && String(user?.id) !== String(tutor?.userId);
+
+  async function handleToggleFollow() {
+    if (!authenticated) {
+      feedback.info({ title: 'Cần đăng nhập', message: 'Vui lòng đăng nhập để theo dõi gia sư.' });
+      return;
+    }
+    if (user?.activeRole !== 'STUDENT' && user?.role !== 'STUDENT') {
+      feedback.warning('Chỉ tài khoản Học viên mới có thể theo dõi gia sư.');
+      return;
+    }
+
+    setFollowLoading(true);
+    try {
+      const response = followStatus.isFollowed
+        ? await communityApi.unfollowTutor(tutor.userId)
+        : await communityApi.followTutor(tutor.userId);
+      setFollowStatus(response);
+      feedback.success(followStatus.isFollowed
+        ? `Đã hủy theo dõi gia sư ${tutor.fullName}`
+        : `Đã theo dõi gia sư ${tutor.fullName}`);
+    } catch (followError) {
+      feedback.error(followError?.message || 'Không thể cập nhật trạng thái theo dõi.');
+    } finally {
+      setFollowLoading(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-bg text-ink font-sans">
@@ -184,6 +235,9 @@ export function PublicTutorProfilePage() {
                     </p>
                     <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-bold text-slate-600">
                       <RatingPill averageRating={tutor.averageRating} reviewCount={tutor.reviewCount} />
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-blue-700">
+                        <UsersRound size={15} /> {Number(followStatus.followerCount || 0)} người theo dõi
+                      </span>
                       {safeLocation && (
                         <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
                           <MapPin size={15} className="text-rose-500" /> {safeLocation}
@@ -317,6 +371,7 @@ export function PublicTutorProfilePage() {
                     <QuickInfo icon={GraduationCap} label="Môn đã duyệt" value={`${capabilities.length} môn`} />
                     <QuickInfo icon={BookOpen} label="Lớp công khai" value={`${Number(tutor.publishedClassCount || publicClasses.length || 0)} lớp`} />
                     <QuickInfo icon={UsersRound} label="Đánh giá" value={`${Number(tutor.reviewCount || 0)} lượt`} />
+                    <QuickInfo icon={UsersRound} label="Người theo dõi" value={`${Number(followStatus.followerCount || 0)} người`} />
                     {safeLocation && <QuickInfo icon={MapPin} label="Khu vực" value={safeLocation} />}
                     <QuickInfo icon={CalendarDays} label="Lịch dạy" value={summarizeAvailability(availabilityByDay)} />
                   </div>
@@ -325,6 +380,21 @@ export function PublicTutorProfilePage() {
                 <section className="border border-slate-200 bg-white p-6 shadow-[0_18px_42px_rgba(15,23,42,.06)]">
                   <h2 className="font-display text-xl font-extrabold text-slate-950">Hành động</h2>
                   <div className="mt-4 grid gap-3">
+                    {canFollow && (
+                      <button
+                        type="button"
+                        onClick={handleToggleFollow}
+                        disabled={followLoading}
+                        className={`inline-flex items-center justify-center gap-2 px-4 py-3 text-sm font-extrabold transition-colors disabled:cursor-wait disabled:opacity-70 ${
+                          followStatus.isFollowed
+                            ? 'border border-slate-300 bg-slate-100 text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700'
+                            : 'bg-slate-900 text-white hover:bg-primary'
+                        }`}
+                      >
+                        {followStatus.isFollowed ? <CheckCircle2 size={16} /> : <UsersRound size={16} />}
+                        {followLoading ? 'Đang xử lý...' : followStatus.isFollowed ? 'Đang theo dõi' : 'Theo dõi gia sư'}
+                      </button>
+                    )}
                     {canChat && (
                       <button
                         type="button"

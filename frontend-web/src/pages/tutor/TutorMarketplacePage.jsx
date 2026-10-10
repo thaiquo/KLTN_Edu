@@ -24,9 +24,11 @@ import {
   X
 } from 'lucide-react';
 import { tutorApi } from '../../api/tutors';
+import { communityApi } from '../../api/community';
 import { teachingCatalogApi } from '../../api/teachingRegistrations';
 import { referenceApi } from '../../api/reference';
 import { HomeHeader } from '../../components/home/HomeHeader';
+import { useFeedback } from '../../components/feedback/useFeedback';
 import { AiTutorMatchingModal } from '../../components/matching/AiTutorMatchingModal';
 import { useAuth } from '../../hooks/useAuth';
 import { useStartTutorConversation } from '../../hooks/useStartTutorConversation';
@@ -585,7 +587,11 @@ function FilterPanel({ filters, catalog, locations, updateFilter, clearFilters, 
 }
 
 function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiResult = false, marketplaceReturnTo = '/tutors' }) {
+  const { user, authenticated } = useAuth();
+  const feedback = useFeedback();
   const { canShowChatAction, startTutorConversation, startingTutorUserId } = useStartTutorConversation();
+  const [followStatus, setFollowStatus] = useState({ isFollowed: false, followerCount: 0 });
+  const [followLoading, setFollowLoading] = useState(false);
   const capability = isAiResult ? capabilityFromMatch(tutor.matchedSubject) : getDisplayCapability(tutor, selectedSubjectId);
   const hasSubjectFilter = Boolean((selectedSubjectId || isAiResult) && capability);
   const location = formatLocation(tutor.location);
@@ -602,6 +608,41 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiR
   const scoreCriteria = Array.isArray(tutor.scoreBreakdown?.criteria) ? tutor.scoreBreakdown.criteria.filter(Boolean) : [];
   const canChat = canShowChatAction(tutor.userId);
   const startingChat = Number(startingTutorUserId) === Number(tutor.userId);
+  const canFollow = authenticated
+    && (user?.activeRole === 'STUDENT' || user?.role === 'STUDENT')
+    && String(user?.id) !== String(tutor?.userId);
+
+  useEffect(() => {
+    if (!tutor?.userId) return;
+    let active = true;
+
+    communityApi.getTutorFollowStatus(tutor.userId)
+      .then((response) => {
+        if (active && response) setFollowStatus(response);
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, [tutor?.userId]);
+
+  async function handleToggleFollow() {
+    setFollowLoading(true);
+    try {
+      const response = followStatus.isFollowed
+        ? await communityApi.unfollowTutor(tutor.userId)
+        : await communityApi.followTutor(tutor.userId);
+      setFollowStatus(response);
+      feedback.success(followStatus.isFollowed
+        ? `Đã hủy theo dõi gia sư ${tutor.fullName}`
+        : `Đã theo dõi gia sư ${tutor.fullName}`);
+    } catch (followError) {
+      feedback.error(followError?.message || 'Không thể cập nhật trạng thái theo dõi.');
+    } finally {
+      setFollowLoading(false);
+    }
+  }
 
   return (
     <article className="group flex min-h-[360px] flex-col rounded-[8px] border border-slate-200 bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,.06)] transition-all duration-200 hover:-translate-y-1 hover:border-primary/40 hover:shadow-[0_22px_50px_rgba(15,23,42,.10)]">
@@ -611,6 +652,9 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiR
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="truncate font-display text-xl font-extrabold text-slate-950">{tutor.fullName || 'Gia sư EduConnect'}</h3>
             {tutor.approvedOrVerified && <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-black text-emerald-700"><ShieldCheck size={12} /> Đã được xét duyệt</span>}
+            <span className="inline-flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-2 py-1 text-[10px] font-black text-blue-700">
+              <UsersRound size={12} /> {Number(followStatus.followerCount || 0)}
+            </span>
           </div>
           <RatingBadge averageRating={tutor.averageRating} reviewCount={tutor.reviewCount} />
         </div>
@@ -709,6 +753,21 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiR
             className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-primary px-5 text-sm font-black text-white transition-colors hover:bg-primary-dark disabled:cursor-wait disabled:opacity-70"
           >
             <MessageCircle size={16} /> {startingChat ? 'Đang mở...' : 'Nhắn tin'}
+          </button>
+        )}
+        {canFollow && (
+          <button
+            type="button"
+            onClick={handleToggleFollow}
+            disabled={followLoading}
+            title={followStatus.isFollowed ? 'Bỏ theo dõi gia sư' : 'Theo dõi gia sư'}
+            className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] border px-4 text-sm font-black transition-colors disabled:cursor-wait disabled:opacity-70 ${
+              followStatus.isFollowed
+                ? 'border-slate-300 bg-slate-100 text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700'
+                : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+            }`}
+          >
+            <UsersRound size={16} /> {followLoading ? 'Đang xử lý...' : followStatus.isFollowed ? 'Đang theo dõi' : 'Theo dõi'}
           </button>
         )}
         <Link

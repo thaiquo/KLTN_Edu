@@ -82,7 +82,8 @@ export function CommunityFeedPage({
         page: targetPage,
         size: 10,
         keyword: kw.trim() || undefined,
-        postType: !['ALL', 'SAVED'].includes(activeTab) ? activeTab : undefined
+        postType: !['ALL', 'SAVED', 'FOLLOWING'].includes(activeTab) ? activeTab : undefined,
+        followingOnly: activeTab === 'FOLLOWING' ? true : undefined
       };
       const res = activeTab === 'SAVED'
         ? await communityApi.getBookmarkedPosts({ page: targetPage, size: 10 })
@@ -110,7 +111,7 @@ export function CommunityFeedPage({
   );
 
   useEffect(() => {
-    if (!authenticated && ['SAVED', 'MINE'].includes(activeTab)) {
+    if (!authenticated && ['SAVED', 'MINE', 'FOLLOWING'].includes(activeTab)) {
       setActiveTab('ALL');
     }
   }, [authenticated, activeTab]);
@@ -335,6 +336,19 @@ export function CommunityFeedPage({
               <Flame className="w-3.5 h-3.5" />
               <span>Tất cả bài viết</span>
             </button>
+            {authenticated && (user?.activeRole === 'STUDENT' || user?.role === 'STUDENT') && (
+              <button
+                onClick={() => setActiveTab('FOLLOWING')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === 'FOLLOWING'
+                    ? 'bg-amber-500 text-white shadow-sm'
+                    : 'text-amber-800 bg-amber-50 border border-amber-200/80 hover:bg-amber-100/70'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>⭐ Gia sư đang theo dõi</span>
+              </button>
+            )}
             <button
               onClick={() => setActiveTab('TUTOR_ANNOUNCEMENT')}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
@@ -479,14 +493,28 @@ export function CommunityFeedPage({
                 {exploreMode ? <Compass className="w-7 h-7" /> : <BookOpen className="w-7 h-7" />}
               </div>
               <h3 className="font-bold text-slate-800 text-sm md:text-base mb-1">
-                {exploreMode ? 'Không tìm thấy bài viết cộng đồng nào' : 'Chưa có bài viết nào phù hợp'}
+                {activeTab === 'FOLLOWING'
+                  ? 'Chưa có bài viết từ gia sư bạn đang theo dõi'
+                  : exploreMode
+                  ? 'Không tìm thấy bài viết cộng đồng nào'
+                  : 'Chưa có bài viết nào phù hợp'}
               </h3>
               <p className="text-xs text-slate-500 max-w-sm mx-auto mb-4">
-                {exploreMode
+                {activeTab === 'FOLLOWING'
+                  ? 'Bạn chưa theo dõi gia sư nào hoặc các gia sư bạn theo dõi chưa đăng bài mới. Hãy khám phá Marketplace để theo dõi các gia sư yêu thích!'
+                  : exploreMode
                   ? 'Hiện không có bài viết nào trong cộng đồng phù hợp với tiêu chí lọc của bạn. Bạn có thể thử đổi bộ lọc hoặc từ khóa.'
                   : 'Hãy là người đầu tiên đăng bài khảo sát hoặc tìm kiếm trên EduConnect!'}
               </p>
-              {exploreMode ? (
+              {activeTab === 'FOLLOWING' ? (
+                <Link
+                  to="/tutors"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-xl shadow-sm transition"
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Khám phá Marketplace Gia sư</span>
+                </Link>
+              ) : exploreMode ? (
                 <button
                   type="button"
                   onClick={() => {

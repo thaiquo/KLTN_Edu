@@ -2,13 +2,14 @@ import { apiRequest } from './client';
 
 export const communityApi = {
   // Posts
-  getPosts: ({ postType, status, subjectId, learningMode, keyword, page = 0, size = 10 } = {}) => {
+  getPosts: ({ postType, status, subjectId, learningMode, keyword, followingOnly, page = 0, size = 10 } = {}) => {
     const params = new URLSearchParams();
     if (postType && postType !== 'ALL') params.set('postType', postType);
     if (status) params.set('status', status);
     if (subjectId) params.set('subjectId', String(subjectId));
     if (learningMode) params.set('learningMode', learningMode);
     if (keyword) params.set('keyword', keyword);
+    if (followingOnly) params.set('followingOnly', 'true');
     params.set('page', String(page));
     params.set('size', String(size));
     const query = params.toString();
@@ -100,6 +101,23 @@ export const communityApi = {
     method: 'POST',
     body: JSON.stringify(data)
   }),
+
+  // Tutor Follow System
+  followTutor: (tutorUserId) => apiRequest(`/api/community/tutors/${tutorUserId}/follow`, {
+    method: 'PUT'
+  }),
+
+  unfollowTutor: (tutorUserId) => apiRequest(`/api/community/tutors/${tutorUserId}/follow`, {
+    method: 'DELETE'
+  }),
+
+  getTutorFollowStatus: (tutorUserId) => apiRequest(`/api/community/tutors/${tutorUserId}/follow-status`),
+
+  getFollowingTutors: () => apiRequest('/api/community/following-tutors'),
+
+  getTutorFollowers: (tutorUserId, { page = 0, size = 20 } = {}) => {
+    return apiRequest(`/api/community/tutors/${tutorUserId}/followers?page=${page}&size=${size}`);
+  },
 };
 
 export default communityApi;

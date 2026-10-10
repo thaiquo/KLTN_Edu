@@ -1,4 +1,4 @@
-import{J as e,M as t,b as n,j as r,q as i,r as a}from"./ModalController-BGYZ-tET.js";import{c as o,d as s,l as c,s as l,w as u,x as d,y as f}from"./wui-text-D7DuN2ep.js";import{n as p}from"./features-Dndt9sj8.js";import{t as m}from"./w3m-email-otp-widget-CGDP1dzy.js";var h=u`
+import{J as e,M as t,b as n,j as r,q as i,r as a}from"./ModalController-BGYZ-tET.js";import{c as o,d as s,l as c,s as l,w as u,x as d,y as f}from"./wui-text-D7DuN2ep.js";import{n as p}from"./features-Dndt9sj8.js";import{t as m}from"./w3m-email-otp-widget-DFJ0nyUx.js";var h=u`
   .email-sufixes {
     display: flex;
     flex-direction: row;

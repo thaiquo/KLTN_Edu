@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | `api-gateway` | IMPLEMENTED | Routes current REST and WebSocket families with credentialed CORS/cookie forwarding. |
 | `account-service` | IMPLEMENTED + TESTED | Auth, roles, active role, Student/Tutor profiles, Tutor application identity data, internal active notification recipient lookup. MERGE-FIX-A recipient tests: 3 PASS. |
-| `learning-service` | IMPLEMENTED + TESTED | Catalog, tutor authorization/registrations, availability, classes, enrollment, sessions, attendance, homework, reviews, Community, Learning termination sync. MERGE-FIX-A/B Learning tests: 183 PASS; compact Flyway V1..V8 clean migration and JPA validate PASS. |
+| `learning-service` | IMPLEMENTED + TESTED | Catalog, tutor authorization/registrations, availability, classes, enrollment, sessions, attendance, homework, reviews, Community, Tutor Follow, Learning termination sync. Compact Flyway V1..V9 includes the Follow schema. |
 | `contract-service` | IMPLEMENTED/PARTIAL | Contract, signing, final PDF/artifacts, escrow, settlement, dispute, termination governance/outbox and blockchain reconciliation are implemented; production ops remains limited. Contract V17..V19 cover termination governance/outbox/classification. |
 | `notification-service` | IMPLEMENTED + TESTED | Persisted Bell notifications, event consumers, human chat REST/WebSocket, chat attachments. MERGE-FIX-A Notification tests: 73 PASS. |
 | `ai-service` | IMPLEMENTED/PARTIAL | Tutor/Class AI Matching, Gemini analyzer/grounding, Qdrant semantic retrieval, Matching V3 explainability, chatbot foundation/RAG/tools are implemented in source. Post-merge full runtime regression is still pending unless separately run. |
@@ -37,6 +37,7 @@
 | Class AI Matching | IMPLEMENTED | IMPLEMENTED | NOT IMPLEMENTED | Integrated into Class Marketplace/chatbot; post-merge runtime regression pending. |
 | Matching V3 explainability | IMPLEMENTED | IMPLEMENTED | NOT IMPLEMENTED | Dynamic scoring, score breakdown, reasons/mismatch reasons in AI Service contracts. |
 | Community Posts | IMPLEMENTED | IMPLEMENTED | NOT IMPLEMENTED | Feed/list/detail/create/update/delete/close, Student/Tutor post types. |
+| Tutor Follow | IMPLEMENTED | IMPLEMENTED | NOT IMPLEMENTED | Student-to-approved-Tutor follow, follower count, followed-Tutor feed filter and management views. |
 | Polls/interactions/bookmarks | IMPLEMENTED | IMPLEMENTED | NOT IMPLEMENTED | Poll voting, likes, comments/replies, bookmarks. |
 | Community notifications | IMPLEMENTED | IMPLEMENTED | NOT IMPLEMENTED | Learning emits Community events; Notification consumes supported events. |
 | Community post-to-class | IMPLEMENTED | IMPLEMENTED | NOT IMPLEMENTED | Tutor-author conversion uses class creation behavior. |
@@ -64,7 +65,7 @@
 
 ## 5. Learning
 
-- IMPLEMENTED + TESTED: compact Flyway V1..V8, clean migration PASS and JPA validate PASS.
+- IMPLEMENTED: compact Flyway V1..V9, with Community in V8 and Tutor Follow in V9.
 - IMPLEMENTED: teaching catalog, tutor subject registrations, subject suggestions/requests and review flows.
 - IMPLEMENTED: Tutor availability and class creation/review/visibility.
 - IMPLEMENTED: public class search/detail/share endpoints, including `/api/public/classes/{id}/share`.
@@ -118,7 +119,7 @@
 | Phase | Validation |
 | --- | --- |
 | MERGE-FIX-A | Learning event integration PASS; Notification event integration PASS; Learning 183 tests PASS; Notification 73 tests PASS; Account internal recipient 3 tests PASS. |
-| MERGE-FIX-B | Learning compact Flyway V1..V8; clean DB migration PASS; JPA validate PASS; Learning 183 tests PASS. |
+| MERGE-FIX-B | Learning compact Flyway V1..V8; clean DB migration PASS; JPA validate PASS; Learning 183 tests PASS. Follow extends the compact lineage with V9. |
 | MERGE-FIX-C | Frontend source integration PASS; utility tests 7 PASS; frontend build PASS. |
 
 These are merge validations, not a blanket full production end-to-end certification.

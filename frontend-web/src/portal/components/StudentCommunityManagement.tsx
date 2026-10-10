@@ -40,15 +40,45 @@ export function StudentCommunityManagement({
   initialTab = 'explore',
   hideExploreTab = false
 }: StudentCommunityManagementProps) {
-  // Main Tabs: 'explore' (Khám phá bài viết cộng đồng/người khác) | 'mine' (Quản lý bài đăng của chính mình)
-  const [activeMainTab, setActiveMainTab] = useState<'explore' | 'mine'>(initialTab);
+  // Main Tabs: 'explore' | 'mine' | 'following'
+  const [activeMainTab, setActiveMainTab] = useState<'explore' | 'mine' | 'following'>(initialTab as any);
   const feedback = useFeedback();
 
   useEffect(() => {
     if (initialTab) {
-      setActiveMainTab(initialTab);
+      setActiveMainTab(initialTab as any);
     }
   }, [initialTab]);
+
+  // Following tutors state
+  const [followingTutors, setFollowingTutors] = useState<any[]>([]);
+  const [followingLoading, setFollowingLoading] = useState(false);
+
+  const loadFollowingTutors = useCallback(async () => {
+    setFollowingLoading(true);
+    try {
+      const res = await communityApi.getFollowingTutors();
+      setFollowingTutors(res || []);
+    } catch (err) {
+      console.error('Lỗi khi tải danh sách gia sư theo dõi:', err);
+    } finally {
+      setFollowingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadFollowingTutors();
+  }, [loadFollowingTutors]);
+
+  const handleUnfollow = async (tutorUserId: number) => {
+    try {
+      await communityApi.unfollowTutor(tutorUserId);
+      setFollowingTutors(prev => prev.filter(f => f.tutorUserId !== tutorUserId));
+      feedback.success('Đã hủy theo dõi gia sư.');
+    } catch (err: any) {
+      feedback.error(err.message || 'Không thể hủy theo dõi gia sư.');
+    }
+  };
 
   // 'mine' tab state
   const [posts, setPosts] = useState<any[]>([]);
@@ -338,6 +368,26 @@ export function StudentCommunityManagement({
                 activeMainTab === 'mine' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-700'
               }`}>
                 {posts.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveMainTab('following')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs md:text-sm font-bold transition cursor-pointer ${
+              activeMainTab === 'following'
+                ? 'bg-white text-indigo-600 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-amber-500" />
+            <span>3. Gia sư đang theo dõi</span>
+            {followingTutors.length > 0 && (
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                activeMainTab === 'following' ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {followingTutors.length}
               </span>
             )}
           </button>
@@ -764,6 +814,103 @@ export function StudentCommunityManagement({
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 3: FOLLOWING TUTORS */}
+      {activeMainTab === 'following' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+            <div>
+              <h2 className="text-base md:text-lg font-bold text-slate-900 flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-amber-500" />
+                <span>Danh sách Gia sư bạn đang quan tâm & theo dõi</span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Các bài viết, khảo sát mở lớp của các gia sư này sẽ luôn được ưu tiên hiển thị trên Bảng tin của bạn.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={loadFollowingTutors}
+              className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-600 transition flex items-center gap-1.5 text-xs font-bold cursor-pointer shrink-0"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${followingLoading ? 'animate-spin text-indigo-600' : ''}`} />
+              <span>Làm mới</span>
+            </button>
+          </div>
+
+          {followingLoading ? (
+            <div className="p-12 text-center bg-white rounded-2xl border border-slate-200/80">
+              <RefreshCw className="w-6 h-6 animate-spin text-indigo-600 mx-auto mb-2" />
+              <p className="text-xs text-slate-500 font-medium">Đang tải danh sách gia sư theo dõi...</p>
+            </div>
+          ) : followingTutors.length === 0 ? (
+            <div className="p-12 text-center bg-white rounded-2xl border border-slate-200/80">
+              <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-3">
+                <Users className="w-6 h-6" />
+              </div>
+              <h3 className="font-bold text-slate-900 text-sm md:text-base mb-1">
+                Bạn chưa theo dõi gia sư nào
+              </h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto mb-4">
+                Hãy khám phá Marketplace Gia sư để tìm và theo dõi các gia sư phù hợp với nhu cầu học tập của bạn!
+              </p>
+              <button
+                type="button"
+                onClick={() => onNavigate ? onNavigate('tutors') : window.location.assign('/tutors')}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-sm transition cursor-pointer"
+              >
+                Khám phá Marketplace Gia sư
+              </button>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {followingTutors.map((item) => (
+                <div
+                  key={item.tutorUserId}
+                  className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between hover:shadow-md transition space-y-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-base shadow-sm">
+                        G
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-slate-900 text-sm hover:text-indigo-600">
+                          Gia sư #{item.tutorUserId}
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          <span>Đã theo dõi: {new Date(item.followedAt).toLocaleDateString('vi-VN')}</span>
+                        </p>
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                      ⭐ Đang theo dõi
+                    </span>
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveMainTab('explore')}
+                      className="text-xs font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5" /> Xem bài viết
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleUnfollow(item.tutorUserId)}
+                      className="text-xs font-bold text-slate-400 hover:text-rose-600 transition cursor-pointer px-2.5 py-1 rounded-lg hover:bg-rose-50"
+                    >
+                      Bỏ theo dõi
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
