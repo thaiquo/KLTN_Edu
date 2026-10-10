@@ -5,8 +5,11 @@ import org.springframework.amqp.core.BindingBuilder;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Queue;
 import org.springframework.amqp.rabbit.annotation.EnableRabbit;
+import org.springframework.amqp.support.converter.ContentTypeDelegatingMessageConverter;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.amqp.support.converter.Jackson2JavaTypeMapper;
+import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.amqp.support.converter.SimpleMessageConverter;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.context.annotation.Bean;
@@ -33,6 +36,8 @@ public class LearningRabbitConfig {
     public static final String CLASS_SUBMITTED_ROUTING_KEY = "learning.class.submitted";
     public static final String HOMEWORK_SUBMITTED_ROUTING_KEY = "learning.homework.submitted";
     public static final String HOMEWORK_GRADED_ROUTING_KEY = "learning.homework.graded";
+    public static final String COMMUNITY_POST_CONVERTED_ROUTING_KEY = "learning.community-post.converted";
+    public static final String COMMUNITY_POST_INTERACTION_ROUTING_KEY = "learning.community-post.interaction";
 
     public static final String CONTRACT_ACTIVATED_QUEUE = "learning.contract-activated";
     public static final String CONTRACT_EXPIRED_QUEUE = "learning.contract-expired";
@@ -85,12 +90,15 @@ public class LearningRabbitConfig {
     }
 
     @Bean
-    Jackson2JsonMessageConverter jsonMessageConverter() {
+    MessageConverter jsonMessageConverter() {
         com.fasterxml.jackson.databind.ObjectMapper objectMapper = new com.fasterxml.jackson.databind.ObjectMapper()
                 .registerModule(new JavaTimeModule())
                 .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter(objectMapper);
-        converter.setTypePrecedence(Jackson2JavaTypeMapper.TypePrecedence.INFERRED);
+        Jackson2JsonMessageConverter jacksonConverter = new Jackson2JsonMessageConverter(objectMapper);
+        jacksonConverter.setTypePrecedence(Jackson2JavaTypeMapper.TypePrecedence.INFERRED);
+
+        ContentTypeDelegatingMessageConverter converter = new ContentTypeDelegatingMessageConverter(jacksonConverter);
+        converter.addDelegate("text/plain", new SimpleMessageConverter());
         return converter;
     }
 }

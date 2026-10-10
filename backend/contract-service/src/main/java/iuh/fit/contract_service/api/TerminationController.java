@@ -23,6 +23,7 @@ public class TerminationController {
     private final TerminationEvidenceRepository evidenceRepository;
 
     public record Request(UUID agreementId, boolean wholeClass, String reason, String signature, String signerWallet, Long requestedAtTimestamp) {}
+    public record AdminRequest(UUID agreementId, boolean wholeClass, String reason, boolean approveImmediately) {}
     public record Action(String action, String reason) {}
 
     @GetMapping public List<TerminationService.View> list() { return service.list(users.requireCurrentUser()); }
@@ -33,6 +34,11 @@ public class TerminationController {
 
     @PostMapping public TerminationService.View request(@RequestBody Request body) {
         return service.request(body.agreementId(), body.wholeClass(), body.reason(), body.signature(), body.signerWallet(), body.requestedAtTimestamp(), users.requireCurrentUser());
+    }
+
+    @PostMapping("/admin") public TerminationService.View adminRequest(@RequestBody AdminRequest body) {
+        return service.adminRequest(body.agreementId(), body.wholeClass(), body.reason(),
+                body.approveImmediately(), users.requireCurrentUser());
     }
 
     @PostMapping("/{id}/actions") public TerminationService.View act(@PathVariable UUID id, @RequestBody Action body) {

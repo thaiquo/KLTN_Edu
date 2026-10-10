@@ -1,5 +1,18 @@
 # Shared environment
 
+## Internal notification deployment order
+
+Contract and Notification must use the same `JWT_SECRET`. The Contract service
+signs internal notification requests with a short-lived JWT whose subject is
+`contract-service` and scope is `notification-send`. Notification rejects calls
+without this token. For a rolling local or production update, start the updated
+Contract service first, then start the updated Notification service. The older
+Notification service accepts the new authenticated calls during the transition;
+reversing the order can temporarily stop contract-related notifications.
+Restart Account separately to load its corrected unauthorized response for the
+internal recipient lookup. Existing running processes do not pick up these
+source changes automatically.
+
 Use one `.env` at the repository root, copied from `.env.example`. PowerShell
 startup scripts, backend `run-local.sh`, Docker Compose and Vite read this file.
 Vite exposes only keys prefixed `VITE_`; these values are public browser settings.

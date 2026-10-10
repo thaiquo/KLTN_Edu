@@ -10,6 +10,12 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Date;
+import java.nio.charset.StandardCharsets;
+import javax.crypto.SecretKey;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 
 @Component
 public class NotificationDispatcher {
@@ -18,16 +24,27 @@ public class NotificationDispatcher {
 
     private final HttpClient httpClient;
     private final String notificationServiceUrl;
+    private final TerminationNotificationOutbox terminationOutbox;
+    private final SecretKey serviceKey;
 
     public NotificationDispatcher(
-            @Value("${NOTIFICATION_SERVICE_URL:http://localhost:8084}") String notificationServiceUrl) {
+            @Value("${NOTIFICATION_SERVICE_URL:http://localhost:8084}") String notificationServiceUrl,
+            TerminationNotificationOutbox terminationOutbox,
+            @Value("${jwt.secret}") String secret) {
+        this.terminationOutbox = terminationOutbox;
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(3))
                 .build();
         this.notificationServiceUrl = notificationServiceUrl;
+        this.serviceKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
     public void sendAsync(String recipientEmail, Long recipientId, String title, String content, String type, String referenceType, String referenceId) {
+        if (type != null && type.startsWith("TERMINATION_")) {
+            terminationOutbox.enqueue("termination:" + java.util.UUID.randomUUID(),
+                    new TerminationNotificationOutbox.Intent(recipientId, recipientEmail, title, content, type, referenceType, referenceId));
+            return;
+        }
         if (recipientEmail == null || recipientEmail.isBlank()) {
             return;
         }
@@ -50,6 +67,9 @@ public class NotificationDispatcher {
                     .uri(URI.create(url))
                     .timeout(Duration.ofSeconds(4))
                     .header("Content-Type", "application/json")
+                    .header("X-Service-Token", Jwts.builder().subject("contract-service")
+                            .claim("serviceScope", "notification-send")
+                            .expiration(Date.from(Instant.now().plusSeconds(60))).signWith(serviceKey).compact())
                     .POST(HttpRequest.BodyPublishers.ofString(bodyJson))
                     .build();
 

@@ -124,6 +124,9 @@ public class TerminationProcessor {
     private void close(ContractAgreement a, TerminationCase c, TerminationItem item) {
         learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), c.isWholeClass(), "CLOSE");
         item.setStatus("COMPLETED");
+        notifications.sendAsync(a.getClassroomReviewerEmail(), null, "Đã hoàn tất thanh lý hợp đồng",
+                "Hợp đồng đã hoàn tất quyết toán và cập nhật quyền tham gia lớp. Mở hồ sơ để xem kết quả và giao dịch xác nhận.",
+                "TERMINATION_COMPLETED", "AGREEMENT", a.getId().toString());
         String scope = c.isWholeClass() ? "lop hoc" : "hop dong";
         notifications.sendAsync(a.getStudentEmail(), a.getStudentId(), "Ket qua cham dut hop dong",
                 "Admin da hoan tat xu ly " + scope + ". Danh sach lop va lich hoc tuong lai da duoc cap nhat.",

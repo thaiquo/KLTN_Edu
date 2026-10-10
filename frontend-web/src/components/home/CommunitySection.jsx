@@ -19,7 +19,7 @@ export function CommunitySection() {
           </div>
           <a
             className="inline-flex items-center gap-2 pb-1.5 border-b border-slate-900 text-[13px] font-extrabold whitespace-nowrap hover:text-primary hover:border-primary transition-colors"
-            href="#matching"
+            href="/community"
           >
             Khám phá tất cả <ArrowUpRight size={16} />
           </a>

@@ -42,6 +42,15 @@ export function getNotificationTarget(notification, activeRole) {
     return target('/staff/tutors', 'class-management');
   }
 
+  if (type.startsWith('TERMINATION_')) {
+    if (role === 'STUDENT') return target('/student/wallet', 'wallet');
+    const ref = notification?.referenceId;
+    const filter = ref && referenceType === 'AGREEMENT'
+      ? `&agreementId=${encodeURIComponent(ref)}`
+      : ref && referenceType === 'CLASSROOM' ? `&classroomId=${encodeURIComponent(ref)}` : '';
+    return target(`/dashboard?tab=contracts&subtab=terminations${filter}`, 'contracts');
+  }
+
   if (type === 'TUTOR_APPLICATION_REVIEWED' || referenceType === 'TUTOR_APPLICATION') {
     return role === 'TUTOR'
       ? target('/dashboard', 'dashboard')
@@ -66,6 +75,17 @@ export function getNotificationTarget(notification, activeRole) {
       return target('/tutor/teaching-registrations', 'subjects');
     }
     return target('/tutor/teaching-registrations');
+  }
+
+  if (type === 'COMMUNITY_POST_CONVERTED_TO_CLASS'
+      || type === 'COMMUNITY_POST_COMMENTED'
+      || type === 'COMMUNITY_POST_REPLIED'
+      || referenceType === 'COMMUNITY_POST') {
+    const postId = notification?.referenceId;
+    if (role === 'TUTOR' || role === 'STAFF' || role === 'ADMIN') {
+      return target(postId ? `/dashboard?tab=community#post-${encodeURIComponent(postId)}` : '/dashboard?tab=community', 'community');
+    }
+    return target(postId ? `/community#post-${encodeURIComponent(postId)}` : '/community');
   }
 
   if (type === 'CLASS_REVIEWED' || referenceType === 'CLASS') {

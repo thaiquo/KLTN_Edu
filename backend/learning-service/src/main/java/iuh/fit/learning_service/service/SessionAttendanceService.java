@@ -7,6 +7,7 @@ import iuh.fit.learning_service.entity.ClassSession;
 import iuh.fit.learning_service.entity.SessionAttendance;
 import iuh.fit.learning_service.entity.SessionFile;
 import iuh.fit.learning_service.enums.AttendanceOutcome;
+import iuh.fit.learning_service.enums.ClassRoomStatus;
 import iuh.fit.learning_service.enums.ClassSessionStatus;
 import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 import iuh.fit.learning_service.enums.SyllabusMode;
@@ -140,6 +141,12 @@ public class SessionAttendanceService {
 
         ClassRoom classRoom = session.getClassRoom();
         sessionAccessControl.requireTutor(classRoom);
+        if (classRoom.getStatus() == ClassRoomStatus.CANCELLED || classRoom.getStatus() == ClassRoomStatus.CLOSED) {
+            throw new BadRequestException("Lớp học đã kết thúc hoặc đã hủy; không thể chỉnh sửa buổi học");
+        }
+        if (session.getStatus() == ClassSessionStatus.CANCELLED) {
+            throw new BadRequestException("Buổi học đã bị hủy; không thể chỉnh sửa");
+        }
         if (tutorEmail != null && !classRoom.getTutorEmail().equalsIgnoreCase(tutorEmail.trim())) {
             throw new ForbiddenException("Bạn không có quyền chỉnh sửa buổi học của lớp này");
         }
@@ -197,6 +204,9 @@ public class SessionAttendanceService {
                 .orElseThrow(() -> new ResourceNotFoundException("Lớp học không tồn tại: " + classRoomId));
 
         sessionAccessControl.requireTutor(classRoom);
+        if (classRoom.getStatus() == ClassRoomStatus.CANCELLED || classRoom.getStatus() == ClassRoomStatus.CLOSED) {
+            throw new BadRequestException("Lớp học đã kết thúc hoặc đã hủy; không thể sửa link phòng học");
+        }
         if (tutorEmail != null && !classRoom.getTutorEmail().equalsIgnoreCase(tutorEmail.trim())) {
             throw new ForbiddenException("Bạn không có quyền chỉnh sửa lớp học này");
         }
@@ -885,6 +895,7 @@ public class SessionAttendanceService {
     }
 
     private void publishHomeworkSubmittedNotification(ClassSession session, SessionAttendance attendance) {
+        if (learningEventPublisher == null) return;
         ClassRoom room = session.getClassRoom();
         learningEventPublisher.publishHomeworkSubmitted(
                 room.getId(),
@@ -900,6 +911,7 @@ public class SessionAttendanceService {
     }
 
     private void publishHomeworkGradedNotification(ClassSession session, SessionAttendance attendance) {
+        if (learningEventPublisher == null) return;
         ClassRoom room = session.getClassRoom();
         learningEventPublisher.publishHomeworkGraded(
                 room.getId(),
@@ -1275,7 +1287,8 @@ public class SessionAttendanceService {
                 session.getAssignmentExternalUrl(),
                 session.getMaterialExternalUrl(),
                 mySubmissionFileName,
-                mySubmissionFileSize
+                mySubmissionFileSize,
+                terminationService.isAttendanceStopped(session, studentId)
         );
     }
 

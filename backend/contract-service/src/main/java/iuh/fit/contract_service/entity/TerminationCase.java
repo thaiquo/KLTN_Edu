@@ -17,7 +17,10 @@ public class TerminationCase {
     @Column(columnDefinition = "TEXT") private String reason;
     private String requestedBy;
     private String status;
+    private String origin = "PARTY_REQUEST";
     private String detectionKey;
+    private OffsetDateTime responseDeadline;
+    private OffsetDateTime tutorRespondedAt;
     private OffsetDateTime createdAt;
     private OffsetDateTime updatedAt;
     @Column(columnDefinition = "TEXT") private String auditJson;

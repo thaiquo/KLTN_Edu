@@ -51,7 +51,7 @@ class TerminationFlowIntegrationTest {
         when(verificationService.verifyTerminationSignature(any(), any(), any(), any(), anyBoolean(), anyLong(), anyLong(), any()))
                 .thenReturn(true);
         when(learning.send(9999L, a.getStudentId(), a.getId(), wholeClass, "HOLD"))
-                .thenReturn(new TerminationLearningClient.Snapshot(0, List.of()));
+                .thenReturn(new TerminationLearningClient.Snapshot(0, List.of(), null));
         var requester = wholeClass
                 ? user(3, "t@test.vn", "TUTOR")
                 : user(a.getStudentId(), a.getStudentEmail(), "STUDENT");
@@ -67,7 +67,7 @@ class TerminationFlowIntegrationTest {
         assertThat(items.findByCaseIdOrderByAgreementId(caseId)).hasSize(1);
         assertThat(b.getTerminationCutoffSession()).isNull();
         when(learning.send(9999L, 2L, a.getId(), false, "FREEZE"))
-                .thenReturn(new TerminationLearningClient.Snapshot(0, List.of()));
+                .thenReturn(new TerminationLearningClient.Snapshot(0, List.of(), null));
         processor.process(a.getId()); processor.process(a.getId());
         assertThat(transactions.count()).isEqualTo(1);
         assertThat(agreements.findById(a.getId()).orElseThrow().getStatus()).isEqualTo(ContractAgreementStatus.ACTIVE);

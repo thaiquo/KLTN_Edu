@@ -52,6 +52,7 @@ public class EnrollmentRequestController {
     }
 
     @PostMapping({"/api/v1/classes/{classId}/enroll", "/api/classes/{classId}/enroll"})
+    @PreAuthorize("hasRole('STUDENT')")
     public ResponseEntity<EnrollmentRequestResponse> enrollClass(
             Authentication authentication,
             @PathVariable Long classId,

@@ -1,5 +1,7 @@
+import { selectTerminationCase } from "../../../utils/terminationState";
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
   BookOpen,
   Calendar,
   CheckCircle2,
@@ -16,6 +18,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { classApi } from "../../../api/classes";
+import { terminationsApi, TerminationView } from "../../../api/terminationsApi";
+import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
 
 type PortalRole = "student" | "tutor" | "staff" | "admin";
 
@@ -67,11 +71,13 @@ const STATUS_OPTIONS = [
   { id: "REJECTED", label: "Từ chối" },
   { id: "LOCKED", label: "Đã khóa" },
   { id: "CLOSED", label: "Đã đóng" },
+  { id: "CANCELLED", label: "Đã hủy" },
 ];
 
 export function AdminClassManagement({ activeRole }: { activeRole: PortalRole }) {
   const isAdmin = activeRole === "admin";
   const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [terminationCases, setTerminationCases] = useState<TerminationView[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<ClassItem | null>(null);
   const [status, setStatus] = useState("ALL");
@@ -80,12 +86,30 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
   async function load() {
     setLoading(true);
     try {
-      const data = await classApi.adminGetAllClasses({ reviewedByMe: !isAdmin });
+      const [data, termData] = await Promise.all([
+        classApi.adminGetAllClasses({ reviewedByMe: !isAdmin }),
+        terminationsApi.list().catch(() => [] as TerminationView[])
+      ]);
       setClasses(Array.isArray(data) ? data : []);
+      setTerminationCases(Array.isArray(termData) ? termData : []);
     } finally {
       setLoading(false);
     }
   }
+
+  useRealtimeRefresh(
+    [
+      "CLASS_REVIEWED",
+      "CLASS_MUTATED",
+      "CLASS_STATUS_CHANGED",
+      "CLASSROOM_STATUS_CHANGED",
+      "TERMINATION_UPDATED",
+      "TERMINATION_COMPLETED",
+      "TERMINATION_REQUESTED",
+      "TERMINATION_APPROVED"
+    ],
+    load
+  );
 
   useEffect(() => {
     load();
@@ -114,6 +138,8 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
     pending: classes.filter((item) => item.status === "PENDING_APPROVAL").length,
     rejected: classes.filter((item) => item.status === "REJECTED").length,
     locked: classes.filter((item) => item.status === "LOCKED").length,
+    cancelled: classes.filter((item) => item.status === "CANCELLED").length,
+    closed: classes.filter((item) => item.status === "CLOSED").length,
   }), [classes]);
 
   return (
@@ -145,13 +171,14 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
         </div>
       </header>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-7">
         <StatCard label="Tổng số lớp" value={stats.total} icon={<BookOpen className="h-4 w-4" />} active={status === "ALL"} onClick={() => setStatus("ALL")} />
         <StatCard label="Public" value={stats.published} icon={<Globe2 className="h-4 w-4" />} active={status === "PUBLISHED"} onClick={() => setStatus("PUBLISHED")} tone="emerald" />
         <StatCard label="Private" value={stats.privateCount} icon={<Lock className="h-4 w-4" />} active={status === "PRIVATE"} onClick={() => setStatus("PRIVATE")} tone="sky" />
         <StatCard label="Chờ duyệt" value={stats.pending} icon={<Calendar className="h-4 w-4" />} active={status === "PENDING_APPROVAL"} onClick={() => setStatus("PENDING_APPROVAL")} tone="amber" />
         <StatCard label="Bị từ chối" value={stats.rejected} icon={<XCircle className="h-4 w-4" />} active={status === "REJECTED"} onClick={() => setStatus("REJECTED")} tone="rose" />
         <StatCard label="Đã khóa" value={stats.locked} icon={<Lock className="h-4 w-4" />} active={status === "LOCKED"} onClick={() => setStatus("LOCKED")} tone="violet" />
+        <StatCard label="Đã hủy" value={stats.cancelled} icon={<XCircle className="h-4 w-4" />} active={status === "CANCELLED"} onClick={() => setStatus("CANCELLED")} tone="rose" />
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -219,7 +246,12 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
                       <p className="truncate font-black text-slate-800" title={tutorName(item)}>{tutorName(item)}</p>
                       <p className="truncate text-[11px] text-slate-400" title={item.tutorEmail}>{item.tutorEmail}</p>
                     </td>
-                    <td className="px-4 py-3">{statusBadge(item.status)}</td>
+                    <td className="px-4 py-3">
+                      {statusBadge(
+                        item.status,
+                        selectTerminationCase(terminationCases, { classroomId: item.id, wholeClassOnly: true })
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       {item.learningMode === "ONLINE" ? (
                         <span className="inline-flex items-center gap-1 font-bold text-blue-700"><Video className="h-3.5 w-3.5" /> Online</span>
@@ -261,7 +293,13 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
         )}
       </section>
 
-      {selected && <ClassDetailModal item={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <ClassDetailModal
+          item={selected}
+          termCase={selectTerminationCase(terminationCases, { classroomId: selected.id, wholeClassOnly: true })}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   );
 }
@@ -285,7 +323,15 @@ function StatCard({ label, value, icon, active, onClick, tone = "slate" }: any) 
   );
 }
 
-function ClassDetailModal({ item, onClose }: { item: ClassItem; onClose: () => void }) {
+function ClassDetailModal({
+  item,
+  termCase,
+  onClose,
+}: {
+  item: ClassItem;
+  termCase?: TerminationView;
+  onClose: () => void;
+}) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/60 p-4 sm:p-8" onClick={onClose}>
       <div className="my-auto w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
@@ -299,6 +345,28 @@ function ClassDetailModal({ item, onClose }: { item: ClassItem; onClose: () => v
             <X className="h-5 w-5" />
           </button>
         </header>
+
+        {termCase && (
+          <section className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="font-black text-rose-900 flex items-center gap-1.5">
+                <AlertCircle className="h-4 w-4 text-rose-600" />
+                Hồ sơ dừng/hủy lớp (#{termCase.request.id.slice(0, 8)})
+              </p>
+              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-rose-100 text-rose-800 border border-rose-300">
+                {termCase.request.status === "APPROVED"
+                  ? "Admin đã duyệt (Đang hoàn cọc)"
+                  : termCase.request.status === "COMPLETED"
+                  ? "Đã thanh lý hoàn tất"
+                  : termCase.request.status}
+              </span>
+            </div>
+            <p className="text-slate-800 font-semibold mb-1"><strong>Lý do:</strong> {termCase.request.reason}</p>
+            <p className="text-slate-600 text-[11px]">
+              Tiến độ thanh lý: {termCase.items.filter(i => i.status === "COMPLETED").length}/{termCase.items.length} hợp đồng đã quyết toán & hoàn tiền cọc qua Smart Contract.
+            </p>
+          </section>
+        )}
 
         <div className="mt-5 grid gap-3 text-xs sm:grid-cols-3">
           <Info label="Trạng thái" value={statusText(item.status)} />
@@ -370,7 +438,23 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
-function statusBadge(status: string) {
+function statusBadge(status: string, termCase?: TerminationView) {
+  if (status === "LOCKED" && termCase?.request.status === "APPROVED") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-rose-800">
+        <AlertCircle className="h-3 w-3 text-rose-600" />
+        Đã duyệt hủy (Đang hoàn cọc)
+      </span>
+    );
+  }
+  if (status === "CANCELLED") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full border border-rose-300 bg-rose-50 px-2.5 py-0.5 text-[10px] font-black uppercase text-rose-800">
+        <CheckCircle2 className="h-3 w-3 text-rose-600" />
+        Đã hủy (Thanh lý xong)
+      </span>
+    );
+  }
   const classes: Record<string, string> = {
     PUBLISHED: "border-emerald-200 bg-emerald-50 text-emerald-700",
     PRIVATE: "border-sky-200 bg-sky-50 text-sky-700",
@@ -378,6 +462,7 @@ function statusBadge(status: string) {
     REJECTED: "border-rose-200 bg-rose-50 text-rose-700",
     LOCKED: "border-violet-200 bg-violet-50 text-violet-700",
     CLOSED: "border-slate-200 bg-slate-100 text-slate-700",
+    CANCELLED: "border-rose-300 bg-rose-50 text-rose-800",
   };
   return (
     <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${classes[status] || "border-slate-200 bg-slate-100 text-slate-700"}`}>
@@ -395,6 +480,7 @@ function statusText(status: string) {
     REJECTED: "Bị từ chối",
     LOCKED: "Đã khóa",
     CLOSED: "Đã đóng",
+    CANCELLED: "Đã hủy (Thanh lý)",
     ACTIVE: "Đang học",
     DRAFT: "Nháp",
   };

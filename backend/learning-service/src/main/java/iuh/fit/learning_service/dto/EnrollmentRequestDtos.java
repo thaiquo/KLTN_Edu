@@ -97,7 +97,8 @@ public final class EnrollmentRequestDtos {
             String endTime,
             String status,
             String meetingLink,
-            boolean assignmentLocked
+            boolean assignmentLocked,
+            boolean attendanceStopped
     ) {}
 
     public record StudentScheduleResponse(

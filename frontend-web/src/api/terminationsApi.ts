@@ -36,6 +36,9 @@ export interface TerminationView {
     reason: string;
     requestedBy: string;
     status: string;
+    origin?: 'PARTY_REQUEST' | 'AUTO_TUTOR_ABSENCE' | 'SYSTEM_REVIEW' | 'ADMIN_DIRECT' | string;
+    responseDeadline?: string | null;
+    tutorRespondedAt?: string | null;
     createdAt: string;
     auditJson: string;
     lastError: string | null;
@@ -61,6 +64,16 @@ export const terminationsApi = {
     apiRequest('/api/contracts/terminations', {
       method: 'POST',
       body: JSON.stringify({ agreementId, wholeClass, reason, signature, signerWallet, requestedAtTimestamp }),
+    }),
+  adminRequest: (
+    agreementId: string,
+    wholeClass: boolean,
+    reason: string,
+    approveImmediately: boolean
+  ): Promise<TerminationView> =>
+    apiRequest('/api/contracts/terminations/admin', {
+      method: 'POST',
+      body: JSON.stringify({ agreementId, wholeClass, reason, approveImmediately }),
     }),
   act: (id: string, action: string, reason: string): Promise<TerminationView> =>
     apiRequest(`/api/contracts/terminations/${id}/actions`, { method: 'POST', body: JSON.stringify({ action, reason }) }),

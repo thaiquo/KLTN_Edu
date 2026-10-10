@@ -40,6 +40,35 @@ class LearningTerminationServiceTest {
         when(sessions.findByClassRoomIdOrderBySequenceNumberAsc(1L)).thenReturn(rows);
         when(enrollments.findByAgreementId(agreement)).thenReturn(Optional.of(enrollment));
     }
+    @Test void cancelledClassCannotBeAttendedEvenBeforeCutoff() {
+        room.setStatus(ClassRoomStatus.CANCELLED);
+        room.setTerminationCutoffSession(5);
+        var row = session(3, LocalDateTime.now());
+        assertThat(service.isAttendanceStopped(row, null)).isTrue();
+        assertThatThrownBy(() -> service.requireCanAttend(row, null))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+    }
+
+    @Test void individualStopDoesNotStopTutorOrAnotherStudent() {
+        var row = session(2, LocalDateTime.now());
+        var stop = new LearningTerminationStop(); stop.setCutoffSession(1);
+        when(stops.findByClassroomIdAndStudentId(1L, 2L)).thenReturn(List.of(stop));
+        assertThat(service.isAttendanceStopped(row, 2L)).isTrue();
+        assertThat(service.isAttendanceStopped(row, 3L)).isFalse();
+        assertThat(service.isAttendanceStopped(row, null)).isFalse();
+        service.requireCanAttend(row, 3L);
+        assertThatThrownBy(() -> service.requireCanAttend(row, 2L))
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        assertThat(service.isAttendanceStopped(session(1, LocalDateTime.now()), 2L)).isFalse();
+    }
+
+    @Test void wholeClassHoldKeepsStartedSessionAvailable() {
+        room.setTerminationCutoffSession(1);
+        service.requireCanAttend(session(1, LocalDateTime.now()), null);
+        assertThat(service.isAttendanceStopped(session(1, LocalDateTime.now()), null)).isFalse();
+        assertThat(service.isAttendanceStopped(session(2, LocalDateTime.now()), null)).isTrue();
+    }
+
     @Test void individualFreezePreservesOtherStudentsAndClassSchedule() {
         var past = session(1, LocalDateTime.now().minusHours(1));
         var future = session(2, LocalDateTime.now().plusDays(1));
@@ -56,6 +85,8 @@ class LearningTerminationServiceTest {
         prepare(List.of(past, future));
         var held = service.apply(new LearningTerminationService.Command(1L, 2L, agreement, false, "HOLD"));
         assertThat(held.cutoffSession()).isEqualTo(1);
+        assertThat(held.nextSessionStart()).isNotNull();
+        assertThat(held.nextSessionStart().getOffset()).isEqualTo(ZoneOffset.ofHours(7));
         var stop = new LearningTerminationStop(); stop.setAgreementId(agreement); stop.setCutoffSession(1);
         when(stops.findById(agreement)).thenReturn(Optional.of(stop));
         service.apply(new LearningTerminationService.Command(1L, 2L, agreement, false, "RELEASE"));

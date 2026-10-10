@@ -66,6 +66,7 @@ public class SecurityConfig {
                         )
                 )
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.GET, "/api/internal/notification-reviewers").permitAll()
                         .requestMatchers(
                                 "/api/auth/register",
                                 "/api/auth/verify-email",

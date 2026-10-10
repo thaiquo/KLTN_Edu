@@ -28,7 +28,7 @@ export function ClassRequestRow({ item }) {
           <span className="text-slate-400 text-[11px]">{item.duration}</span>
         </span>
         <a
-          href="#matching"
+          href="/classes"
           aria-label={`Xem yêu cầu ${item.title}`}
           className="w-9 h-9 grid place-items-center rounded-[11px] bg-slate-900 text-white hover:bg-primary transition-colors"
         >

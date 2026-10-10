@@ -21,7 +21,8 @@ public class LearningTerminationService {
     private final RollingSessionService rollingSessions;
 
     public record Command(Long classroomId, Long studentId, String agreementId, boolean wholeClass, String action) {}
-    public record Snapshot(int cutoffSession, List<Long> requiredSessions) {}
+    public record Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart) {}
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Bangkok");
 
     @Transactional
     public Snapshot apply(Command command) {
@@ -34,7 +35,7 @@ public class LearningTerminationService {
                 throw new IllegalStateException("Class still has active enrollments");
             }
             room.setStatus(ClassRoomStatus.CANCELLED);
-            return new Snapshot(room.getTerminationCutoffSession(), List.of());
+            return new Snapshot(room.getTerminationCutoffSession(), List.of(), null);
         }
         UUID.fromString(command.agreementId());
         var enrollment = enrollments.findByAgreementId(command.agreementId()).orElseThrow(() ->
@@ -56,12 +57,12 @@ public class LearningTerminationService {
             } else {
                 rollingSessions.createMissingAttendancesForEnrollment(enrollment);
             }
-            return new Snapshot(0, List.of());
+            return new Snapshot(0, List.of(), null);
         }
         if (stop == null) {
             if ("CLOSE".equals(command.action())) throw new IllegalStateException("Freeze must complete first");
             int cutoff = room.getTerminationCutoffSession() != null ? room.getTerminationCutoffSession()
-                    : cutoff(rows, LocalDateTime.now());
+                    : cutoff(rows, LocalDateTime.now(BUSINESS_ZONE));
             stop = new LearningTerminationStop();
             stop.setAgreementId(command.agreementId());
             stop.setClassroomId(room.getId());
@@ -107,9 +108,17 @@ public class LearningTerminationService {
             stop.setClosed(true);
         }
         final int cutoff = stop.getCutoffSession();
+        OffsetDateTime nextSessionStart = rows.stream()
+                .filter(s -> s.getStatus() != ClassSessionStatus.CANCELLED)
+                .filter(s -> s.getSequenceNumber() > cutoff)
+                .map(s -> LocalDateTime.of(s.getSessionDate(), LocalTime.parse(s.getStartTime())))
+                .filter(start -> start.isAfter(LocalDateTime.now(BUSINESS_ZONE)))
+                .min(LocalDateTime::compareTo)
+                .map(start -> start.atZone(BUSINESS_ZONE).toOffsetDateTime())
+                .orElse(null);
         return new Snapshot(cutoff, rows.stream()
                 .filter(s -> s.getSequenceNumber() <= cutoff && s.getStatus() != ClassSessionStatus.CANCELLED)
-                .map(s -> s.getSequenceNumber().longValue()).toList());
+                .map(s -> s.getSequenceNumber().longValue()).toList(), nextSessionStart);
     }
 
     static int cutoff(List<ClassSession> rows, LocalDateTime now) {
@@ -121,6 +130,9 @@ public class LearningTerminationService {
     @Transactional
     public void requireCanAttend(ClassSession session, Long studentId) {
         var room = rooms.findByIdForUpdate(session.getClassRoom().getId()).orElseThrow();
+        if (room.getStatus() == ClassRoomStatus.CANCELLED || room.getStatus() == ClassRoomStatus.CLOSED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Lop da ket thuc; khong the diem danh");
+        }
         if (room.getTerminationCutoffSession() != null && session.getSequenceNumber() > room.getTerminationCutoffSession()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Lop dang cham dut; buoi hoc da dung");
         }
@@ -131,7 +143,19 @@ public class LearningTerminationService {
     }
 
     public boolean isWholeClassSessionStopped(ClassSession session) {
-        Integer cutoff = session.getClassRoom().getTerminationCutoffSession();
+        var room = session.getClassRoom();
+        if (room == null || room.getStatus() == ClassRoomStatus.CANCELLED || room.getStatus() == ClassRoomStatus.CLOSED) {
+            return true;
+        }
+        Integer cutoff = room.getTerminationCutoffSession();
         return cutoff != null && session.getSequenceNumber() > cutoff;
+    }
+
+    public boolean isAttendanceStopped(ClassSession session, Long studentId) {
+        var room = session.getClassRoom();
+        return room.getStatus() == ClassRoomStatus.CANCELLED || room.getStatus() == ClassRoomStatus.CLOSED
+                || isWholeClassSessionStopped(session)
+                || (studentId != null && stops.findByClassroomIdAndStudentId(room.getId(), studentId).stream()
+                    .anyMatch(stop -> session.getSequenceNumber() > stop.getCutoffSession()));
     }
 }

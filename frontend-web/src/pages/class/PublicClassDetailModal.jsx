@@ -1,13 +1,14 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BookOpen, Calendar, Clock, DollarSign, Globe, Info, Key, MapPin,
-  Users, Video, X, UserRound, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle, XCircle, AlertTriangle
+  Users, Video, X, UserRound, ArrowRight, ShieldCheck, CheckCircle2, AlertCircle, XCircle, AlertTriangle, Share2
 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useFeedback } from '../../components/feedback/useFeedback';
 import { ContractDocumentModal } from '../../components/contract/ContractDocumentModal';
 import { checkClassScheduleConflict } from '../../utils/scheduleUtils';
+import { buildClassShareUrl, copyToClipboard } from '../../utils/shareLinks';
 
 const VIETNAMESE_DAYS = [
   { value: 2, label: 'T2' },
@@ -49,8 +50,23 @@ function checkProfileCompletion(user) {
 
 export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const feedback = useFeedback();
+
+  const [copiedShare, setCopiedShare] = React.useState(false);
+  const handleShareClass = async () => {
+    if (!classRoom?.id) return;
+    try {
+      const shareUrl = buildClassShareUrl(classRoom.id);
+      await copyToClipboard(shareUrl);
+      setCopiedShare(true);
+      feedback.success('Đã sao chép liên kết lớp học vào bộ nhớ tạm!');
+      setTimeout(() => setCopiedShare(false), 2500);
+    } catch {
+      feedback.error('Không thể sao chép liên kết lớp học.');
+    }
+  };
 
   const [myRequest, setMyRequest] = React.useState(null);
   const [openContractDoc, setOpenContractDoc] = React.useState(false);
@@ -61,6 +77,11 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const [studentSchedule, setStudentSchedule] = React.useState({ recurringSchedules: [], upcomingSessions: [] });
 
   const profileCheck = React.useMemo(() => checkProfileCompletion(user), [user]);
+  const isStudent = user?.activeRole === 'STUDENT';
+  const enrollmentOpen = classRoom?.status === 'PUBLISHED'
+    && classRoom?.terminationCutoffSession == null
+    && classRoom?.startDate
+    && new Date(`${classRoom.startDate}T00:00:00`).getTime() > new Date().setHours(0, 0, 0, 0);
 
   React.useEffect(() => {
     if (user?.activeRole === 'STUDENT') {
@@ -108,6 +129,19 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
   const handleEnrollSubmit = async (e) => {
     if (e) e.preventDefault();
     setProfileWarning(null);
+
+    if (!user) {
+      navigate('/login', { state: { from: location } });
+      return;
+    }
+    if (!isStudent) {
+      feedback.warning('Chỉ tài khoản đang ở vai trò Học viên mới có thể gửi yêu cầu tham gia lớp.');
+      return;
+    }
+    if (!enrollmentOpen) {
+      feedback.warning('Lớp học này không còn nhận yêu cầu tham gia mới.');
+      return;
+    }
 
     // Profile Completeness Enforcement Check
     if (!profileCheck.isComplete) {
@@ -205,6 +239,16 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
               {classRoom.name}
             </h2>
           </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleShareClass}
+              className="p-2 rounded-2xl border border-slate-200 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+              title="Chia sẻ liên kết lớp học"
+            >
+              <Share2 className="w-4 h-4 text-indigo-600" />
+              <span className="hidden sm:inline">{copiedShare ? 'Đã sao chép!' : 'Chia sẻ lớp'}</span>
+            </button>
           <button
             type="button"
             onClick={onClose}
@@ -212,6 +256,7 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
           >
             <X className="w-5 h-5" />
           </button>
+          </div>
         </div>
 
         {/* Tutor Owner Card Info Banner */}
@@ -527,7 +572,7 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
         )}
 
         {/* Invite Key Form Dropdown (only shown when class has INVITE_KEY mode) */}
-        {showInviteKeyForm && classRoom.joinMode === 'INVITE_KEY' && (
+        {showInviteKeyForm && isStudent && enrollmentOpen && classRoom.joinMode === 'INVITE_KEY' && (
           <form onSubmit={handleEnrollSubmit} className="p-4 bg-sky-50 border border-sky-200 rounded-2xl space-y-3 animate-in fade-in">
             <h3 className="text-xs font-black text-sky-900 uppercase tracking-wider flex items-center gap-1.5">
               <Key className="w-4 h-4 text-sky-600" /> Nhập Mã mời để tham gia lớp học
@@ -574,7 +619,23 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
             Đóng
           </button>
 
-          {!myRequest || myRequest.status === 'CANCELLED' || myRequest.status === 'REJECTED' ? (
+          {!user ? (
+            <button
+              type="button"
+              onClick={() => navigate('/login', { state: { from: location } })}
+              className="px-6 py-2.5 rounded-xl bg-brand-primary text-white text-xs font-black hover:bg-brand-primary/90 transition-all shadow-md"
+            >
+              Đăng nhập để gửi yêu cầu
+            </button>
+          ) : !isStudent ? (
+            <span className="px-4 py-2 bg-slate-100 text-slate-600 font-extrabold text-xs rounded-xl">
+              Chỉ học viên có thể gửi yêu cầu
+            </span>
+          ) : !enrollmentOpen ? (
+            <span className="px-4 py-2 bg-slate-100 text-slate-600 font-extrabold text-xs rounded-xl">
+              Lớp đã đóng tuyển sinh
+            </span>
+          ) : (!myRequest || myRequest.status === 'CANCELLED' || myRequest.status === 'REJECTED') ? (
             classRoom.joinMode === 'INVITE_KEY' ? (
               !showInviteKeyForm && (
                 <button

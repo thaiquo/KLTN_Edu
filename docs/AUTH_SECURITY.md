@@ -120,6 +120,8 @@ Mobile currently uses credentialed API requests, but the CSRF flow is not as com
 
 ## 8. Security Guardrails
 
+Internal notification APIs (verified in source on 2026-10-02): Account reviewer lookup requires an expiring service JWT with subject `contract-service` and scope `notification-recipients`. Notification Service's internal send endpoint requires the same subject with scope `notification-send`; Contract's direct dispatcher and termination outbox both attach it. User cookie JWTs do not grant either service scope. Requests with missing/invalid service tokens return 401 after the updated services are loaded.
+
 - Do not store browser access tokens in `localStorage`.
 - Do not store browser access tokens in `sessionStorage`.
 - Do not migrate to Bearer-only browser auth without explicit confirmation.

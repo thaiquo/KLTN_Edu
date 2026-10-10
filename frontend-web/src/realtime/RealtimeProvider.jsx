@@ -12,7 +12,11 @@ const ENDPOINTS = ['/ws/account', '/ws/learning', '/ws/notifications', '/ws/chat
 const TOAST_DEDUPE_WINDOW_MS = 15_000;
 
 function socketUrl(path, email) {
-  const configured = import.meta.env.VITE_REALTIME_URL?.replace(/\/$/, '');
+  // Development sockets use Vite's /ws proxy so cookies stay on the same
+  // host as the page and each endpoint is appended exactly once.
+  const configured = import.meta.env.DEV
+    ? ''
+    : import.meta.env.VITE_REALTIME_URL?.replace(/\/$/, '');
   const query = email ? `?email=${encodeURIComponent(email)}` : '';
 
   if (configured) {
@@ -457,6 +461,11 @@ export function RealtimeProvider({ children }) {
       sockets.push(socket);
 
       socket.onopen = () => {
+        if (stopped) {
+          socket.close();
+          return;
+        }
+
         /*
          * Nếu notification socket bị ngắt rồi kết nối lại,
          * invalidate query để lấy lại các notification có thể
@@ -630,9 +639,13 @@ export function RealtimeProvider({ children }) {
     return () => {
       stopped = true;
 
-      sockets.forEach((socket) =>
-        socket.close()
-      );
+      sockets.forEach((socket) => {
+        // Closing while CONNECTING makes browsers emit a misleading warning.
+        // The onopen guard above closes late connections without reconnecting.
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.close();
+        }
+      });
 
       retryTimers.current.forEach(
         clearTimeout

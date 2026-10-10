@@ -1,18 +1,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, BookOpen, Calendar, ChevronDown, Clock, Eye, Filter,
-  MapPin, RotateCcw, Search, Sparkles, Star, Users, Video
+  MapPin, RotateCcw, Search, Share2, Sparkles, Star, Users, Video
 } from 'lucide-react';
 import { classApi } from '../../api/classes';
 import { teachingCatalogApi } from '../../api/teachingRegistrations';
 import { HomeHeader } from '../../components/home/HomeHeader';
 import { AiClassSearchModal } from '../../components/matching/AiClassSearchModal';
 import { PublicClassDetailModal } from './PublicClassDetailModal';
+import { useFeedback } from '../../components/feedback/useFeedback';
 import { useAuth } from '../../hooks/useAuth';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import { classMarketplaceSearchSessionStore } from '../../store/classMarketplaceSearchSessionStore';
 import { formatDayOfWeek, formatTimeSlot } from '../../utils/scheduleUtils';
+import { buildClassShareUrl, copyToClipboard } from '../../utils/shareLinks';
 
 const PAGE_SIZE = 9;
 const SELECT_CLASS = 'min-h-12 w-full min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-extrabold text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 disabled:cursor-not-allowed';
@@ -54,6 +56,8 @@ const DEFAULT_FILTERS = {
 export function ClassMarketplacePage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { classId: routeClassId } = useParams();
+  const feedback = useFeedback();
   const { authenticated, user, loading: authLoading } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filters, setFilters] = useState(() => filtersFromSearchParams(searchParams));
@@ -243,15 +247,16 @@ export function ClassMarketplacePage() {
 
   useEffect(() => {
     if (!sessionRestored) return;
-    const classId = new URLSearchParams(location.search).get('classId');
+    const params = new URLSearchParams(location.search);
+    const classId = routeClassId || params.get('classId') || params.get('id');
     if (!classId || !/^\d+$/.test(classId)) return;
     if (selectedClass && String(selectedClass.id) === classId) return;
     setDetailLoadingId(Number(classId));
-    classApi.getPublicClassById(classId)
+    classApi.getShareableClassById(classId)
       .then((detail) => setSelectedClass(detail))
       .catch(() => setSelectedClass(null))
       .finally(() => setDetailLoadingId(null));
-  }, [location.search, selectedClass, sessionRestored]);
+  }, [location.search, routeClassId, selectedClass, sessionRestored]);
 
   const hasFilter = useMemo(() => {
     return Object.values(filters).some((value) => Array.isArray(value) ? value.length > 0 : Boolean(value)) || sort !== 'newest';
@@ -343,10 +348,24 @@ export function ClassMarketplacePage() {
 
   function closeClassDetail() {
     setSelectedClass(null);
-    if (searchParams.get('classId')) {
+    if (routeClassId) {
+      navigate('/classes', { replace: true });
+      return;
+    }
+    if (searchParams.get('classId') || searchParams.get('id')) {
       const next = new URLSearchParams(searchParams);
       next.delete('classId');
+      next.delete('id');
       setSearchParams(next, { replace: true });
+    }
+  }
+
+  async function shareClass(classRoom) {
+    try {
+      await copyToClipboard(buildClassShareUrl(classRoom.id));
+      feedback.success('Đã sao chép liên kết lớp học vào bộ nhớ tạm.');
+    } catch {
+      feedback.error('Không thể sao chép liên kết lớp học.');
     }
   }
 
@@ -511,6 +530,7 @@ export function ClassMarketplacePage() {
                       detailLoading={detailLoadingId === classRoom.id}
                       onOpen={() => openClassDetail(classRoom)}
                       onTutorOpen={() => classRoom.tutorProfileId && navigate(`/tutors/${classRoom.tutorProfileId}`, { state: { marketplaceReturnTo } })}
+                      onShare={() => shareClass(classRoom)}
                     />
                   );
                 })}
@@ -560,6 +580,7 @@ export function ClassMarketplacePage() {
                     detailLoading={detailLoadingId === classRoom.id}
                     onOpen={() => openClassDetail(classRoom)}
                     onTutorOpen={() => classRoom.tutorProfileId && navigate(`/tutors/${classRoom.tutorProfileId}`)}
+                    onShare={() => shareClass(classRoom)}
                   />
                 ))}
               </div>
@@ -635,7 +656,7 @@ function classCardFromAiMatch(match) {
   };
 }
 
-function PublicClassCard({ classRoom, onOpen, onTutorOpen, detailLoading, isAiResult = false }) {
+function PublicClassCard({ classRoom, onOpen, onTutorOpen, onShare, detailLoading, isAiResult = false }) {
   const tutorName = classRoom.tutorFullName || 'Gia sư EduConnect';
   const price = Number(classRoom.pricePerSession) || 0;
   const availableSlots = Number(classRoom.availableSlots ?? Math.max(0, Number(classRoom.maxStudents || 0) - Number(classRoom.acceptedCount || 0)));
@@ -713,9 +734,19 @@ function PublicClassCard({ classRoom, onOpen, onTutorOpen, detailLoading, isAiRe
           <p className="text-xs font-bold text-slate-500">Học phí</p>
           <p className="text-xl font-black text-slate-950">{price > 0 ? price.toLocaleString('vi-VN') : 'Miễn phí'} <span className="text-xs font-extrabold text-slate-500">đ / buổi</span></p>
         </div>
-        <button type="button" onClick={onOpen} className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-black text-white hover:bg-emerald-700">
-          <Eye size={16} /> {detailLoading ? 'Đang mở...' : 'Xem chi tiết'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onShare}
+            className="inline-flex min-h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
+            title="Chia sẻ liên kết lớp học"
+          >
+            <Share2 size={16} />
+          </button>
+          <button type="button" onClick={onOpen} className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-black text-white hover:bg-emerald-700">
+            <Eye size={16} /> {detailLoading ? 'Đang mở...' : 'Xem chi tiết'}
+          </button>
+        </div>
       </div>
     </article>
   );

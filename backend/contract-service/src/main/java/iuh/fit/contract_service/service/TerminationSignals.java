@@ -20,7 +20,6 @@ public class TerminationSignals {
         for (var a : agreements.findByStatus(ContractAgreementStatus.ACTIVE)) {
             if (a.isLegacyExcluded() || a.getTerminationCutoffSession() != null) continue;
             var rows = settlements.findByAgreementId(a.getId()).stream()
-                    .filter(s -> s.getStatus() == SettlementStatus.SETTLED || s.getStatus() == SettlementStatus.REFUNDED)
                     .sorted(Comparator.comparing(SessionSettlement::getSessionId).reversed()).limit(3).toList();
             if (rows.size() != 3 || rows.getFirst().getSessionId() - rows.getLast().getSessionId() != 2) continue;
             boolean absent = rows.stream().allMatch(s -> s.getOutcome() == SettlementOutcome.TUTOR_ABSENT);

@@ -38,70 +38,97 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
-        String token = extractToken(request);
-        if (token == null || token.isBlank()) {
+        if (request.getRequestURI().startsWith("/api/learning/internal/")) {
+            try {
+                Claims claims = Jwts.parser().verifyWith(secretKey).build()
+                        .parseSignedClaims(request.getHeader("X-Service-Token")).getPayload();
+                if (!"contract-service".equals(claims.getSubject())
+                        || !"learning-enrollment".equals(claims.get("serviceScope", String.class))
+                        || claims.getExpiration() == null
+                        || claims.getExpiration().before(new Date())) {
+                    throw new IllegalArgumentException("Invalid service identity");
+                }
+                SecurityContextHolder.getContext().setAuthentication(
+                        new UsernamePasswordAuthenticationToken("contract-service", null,
+                                List.of(new SimpleGrantedAuthority("ROLE_INTERNAL_CONTRACT"))));
+            } catch (Exception ex) {
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                return;
+            }
             filterChain.doFilter(request, response);
             return;
         }
 
-        try {
-            Claims claims = Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload();
-            if (claims.getExpiration() == null || claims.getExpiration().before(new Date())) {
-                filterChain.doFilter(request, response);
-                return;
-            }
-            String email = claims.getSubject();
-            List<?> roles = claims.get("roles", List.class);
-            String activeRole = claims.get("activeRole", String.class);
-            Long userId = extractUserId(claims.get("userId"));
-            boolean approvedTutorContext = isApprovedTutorContext(claims, activeRole);
-            List<SimpleGrantedAuthority> authorities = new ArrayList<>();
-            if (roles != null) {
-                for (Object r : roles) {
-                    String roleName = normalizeRoleName(String.valueOf(r));
-                    if ("TUTOR".equals(roleName) && !approvedTutorContext) {
-                        continue;
-                    }
-                    String roleStr = "ROLE_" + roleName;
-                    authorities.add(new SimpleGrantedAuthority(roleStr));
-                }
-            }
-            if (activeRole != null && !activeRole.isBlank()) {
-                String activeRoleName = normalizeRoleName(activeRole);
-                if (!"TUTOR".equals(activeRoleName) || approvedTutorContext) {
-                    SimpleGrantedAuthority auth = new SimpleGrantedAuthority("ROLE_" + activeRoleName);
-                    if (!authorities.contains(auth)) {
-                        authorities.add(auth);
-                    }
-                }
-            }
-            UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                    new LearningUserPrincipal(email, userId, activeRole),
-                    null,
-                    authorities);
+        List<String> tokens = extractTokens(request);
+        if (tokens.isEmpty()) {
+            filterChain.doFilter(request, response);
+            return;
+        }
 
-            if (userId != null) {
-                authentication.setDetails(userId);
-            }
+        SecurityContextHolder.clearContext();
+        for (String token : tokens) {
+            try {
+                Claims claims = Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload();
+                if (claims.getExpiration() == null || claims.getExpiration().before(new Date())) {
+                    continue;
+                }
+                String email = claims.getSubject();
+                List<?> roles = claims.get("roles", List.class);
+                String activeRole = claims.get("activeRole", String.class);
+                Long userId = extractUserId(claims.get("userId"));
+                boolean approvedTutorContext = isApprovedTutorContext(claims, activeRole);
+                List<SimpleGrantedAuthority> authorities = new ArrayList<>();
+                if (roles != null) {
+                    for (Object r : roles) {
+                        String roleName = normalizeRoleName(String.valueOf(r));
+                        if ("TUTOR".equals(roleName) && !approvedTutorContext) {
+                            continue;
+                        }
+                        String roleStr = "ROLE_" + roleName;
+                        authorities.add(new SimpleGrantedAuthority(roleStr));
+                    }
+                }
+                if (activeRole != null && !activeRole.isBlank()) {
+                    String activeRoleName = normalizeRoleName(activeRole);
+                    if (!"TUTOR".equals(activeRoleName) || approvedTutorContext) {
+                        SimpleGrantedAuthority auth = new SimpleGrantedAuthority("ROLE_" + activeRoleName);
+                        if (!authorities.contains(auth)) {
+                            authorities.add(auth);
+                        }
+                    }
+                }
+                UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                        new LearningUserPrincipal(email, userId, activeRole),
+                        null,
+                        authorities);
 
-            SecurityContextHolder.getContext().setAuthentication(authentication);
-        } catch (RuntimeException ex) {
-            SecurityContextHolder.clearContext();
+                if (userId != null) {
+                    authentication.setDetails(userId);
+                }
+
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+                break;
+            } catch (RuntimeException ignored) {
+                // Browsers can retain an older cookie with the same name on another path.
+            }
         }
 
         filterChain.doFilter(request, response);
     }
 
-    private String extractToken(HttpServletRequest request) {
+    private List<String> extractTokens(HttpServletRequest request) {
+        List<String> tokens = new ArrayList<>();
         Cookie[] cookies = request.getCookies();
         if (cookies != null) {
             for (Cookie cookie : cookies) {
-                if ("access_token".equals(cookie.getName())) {
-                    return cookie.getValue();
+                if ("access_token".equals(cookie.getName())
+                        && cookie.getValue() != null
+                        && !cookie.getValue().isBlank()) {
+                    tokens.add(cookie.getValue());
                 }
             }
         }
-        return null;
+        return tokens;
     }
 
     private boolean isApprovedTutorContext(Claims claims, String activeRole) {

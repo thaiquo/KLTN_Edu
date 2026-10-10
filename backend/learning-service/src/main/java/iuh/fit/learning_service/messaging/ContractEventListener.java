@@ -1,6 +1,6 @@
 package iuh.fit.learning_service.messaging;
 
-import tools.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import iuh.fit.learning_service.service.EnrollmentRequestService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,11 +14,10 @@ public class ContractEventListener {
     private static final Logger log = LoggerFactory.getLogger(ContractEventListener.class);
 
     private final EnrollmentRequestService enrollmentRequestService;
-    private final ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public ContractEventListener(EnrollmentRequestService enrollmentRequestService, ObjectMapper objectMapper) {
+    public ContractEventListener(EnrollmentRequestService enrollmentRequestService) {
         this.enrollmentRequestService = enrollmentRequestService;
-        this.objectMapper = objectMapper;
     }
 
     @RabbitListener(queues = LearningRabbitConfig.CONTRACT_ACTIVATED_QUEUE)
@@ -35,6 +34,10 @@ public class ContractEventListener {
             enrollmentRequestService.activateEnrollment(classroomId, studentId, agreementId);
         } catch (Exception e) {
             log.error("Failed to process contract.activated.v1 event: {}", e.getMessage(), e);
+            // Do not acknowledge a confirmed funding event when Learning has not
+            // persisted ENROLLED yet. RabbitMQ must redeliver it after a transient
+            // database/service failure instead of silently stranding the student.
+            throw new IllegalStateException("Could not activate enrollment from contract event", e);
         }
     }
 
@@ -52,12 +55,16 @@ public class ContractEventListener {
             enrollmentRequestService.expireEnrollment(classroomId, studentId, agreementId);
         } catch (Exception e) {
             log.error("Failed to process contract.expired.v1 event: {}", e.getMessage(), e);
+            throw new IllegalStateException("Could not expire enrollment from contract event", e);
         }
     }
 
     private Map<?, ?> parsePayload(Object message) throws Exception {
         if (message instanceof Map) {
             return (Map<?, ?>) message;
+        }
+        if (message instanceof org.springframework.amqp.core.Message amqpMessage) {
+            return objectMapper.readValue(amqpMessage.getBody(), Map.class);
         }
         if (message instanceof String str) {
             return objectMapper.readValue(str, Map.class);

@@ -1,5 +1,8 @@
 const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
 const configuredGatewayUrl = import.meta.env.VITE_API_GATEWAY_URL?.trim();
+// In development, keep browser requests same-origin and let Vite proxy /api.
+// This prevents cookie auth from breaking when the UI is opened through
+// 127.0.0.1 while the configured gateway host is localhost (or vice versa).
 const API_URL = (
   import.meta.env.DEV
     ? ''

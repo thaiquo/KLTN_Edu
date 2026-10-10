@@ -9,6 +9,8 @@ import iuh.fit.learning_service.messaging.event.HomeworkNotificationEvent;
 import iuh.fit.learning_service.messaging.event.SubjectRequestSubmittedEvent;
 import iuh.fit.learning_service.messaging.event.TeachingRegistrationReviewedEvent;
 import iuh.fit.learning_service.messaging.event.TeachingRegistrationSubmittedEvent;
+import iuh.fit.learning_service.messaging.event.CommunityPostConvertedEvent;
+import iuh.fit.learning_service.messaging.event.CommunityPostInteractionEvent;
 import iuh.fit.learning_service.service.StaffNotificationRecipientLookup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -173,6 +175,87 @@ public class LearningEventPublisher {
                 "CANCELLED",
                 null,
                 studentName
+        );
+    }
+
+    public void publishCommunityPostConverted(
+            Long postId,
+            Long classId,
+            Long recipientUserId,
+            Long actorUserId,
+            String postTitle,
+            String classTitle,
+            String tutorName
+    ) {
+        if (postId == null || classId == null || recipientUserId == null) {
+            log.warn(
+                    "Skipping community conversion notification postId={} classId={} recipientUserId={}",
+                    postId,
+                    classId,
+                    recipientUserId);
+            return;
+        }
+        String eventId = "community-post-converted:" + postId + ":" + classId + ":" + recipientUserId;
+        publishAfterCommit(
+                LearningRabbitConfig.EXCHANGE,
+                LearningRabbitConfig.COMMUNITY_POST_CONVERTED_ROUTING_KEY,
+                new CommunityPostConvertedEvent(
+                        eventId,
+                        "COMMUNITY_POST_CONVERTED_TO_CLASS",
+                        LocalDateTime.now(),
+                        "learning-service",
+                        postId,
+                        classId,
+                        recipientUserId,
+                        actorUserId,
+                        postTitle,
+                        classTitle,
+                        tutorName,
+                        "COMMUNITY_POST",
+                        String.valueOf(postId))
+        );
+    }
+
+    public void publishCommunityPostInteraction(
+            String eventType,
+            Long postId,
+            Long commentId,
+            Long recipientUserId,
+            Long actorUserId,
+            String actorName,
+            String postTitle,
+            String commentPreview,
+            String targetRole
+    ) {
+        if (postId == null || commentId == null || recipientUserId == null || eventType == null) {
+            log.warn(
+                    "Skipping community interaction notification eventType={} postId={} commentId={} recipientUserId={}",
+                    eventType,
+                    postId,
+                    commentId,
+                    recipientUserId);
+            return;
+        }
+        String normalizedType = eventType.trim().toUpperCase();
+        String eventId = "community-post-interaction:" + normalizedType + ":" + postId + ":" + commentId + ":" + recipientUserId;
+        publishAfterCommit(
+                LearningRabbitConfig.EXCHANGE,
+                LearningRabbitConfig.COMMUNITY_POST_INTERACTION_ROUTING_KEY,
+                new CommunityPostInteractionEvent(
+                        eventId,
+                        normalizedType,
+                        LocalDateTime.now(),
+                        "learning-service",
+                        postId,
+                        commentId,
+                        recipientUserId,
+                        actorUserId,
+                        actorName,
+                        postTitle,
+                        commentPreview,
+                        targetRole,
+                        "COMMUNITY_POST",
+                        String.valueOf(postId))
         );
     }
 

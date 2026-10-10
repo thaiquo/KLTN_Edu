@@ -82,6 +82,7 @@ export const classApi = {
     return apiRequest(`/api/learning/public/classes${queryString ? `?${queryString}` : ''}`);
   },
   getPublicClassById: (id) => apiRequest(`/api/learning/public/classes/${id}`),
+  getShareableClassById: (id) => apiRequest(`/api/learning/public/classes/${id}/share`),
   verifyJoinKey: (id, joinKey) => apiRequest(`/api/learning/public/classes/${id}/verify-key`, {
     method: 'POST',
     body: JSON.stringify({ joinKey })

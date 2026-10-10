@@ -149,6 +149,9 @@ public class ClassRoomService {
             throw new ForbiddenException("You do not have access to this classroom");
         }
 
+        if (classRoom.getStatus() == ClassRoomStatus.CANCELLED || classRoom.getStatus() == ClassRoomStatus.CLOSED) {
+            throw new BadRequestException("Lớp đã kết thúc; không thể sửa nội dung và phòng học");
+        }
         validateSyllabus(request.syllabusMode(), request.syllabusFileUrl(), request.chapters());
 
         classRoom.setDescription(request.description().trim());
@@ -180,7 +183,8 @@ public class ClassRoomService {
     public ClassRoomDtos.ClassRoomResponse updateVisibility(String tutorEmail, Long id, ClassRoomDtos.UpdateVisibilityRequest request) {
         ClassRoom classRoom = classRoomRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + id));
-        if (classRoom.getTerminationCutoffSession() != null) throw new BadRequestException("Classroom is terminating");
+        if (classRoom.getTerminationCutoffSession() != null || classRoom.getStatus() == ClassRoomStatus.CANCELLED
+                || classRoom.getStatus() == ClassRoomStatus.CLOSED) throw new BadRequestException("Classroom is terminating or closed");
         if (!classRoom.getTutorEmail().equalsIgnoreCase(tutorEmail)) {
             throw new ForbiddenException("You do not have access to this classroom");
         }
@@ -918,6 +922,30 @@ public class ClassRoomService {
             throw new ResourceNotFoundException("Classroom is not available for public view");
         }
         return toResponse(classRoom, false);
+    }
+
+    @Transactional(readOnly = true)
+    public ClassRoomDtos.ClassRoomResponse getShareablePublicClassById(Long id) {
+        ClassRoom classRoom = classRoomRepository.findByIdWithDetails(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + id));
+        if (!isAcceptingPublicShareLink(classRoom)) {
+            throw new ResourceNotFoundException("Classroom share link is no longer available");
+        }
+        return toResponse(classRoom, false);
+    }
+
+    private boolean isAcceptingPublicShareLink(ClassRoom classRoom) {
+        if (classRoom == null || classRoom.getId() == null) return false;
+        if (classRoom.getStatus() != ClassRoomStatus.PUBLISHED) return false;
+        if (classRoom.getTerminationCutoffSession() != null) return false;
+        if (classRoom.getStartDate() == null || classRoom.getStartDate().isBefore(LocalDate.now())) return false;
+        if (classRoom.getMaxStudents() == null || classRoom.getMaxStudents() <= 0) return false;
+        long acceptedCount = enrollmentRequestRepository != null
+                ? enrollmentRequestRepository.countByClassRoomIdAndStatusIn(
+                        classRoom.getId(),
+                        List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED))
+                : 0;
+        return acceptedCount < classRoom.getMaxStudents();
     }
 
     @Transactional(readOnly = true)

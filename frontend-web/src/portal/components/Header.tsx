@@ -55,11 +55,10 @@ export function Header({
 
   function handleNotificationNavigate(target: unknown) {
     const route = getNotificationRoute(target);
-    if (route && route.includes("conversation=")) {
+    if (route?.includes("conversation=") || route?.includes("subtab=terminations")) {
       navigate(route);
       return;
     }
-
     const portalPage = getNotificationPortalPage(target);
     if (portalPage && onNavigate) {
       onNavigate(portalPage);

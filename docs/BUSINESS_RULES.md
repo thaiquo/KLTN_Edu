@@ -165,12 +165,16 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
   - Hệ thống kiểm tra đối chiếu ví kết nối MetaMask: nếu địa chỉ ví không khớp với ví đã ký hợp đồng và nạp cọc ban đầu, yêu cầu sẽ bị từ chối ngay lập tức để chống giả mạo danh tính và gian lận tài chính.
   - Quá trình ký EIP-712 hoàn toàn gasless (0 Sepolia ETH).
 - **Quy trình thẩm định và phân xử của Ban Quản trị (Staff vs Admin):**
+  - Hệ thống cảnh cáo khi ghi nhận **3 buổi liên tiếp** có kết quả `TUTOR_ABSENT` của cùng lớp. Việc đếm dựa trên session riêng biệt, không nhân số lần theo số học viên/agreement trong lớp. Ngay khi lập hồ sơ `AUTO_TUTOR_ABSENCE`, Learning giữ các buổi tương lai của cả lớp để buổi tiếp theo không diễn ra trong lúc chờ xử lý.
+  - Hạn Gia sư giải trình tối đa 24 giờ. Nếu buổi tiếp theo còn ít nhất 6 giờ, hạn được rút về trước giờ bắt đầu buổi đó 2 giờ; nếu buổi tiếp theo còn dưới 6 giờ thì buổi đó tiếp tục bị giữ và Gia sư vẫn có đủ cửa sổ 24 giờ. Minh chứng hoặc lời giải thích của Gia sư được ghi nhận vào `tutorRespondedAt`.
+  - Với cảnh cáo tự động, Staff chỉ kiến nghị chấm dứt sau khi Gia sư đã phản hồi hoặc hết hạn. Chỉ Admin được cho lớp tiếp tục (từ chối hủy và release hold). Admin được dùng quyết định khẩn cấp trước hạn khi có căn cứ nghiêm trọng; thao tác và lý do phải được lưu audit.
+  - Admin có thể chủ động tạo hồ sơ quản trị cho toàn lớp hoặc một agreement/học viên. Hold vận hành có hiệu lực ngay khi Learning xác nhận; Admin có thể chỉ tạm dừng để xem xét hoặc đồng thời phê duyệt hủy. Admin không ký thay Student/Tutor và hồ sơ quản trị được đánh dấu `ADMIN_DIRECT`.
   - Khi có yêu cầu chấm dứt hoặc đề xuất hủy lớp, hệ thống đồng bộ hold với Learning (`HOLD_PENDING` nếu cần retry, sau đó `REQUESTED`). Cutoff lấy theo thời gian server lúc hold thành công, không lấy theo thời gian Admin xử lý.
   - Student hold chỉ chặn các buổi tương lai của hợp đồng đó; lớp và các Student khác tiếp tục bình thường. Tutor hold chặn các buổi tương lai của toàn lớp, đóng băng đăng ký mới và hiển thị `Chờ duyệt hủy lớp`.
   - Hold không gửi giao dịch blockchain và không hoàn tiền. Buổi đã bắt đầu trước cutoff vẫn hoàn tất attendance, settlement và cửa sổ dispute như bình thường.
-  - Khiếu nại chỉ giữ quyết toán của buổi học và agreement liên quan; các buổi tương lai vẫn diễn ra bình thường nếu không có yêu cầu chấm dứt/hủy lớp riêng. Khi Staff kiến nghị/từ chối hoặc Admin duyệt/từ chối yêu cầu chấm dứt, mọi khiếu nại còn mở trên các agreement bị ảnh hưởng phải được phân xử trước. Khiếu nại đã `APPROVED` hoặc `REJECTED` không chặn quyết định; sau đó worker vẫn chờ settlement của từng buổi được xác nhận trước khi hoàn cọc dư.
+  - Khiếu nại chỉ giữ quyết toán của buổi học và agreement liên quan; các buổi tương lai vẫn diễn ra bình thường nếu không có yêu cầu chấm dứt/hủy lớp riêng. Với luồng xét duyệt thông thường, khi Staff kiến nghị hoặc Admin duyệt/từ chối yêu cầu chấm dứt, mọi khiếu nại còn mở trên các agreement bị ảnh hưởng phải được phân xử trước. `FORCE_APPROVE` cho phép Admin ra quyết định dừng khẩn cấp khi khiếu nại còn mở; worker vẫn chờ kết quả dispute và settlement của từng buổi được xác nhận trước khi hoàn cọc dư.
   - **Phân định thẩm quyền:**
-    - **Nhân viên (Staff):** Chỉ được xem và thẩm định các hồ sơ thuộc các lớp học do chính mình được phân công duyệt (`classroomReviewerEmail`). Staff có quyền ghi nhận ý kiến, yêu cầu bổ sung thông tin hoặc kiến nghị đề xuất (`RECOMMEND`), hoặc từ chối (`REJECT`). Staff không có thẩm quyền ra lệnh giải ngân/hoàn cọc Escrow.
+    - **Nhân viên (Staff):** Chỉ được xem và thẩm định các hồ sơ thuộc các lớp học do chính mình được phân công duyệt (`classroomReviewerEmail`). Staff có quyền ghi nhận ý kiến, yêu cầu bổ sung thông tin hoặc kiến nghị đề xuất (`RECOMMEND`). Chỉ Admin được từ chối (`REJECT`) và khôi phục lớp. Staff không có thẩm quyền ra lệnh giải ngân/hoàn cọc Escrow.
     - **Quản trị viên (Admin):** Có quyền quản trị toàn hệ thống, xem tất cả hồ sơ. Admin có thẩm quyền tối cao phê duyệt (`APPROVE` trực tiếp từ `REQUESTED` hoặc `RECOMMENDED`) để kích hoạt quyết toán thanh lý Escrow V1, hoặc từ chối (`REJECT`) để giải phóng hold và khôi phục lớp học.
 - **Tài liệu minh chứng đính kèm & Tính bất biến (Evidence Staging & Immutability):**
   - Học viên và Gia sư có thể đính kèm tối đa 5 file minh chứng (ảnh, video, ghi âm, tài liệu PDF, Word, Excel, TXT) với dung lượng tối đa 50 MB mỗi file.
@@ -205,7 +209,37 @@ AI Matching hỗ trợ gợi ý và xếp hạng trong nghiệp vụ tìm kiếm
 
 Hệ thống vẫn có business flow hợp lệ khi AI chưa triển khai; khi đó tìm kiếm/lọc thủ công vẫn là luồng nghiệp vụ nền.
 
-## 8. Change Policy
+## 8. Community Survey to Class
+
+- Tutor đăng khảo sát để tham khảo nhu cầu theo 21 lựa chọn cố định `7 ngày x 3 buổi`: Sáng `[07:00,13:00)`, Chiều `[13:00,18:00)` và Tối `[18:00,23:00)`. Ca khảo sát không giữ chỗ trong lịch rảnh, không phải giờ học chính thức và không tự tạo lớp.
+- Student có thể chọn tối đa số lựa chọn bằng số buổi dự kiến mỗi tuần. Số học viên duy nhất, số vote và mốc quan tâm chỉ hỗ trợ Tutor ra quyết định; mốc này không phải điều kiện bắt buộc để mở lớp.
+- Khi Tutor yêu cầu đề xuất, hệ thống riêng tư đối chiếu thứ/buổi được vote với lịch rảnh và các lớp đang chiếm lịch của chính Tutor. API công khai không trả toàn bộ lịch rảnh.
+- Tutor mở wizard tạo lớp đã được điền trước bằng lịch đề xuất, nhưng có quyền chỉnh toàn bộ thông tin và lịch chính thức trước khi xác nhận. Hệ thống chỉ liên kết bài khảo sát và thông báo cho người đã vote sau khi tạo lớp thành công.
+- Lớp chính thức vẫn phải tuân thủ đăng ký giảng dạy đã duyệt, học phí hợp lệ, lịch rảnh và quy tắc chống trùng lịch của `ClassRoomService`.
+
+## 9. Community Class Share and Interaction
+
+- Tutor chỉ được gắn lớp của chính mình khi lớp đang `PUBLISHED`, chưa có cutoff thanh lý và có ngày khai giảng sau ngày hiện tại (`startDate >= today`). Bài giới thiệu cũ được giữ làm lịch sử, nhưng thẻ lớp tự chuyển sang trạng thái đóng tuyển sinh khi lớp không còn thỏa điều kiện; không còn điều hướng sang luồng gửi yêu cầu.
+- Chỉ active role `STUDENT` hoặc `TUTOR` được like, bookmark và comment bài cộng đồng. Guest chỉ đọc nội dung công khai; Staff/Admin giám sát qua các phân hệ quản trị, không dùng tương tác cộng đồng.
+- Tác giả Gia sư và người xem có thể mở popup xem danh sách chi tiết các tài khoản đã thích bài viết (họ tên, avatar, vai trò `STUDENT`/`TUTOR`, thời gian thích).
+
+## 10. Deep Link, Share Validity & Feed Discovery
+
+- **Sao chép liên kết chia sẻ (Share Link)**:
+  - Cho phép người dùng (Học viên, Gia sư) sao chép đường dẫn chia sẻ bài viết (`/community?postId={id}`) hoặc lớp học (`/classes/{id}`) để gửi qua tin nhắn hoặc chia sẻ ra bên ngoài.
+- **Kiểm soát hiệu lực liên kết Lớp học**:
+  - Endpoint chia sẻ `/api/learning/public/classes/{id}/share` kiểm tra nghiêm ngặt điều kiện tuyển sinh: lớp phải đang `PUBLISHED`, ngày khai giảng chưa qua (`startDate >= today`), chưa có `cutoffDate` (chưa bị thanh lý hoặc hủy) và chưa đủ sĩ số (`currentEnrollment < maxStudents`).
+  - Khi mở liên kết hợp lệ: Hệ thống điều hướng đến đúng lớp học trên Marketplace, tự động mở Modal chi tiết lớp học (`PublicClassDetailModal`) và áp dụng viền màu nổi bật (highlight).
+  - Khi lớp học không còn hiệu lực (đã khóa, dừng tuyển, đã bắt đầu học hoặc đủ học viên): Backend trả về 404, frontend hiển thị thông báo dịu mắt "Lớp học này hiện không còn nhận học viên hoặc liên kết đã hết hiệu lực".
+- **Kiểm soát hiệu lực liên kết Bài viết**:
+  - Khi mở liên kết bài viết hợp lệ: Bảng tin cộng đồng tự động tìm kiếm, cuộn mượt (smooth scroll) đến bài viết và kích hoạt hiệu ứng viền sáng tím nổi bật. Nếu bài viết không nằm ở trang đầu feed, hệ thống tự động tải chi tiết bài viết đó và chèn lên đầu trang.
+  - Khi bài viết bị xóa hoặc ẩn (`status === HIDDEN`): Backend trả về 404, frontend hiển thị thông báo liên kết bài viết không còn hiệu lực.
+- **Tìm kiếm và sắp xếp Bảng tin cộng đồng**:
+  - Loại bỏ các dropdown lọc môn học và hình thức tĩnh trên giao diện Bảng tin do danh mục môn học cố định không khớp với danh mục thực tế.
+  - Thay thế bằng thanh tìm kiếm từ khóa (`keyword`) duy nhất: Backend tự động so khớp đa chiều qua tiêu đề, nội dung bài viết, tên tác giả, cấp học, tên môn học (`subject.name`) và tên lớp học liên kết (`linkedClass.name`).
+  - Mặc định luôn sắp xếp bài đăng mới nhất theo thời gian (`createdAt DESC`), đảm bảo bài viết vừa đăng luôn xuất hiện đầu tiên trên bảng tin.
+
+## 11. Change Policy
 
 Business rules có thể thay đổi trong quá trình phát triển. Khi người dùng xác nhận business rule mới:
 

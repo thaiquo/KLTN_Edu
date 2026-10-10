@@ -17,7 +17,8 @@ import {
   ShieldCheck,
   Users,
   WalletCards,
-  Layers3
+  Layers3,
+  Newspaper
 } from "lucide-react";
 import { UserRole } from "../types";
 
@@ -43,6 +44,7 @@ export function Sidebar({
     switch (activeRole) {
       case "tutor":
         return [
+          { id: "community", label: "Bảng tin", icon: Newspaper },
           { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
           { id: "subjects", label: "Môn học", icon: BookOpen },
           { id: "my-classes", label: "Lớp học", icon: GraduationCap },
@@ -57,6 +59,7 @@ export function Sidebar({
         ];
       case "student":
         return [
+          { id: "community", label: "Bảng tin", icon: Newspaper },
           { id: "my-classes", label: "Lớp học của tôi", icon: GraduationCap },
           { id: "homework", label: "Quản lý bài tập", icon: CheckSquare },
           { id: "contracts", label: "Hợp đồng của tôi", icon: ShieldCheck },

@@ -1,383 +1,276 @@
 # EduConnect API Baseline
 
-Escrow hardening (2026-09-12): `POST /api/contracts/transactions/{id}/retry` is active-Admin-only,
-returns queued transaction status, and rejects unknown receipts, legacy agreements and ineligible lifecycle states.
-Agreement summaries now expose `remainingDeposit`, `releasedAmountUsdc`, `refundedAmountUsdc` and `fundedTxHash`
-from confirmed financial data. See [runtime semantics](ESCROW_HARDENING_2026-09-12.md).
+> Post-merge baseline: 2026-10-10. This file documents current API families verified from merged controllers and frontend clients. It is not a full OpenAPI dump.
 
 ## 1. API Principles
 
-- EduConnect uses REST-style APIs for Web/Mobile integration.
 - Each service owns APIs for its domain.
-- DTO/request/response models should be separated from Entity models when appropriate.
-- Authentication and authorization must follow `docs/AUTH_SECURITY.md`.
-- Frontend and Mobile clients must not access databases directly.
-- This document is a routing baseline, not a hand-written OpenAPI specification.
+- Browser clients use credentialed requests, HttpOnly cookies and CSRF for state-changing calls.
+- Frontend/Mobile must not access databases directly.
+- Internal service endpoints must be treated as service-token protected even when the Spring route itself is not a normal user-facing route.
+- Do not document a standalone `/matching` product route. AI Matching is part of Tutor Marketplace, Class Marketplace and chatbot flows.
 
-## 2. API Ownership
+## 2. Ownership Summary
 
-| Domain | Owning Service | Main API Responsibility |
-| --- | --- | --- |
-| Authentication | `account-service` | Register, verify email, resend OTP, login, refresh session, switch role, logout, forgot/reset password, CSRF endpoint. |
-| User/Profile | `account-service` | Current user, profile updates, student activation, avatar, password change. |
-| Tutor Profile/Application | `account-service` | Tutor public profile, lightweight identity-document application, staff tutor approval. |
-| Reference Geography | `account-service` | Provinces/communes reference data. |
-| Teaching Catalog | `learning-service` | Program type, education level, subject category/group/subject/level catalog. |
-| Tutor Expertise | `learning-service` | Tutor subject registrations and tutor subject data. |
-| Availability | `learning-service` | Tutor availability management. |
-| Class/Classroom | `learning-service` | Tutor class management, public class search/detail, staff/admin class monitoring. |
-| Enrollment/Join Request | `learning-service` | Student class enrollment requests and tutor accept/reject flows. |
-| Contract/Escrow/Settlement | `contract-service` | Contract agreement, signing, document, payment submission, transaction, settlement, dispute, expiry, cancellation/refund, and blockchain workflow APIs. Funding/session/lifecycle state transitions require confirmed blockchain events where Solidity emits authoritative events. Deployment/runtime hardening remains partial end-to-end. |
-| Notification | `notification-service` | Persistent user notifications, unread count, mark one read, mark all read, and limited realtime notification delivery for the authenticated recipient account. |
-| Chat | `notification-service` | Hardened Student-Tutor direct conversation/message persistence, participant-scoped REST APIs, explicit unread/read state and WebSocket delivery consumed by the Web Messages UI. |
-| AI Matching | `ai-service` | `GET /api/ai/health`, Student-only Tutor AI endpoints `POST /api/ai/matching/analyze`, `POST /api/ai/matching/ground`, `POST /api/ai/matching/tutors`, and Student-only Class AI endpoints `POST /api/ai/classes/analyze`, `POST /api/ai/classes/ground`, `POST /api/ai/classes/match`. Tutor matching and backend Class matching return conservative Hybrid V2 results with deterministic fallback. Staff/Admin semantic maintenance exists under `/api/ai/semantic/**`; RAG APIs are not implemented yet. |
-
-## 3. Current API Groups
-
-Current large API groups with source evidence:
-
-- Authentication and session lifecycle.
-- `POST /api/auth/switch-role` validates role/profile eligibility; switching to `TUTOR` requires approved Tutor and TutorApplication records.
-- Current user/profile and avatar.
-- Tutor public search/detail.
-- Tutor application and document management.
-- Tutor application lifecycle: `DRAFT` before submit, `PENDING` after submit, then Staff `APPROVED` or `REJECTED`.
-- Restricted Tutor application flow for `DRAFT`/`PENDING`/`REJECTED` tutors through Account Service profile/application/document APIs.
-- Current Tutor approval submission requires identity documents only: CCCD/CMND front + back, or passport. Teaching/class registration belongs to full Tutor functionality after approval.
-- Staff tutor application approval/rejection.
-- Staff/admin user management.
-- Reference province/commune lookup.
-- Teaching catalog read/admin management.
-- Subject requests and catalog suggestions.
-- Tutor subject registration.
-- Tutor availability.
-- Tutor class management.
-- Public class search/detail and join-key verification.
-- Enrollment request create/cancel/my-requests/accept/reject.
-- Enrollment request events on `kltn.edu.events` for `learning.enrollment.requested`, `learning.enrollment.accepted`, `learning.enrollment.rejected`, and `learning.enrollment.cancelled`.
-- Staff/admin class monitoring.
-- Notification list/count/read state through `notification-service`.
-- Notification realtime delivery through `/ws/notifications` for supported persisted notification events.
-
-Contract Service contains workflow/service logic, persistence, and REST controllers for agreement listing/detail, signing, document view/artifacts, payment submission, transactions, settlements, disputes, expiration, and cancellation/refund. Browser payment submission records an escrow `fundAgreement` transaction as `PAYMENT_CONFIRMING`; it must not mark the agreement `ACTIVE`, lock escrow funds, notify activation, or activate the learning enrollment until a confirmed `AgreementFunded` blockchain event is ingested. Session settlement, payout/refund distribution, agreement completion, expiration, cancellation, and unused refund state are likewise driven by confirmed escrow events rather than by receipt-only success.
-
-Dispute file evidence uses multipart endpoints in `DisputeEvidenceController`. Files are stored through Contract Service's local/S3 artifact abstraction; the current root environment selects S3. The database stores object key, submitting user/role, media type, SHA-256 and creation time. File content is streamed only after dispute visibility and reviewer-scope authorization; clients never receive a public permanent S3 URL.
-
-Contract Service authentication now follows the same browser-cookie baseline as the other protected services: it reads the current account from the `access_token` JWT cookie and derives `userId`, `email`, `activeRole`, and `roles` server-side. Contract list/detail/document/sign/payment/dispute/transaction authorization must not trust frontend-supplied `role`, `userId`, `email`, `X-User-Role`, `X-User-Id`, or `X-User-Email`.
-
-## 3.0 Public Class Search V1
-
-Learning Service exposes Manual Public Class Search through the existing `GET /api/public/classes` endpoint. The endpoint returns a paged marketplace response, not an unbounded list. Public listing eligibility is authoritative in the backend: only `PUBLISHED` and `ACTIVE` classes are listed; `CLOSED`, `LOCKED`, rejected, draft, private, and invalid lifecycle states are excluded from the marketplace list.
-
-Supported V1 filters include `keyword`, `subjectId`, `levelId`, repeated `levelIds`, `mode`/`teachingMode`, `minPrice`, `maxPrice`, `programTypeId`, `educationLevelId`, `categoryId`, repeated `weekdays`, legacy single `weekday`, `startTime`, `endTime`, `availableOnly`, `page`, `size`, and `sort`. Keyword search covers class title, description, tutor public display name, subject/category names, and level names. Price uses `pricePerSession` and is displayed in the UI as `Ä‘ / buá»•i`.
-
-Manual Class Marketplace UI intentionally does not expose a Subject selector. `subjectId` remains supported by the backend for direct API compatibility, grounding, and future AI Class Search. Because catalog levels are stored under subjects, the UI deduplicates displayed level labels across the selected Program -> Education Level -> Category scope and sends every matching level id through `levelIds` instead of choosing one arbitrary `levelId`.
-
-Schedule availability filtering treats selected `weekdays` as the student's available days. When weekdays are provided, every recurring schedule row required by the class must be contained in that selected day set. When `startTime` and/or `endTime` are provided, every required class schedule row must fit inside that time window. If no weekdays are selected, there is no day restriction.
-
-Supported deterministic sort values are `newest`, `price_asc`, `price_desc`, `soonest`, and `rating_desc`. The public card DTO intentionally omits private fields such as meeting link, invite key, tutor email, class review reason/reviewer, and other staff-only review metadata. Public detail still hides the classroom meeting link unless the student later gains the normal protected class/session access.
-
-Backend AI Class Search now has semantic indexing/retrieval and Hybrid Class Matching V2. The Class Marketplace UI is still primarily a manual search flow with URL query state, server pagination, catalog-driven hierarchy/level selection without a Subject dropdown, advanced schedule availability filters, and public class detail modal; final AI-ranked class result rendering in the frontend remains a later integration step.
-
-## 3.0A AI Class Search Analyze/Ground
-
-Phase 4.6.3 adds Student-only AI Class Search preparation endpoints in `ai-service`:
-
-| Method | Endpoint | Purpose | Current boundary |
-| --- | --- | --- | --- |
-| `POST` | `/api/ai/classes/analyze` | Uses the configured Gemini requirement analyzer to extract class-search hints from natural Vietnamese text. | Returns human-readable hints only; no subjectId, levelId, classId, ranking, embedding, or fake class result is generated by Gemini. |
-| `POST` | `/api/ai/classes/ground` | Deterministically resolves `subjectHint` and `levelHint` against the live Learning catalog snapshot and returns clarification when needed. | Produces grounded catalog IDs and review data; it does not itself call class search, Qdrant, semantic retrieval, or Hybrid Class Matching. |
-| `POST` | `/api/ai/classes/match` | Scores grounded class requirements against public Learning class data and optionally applies semantic retrieval from `public_classes_v1`. | Requires grounded subject, level, and teaching mode. Hard eligibility comes from Learning public class data and cannot be bypassed by semantic hits. |
-
-These endpoints require active `STUDENT` authentication with the same cookie/JWT/CSRF baseline as Tutor AI Matching. Class Marketplace currently has a large modal entry point for Analyze -> Ground -> Review; final AI-ranked class result rendering remains future frontend work. Manual Class Search remains independent and continues to use `GET /api/public/classes`.
-
-Learning Service also exposes `GET /api/public/classes/semantic-source` as a public-safe source endpoint for AI indexing and authoritative validation. It returns only `PUBLISHED`/`ACTIVE` classes through the same public filter path as `GET /api/public/classes`, can require `availableOnly=true`, and omits private fields such as meeting links, invite keys, tutor email, and staff review metadata while including public chapter text for semantic documents.
-
-## 3.0B Contract Final PDF Retention
-
-Official contract retention policy: PostgreSQL keeps the immutable signed terms JSON, hashes and EIP-712 proofs; the blockchain keeps the agreement terms hash and escrow state. After an agreement is `ACTIVE`, Contract Service renders and retains exactly one final PDF per agreement version in private object storage, with its SHA-256 and size in PostgreSQL. DOCX is a transient conversion input and is not retained; legacy DOCX objects are removed by a scheduled cleanup job. Contract files are streamed only after agreement authorization.
-
-## 3.1 Notification API
-
-Current Notification Service endpoints:
-
-| Method | Endpoint | Purpose | Notes |
-| --- | --- | --- | --- |
-| `GET` | `/api/notifications` | List notifications for the authenticated user. | Supports `page`, `size`, `unreadOnly`, and optional `targetRole`. |
-| `GET` | `/api/notifications/unread-count` | Return unread notification count for the authenticated user. | Supports optional `targetRole`. |
-| `PATCH` | `/api/notifications/{id}/read` | Mark one owned notification as read. | Idempotent for already-read rows. |
-| `PATCH` | `/api/notifications/read-all` | Mark all matching owned notifications as read. | Supports optional `targetRole`; returns updated count. |
-| `PUT` | `/api/notifications/chat-view-context` | Update the authenticated browser client's active Messages-view context. | Used by Web to suppress chat Bell notifications while the recipient is already inside Messages; user ownership is derived from the JWT cookie and `clientId` is only a per-browser-tab presence key. |
-
-Current Notification Service WebSocket endpoint:
-
-| Protocol | Endpoint | Purpose | Notes |
-| --- | --- | --- | --- |
-| Raw WebSocket | `/ws/notifications` | Deliver persisted notification creation events to the authenticated recipient while online. | Routed by `api-gateway` to `notification-service`. REST remains authoritative; clients should invalidate/refetch notification queries after receiving a frame. |
-
-Current realtime envelope:
-
-| Field | Purpose |
+| API family | Owning service |
 | --- | --- |
-| `source` | Event source, currently `notification-service`. |
-| `eventType` | Envelope type, currently `NOTIFICATION_CREATED`. |
-| `notificationId` | Persisted notification id. |
-| `notificationType` | Business notification type. |
-| `recipientUserId` | Authenticated recipient account id. |
-| `targetRole` | Optional role/context hint. |
-| `referenceType` | Referenced business object type. |
-| `referenceId` | Referenced business object id. |
-| `title` | Short UI title. |
-| `message` | UI message without sensitive payload. |
-| `createdAt` | Server timestamp. |
+| Auth, account, profile, Tutor application identity data, geography | `account-service` |
+| Teaching catalog, tutor registration, availability, class, enrollment, sessions, homework, reviews, Community | `learning-service` |
+| Contract, document, escrow, settlement, dispute, termination | `contract-service` |
+| Bell notifications and human Student-Tutor chat | `notification-service` |
+| Tutor/Class AI Matching, AI chatbot, semantic maintenance | `ai-service` |
 
-Security and ownership:
-
-- The service reads the current user from the `access_token` cookie JWT.
-- Clients must not send `recipientUserId`; ownership is derived server-side.
-- Mutating endpoints require the normal browser CSRF header.
-- Notification click routing is a frontend concern and should use existing routes from `docs/FEEDBACK_NOTIFICATION_SPEC.md`.
-- WebSocket notification sessions are authenticated through the same browser cookie principal. The server sends user-specific notification frames only to matching `recipientUserId` sessions.
-
-## 3.2 Enrollment Notification Events
-
-Learning Service publishes enrollment events to the shared RabbitMQ exchange `kltn.edu.events` after the enrollment transaction commits.
-
-| Event | Routing Key | Actor | Recipient | Reference |
-| --- | --- | --- | --- | --- |
-| `ENROLLMENT_REQUESTED` | `learning.enrollment.requested` | Student | Tutor | `ENROLLMENT_REQUEST` / enrollment request id |
-| `ENROLLMENT_ACCEPTED` | `learning.enrollment.accepted` | Tutor | Student | `ENROLLMENT_REQUEST` / enrollment request id |
-| `ENROLLMENT_REJECTED` | `learning.enrollment.rejected` | Tutor/system capacity cleanup | Student | `ENROLLMENT_REQUEST` / enrollment request id |
-| `ENROLLMENT_CANCELLED` | `learning.enrollment.cancelled` | Student | Tutor | `ENROLLMENT_REQUEST` / enrollment request id |
-
-Current enrollment event payload shape:
-
-| Field | Purpose |
-| --- | --- |
-| `eventId` | Unique idempotency key for the business event. |
-| `eventType` | One of the enrollment events above. |
-| `occurredAt` | Producer timestamp. |
-| `producer` | Current value: `learning-service`. |
-| `enrollmentRequestId` | Enrollment request id. |
-| `classId` | Class id. |
-| `recipientUserId` | Notification recipient account id resolved by the producer. |
-| `actorUserId` | User id of the actor when available. |
-| `classTitle` | Safe display class name. |
-| `reviewStatus` | Result/status hint such as `PENDING`, `ACCEPTED`, `REJECTED`, or `CANCELLED`. |
-| `rejectReason` | Safe rejection reason when supported. |
-| `studentName` | Safe display student name when submitted. |
-
-Notification Service consumes these events, persists account-owned notifications, and `/ws/notifications` delivers `NOTIFICATION_CREATED` to the recipient while online. Clients must still refetch authoritative REST state.
-
-## 3.3 Teaching Registration Notification Event
-
-Learning Service publishes Tutor teaching registration review decisions to `kltn.edu.events` after the approve/reject transaction commits.
-
-| Event | Routing Key | Actor | Recipient | Reference |
-| --- | --- | --- | --- | --- |
-| `TEACHING_REGISTRATION_REVIEWED` | `learning.teaching-registration.reviewed` | Staff/Admin reviewer | Tutor | `TEACHING_REGISTRATION` / registration id |
-
-Current teaching registration reviewed payload shape:
-
-| Field | Purpose |
-| --- | --- |
-| `eventId` | Unique idempotency key for the business event. |
-| `eventType` | Current value: `TEACHING_REGISTRATION_REVIEWED`. |
-| `occurredAt` | Producer timestamp. |
-| `producer` | Current value: `learning-service`. |
-| `registrationId` | Tutor subject registration id. |
-| `recipientUserId` | Tutor account id resolved by Learning Service from trusted tutor authorization state. |
-| `tutorEmail` | Safe display/filter email for the Tutor. |
-| `tutorProfileId` | Tutor profile id used for trusted recipient lookup when available. |
-| `reviewerUserId` | Reviewer account id when safely available; currently nullable. |
-| `reviewerEmail` | Reviewer email from authenticated backend state. |
-| `subjectId` | Catalog subject id when available. |
-| `subjectName` | Safe display subject/proposed-subject name. |
-| `reviewStatus` | `APPROVED` or `REJECTED`. |
-| `rejectReason` | Safe concise rejection reason when rejected. |
-| `referenceType` | Current value: `TEACHING_REGISTRATION`. |
-| `referenceId` | String form of `registrationId`. |
-
-Notification Service consumes this event, persists `TEACHING_REGISTRATION_REVIEWED` notifications for `targetRole=TUTOR`, and `/ws/notifications` delivers `NOTIFICATION_CREATED` to the Tutor Bell while online.
-
-## 3.4 Contract Identity/Auth API Rule
-
-Current Contract Service protected APIs derive identity from the authenticated cookie JWT:
-
-| API Surface | Identity Source | Authorization Rule |
-| --- | --- | --- |
-| Agreement list/detail | `access_token` cookie JWT | Admin sees all; Staff sees agreements for reviewed classes; Student/Tutor sees only agreements for the current active role and account. |
-| Contract document view/artifact/preview/download/finalize | `access_token` cookie JWT | Same agreement visibility rule. |
-| Agreement signing | `access_token` cookie JWT | Signing role is the JWT `activeRole`; frontend role/body/header values are not authoritative. |
-| Payment submitted | `access_token` cookie JWT | Only the agreement Student in active Student role can submit payment while the agreement is `WAITING_PAYMENT` or idempotently `PAYMENT_CONFIRMING`; successful submission records the txHash for confirmation and does not activate the agreement. |
-| Settlement propose/finalize | `access_token` cookie JWT | Agreement Tutor, assigned Staff, or Admin can enqueue backend-owned operator transactions. Session payout/refund status updates only after confirmed escrow events. |
-| Dispute list/detail/open/resolve | `access_token` cookie JWT | Student or Tutor opens only their own per-Student agreement's `BOTH_PRESENT`/`PROPOSED` settlement before its 24h deadline; reason is required and evidence is optional. Submission immediately holds only that agreement settlement. Tutor sees Student-origin complaints and may send a private response/evidence to Staff/Admin. Student cannot list or read Tutor-origin complaints and cannot read the Tutor's private response/evidence. Assigned Staff/Admin resolution requires matching active authority. Browser UI must not directly call operator/arbitrator-only Solidity functions. |
-| Agreement expire/cancel | `access_token` cookie JWT | Assigned Staff/Admin can enqueue lifecycle transactions. Scheduler also queues overdue WAITING_PAYMENT expiry. Local agreement status changes only after confirmed escrow lifecycle events. |
-| Transaction list/detail | `access_token` cookie JWT | Staff/Admin active roles can view administrative transaction lists; Student/Tutor sees own agreement transactions. |
-
-## 3.5 Session, attendance, homework and storage API
-
-| Method | Endpoint | Rule / Purpose |
-| --- | --- | --- |
-| `GET` | `/api/classes/{classId}/sessions` | Returns session timeline subject to classroom access rules. |
-| `PUT` | `/api/classes/{classId}/meeting-link` | Tutor updates the classroom-level link; later sessions read the new value. |
-| `POST` | `/api/sessions/{sessionId}/student-checkin` | Current Student checks in for themself inside the session window. |
-| `GET` | `/api/sessions/{sessionId}/student-meeting-link` | Returns link only after the current Student's valid check-in. |
-| `POST` | `/api/sessions/{sessionId}/tutor-attendance` | Tutor checks in for teaching; the request cannot mark Students present. |
-| `POST` | `/api/sessions/{sessionId}/homework-submission` | Checked-in Student submits homework on their attendance record. |
-| `POST multipart` | `/api/learning/sessions/{sessionId}/homework-submission-file` | Student uploads actual homework submission file to S3 with optional notes. |
-| `GET` | `/api/learning/sessions/{sessionId}/submissions/{attendanceId}/download-url` | Presigned download URL for student homework submission (Tutor or owning Student). |
-| `PUT` | `/api/learning/sessions/{sessionId}/attendances/{attendanceId}/grade` | Tutor grades homework and provides feedback. |
-| `GET` | `/api/learning/sessions/tutor-homework-overview` | List sessions with homework/submission metrics for Tutor Homework Management. |
-| `POST multipart` | `/api/learning/sessions/{sessionId}/assignment-files` | Tutor uploads up to 5 assignment files to S3 for this session. |
-| `POST multipart` | `/api/learning/sessions/{sessionId}/material-files` | Tutor uploads lecture slide / material files to S3 for this session. |
-| `DELETE` | `/api/learning/sessions/{sessionId}/files/{fileId}` | Tutor deletes a session assignment or material file. |
-| `GET` | `/api/learning/sessions/{sessionId}/files/{fileId}/download-url` | Presigned download URL for session assignment/slide (Tutor, or Student ONLY IF `studentChecked == true`). |
-| `GET` | `/api/learning/classes/{classId}/materials` | List class-level materials (enrolled Student or Tutor). |
-| `POST multipart` | `/api/learning/classes/{classId}/materials` | Tutor uploads multiple class-level materials to S3. |
-| `DELETE` | `/api/learning/classes/{classId}/materials/{materialId}` | Tutor deletes a class-level material. |
-| `GET` | `/api/learning/classes/{classId}/materials/{materialId}/download-url` | Presigned download URL for class-level material (no check-in required). |
-| `POST multipart` | `/api/learning/classes/{classId}/syllabus` | Tutor uploads syllabus / curriculum file to S3. |
-| `GET` | `/api/learning/classes/{classId}/syllabus/download-url` | Presigned download URL for class syllabus file. |
-| `POST` | `/api/contracts/internal/classrooms/{classroomId}/sessions/{sessionId}/auto-propose` | Signed internal Learning call; proposes one settlement for every eligible agreement and defaults missing/corrupt attendance to `TUTOR_ABSENT`. |
-
-Learning keeps `settlementDispatched=false` until Contract returns a successful proposal list. A worker retries completed sessions after restart; Contract independently finalizes only confirmed `PROPOSED` settlements whose on-chain deadline expired and which are not disputed.
-
-## 3.6 Dispute and evidence API
+## 3. Account APIs
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/contracts/agreements/{agreementId}/settlements/{sessionId}/dispute` | Open with required text reason and optional evidence hash/legacy metadata. |
-| `POST multipart` | `/api/contracts/agreements/{agreementId}/settlements/{sessionId}/dispute-file` | Store one managed evidence file and open the dispute. |
-| `GET` | `/api/contracts/disputes` | Role-scoped history/list. Student sees only Student-visible own cases; Tutor/Admin/Staff follow their own scope. |
-| `GET` | `/api/contracts/disputes/{id}` | Detail with visibility filtering for private Tutor-origin data/evidence. |
-| `PUT` | `/api/contracts/disputes/{id}/tutor-evidence` | Tutor response text/legacy file metadata during response window. |
-| `PUT multipart` | `/api/contracts/disputes/{id}/tutor-evidence-file` | Tutor response plus managed file during response window. |
-| `GET` | `/api/contracts/disputes/{disputeId}/evidence/{evidenceId}/content` | Authorized inline content stream with `nosniff`. |
-| `POST` | `/api/contracts/disputes/{id}/resolve` | Admin/assigned Staff queues on-chain resolution after response or response deadline. |
+| `POST` | `/api/auth/register` | Register account. |
+| `POST` | `/api/auth/verify-email` | Verify OTP. |
+| `POST` | `/api/auth/resend-verification-otp` | Resend verification OTP. |
+| `POST` | `/api/auth/login` | Login and set auth cookies. |
+| `POST` | `/api/auth/refresh` | Refresh session. |
+| `POST` | `/api/auth/switch-role` | Switch active role after eligibility checks. |
+| `POST` | `/api/auth/logout` | Revoke/logout. |
+| `GET` | `/api/auth/csrf` | CSRF bootstrap. |
+| `POST` | `/api/auth/forgot-password` | Begin reset flow. |
+| `POST` | `/api/auth/reset-password` | Complete reset flow. |
+| `GET` | `/api/users/me` | Current user/profile. |
+| `PUT` | `/api/users/me` | Update current user profile. |
+| `PUT` | `/api/users/me/wallet` | Update wallet. |
+| `POST` | `/api/users/me/avatar` | Upload avatar. |
+| `PUT` | `/api/users/me/password` | Change password. |
+| `GET` | `/api/reference/provinces` | Province list. |
+| `GET` | `/api/reference/provinces/{provinceCode}/communes` | Commune list. |
+| `GET` | `/api/reference/locations/snapshot` | Location snapshot for grounding/search. |
 
-Managed file policy: maximum 50 MB; JPEG/PNG/WebP/GIF, MP4/WebM/QuickTime, MP3/MP4 audio/WAV, PDF, TXT, DOC/DOCX and XLS/XLSX. Reason/response text is stored independently of file evidence.
+Tutor/account related APIs include `/api/tutors`, `/api/tutors/search-v2`, `/api/tutors/{tutorProfileId}/detail-v2`, `/api/tutor-applications/**`, `/api/staff/tutor-applications/**`, `/api/staff/tutors/**`, and admin user management under `/api/admin/users`, `/api/users/admin`, `/api/staff/users`.
 
-## 3.7 Chat API status
-
-Chat remains owned by `notification-service`. Account `userId` is the canonical participant identity; email is retained only as a display snapshot and backward-compatible field.
+## 4. Learning Catalog and Tutor APIs
 
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/chat/conversations/direct` | Create or reuse one direct conversation for the authenticated user and `recipientUserId`. |
-| `GET` | `/api/chat/conversations` | List conversations where the authenticated `userId` is a participant, including counterpart display metadata and unread count. |
-| `GET` | `/api/chat/conversations/{id}/messages?page&size` | Return participant-authorized message history, newest first, without read side effects. |
-| `POST` | `/api/chat/conversations/{id}/read` | Mark unread incoming messages in that conversation as read for the authenticated participant. |
-| `POST` | `/api/chat/messages` | Persist a text message in an existing conversation; sender comes from the JWT principal and recipient is derived from the conversation. Compatibility create-by-recipient still accepts `recipientUserId` when `conversationId` is absent. |
-| `POST multipart` | `/api/chat/conversations/{id}/attachments` | Persist one media chat message in an existing conversation. The `files` parts contain either 1-5 images or exactly 1 video; optional `caption` is stored as message content. |
-| WebSocket | `/ws/chat` | Push `NEW_MESSAGE` frames only to authenticated sender/recipient `userId` sessions. |
+| `GET` | `/api/teaching-catalog/program-types` | Program types. |
+| `GET` | `/api/teaching-catalog/education-levels` | Education levels. |
+| `GET` | `/api/teaching-catalog/categories` | Catalog categories. |
+| `GET` | `/api/teaching-catalog/subjects` | Catalog subjects. |
+| `GET` | `/api/teaching-catalog/levels` | Catalog levels. |
+| `GET` | `/api/teaching-catalog/grounding-snapshot` | Catalog snapshot for AI grounding. |
+| `POST/GET` | `/api/subject-requests/**` | Subject request/suggestion review flow. |
+| `POST/GET` | `/api/catalog-subject-suggestions/**` | Catalog subject suggestions. |
+| `GET/POST` | `/api/tutor/subject-registrations` | Tutor subject registrations. |
+| `POST` | `/api/tutor/subject-registrations/batch` | Batch registration. |
+| `GET/POST` | `/api/tutor/availability` | Tutor availability. |
+| `GET` | `/api/tutor-subjects` | Tutor subject data. |
+| `GET` | `/api/tutor-subjects/by-profile/{tutorProfileId}` | Tutor subjects by profile. |
 
-Direct chat is limited to Student with approved Tutor. `notification-service` resolves current participant eligibility through `account-service` chat identity lookup; Staff/Admin direct chat, self-chat, Student-Student and unapproved Tutor conversations are rejected. The database enforces one conversation per unordered user pair through normalized `participant_low_user_id`/`participant_high_user_id` uniqueness; duplicate historical pairs must be merged manually before the hardening migration can apply.
+## 5. Public Tutor Search and Reviews
 
-Chat attachments are owned by `notification-service`. Supported runtime attachment types are JPEG/PNG/WebP images and MP4/WebM videos. One IMAGE message may contain 1-5 image attachments, maximum 10 MB each. One VIDEO message contains exactly one video attachment, maximum 40 MB. Image and video files cannot be mixed in one send. The service stores file bytes in private S3, while PostgreSQL stores message metadata plus child `chat_attachments` rows with object key, original filename, MIME type, byte size and SHA-256. Clients receive short-lived presigned GET URLs in `ChatMessageDto.attachments[].url`; URLs are not permanent public object URLs. Legacy V4 single-attachment columns remain in the database for migration compatibility, but runtime read/write uses `chat_attachments`.
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/tutors/search-v2` | Public Tutor Search V2 with manual filters. |
+| `GET` | `/api/tutors/{tutorProfileId}/detail-v2` | Public Tutor Detail V2. |
+| `GET` | `/api/public/tutors/search-data` | Public tutor capability/search data owned by Learning. |
+| `GET` | `/api/public/tutors/{tutorId}/reviews` | Public tutor reviews. |
+| `GET` | `/api/public/tutors/{tutorId}/rating-summary` | Rating summary. |
+| `GET` | `/api/public/tutors/rating-summaries` | Batched rating summaries. |
 
-Current WebSocket chat frame shape:
+## 6. Class, Enrollment, Session and Homework APIs
 
-| Field | Purpose |
-| --- | --- |
-| `type` | Current value: `NEW_MESSAGE`. |
-| `payload.messageId` | Persisted chat message id. |
-| `payload.conversationId` | Conversation id. |
-| `payload.senderUserId` | Account id of the sender. |
-| `payload.type` | `TEXT`, `IMAGE`, or `VIDEO`. |
-| `payload.content` | Persisted text content. |
-| `payload.attachments` | Attachment metadata list plus presigned URLs for image/video messages; no binary payload is sent over WebSocket. |
-| `payload.createdAt` | Server timestamp. |
-| `payload.read` | Initial read state, normally `false`. |
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET/POST` | `/api/tutor/classes` | Tutor class list/create. |
+| `GET` | `/api/tutor/classes/stats` | Tutor class stats. |
+| `GET/PUT/DELETE` | `/api/tutor/classes/{id}` and subpaths | Tutor class detail/update/visibility/delete. |
+| `GET` | `/api/admin/classes` | Staff/Admin class monitoring. |
+| `POST` | `/api/admin/classes/{id}/approve` | Approve class. |
+| `POST` | `/api/admin/classes/{id}/reject` | Reject class. |
+| `GET` | `/api/public/classes` | Public class search. |
+| `GET` | `/api/public/classes/{id}` | Public class detail. |
+| `GET` | `/api/public/classes/{id}/share` | Shareable class detail for `/classes/{id}`. |
+| `POST` | `/api/public/classes/{id}/verify-key` | Verify join key. |
+| `GET` | `/api/public/classes/semantic-source` | Public-safe class source for AI indexing/validation. |
+| `POST` | `/api/classes/{classId}/enroll` | Student enroll/request join. |
+| `GET` | `/api/student/classes` | Student classes. |
+| `GET` | `/api/student/schedule` | Student schedule. |
+| `GET` | `/api/enrollment-requests/my-requests` | Student request list. |
+| `POST` | `/api/enrollment-requests/{requestId}/cancel` | Cancel request. |
+| `POST` | `/api/enrollment-requests/{requestId}/accept` | Tutor accept. |
+| `POST` | `/api/enrollment-requests/{requestId}/reject` | Tutor reject. |
 
-Web chat integration is implemented for the Student `/messages` page, Tutor Portal `messages` tab, Tutor Marketplace cards, and Public Tutor Profile. Marketplace manual/AI cards and profile actions use the canonical tutor `userId` to call `POST /api/chat/conversations/direct`, then navigate to `/messages?conversation={id}` where the selected conversation opens. The UI loads real conversations/history from `/api/chat/conversations`, sends text messages through `/api/chat/messages`, sends grouped image messages or one-video messages through the multipart attachment endpoint, marks active conversations read through `/api/chat/conversations/{id}/read`, consumes `/ws/chat` `NEW_MESSAGE` frames through the Gateway, and keeps the selected conversation in the `conversation` query parameter. Chat Bell summaries are implemented for recipients outside Messages; calls, typing/presence, group chat, and mobile app parity remain out of scope.
+Session/homework APIs are under `/api/classes/{classId}/sessions`, `/api/sessions/{sessionId}/...`, `/api/classes/{classId}/materials`, `/api/classes/{classId}/syllabus-file`, `/api/tutor/homework-overview`, and `/api/student/homework-overview`.
 
-Chat Bell summaries are now implemented for Web. When the recipient is outside Messages, each persisted ChatMessage creates at most one `CHAT_MESSAGE` notification with `referenceType=CHAT_CONVERSATION` and `referenceId=conversationId`; grouped image messages still count as one notification. When the recipient browser has the Messages route active through `/api/notifications/chat-view-context`, Notification Service suppresses chat Bell creation and the Messages sidebar unread state remains the attention surface. Opening/marking a conversation read clears unread chat Bell notifications for that conversation.
+## 7. Community APIs
 
-## 3.8 Contract Termination & Cancellation API status
+Community belongs to Learning Service and is exposed through `/api/community`.
 
-Luá»“ng Cháº¥m dá»©t há»£p Ä‘á»“ng & Äá» xuáº¥t Há»§y lá»›p há»c tÃ­ch há»£p báº£o chá»©ng chá»¯ kÃ½ sá»‘ EIP-712 gasless, khu vá»±c Ä‘á»‡m minh chá»©ng trÆ°á»›c khi gá»­i vÃ  theo dÃµi hoÃ n tiá»n tá»± Ä‘á»™ng 15 giÃ¢y.
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/community/posts` | Feed/list; supports `postType`, `status`, `subjectId`, `learningMode`, `keyword`, `page`, `size`. |
+| `GET` | `/api/community/posts/{id}` | Post detail and view count. |
+| `GET` | `/api/community/posts/mine` | Current user's posts. |
+| `GET` | `/api/community/posts/bookmarked` | Current user's bookmarks. |
+| `POST` | `/api/community/posts` | Create Student/Tutor post. |
+| `PUT` | `/api/community/posts/{id}` | Update own post. |
+| `DELETE` | `/api/community/posts/{id}` | Soft-delete/hide post. |
+| `PATCH` | `/api/community/posts/{id}/close` | Close post/poll where allowed. |
+| `POST` | `/api/community/polls/{pollId}/vote` | Toggle one poll option. |
+| `PUT` | `/api/community/polls/{pollId}/votes` | Replace all selected poll options. |
+| `DELETE` | `/api/community/polls/{pollId}/vote` | Clear current user's poll vote selections. |
+| `GET` | `/api/community/posts/{id}/likes` | Like user list. |
+| `POST` | `/api/community/posts/{id}/reactions` | Toggle LIKE. |
+| `POST` | `/api/community/posts/{id}/bookmarks` | Toggle bookmark. |
+| `GET` | `/api/community/posts/{id}/comments` | Comments. |
+| `POST` | `/api/community/posts/{id}/comments` | Add comment/reply. |
+| `GET` | `/api/community/posts/{id}/class-suggestion` | Tutor-author class suggestion from poll demand. |
+| `POST` | `/api/community/posts/{id}/convert-to-class` | Tutor-author post-to-class conversion. |
 
-Controller: `TerminationController` in `contract-service` (prefix `/api/contracts/terminations`).
+Community emits Learning WebSocket updates and RabbitMQ notification events for supported interactions/conversion. Do not document `/api/learning/community` unless gateway/client/source are changed.
 
-| Method | Endpoint | Purpose | Scope / Authorization |
-| --- | --- | --- | --- |
-| `GET` | `/api/contracts/terminations` | List termination requests & cancellation cases. | Role-scoped: Student sees own cases, Tutor sees own classroom cases, Staff/Admin sees all manageable cases. |
-| `GET` | `/api/contracts/terminations/refunds` | List financial progress per affected agreement, including deposited USDC, confirmed Tutor payout, platform fee, session refunds, unused-deposit refund and escrow remainder. | Student sees only their own agreement item in a Tutor whole-class cancellation; Tutor reason, audit, signature and evidence are omitted. Tutor/Staff/Admin retain their normal case scope. |
-| `POST` | `/api/contracts/terminations` | Submit termination request with cryptographic EIP-712 verification and create a retryable Learning hold. | Student: own agreement only (`wholeClass=false`). Tutor: whole class only (`wholeClass=true`). Signed timestamp must be within five minutes and a signature cannot be reused. |
-| `POST` | `/api/contracts/terminations/{id}/actions` | Respond, recommend, approve or reject a termination case. | Parties may `RESPOND`; assigned Staff may `RECOMMEND`/`REJECT` (scoped to assigned classrooms); Admin has supreme authority to `APPROVE` (directly from `REQUESTED` or `RECOMMENDED`) or `REJECT`. Reject releases hold and restores class; approve preserves cutoff and initiates session settlement / escrow refund processing. |
-| `POST` | `/api/contracts/terminations/{id}/evidence` | Upload termination evidence file (image, video, audio, PDF, Word, Excel, text). | Parties (`STUDENT`, `TUTOR`) for active cases (`HOLD_PENDING`, `REQUESTED`, `RECOMMENDED`). Max 5 files per party, max 50 MB per file. Whitelist MIME check, SHA-256 integrity, stored on S3. |
-| `GET` | `/api/contracts/terminations/{id}/evidence/{evidenceId}/content` | Stream/download stored termination evidence file. | Parties on the agreement/class, assigned Staff reviewer, and Admin. Streams with original filename and nosniff header. |
+## 8. Contract, Escrow and Termination APIs
 
-## 4. API Status Principle
+Contract Service protected APIs derive identity from the cookie JWT and active role. Frontend-supplied role/user headers are not authoritative.
 
-## 3.9 AI Class Search Frontend Contract Status
+Core families include:
 
-Web Class Marketplace now consumes the full Student-only AI Class Search flow: `POST /api/ai/classes/analyze` -> `POST /api/ai/classes/ground` -> `POST /api/ai/classes/match`. The final `/match` request sends the grounded requirement returned by `/ground` as `{ requirement, topK }`; it does not ask Gemini to rerun analysis and does not transform the AI requirement into manual class filters.
+- `/api/contracts/agreements/initiate`
+- `/api/contracts/agreements`
+- `/api/contracts/agreements/{id}`
+- `/api/contracts/agreements/{id}/sign`
+- `/api/contracts/agreements/{id}/payment-submitted`
+- `/api/contracts/agreements/{id}/document-view`
+- `/api/contracts/agreements/{id}/document-artifact`
+- `/api/contracts/agreements/{id}/document-artifact/finalize`
+- `/api/contracts/agreements/{id}/document-artifact/preview`
+- `/api/contracts/agreements/{id}/document-artifact/download`
+- `/api/contracts/agreements/{id}/settlements`
+- `/api/contracts/admin/financial-overview`
+- `/api/contracts/admin/settlements`
+- `/api/contracts/transactions/{id}/retry`
+- dispute/evidence endpoints under `/api/contracts/disputes/**`
 
-The browser renders `/api/ai/classes/match` results through the existing public class card design with an additional EduConnect `% phÃ¹ há»£p` badge and backend-provided `matchingReasons`. Raw semantic internals such as vector IDs, Qdrant payload, document hashes, embedding model, raw cosine similarity, and score breakdown details are not part of the student UI contract.
+Termination API prefix: `/api/contracts/terminations`.
 
-Class Marketplace AI and Manual Search are independent UI modes. Manual search continues to call `GET /api/learning/public/classes` with URL filters, sorting, and pagination. AI results are a session-scoped snapshot stored in browser `sessionStorage` with version, TTL, and account ownership; detail/back and page refresh restore the saved AI cards without replaying Analyze, Ground, Match, or embedding calls.
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/contracts/terminations` | Role-scoped termination/cancellation cases. |
+| `GET` | `/api/contracts/terminations/refunds` | Role-scoped refund/financial progress; Student sees only own relevant agreement items. |
+| `POST` | `/api/contracts/terminations` | Student agreement termination or Tutor whole-class cancellation with EIP-712 verification. |
+| `POST` | `/api/contracts/terminations/admin` | Admin operational stop/cancel request. |
+| `POST` | `/api/contracts/terminations/{id}/actions` | Respond/recommend/approve/reject/force action according to role and state. |
+| `POST multipart` | `/api/contracts/terminations/{id}/evidence` | Upload termination evidence. |
+| `GET` | `/api/contracts/terminations/{id}/evidence/{evidenceId}/content` | Download authorized evidence. |
 
-Treat API status carefully:
+Funding, settlement, expiration and refunds are authoritative only after Contract ingests confirmed blockchain events.
 
-- Controller + route + service flow + persistence/security evidence can support IMPLEMENTED or PARTIAL status.
-- Service logic without a public Controller is not a public API.
-- UI code calling or mocking a feature is not proof that the backend API exists.
+## 9. Notification and Human Chat APIs
+
+Bell notification API:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/notifications` | Notification list; supports pagination/unread/role filters. |
+| `GET` | `/api/notifications/unread-count` | Unread count. |
+| `PATCH` | `/api/notifications/{id}/read` | Mark one read. |
+| `PATCH` | `/api/notifications/read-all` | Mark all matching notifications read. |
+| `PUT` | `/api/notifications/chat-view-context` | Set active Messages context to suppress chat Bell noise. |
+| WebSocket | `/ws/notifications` | Push notification-created frames. |
+
+Human Student-Tutor chat API:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/chat/conversations` | Current user's conversations. |
+| `POST` | `/api/chat/conversations/direct` | Create/reuse direct Student-Tutor conversation. |
+| `GET` | `/api/chat/conversations/{id}/messages` | Paginated message history. |
+| `POST` | `/api/chat/conversations/{id}/read` | Mark conversation read. |
+| `POST` | `/api/chat/messages` | Send text message. |
+| `POST multipart` | `/api/chat/conversations/{id}/attachments` | Send 1-5 images or exactly 1 video. |
+| WebSocket | `/ws/chat` | Push `NEW_MESSAGE` frames to authenticated participants. |
+
+Chat attachments are private S3 objects with metadata/presigned URLs in API responses; WebSocket frames carry metadata, not binary files.
+
+## 10. AI Matching APIs
+
+Tutor Matching:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/ai/matching/analyze` | Gemini extracts natural-language tutor requirement hints. |
+| `POST` | `/api/ai/matching/ground` | Ground hints to catalog/location IDs and clarification state. |
+| `POST` | `/api/ai/matching/tutors` | Return ranked tutor matches. |
+
+Tutor match responses may include `matchPercentage`, `matchingReasons`, `mismatchReasons`, `missingData`, `relaxedCriteria`, and `scoreBreakdown` with criteria/semantic components.
+
+Class Matching:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/ai/classes/analyze` | Gemini extracts natural-language class-search hints. |
+| `POST` | `/api/ai/classes/ground` | Ground class hints to catalog IDs and review/clarification state. |
+| `POST` | `/api/ai/classes/match` | Return ranked public class matches. |
+
+Class match responses include public class card fields plus `matchPercentage`, `matchingReasons`, `missingData`, `scoreBreakdown`, and `rankingMode`. Raw vector IDs, Qdrant payloads and raw cosine similarity are not public UI contracts.
+
+Semantic maintenance:
+
+- `/api/ai/semantic/collection/init`
+- `/api/ai/semantic/index/sync`
+- `/api/ai/semantic/index/capability`
+- `/api/ai/semantic/search`
+- `/api/ai/semantic/classes/collection/init`
+- `/api/ai/semantic/classes/index/sync`
+- `/api/ai/semantic/classes/index`
+
+These endpoints are operational/maintenance surfaces, not normal Student marketplace APIs.
+
+## 11. AI Chatbot API
+
+`POST /api/ai/chat` belongs to AI Service.
+
+Request shape at high level:
+
+- `message` required, max 1200 chars.
+- optional `conversation` list with role/content pairs.
+- optional `pageContext` with current route/page type.
+
+Response shape at high level:
+
+- `message`
+- `intent`
+- `sources`
+- `actions`
+- `toolResult`
+
+The chatbot may use RAG, public lookup/count, Tutor/Class matching, and authenticated Student/Tutor read-only tools. It does not use Notification Service chat tables and does not use `/ws/chat`.
+
+Admin knowledge maintenance currently exists under `/api/ai/admin/chatbot-knowledge/reindex` and `/api/ai/admin/chatbot-knowledge/status`.
+
+## 12. Internal APIs
+
+| Method | Endpoint | Owner | Caller | Security |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/internal/notification-reviewers` | Account | Contract | `X-Service-Token`, subject `contract-service`, scope `notification-recipients`. |
+| `POST` | `/api/notifications/internal/send` | Notification | Contract | `X-Service-Token`, subject `contract-service`, scope `notification-send`. |
+| `POST` | `/api/learning/internal/enrollment-requests/activate` | Learning | Contract | Internal lifecycle call. |
+| `POST` | `/api/learning/internal/enrollment-requests/expire` | Learning | Contract | Internal lifecycle call. |
+| `POST` | `/api/learning/internal/termination` | Learning | Contract | Internal termination/cutoff synchronization. |
+
+These are not frontend/public APIs. Document service-token or internal caller expectations whenever adding similar routes.
+
+## 13. WebSocket APIs
+
+- `/ws/account`
+- `/ws/learning`
+- `/ws/notifications`
+- `/ws/chat`
+
+REST/database state remains authoritative; WebSocket events are for realtime hints and UI reconciliation.
+
+## 14. API Status Rule
+
+Use precise status language:
+
+- Controller + route + service + persistence/security + client/test evidence can support `IMPLEMENTED`.
+- A service method without a controller is not a public API.
+- UI mock code is not proof of backend API implementation.
 - Planned target capabilities should not be documented as current APIs.
-
-## 5. Request/Response Convention
-
-Current backend source shows common use of:
-
-- request/response DTOs;
-- Bean Validation such as `@Valid`;
-- `ResponseEntity` for explicit HTTP responses;
-- centralized exception handling;
-- pagination/filter parameters in selected list/search APIs.
-
-Keep new APIs consistent with nearby controllers in the owning service.
-
-## 6. Authentication Requirements
-
-Authenticated APIs must follow the JWT/cookie/CSRF/role baseline in `docs/AUTH_SECURITY.md`.
-
-Tutor API distinction:
-
-- Account Service owns Tutor application/profile-review APIs that authenticated restricted Tutors need for identity-document submission/correction. These APIs do not imply full teaching permission.
-- Learning Service owns full teaching operation APIs. These require approved Tutor eligibility and must not be opened to `PENDING`/`REJECTED` Tutors by frontend hiding alone.
-
-Before adding or changing an API, audit:
-
-- whether the endpoint is public or authenticated;
-- which role(s) can access it;
-- whether the active role matters;
-- whether browser calls require CSRF handling.
-
-## 7. Frontend/Mobile Integration
-
-Web uses API client modules under `frontend-web/src/api` with credentialed requests and CSRF handling.
-
-Mobile is an Expo/React Native app with basic API integration through `mobile-app/src/api.js` and auth context. Mobile is not feature-equivalent with Web and should not be assumed to have every Web flow.
-
-## 8. Cross-Service API Rule
-
-- Identify the owning service before adding an endpoint.
-- Do not duplicate business logic already owned by another service.
-- Do not query another service's database directly.
-- Use API or events for cross-domain integration when a flow crosses service boundaries.
-- Check gateway routing if the endpoint must be reachable through `api-gateway`.
-
-## 9. Where to Audit Before Adding API
-
-Before adding or modifying an API, inspect the relevant:
-
-- Controller;
-- request/response DTOs;
-- Service layer;
-- Repository/Entity/migration;
-- SecurityConfig and `@PreAuthorize`;
-- frontend API client/component;
-- mobile API call/screen if applicable;
-- gateway route if the API is exposed through the gateway;
-- event producer/consumer if the API triggers cross-service work.

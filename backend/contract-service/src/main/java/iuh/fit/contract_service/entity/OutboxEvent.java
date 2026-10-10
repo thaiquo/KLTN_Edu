@@ -68,4 +68,14 @@ public class OutboxEvent {
         event.attemptCount = 0;
         return event;
     }
+
+    public void markPublished(OffsetDateTime publishedAt) {
+        this.publishedAt = publishedAt;
+        this.lastError = null;
+    }
+
+    public void recordPublishFailure(String error) {
+        this.attemptCount = (this.attemptCount == null ? 0 : this.attemptCount) + 1;
+        this.lastError = error == null ? "Unknown publish failure" : error.substring(0, Math.min(error.length(), 2000));
+    }
 }

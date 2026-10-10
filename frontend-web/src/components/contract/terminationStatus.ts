@@ -2,7 +2,7 @@ import type { TerminationItem, TerminationView } from '../../api/terminationsApi
 
 export const terminationCaseLabel = (status: string): string => ({
   HOLD_PENDING: 'Đang tạm dừng lịch học',
-  REQUESTED: 'Đã tạm dừng lịch tương lai, chờ thẩm định',
+  REQUESTED: 'Đã tiếp nhận, chờ thẩm định',
   RECOMMENDED: 'Staff đã thẩm định, chờ Admin quyết định',
   APPROVED: 'Admin đã duyệt, đang xử lý quyết toán và hoàn cọc',
   RELEASE_PENDING: 'Đang khôi phục lịch học',
@@ -11,6 +11,7 @@ export const terminationCaseLabel = (status: string): string => ({
 }[status] || status);
 
 export const terminationItemLabel = (item: TerminationItem): string => ({
+  WAITING_APPROVAL: 'Chưa duyệt · Chưa thực hiện hoàn tiền',
   LEARNING_PENDING: 'Đang đồng bộ lịch học',
   WAITING_PAYMENT: 'Đang xử lý hợp đồng chưa nạp cọc',
   WAITING_SETTLEMENT: 'Chờ quyết toán các buổi trước mốc hủy',
@@ -24,6 +25,9 @@ export const terminationItemLabel = (item: TerminationItem): string => ({
 
 export const terminationProgressText = (termination: TerminationView): string => {
   const { request, items } = termination;
+  if (request.status === 'REQUESTED') return request.origin === 'SYSTEM_REVIEW'
+    ? 'Đề nghị xem xét · Chưa có quyết định dừng lớp'
+    : 'Đã dừng lịch tương lai thuộc phạm vi yêu cầu · Chờ thẩm định';
   if (request.status !== 'APPROVED') return terminationCaseLabel(request.status);
   const outstanding = items.filter(item => item.status !== 'COMPLETED');
   if (outstanding.length === 0) return 'Đã duyệt, đang cập nhật trạng thái lớp';

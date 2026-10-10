@@ -19,7 +19,7 @@ class TerminationSignalsTest {
         lenient().when(s.getOutcome()).thenReturn(SettlementOutcome.TUTOR_ABSENT);
         return s;
     }
-    @Test void threeDistinctConsecutiveAbsencesCreateReviewOnly() {
+    @Test void threeDistinctConsecutiveAbsencesCreateGovernanceWarning() {
         var a = ContractAgreement.builder().id(UUID.randomUUID()).classroomId(1L).build();
         when(agreements.findByStatus(ContractAgreementStatus.ACTIVE)).thenReturn(List.of(a));
         var rows = List.of(absent(1), absent(2), absent(3));

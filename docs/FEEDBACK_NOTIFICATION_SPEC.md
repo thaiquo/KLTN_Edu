@@ -35,6 +35,10 @@ This spec is documentation only. Current source includes persistent Notification
 
 ## 3. Core Architecture Rule
 
+Contract notification update (2026-10-02): the internal send endpoint checks a short-lived `notification-send` service JWT. Contract's termination outbox and its direct notification dispatcher both attach that token. Account's reviewer lookup checks the separate `notification-recipients` scope. This authenticates the producer before Notification Service accepts a client-supplied recipient id. The termination outbox still retries with a stable event id, and Notification Service deduplicates by event id and recipient.
+
+The local DB probe observed 14 delivered and 0 pending termination outbox rows. This is backend delivery evidence. Per-user browser Bell receipt and unread navigation were not exercised with four authenticated accounts in this audit.
+
 | Layer | Responsibility |
 | --- | --- |
 | REST | Primary read/write business API and source of normal request responses. |
@@ -225,6 +229,7 @@ These are target events derived from current project scope and docs. They are no
 | `SESSION_SETTLED` | `IMPLEMENTED` | Learning/Contract Service | Student/Tutor | Financial progress and Important Success Modal | Partial | Partial after authoritative confirmation | Partial | `/payments` or `/contracts` | Learning delivery, proposal, 24-hour eligibility, on-chain finalization and recovery workers are implemented. |
 | `PAYMENT_CONFIRMED` | `IMPLEMENTED` | Contract Service | Student/Tutor/Admin as applicable | Financial progress and Important Success Modal | Partial | Partial after authoritative confirmation | Partial | `/payments` | Confirmed transaction history and wallet/financial views exist; notification coverage is not universal. |
 | `REFUND_PROCESSED` | `IMPLEMENTED` | Contract Service | Student/Tutor/Admin as applicable | Important Success Modal | Partial | Partial after authoritative confirmation | Partial | `/payments` or `/contracts` | Tutor-absent refund, unused-fund refund and dispute-approved refund paths exist. |
+| `TERMINATION_UPDATED` | `IMPLEMENTED` | Contract Service | Student/Tutor and assigned reviewers | Destructive confirmation plus authoritative case refresh | Transactional outbox; Account resolves assigned Staff and active Admin ids | Notification Service WebSocket for persisted party notifications; manager work queue polls REST | Implemented for affected parties and reviewers | `/contracts` or Portal contract management | Durable intents, stable event ids, retry and deadline notices; see contract/TERMINATION_REVIEW_2026_10_02.md. Runtime delivery still needs verification with services running. |
 | `DISPUTE_OPENED` | `PARTIAL` | Contract Service | Tutor | Confirm before submit, then toast | Immediate when a Student complaint is accepted locally | Notification Service WebSocket | Yes | Portal `complaints` | Tutor notification includes the persisted Student complaint reason. Submission immediately holds the per-Student settlement. Tutor-origin complaints are private Staff/Admin reports and do not notify the Student. Reviewer Bell delivery remains unavailable because agreements do not store reviewer user id. |
 | `DISPUTE_RESOLVED` | `PARTIAL` | Contract Service | Student/Tutor | Important Success Modal for resolver | Yes after confirmed on-chain resolution | Notification Service WebSocket | Yes | `/contracts` or Portal `complaints` | Both parties receive the authoritative resolution result; reviewer Bell delivery remains pending a reviewer recipient id. |
 | `MESSAGE_RECEIVED` | `IMPLEMENTED` | Notification Service chat domain | Recipient | Sender local send state | `CHAT_MESSAGE` Bell summary outside Messages; suppressed inside active Messages | `/ws/chat` is consumed by Web Messages; `/ws/notifications` updates Bell summaries | Bell implemented for outside-Messages recipients | `/messages?conversation={id}` or `/dashboard?tab=messages&conversation={id}` | Message persistence/API/WebSocket and Student/Tutor Web Messages are connected; mobile remains pending. |
@@ -287,6 +292,7 @@ These are target events derived from current project scope and docs. They are no
 | Admin | Lock/unlock user | `IMPLEMENTED` | `SECURITY_SENSITIVE` | Yes recommended | Toast | Toast | Optional if notifying affected user is required | Recommended only if user is online |
 | Admin | Catalog CRUD | `IMPLEMENTED` | `NORMAL_WRITE` | Destructive/status changes may confirm | Toast | Toast/inline | No by default | No |
 | Contract | Sign contract | `PARTIAL` | `FINANCIAL_CRITICAL` when tied to payment | Yes | Important Success Modal after authoritative state | Blocking error/toast | Yes | Required when implemented |
+| Contract | Request/review/force termination | `IMPLEMENTED` | `FINANCIAL_CRITICAL` | Yes for party request and Admin approval | Case status/progress UI | Blocking case error/toast | Durable delivery for affected parties and reviewers | Party notifications realtime; reviewer queue polls REST |
 | Payment | Fund escrow | `PARTIAL` | `FINANCIAL_CRITICAL` | Yes | Progress UI, then Important Success Modal after confirmation | Blocking error/toast | Yes after confirmation | Required after confirmation |
 | Messaging | Send message | `PARTIAL` | `NORMAL_WRITE` | No | Local send state | Inline/toast | Optional Bell summary | Backend realtime implemented; Web integration pending |
 | AI Matching | Generate matching | `PLANNED` | `IMPORTANT_WRITE` for long-running generation | Optional | Toast or result-ready state | Toast/inline | Optional | Recommended only for long-running jobs |
@@ -303,6 +309,9 @@ These are target events derived from current project scope and docs. They are no
 | `SUBJECT_REQUEST_REVIEWED` | `PARTIAL` | Learning Service | Requester | Backend persistent notification and Bell REST UI implemented for approved/rejected events | Implemented through learning realtime and notification WebSocket | `TUTOR` | `/tutor/teaching-registrations` |
 | `CLASS_SUBMITTED` | `PARTIAL` | Learning Service | Staff/Admin | Planned persistent notification | Implemented | `STAFF`/`ADMIN` | `/staff/tutors` |
 | `CLASS_REVIEWED` | `IMPLEMENTED` | Learning Service | Tutor | Backend persistent notification and Bell REST UI implemented for approved/rejected events | Implemented through learning realtime and Notification Service WebSocket | `TUTOR` | `/dashboard` or Portal `my-classes` |
+| `COMMUNITY_POST_CONVERTED_TO_CLASS` | `IMPLEMENTED` | Learning Service | Each Student who voted | Idempotent persistent notification keyed by post, class and recipient | Implemented through Notification Service WebSocket | `STUDENT` | `/community#post-{postId}` while the linked class awaits review |
+| `COMMUNITY_POST_COMMENTED` | `IMPLEMENTED` | Learning Service | Post author, excluding the actor | Idempotent persistent notification keyed by post, comment and recipient | Implemented through Notification Service WebSocket; counts also refresh through `/ws/learning` | Post author role | `/community#post-{postId}` |
+| `COMMUNITY_POST_REPLIED` | `IMPLEMENTED` | Learning Service | Replied user, excluding the actor | Idempotent persistent notification keyed by post, comment and recipient | Implemented through Notification Service WebSocket; counts also refresh through `/ws/learning` | Replied user role | `/community#post-{postId}` |
 | `ENROLLMENT_REQUESTED` | `IMPLEMENTED` | Learning Service | Tutor | Persistent notification implemented | Implemented through Notification Service WebSocket | `TUTOR` | `/dashboard` |
 | `ENROLLMENT_ACCEPTED` | `IMPLEMENTED` | Learning Service | Student | Persistent notification implemented | Implemented through Notification Service WebSocket | `STUDENT` | `/my-classes` |
 | `ENROLLMENT_REJECTED` | `IMPLEMENTED` | Learning Service | Student | Persistent notification implemented | Implemented through Notification Service WebSocket | `STUDENT` | `/my-classes` |
@@ -311,6 +320,7 @@ These are target events derived from current project scope and docs. They are no
 | `ESCROW_FUNDED` | `PARTIAL` | Contract Service | Student/Tutor | Business flow implemented; persistent coverage requires per-path audit | Partial after authoritative confirmation | `STUDENT`/`TUTOR` | `/payments` or `/contracts` |
 | `DISPUTE_OPENED` | `PARTIAL` | Contract Service | Tutor | Persistent notification implemented after confirmed opening | Implemented through Notification Service WebSocket | `TUTOR` | Portal `complaints` |
 | `DISPUTE_RESOLVED` | `PARTIAL` | Contract Service | Student/Tutor | Persistent notification implemented after confirmed resolution | Implemented through Notification Service WebSocket | `STUDENT`/`TUTOR` | `/contracts` or Portal `complaints` |
+| `TERMINATION_UPDATED` | `IMPLEMENTED` | Contract Service | Student/Tutor, Staff/Admin queue | Outbox delivery for parties, assigned Staff and active Admin recipients resolved by Account | Notification Service WebSocket for persisted party notifications; REST polling for the management queue | `STUDENT`/`TUTOR`/`STAFF`/`ADMIN` | `/contracts` or Portal contract management |
 
 ## 16. WebSocket Matrix
 
@@ -336,6 +346,9 @@ These are target events derived from current project scope and docs. They are no
 | `SUBJECT_REQUEST_REVIEWED` | `IMPLEMENTED` | Requester can update proposal state promptly; `/ws/notifications` also syncs Bell for persisted requester notifications. |
 | `CLASS_SUBMITTED` | `IMPLEMENTED` | Staff queue refresh benefits from realtime. |
 | Enrollment request/create/accept/reject/cancel | `IMPLEMENTED` | Student/Tutor request state benefits from prompt updates; Notification WebSocket and frontend `realtime:event` refresh are implemented for the current enrollment flow. |
+| Community post delete/status/count update | `IMPLEMENTED` | `/ws/learning` broadcasts after commit so Student and Tutor feeds remove or update the same post and reconcile public counters without a page reload. Ordinary create/edit/delete still does not create Bell notifications. |
+| Community post comment/reply | `IMPLEMENTED` | `/ws/learning` updates public counters; RabbitMQ creates Bell notifications for the post author or replied user when the recipient is not the actor. |
+| Community poll aggregate update | `IMPLEMENTED` | A Student saves all draft selections in one REST write; `/ws/learning` then broadcasts public aggregate counts to Tutor/Student views. Private per-user selected option ids are not broadcast. |
 | Homework assignment/submission/grading | `PLANNED` | Learning workflow benefits from prompt updates. |
 
 ### PERSISTENT_ONLY

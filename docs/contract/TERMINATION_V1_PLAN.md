@@ -7,7 +7,7 @@ Giữ nguyên Solidity, ABI, địa chỉ deployment và tỷ lệ quyết toán
 
 - Student gửi thông báo đơn phương cho đúng agreement của mình (`wholeClass=false`); Tutor chỉ được đề xuất dừng toàn bộ lớp (`wholeClass=true`) và không được chấm dứt riêng từng Student.
 - Staff phụ trách xác minh và đề xuất; Admin quyết định cuối cùng. Lý do, giải trình và quyết định lưu bền.
-- Ba buổi vắng liên tiếp là dấu hiệu cần xem xét, không phải bằng chứng tự động hủy. Báo cáo trùng không được cộng thành nhiều vi phạm.
+- Ba buổi `TUTOR_ABSENT` liên tiếp của cùng lớp tự tạo cảnh cáo và operational hold, không tự tạo quyết định tài chính. Báo cáo trùng theo nhiều agreement không được cộng thành nhiều buổi vi phạm. Gia sư có hạn giải trình theo lịch buổi kế tiếp, tối đa 24 giờ; Admin quyết định tiếp tục hoặc hủy và có quyền khẩn cấp kèm audit.
 - Khi chữ ký hợp lệ được tiếp nhận, Learning tạo hold vận hành theo thời gian server: dừng buổi tương lai trong phạm vi yêu cầu nhưng chưa thay đổi tiền. Buổi đã bắt đầu trước cutoff vẫn phải quyết toán, kể cả chưa được Learning gửi sang Contract.
 - Nếu hồ sơ bị từ chối, hold được tháo và lịch tương lai được tiếp tục/lên lịch lại. Nếu được duyệt, cutoff ban đầu được giữ bất biến để thanh lý; không dịch cutoff theo thời gian Admin xử lý.
 - Hồ sơ chấm dứt không tự đóng băng tiền của buổi đang khiếu nại. Giữ nguyên cửa sổ 24h và quy trình dispute V1.

@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface UserRoleRepository extends JpaRepository<UserRole, Long> {
+    List<UserRole> findByRoleIn(List<Role> roles);
 
     List<UserRole> findByUserId(Long userId);
 

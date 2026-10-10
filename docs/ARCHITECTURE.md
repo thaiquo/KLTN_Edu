@@ -1,147 +1,164 @@
-# EduConnect — Kiến trúc hiện tại
+# EduConnect Architecture
 
-> Source audit: **2026-09-14**. Kiến trúc chính thức là **Service-Based Architecture** có tích hợp event-driven; không gọi là Microservices Architecture.
+> Post-merge baseline: 2026-10-10. EduConnect uses **Service-Based Architecture** with REST, RabbitMQ events, WebSocket realtime, PostgreSQL/Flyway and Sepolia blockchain integration. Matching and chatbot capabilities are owned by AI Service, not by separate services.
 
-## 1. Sơ đồ tổng thể
+## 1. System Map
 
 ```text
-React/Vite Web ─┐
-Expo Mobile ────┼─HTTP/cookie──> API Gateway :8080
-MetaMask ───────┘                    │
-                                    ├─ Account :8081 ── S3 / Email
-                                    ├─ Learning :8082
-                                    ├─ Contract :8083 ── Sepolia RPC / S3 / Gotenberg
-                                    ├─ Notification + Chat :8084
-                                    └─ AI :8085
+React/Vite Web + Expo Mobile
+        |
+        | HTTP cookies / CSRF / WebSocket
+        v
+API Gateway :8080
+  |-- Account Service :8081
+  |-- Learning Service :8082
+  |-- Contract Service :8083
+  |-- Notification Service :8084
+  `-- AI Service :8085
 
-Account/Learning/Notification <──RabbitMQ──> kltn.edu.events
-Learning <──signed internal REST──> Contract
-Contract <──poll/submit──> EduConnectEscrow trên Sepolia
-Web <──raw WebSocket──> Account/Learning/Notification/Chat
-Các business service ──JPA/Flyway──> PostgreSQL kltn_db
+RabbitMQ exchange: kltn.edu.events
+PostgreSQL: service-owned schemas/migrations in the shared local database
+Object storage: S3/local abstractions per owning service
+Blockchain: EduConnectEscrow on Sepolia, funded with USDC; Sepolia ETH is gas only
+Qdrant: semantic retrieval for tutor/class/chatbot knowledge flows
 ```
 
-## 2. Service map và ownership
+Gateway routes the current REST families and WebSocket paths: `/api/auth`, `/api/users`, `/api/tutors`, `/api/reference`, `/api/learning/**`, `/api/community/**`, `/api/contracts/**`, `/api/notifications/**`, `/api/chat/**`, `/api/ai/**`, `/ws/account`, `/ws/learning`, `/ws/notifications`, and `/ws/chat`.
 
-| Service | Domain owner | Thành phần chính | Mức hoàn thiện |
+## 2. Service Ownership
+
+| Service | Owns | Notes |
+| --- | --- | --- |
+| `account-service` | Authentication, users/roles, active role, Student/Tutor profiles, Tutor application identity data, geography reference data, internal active Staff/Admin notification recipient lookup. | Browser auth uses HttpOnly JWT cookies. Internal recipient lookup is service-token protected. |
+| `learning-service` | Teaching catalog, tutor authorization/subjects, tutor availability, public Tutor/Class learning data, classrooms, enrollment, sessions, attendance, homework, reviews, Community posts/polls/interactions/bookmarks, post-to-class behavior. | Community schema is in Learning Flyway V8. |
+| `contract-service` | E-contract, EIP-712 signing, final PDF/artifacts, escrow/payment lifecycle, blockchain reconciliation, settlement, disputes, termination governance, termination outbox, Contract -> Learning lifecycle events. | Contract is the source of truth for termination governance. |
+| `notification-service` | Persisted Bell notifications, Rabbit consumers, notification WebSocket, human Student-Tutor messaging, chat attachments metadata, chat REST/WebSocket. | Human messaging is not the AI chatbot. |
+| `ai-service` | Tutor Matching, Class Matching, Gemini analysis/grounding, Qdrant semantic retrieval, Matching V3 explainable scoring, AI chatbot, chatbot RAG, public lookup/count tools, authenticated Student/Tutor read-only chatbot tools. | Matching and chatbot stay inside AI Service. |
+| `api-gateway` | Edge routing, credentialed CORS, cookie forwarding, REST/WebSocket proxying. | Gateway is not an identity authority. |
+| `frontend-web` | Marketplaces, portals/dashboard, Community UI, contract/termination UI, human Messages, shared global AI chatbot widget. | AI Matching is integrated into Tutor/Class marketplace and chatbot flows, not a standalone `/matching` product route. |
+
+## 3. Security Baseline
+
+- Browser authentication uses `access_token` and refresh cookies; protected services derive identity server-side.
+- State-changing browser requests require CSRF handling.
+- CORS is credentialed and routed through the Gateway for Web.
+- Authorization uses roles and the current `activeRole`; changing the role model requires explicit approval.
+- Internal service endpoints are not public APIs. Current examples:
+  - Account `GET /api/internal/notification-reviewers` requires `X-Service-Token` signed with subject `contract-service` and scope `notification-recipients`.
+  - Notification `POST /api/notifications/internal/send` requires subject `contract-service` and scope `notification-send`.
+
+## 4. Human Messaging vs AI Chatbot
+
+Human Messaging belongs to `notification-service`.
+
+- Student <-> approved Tutor direct conversations.
+- REST APIs under `/api/chat/**`.
+- Realtime frames on `/ws/chat`.
+- Message history, unread/read state and image/video attachment metadata are persisted by Notification Service.
+
+AI chatbot belongs to `ai-service`.
+
+- HTTP flow under `POST /api/ai/chat`.
+- Shared global widget in Web.
+- Uses RAG/tools/matching adapters where implemented.
+- Does not write to human chat conversation tables and does not use `/ws/chat`.
+
+## 5. Matching Architecture
+
+Tutor Matching is integrated into Tutor Marketplace and chatbot flows:
+
+- Manual/public search remains available through the marketplace.
+- AI flow is Analyze -> Ground -> Match.
+- Grounding resolves catalog/location against Learning/Account reference data.
+- Qdrant supplies semantic evidence when applicable.
+- Matching V3 keeps deterministic backend scoring, dynamic denominator behavior, explainable score breakdown, matching reasons and mismatch reasons.
+- No standalone `/matching` product route should be documented or restored.
+
+Class Matching is separate:
+
+- Public class data is sourced from Learning.
+- AI Class flow is Analyze -> Ground -> Match.
+- Public class semantic indexing uses Qdrant.
+- Hard eligibility remains authoritative in Learning/public class data.
+- Chatbot can call public class lookup/matching tools; it does not own class data.
+
+## 6. Community Architecture
+
+Community belongs to `learning-service`.
+
+Implemented high-level concepts:
+
+- `community_posts`
+- poll records/options/votes
+- interactions, comments and bookmarks
+- Student search/group posts
+- Tutor announcements, polls and class sharing
+- Community -> class conversion using the shared class creation behavior where implemented
+
+Learning emits Community realtime and notification events after transactions commit. Notification Service consumes supported Community RabbitMQ events and persists Bell notifications. Staff/Admin moderation should not be documented as complete unless source later implements it.
+
+## 7. Contract Termination Architecture
+
+Contract Service owns termination governance.
+
+- `termination_cases`, items/evidence and status transitions are Contract-owned.
+- Student agreement termination and Tutor whole-class cancellation are submitted through Contract APIs.
+- Response deadlines and automatic absence handling are represented in Contract state where implemented.
+- Termination notification delivery uses Contract V18 transactional outbox plus internal Notification send.
+- Contract synchronizes lifecycle/cutoff effects to Learning; Learning stores the resulting hold/cutoff state but does not own termination decisions.
+- Frontend displays termination/refund progress for Student, Tutor, Staff and Admin according to role scope.
+
+## 8. Event Architecture
+
+RabbitMQ exchange: `kltn.edu.events`.
+
+Verified event families include:
+
+| Producer | Consumer | Routing key / family | Purpose |
 | --- | --- | --- | --- |
-| `api-gateway` | Edge routing | Spring Cloud Gateway WebFlux, credentialed CORS, REST và WebSocket routes. | IMPLEMENTED |
-| `account-service` | Identity/account | User, role, active role, refresh session, OTP, Student/Tutor profile, TutorApplication/TutorDocument, địa chỉ ví, email, S3. | IMPLEMENTED |
-| `learning-service` | Learning marketplace | Catalog, TutorSubject/registration, availability, classroom/schedule/chapter, enrollment, rolling session, attendance, homework. | IMPLEMENTED cho flow chính Web |
-| `contract-service` | Contract/payment/escrow | Agreement, acceptance, document artifact, payment, settlement, dispute/evidence, blockchain transaction/outbox/event cursor. | IMPLEMENTED cho flow chính; có giới hạn V1/ops |
-| `notification-service` | Notification and chat | Notification persistence, Rabbit consumers, Bell REST/WebSocket, conversation/message persistence, chat REST/WebSocket. | Notification and Web chat IMPLEMENTED for current core flows; some coverage remains partial |
-| `ai-service` | AI matching boundary | Health, Deterministic Matching V1, Gemini analyzer/grounding, Qdrant semantic retrieval foundation. | PARTIAL; Hybrid Matching V2/RAG NOT_IMPLEMENTED |
+| Account | Notification | `account.tutor-application.submitted` | Staff Bell notification for submitted Tutor applications. |
+| Learning | Notification | `learning.teaching-registration.submitted` | Staff/Admin review notification. |
+| Learning | Notification | `learning.subject-request.submitted` | Staff/Admin review notification. |
+| Learning | Notification | `learning.class.submitted` | Staff/Admin class review notification. |
+| Learning | Notification | `learning.community-post.converted` | Notify voters/participants after post-to-class conversion. |
+| Learning | Notification | `learning.community-post.interaction` | Notify post/comment/reply recipients. |
+| Contract | Learning | `contract.activated.v1` | Activate enrollment/class lifecycle after confirmed funding. |
+| Contract | Learning | `contract.expired.v1` | Expire learning enrollment/class lifecycle after confirmed contract expiration. |
 
-Không tạo thêm service hoặc chuyển domain owner nếu chưa có quyết định kiến trúc mới.
+Other existing valid notification events may remain supported by source, but docs should not introduce speculative event names. Blockchain financial state is confirmed by Contract's transaction/event pipeline, not RabbitMQ alone.
 
-## 3. Client
+## 9. Data and Flyway
 
-### Web
+Each service owns its data model even when local development uses the same PostgreSQL database.
 
-`frontend-web` dùng React/Vite, React Router, TanStack Query, Tailwind, ethers.js và Reown AppKit. Web là client chính và có màn hình theo năm actor.
+| Service | Current migration baseline | Representative data |
+| --- | --- | --- |
+| Account | Account chain through V15 in current source/history | users, roles, refresh sessions, OTP, students, tutors, tutor applications/documents. |
+| Learning | Compact V1..V8 | legacy compatibility, normalized catalog, tutor registrations, classrooms, sessions/homework/materials, reviews, Community posts/polls. |
+| Contract | Continuous V1..V19 | agreements, acceptances, artifacts, escrow payments, settlements, disputes/evidence, blockchain transactions/events, termination governance/outbox. |
+| Notification | V1..V2 | notifications, conversations, chat messages and chat attachments. |
 
-`/payments` currently redirects to `/student/wallet`; `MyWalletView` is used for escrow/wallet history. Portal still has some state/demo data, but Student/Tutor Messages UI now uses the real chat API.
+Older high-numbered Learning migrations are not active post-merge migrations. Community is represented by compact Learning V8.
 
-### Mobile
+## 10. Storage and Documents
 
-`mobile-app` dùng Expo Router/React Native. Source hiện chỉ có login, register, auth context và home cơ bản; không suy diễn rằng Mobile có contract/session/dispute parity với Web.
+- Account stores avatars and Tutor identity documents through S3/local storage abstractions and returns time-limited access URLs.
+- Learning stores classroom materials, syllabus, session files and homework submissions through its file storage abstraction.
+- Contract stores final contract PDFs and evidence through its artifact storage abstraction. Final contract PDF retention is implemented; DOCX is a transient conversion input.
+- Notification stores chat attachment bytes in private S3 and persists metadata/object keys; WebSocket never sends binary payloads.
 
-## 4. Giao tiếp liên service
+## 11. Blockchain and Escrow
 
-### REST
+- Solidity `EduConnectEscrow` is the ABI/rule source of truth.
+- USDC/ERC-20 test token is the escrow asset; Sepolia ETH is gas only.
+- Browser writes are limited to party signatures and Student funding actions.
+- Backend operator/arbitrator pipeline handles register/propose/finalize/dispute/expire/cancel flows.
+- Domain state and confirmed financial amounts should move only after confirmed contract events are ingested.
 
-- Client thường đi qua Gateway.
-- Account dùng OpenFeign để đọc một số dữ liệu subject/Tutor từ Learning.
-- Learning gửi kết quả buổi học sang internal endpoint của Contract bằng JWT service token có scope `contract-settlement`.
-- Contract gọi internal Learning activation/expiration endpoint khi event blockchain xác nhận trạng thái agreement.
-- Contract gọi internal Learning termination cutoff endpoint khi phê duyệt chấm dứt hợp đồng hoặc hủy lớp để đóng băng lịch học.
-- Contract gửi notification trực tiếp qua internal Notification API cho các sự kiện contract/settlement/dispute.
+## 12. Current Limits
 
-REST failure không được biến thành trạng thái tài chính giả. Các worker giữ cờ chưa giao thành công và thử lại với các flow có durable state tương ứng.
-
-### RabbitMQ
-
-Exchange hiện tại: `kltn.edu.events`.
-
-- Account phát event lifecycle Tutor application/approval.
-- Learning tiêu thụ projection Tutor authority và phát event enrollment, class review, subject/teaching registration.
-- Notification tiêu thụ các event có đủ recipient id, lưu notification idempotent rồi đẩy WebSocket.
-
-Contract transaction pipeline dùng PostgreSQL/outbox và blockchain event polling; không phụ thuộc RabbitMQ để xác nhận tiền.
-
-### WebSocket
-
-- `/ws/account`
-- `/ws/learning`
-- `/ws/notifications`
-- `/ws/chat`
-
-REST/database vẫn là nguồn dữ liệu authoritative; WebSocket dùng để báo thay đổi và kích hoạt refetch, không thay thế persistence.
-
-## 5. Data architecture
-
-Các service hiện dùng chung một PostgreSQL database vật lý `kltn_db`, nhưng mỗi service có entity/migration và bảng Flyway history riêng. Ownership logic vẫn phải theo service; không thêm truy cập chéo bảng của service khác khi có thể dùng API/event.
-
-| Service | Số migration hiện thấy | Nhóm bảng tiêu biểu |
-| --- | ---: | --- |
-| Account | 13 | users, roles, refresh_sessions, OTP, students, tutors, tutor applications/documents. |
-| Learning | 7 compact migrations | catalog, registrations, class_rooms, schedules/chapters, enrollment_requests, class_sessions, session_attendances, learning_termination_stops, classroom_materials, session_files. |
-| Contract | 16 | contract_agreement/acceptance/artifact, escrow_payment, session_settlement, dispute/evidence, blockchain_transaction, processed_event/outbox/cursor, termination_cases/items. |
-| Notification | 2 | notifications, conversations, chat_messages. |
-
-## 6. Storage và document
-
-- **Account Service**: Dùng S3 cho avatar và hồ sơ/tài liệu xét duyệt Tutor, trả presigned URL có thời hạn.
-- **Contract Service**: Dùng abstraction `ContractArtifactStorage` (local cho dev hoặc S3):
-  - Artifact hợp đồng: template DOCX + poi-tl render; Gotenberg/LibreOffice chuyển DOCX sang PDF; metadata/hash lưu database.
-  - Dispute evidence dùng cùng storage abstraction, key tách theo agreement/session/role, giới hạn 50 MB và lưu SHA-256. Không lưu file binary evidence trong bảng dispute.
-- **Learning Service**: Dùng abstraction `FileStorageService` (lớp hiện thực `S3FileStorageService` dùng AWS SDK v2 `S3Presigner` và `LocalFileStorageService` cho fallback):
-  - Tài liệu môn học cấp lớp: key `classes/{classId}/materials/{uuid}_{fileName}`; học viên đã tham gia lớp và gia sư tải qua presigned URL không cần điểm danh.
-  - File đề bài & slide bài giảng theo buổi: key `classes/{classId}/sessions/{sessionId}/assignments/` hoặc `.../materials/`; học viên chỉ được cấp presigned URL tải về sau khi đã điểm danh thành công (`studentChecked = true`).
-  - File bài nộp của học viên: key `classes/{classId}/sessions/{sessionId}/submissions/{studentId}/{uuid}_{fileName}`; chỉ gia sư và chính học viên sở hữu mới có quyền lấy presigned URL tải bài.
-  - File giáo trình/lộ trình học (Syllabus): key `classes/{classId}/syllabus/{uuid}_{fileName}` lưu trên `class_rooms`.
-
-## 7. Blockchain architecture
-
-- Solidity `EduConnectEscrow` là nguồn ABI và quy tắc tiền.
-- Browser chỉ ký EIP-712 và Student gọi ERC-20 `approve` + escrow `fundAgreement`.
-- Các write sau funding (`REGISTER`, `PROPOSE`, `FINALIZE`, `OPEN_DISPUTE`, `RESOLVE`, `EXPIRE`, `CANCEL`) thuộc backend operator/arbitrator pipeline.
-- Transaction intent có idempotency key, pessimistic locking, sender serialization, prepare/simulate, broadcast, receipt watch và event ingestion.
-- Chỉ confirmed contract event chuyển domain state cuối và số tiền confirmed.
-- Scheduler có catch-up sau restart; smart contract không tự chạy nếu backend operator tắt.
-
-Chi tiết: [BLOCKCHAIN.md](BLOCKCHAIN.md).
-
-## 8. Scheduling và phục hồi
-
-| Worker | Chu kỳ mặc định | Vai trò |
-| --- | ---: | --- |
-| Learning lifecycle | startup + 60 giây | Chốt buổi quá giờ, sinh session cuốn chiếu. |
-| Settlement delivery | initial 5 giây, mỗi 30 giây | Gửi các buổi `COMPLETED` chưa được Contract xác nhận. |
-| Contract finalization | initial 30 giây, mỗi 60 giây | Queue proposal đã hết cửa sổ dispute. |
-| Blockchain dispatcher | initial 5 giây, mỗi 5 giây | Gửi transaction intent hợp lệ. |
-| Receipt watcher | initial 7 giây, mỗi 5 giây | Dò receipt, rebroadcast cùng signed transaction khi cần. |
-| Recovery | 15/30 giây | Hòa giải trạng thái lỗi và retry lỗi trước broadcast có giới hạn. |
-
-Nếu service tắt qua thời hạn, dữ liệu deadline/hàng đợi vẫn ở PostgreSQL và on-chain; khi mở lại sẽ catch up. Không thể tuyên bố giao dịch xảy ra đúng lúc deadline trong thời gian mọi worker đang tắt.
-
-## 9. Hạ tầng local
-
-`docker-compose.yml` chạy:
-
-- PostgreSQL 16;
-- RabbitMQ 3.13 Management;
-- Gotenberg 8;
-- Qdrant 1.18.x.
-
-Application service được chạy bằng Maven/PowerShell script, chưa được container hóa đầy đủ. Root `.env` là cấu hình dùng chung; có thể copy cùng nội dung sang `frontend-web/.env` để Vite nhận các biến web, nhưng chỉ biến `VITE_*` được phép lộ cho browser. Không commit JWT secret, AWS secret, private key hoặc operator keystore password. Cấu hình Sepolia hiện giữ `BLOCKCHAIN_EVENT_BLOCK_BATCH_SIZE=10` để giảm nguy cơ RPC throttle khi quét event.
-
-## 10. Giới hạn kiến trúc hiện tại
-
-- Một blockchain operator instance; chưa có distributed signer coordination.
-- Một RPC endpoint cấu hình chính; chưa có multi-RPC automatic failover.
-- AI service has Matching V1, Gemini analyzer/grounding, embeddings, and Qdrant semantic retrieval foundation; production RAG/evaluation remains incomplete.
-- Web chat is connected to backend chat for Student/Tutor Messages; mobile chat parity remains incomplete.
-- Mobile chưa feature-complete.
-- Reviewer notification phụ thuộc producer cung cấp recipient id đáng tin cậy.
-- Không có Eureka runtime module có source; root Maven không dùng Eureka.
+- Mobile does not have Web parity.
+- Some dashboard/reporting surfaces remain partial.
+- Blockchain ops still need production-grade multi-RPC/failover/monitoring hardening.
+- Staff/Admin Community moderation is not documented as implemented.
+- Runtime behavior requires running the latest merged services; build/test success alone is not production readiness.

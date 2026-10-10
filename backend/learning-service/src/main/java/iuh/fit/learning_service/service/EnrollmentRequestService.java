@@ -6,6 +6,7 @@ import iuh.fit.learning_service.entity.ClassSchedule;
 import iuh.fit.learning_service.entity.ClassSession;
 import iuh.fit.learning_service.entity.EnrollmentRequest;
 import iuh.fit.learning_service.enums.ClassRoomStatus;
+import iuh.fit.learning_service.enums.ClassSessionStatus;
 import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 import iuh.fit.learning_service.enums.JoinMode;
 import iuh.fit.learning_service.exception.BadRequestException;
@@ -35,6 +36,7 @@ public class EnrollmentRequestService {
     private final TutorAuthorizationStateRepository tutorAuthorizationStateRepository;
     private final LearningEventPublisher eventPublisher;
     private final RollingSessionService rollingSessionService;
+    private final iuh.fit.learning_service.repository.LearningTerminationStopRepository terminationStops;
 
     public EnrollmentRequestService(
             ClassRoomRepository classRoomRepository,
@@ -42,7 +44,8 @@ public class EnrollmentRequestService {
             ClassSessionRepository classSessionRepository,
             TutorAuthorizationStateRepository tutorAuthorizationStateRepository,
             LearningEventPublisher eventPublisher,
-            RollingSessionService rollingSessionService
+            RollingSessionService rollingSessionService,
+            iuh.fit.learning_service.repository.LearningTerminationStopRepository terminationStops
     ) {
         this.classRoomRepository = classRoomRepository;
         this.enrollmentRequestRepository = enrollmentRequestRepository;
@@ -50,6 +53,7 @@ public class EnrollmentRequestService {
         this.tutorAuthorizationStateRepository = tutorAuthorizationStateRepository;
         this.eventPublisher = eventPublisher;
         this.rollingSessionService = rollingSessionService;
+        this.terminationStops = terminationStops;
     }
 
     /**
@@ -379,17 +383,20 @@ public class EnrollmentRequestService {
         EnrollmentRequest req = null;
         if (agreementId != null && !agreementId.isBlank()) {
             req = enrollmentRequestRepository.findByAgreementId(agreementId.trim()).orElse(null);
+            if (req == null) {
+                throw new ResourceNotFoundException("No enrollment request is linked to agreement: " + agreementId);
+            }
+            requireActivationIdentity(req, classRoomId, studentId, agreementId);
         }
         if (req == null && classRoomId != null && studentId != null) {
             req = enrollmentRequestRepository.findFirstByClassRoomIdAndStudentIdAndStatusInOrderByCreatedAtDesc(
-                    classRoomId, studentId, List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.PENDING)
+                    classRoomId, studentId, List.of(EnrollmentRequestStatus.ACCEPTED)
             ).orElse(null);
         }
         if (req == null) {
             throw new ResourceNotFoundException("No pending/accepted enrollment request found for activation (classRoomId: " + classRoomId + ", studentId: " + studentId + ", agreementId: " + agreementId + ")");
         }
         if (req.getStatus() != EnrollmentRequestStatus.ACCEPTED
-                && req.getStatus() != EnrollmentRequestStatus.PENDING
                 && req.getStatus() != EnrollmentRequestStatus.ENROLLED) {
             throw new BadRequestException("Enrollment request cannot be activated from status: " + req.getStatus());
         }
@@ -408,10 +415,14 @@ public class EnrollmentRequestService {
         EnrollmentRequest req = null;
         if (agreementId != null && !agreementId.isBlank()) {
             req = enrollmentRequestRepository.findByAgreementId(agreementId.trim()).orElse(null);
+            if (req == null) {
+                throw new ResourceNotFoundException("No enrollment request is linked to agreement: " + agreementId);
+            }
+            requireActivationIdentity(req, classRoomId, studentId, agreementId);
         }
         if (req == null && classRoomId != null && studentId != null) {
             req = enrollmentRequestRepository.findFirstByClassRoomIdAndStudentIdAndStatusInOrderByCreatedAtDesc(
-                    classRoomId, studentId, List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.PENDING)
+                    classRoomId, studentId, List.of(EnrollmentRequestStatus.ACCEPTED)
             ).orElse(null);
         }
         if (req == null) {
@@ -436,11 +447,31 @@ public class EnrollmentRequestService {
         return toResponse(saved);
     }
 
+    private void requireActivationIdentity(EnrollmentRequest request, Long classRoomId, Long studentId, String agreementId) {
+        if (classRoomId == null || studentId == null
+                || !classRoomId.equals(request.getClassRoom().getId())
+                || !studentId.equals(request.getStudentId())
+                || !agreementId.trim().equals(request.getAgreementId())) {
+            throw new BadRequestException("Contract event identity does not match the linked enrollment request");
+        }
+    }
+
     @Transactional(readOnly = true)
     public StudentScheduleResponse getStudentSchedule(String studentEmail) {
         List<EnrollmentRequest> activeRequests = enrollmentRequestRepository.findByStudentEmailWithDetails(studentEmail);
-        List<ClassRoom> activeClasses = activeRequests.stream()
-                .filter(r -> r.getStatus() == EnrollmentRequestStatus.ACCEPTED || r.getStatus() == EnrollmentRequestStatus.ENROLLED)
+        // A reserved slot is not class membership.  The student can see class
+        // schedules only after the confirmed AgreementFunded flow activates the
+        // enrollment; otherwise an unpaid/expired agreement leaks teaching data.
+        List<EnrollmentRequest> enrolledOrAccepted = activeRequests.stream()
+                .filter(r -> r.getStatus() == EnrollmentRequestStatus.ENROLLED
+                        || (r.getStatus() == EnrollmentRequestStatus.CANCELLED
+                        && r.getAgreementId() != null && !r.getAgreementId().isBlank()))
+                .toList();
+
+        // Recurring schedules: only for ongoing classes that are not closed, cancelled, or terminating
+        List<ClassRoom> activeRecurringClasses = enrolledOrAccepted.stream()
+                .filter(r -> r.getStatus() == EnrollmentRequestStatus.ENROLLED)
+                .filter(r -> participationCutoff(r) == null)
                 .map(EnrollmentRequest::getClassRoom)
                 .filter(c -> c != null && c.getStatus() != ClassRoomStatus.CLOSED && c.getStatus() != ClassRoomStatus.CANCELLED
                         && c.getTerminationCutoffSession() == null)
@@ -448,7 +479,7 @@ public class EnrollmentRequestService {
                 .toList();
 
         List<ScheduleItemDto> recurringSchedules = new ArrayList<>();
-        for (ClassRoom classRoom : activeClasses) {
+        for (ClassRoom classRoom : activeRecurringClasses) {
             if (classRoom.getSchedules() != null) {
                 for (ClassSchedule schedule : classRoom.getSchedules()) {
                     recurringSchedules.add(new ScheduleItemDto(
@@ -469,14 +500,31 @@ public class EnrollmentRequestService {
             }
         }
 
-        List<Long> classIds = activeClasses.stream().map(ClassRoom::getId).toList();
+        // Sessions: include all enrolled classes (including terminating ones), marking attendanceStopped when past cutoff
+        java.util.Map<Long, Integer> studentCutoffByClassId = new java.util.HashMap<>();
+        for (EnrollmentRequest req : enrolledOrAccepted) {
+            if (req.getClassRoom() != null) {
+                studentCutoffByClassId.put(req.getClassRoom().getId(), participationCutoff(req));
+            }
+        }
+
+        List<Long> allClassIds = studentCutoffByClassId.keySet().stream().toList();
         List<UpcomingSessionItemDto> sessions = new ArrayList<>();
-        if (!classIds.isEmpty()) {
-            List<ClassSession> classSessions = classSessionRepository.findByClassRoomIdInOrderBySessionDateAscStartTimeAsc(classIds);
+        if (!allClassIds.isEmpty()) {
+            List<ClassSession> classSessions = classSessionRepository.findByClassRoomIdInOrderBySessionDateAscStartTimeAsc(allClassIds);
             for (ClassSession session : classSessions) {
                 int dayOfWeek = session.getSessionDate() != null
                         ? (session.getSessionDate().getDayOfWeek().getValue() == 7 ? 8 : session.getSessionDate().getDayOfWeek().getValue() + 1)
                         : 2;
+
+                Long classId = session.getClassRoom().getId();
+                Integer cutoff = studentCutoffByClassId.get(classId);
+                // A whole-class cancellation happens after previous sessions
+                // have settled. Keep their true COMPLETED history visible; only
+                // future/cancelled session rows are stopped.
+                boolean isStopped = (cutoff != null && session.getSequenceNumber() > cutoff)
+                        || session.getStatus() == ClassSessionStatus.CANCELLED;
+
                 sessions.add(new UpcomingSessionItemDto(
                         session.getId(),
                         session.getClassRoom().getId(),
@@ -488,9 +536,10 @@ public class EnrollmentRequestService {
                         dayOfWeek,
                         session.getStartTime(),
                         session.getEndTime(),
-                        session.getStatus() != null ? session.getStatus().name() : "SCHEDULED",
+                        isStopped ? "CANCELLED" : (session.getStatus() != null ? session.getStatus().name() : "SCHEDULED"),
                         null,
-                        session.getAssignmentTitle() != null && !session.getAssignmentTitle().isBlank()
+                        session.getAssignmentTitle() != null && !session.getAssignmentTitle().isBlank(),
+                        isStopped
                 ));
             }
         }
@@ -509,6 +558,7 @@ public class EnrollmentRequestService {
         List<EnrollmentRequest> activeRequests = enrollmentRequestRepository.findByStudentEmailWithDetails(studentEmail);
         List<ClassRoom> activeClasses = activeRequests.stream()
                 .filter(r -> r.getStatus() == EnrollmentRequestStatus.ACCEPTED || r.getStatus() == EnrollmentRequestStatus.ENROLLED)
+                .filter(r -> participationCutoff(r) == null)
                 .map(EnrollmentRequest::getClassRoom)
                 .filter(c -> c != null && c.getStatus() != ClassRoomStatus.CLOSED && c.getStatus() != ClassRoomStatus.CANCELLED
                         && c.getTerminationCutoffSession() == null)
@@ -582,6 +632,15 @@ public class EnrollmentRequestService {
         return dayOfWeek == 8 ? "Chủ nhật" : "Thứ " + dayOfWeek;
     }
 
+    private Integer participationCutoff(EnrollmentRequest r) {
+        Integer classCutoff = r.getClassRoom().getTerminationCutoffSession();
+        Integer individualCutoff = terminationStops.findByClassroomIdAndStudentId(r.getClassRoom().getId(), r.getStudentId())
+                .stream().map(iuh.fit.learning_service.entity.LearningTerminationStop::getCutoffSession)
+                .min(Integer::compareTo).orElse(null);
+        if (classCutoff == null) return individualCutoff;
+        return individualCutoff == null ? classCutoff : Math.min(classCutoff, individualCutoff);
+    }
+
     private EnrollmentRequestResponse toResponse(EnrollmentRequest r) {
         ClassRoom c = r.getClassRoom();
         return new EnrollmentRequestResponse(
@@ -600,7 +659,7 @@ public class EnrollmentRequestService {
                 r.getAgreementId(),
                 r.getStatus(),
                 c.getStatus().name(),
-                c.getTerminationCutoffSession(),
+                participationCutoff(r),
                 r.getJoinKey(),
                 r.getNote(),
                 r.getRejectReason(),

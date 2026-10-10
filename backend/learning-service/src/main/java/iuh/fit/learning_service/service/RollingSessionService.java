@@ -5,6 +5,7 @@ import iuh.fit.learning_service.entity.ClassSchedule;
 import iuh.fit.learning_service.entity.ClassSession;
 import iuh.fit.learning_service.entity.EnrollmentRequest;
 import iuh.fit.learning_service.entity.SessionAttendance;
+import iuh.fit.learning_service.enums.ClassRoomStatus;
 import iuh.fit.learning_service.enums.ClassSessionStatus;
 import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
@@ -37,7 +38,12 @@ public class RollingSessionService {
     public List<ClassSession> generateInitialWeekSessions(Long classroomId) {
         ClassRoom classRoom = classRoomRepository.findByIdForUpdate(classroomId)
                 .orElseThrow(() -> new IllegalArgumentException("ClassRoom not found: " + classroomId));
-        if (classRoom.getTerminationCutoffSession() != null) return Collections.emptyList();
+        if (classRoom.getStatus() == ClassRoomStatus.CANCELLED
+                || classRoom.getStatus() == ClassRoomStatus.CLOSED
+                || classRoom.getTerminationCutoffSession() != null) {
+            log.info("ClassRoom {} is CANCELLED, CLOSED, or terminating. Skipping initial generation.", classroomId);
+            return Collections.emptyList();
+        }
 
         long existingCount = classSessionRepository.countByClassRoomId(classroomId);
         if (existingCount > 0) {
@@ -108,7 +114,12 @@ public class RollingSessionService {
     public List<ClassSession> generateNextBatchIfNeeded(Long classroomId) {
         ClassRoom classRoom = classRoomRepository.findByIdForUpdate(classroomId)
                 .orElseThrow(() -> new IllegalArgumentException("ClassRoom not found: " + classroomId));
-        if (classRoom.getTerminationCutoffSession() != null) return Collections.emptyList();
+        if (classRoom.getStatus() == ClassRoomStatus.CANCELLED
+                || classRoom.getStatus() == ClassRoomStatus.CLOSED
+                || classRoom.getTerminationCutoffSession() != null) {
+            log.info("ClassRoom {} is CANCELLED, CLOSED, or terminating. Skipping next batch generation.", classroomId);
+            return Collections.emptyList();
+        }
 
         List<ClassSession> existingSessions = classSessionRepository.findByClassRoomIdOrderBySequenceNumberAsc(classroomId);
         if (existingSessions.isEmpty()) {
