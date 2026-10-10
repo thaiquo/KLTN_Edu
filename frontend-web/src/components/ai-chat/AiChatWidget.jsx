@@ -2,6 +2,13 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Bot, ChevronDown, ChevronRight, Loader2, MessageCircle, Send, Sparkles, Star, X } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { sendChatMessage } from '../../api/chatbot';
+import { useAuth } from '../../hooks/useAuth';
+import {
+  clearLegacyAiChatHistory,
+  getAiChatStorageKey,
+  loadAiChatHistory,
+  saveAiChatHistory
+} from './aiChatHistoryStore';
 
 const MAX_MESSAGE_LENGTH = 1000;
 const MAX_HISTORY_ITEMS = 8;
@@ -48,12 +55,19 @@ function pageTypeFor(pathname) {
 export function AiChatWidget() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { authenticated, user } = useAuth();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const scrollRef = useRef(null);
+  const storageKey = useMemo(() => getAiChatStorageKey({
+    authenticated,
+    userId: user?.id ?? user?.userId,
+    activeRole: user?.activeRole
+  }), [authenticated, user?.activeRole, user?.id, user?.userId]);
+  const storageKeyRef = useRef(storageKey);
 
   const pageContext = useMemo(() => ({
     currentRoute: `${location.pathname}${location.search || ''}`,
@@ -75,6 +89,22 @@ export function AiChatWidget() {
     return () => window.removeEventListener(OPEN_AI_CHAT_EVENT, openAssistant);
   }, []);
 
+  useEffect(() => {
+    clearLegacyAiChatHistory();
+  }, []);
+
+  useEffect(() => {
+    storageKeyRef.current = storageKey;
+    setMessages(loadAiChatHistory(storageKey));
+    setInput('');
+    setError('');
+    setSending(false);
+  }, [storageKey]);
+
+  useEffect(() => {
+    saveAiChatHistory(storageKey, messages);
+  }, [messages, storageKey]);
+
   const conversationForRequest = messages
     .filter((item) => item.role === 'USER' || item.role === 'ASSISTANT')
     .slice(-MAX_HISTORY_ITEMS)
@@ -95,13 +125,16 @@ export function AiChatWidget() {
     setInput('');
     setError('');
     setSending(true);
+    const requestStorageKey = storageKey;
+    const requestConversation = conversationForRequest;
 
     try {
       const response = await sendChatMessage({
         message: safeMessage,
-        conversation: conversationForRequest,
+        conversation: requestConversation,
         pageContext
       });
+      if (storageKeyRef.current !== requestStorageKey) return;
       setMessages((current) => [
         ...current,
         {
@@ -115,6 +148,7 @@ export function AiChatWidget() {
         }
       ]);
     } catch (requestError) {
+      if (storageKeyRef.current !== requestStorageKey) return;
       setError(requestError?.message || 'Không thể kết nối trợ lý EduConnect. Vui lòng thử lại sau.');
       setMessages((current) => [
         ...current,
@@ -126,7 +160,9 @@ export function AiChatWidget() {
         }
       ]);
     } finally {
-      setSending(false);
+      if (storageKeyRef.current === requestStorageKey) {
+        setSending(false);
+      }
     }
   }
 

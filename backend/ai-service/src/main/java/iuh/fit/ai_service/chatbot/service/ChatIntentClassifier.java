@@ -36,8 +36,14 @@ public class ChatIntentClassifier {
         if (containsAny(normalized, MUTATION_HINTS)) {
             return ChatIntent.MUTATION_REQUEST;
         }
-        if (isAboutMatching(normalized)) {
+        if (isAboutMatching(normalized) || isAboutEduConnectContractKnowledge(normalized)) {
             return ChatIntent.GENERAL_KNOWLEDGE;
+        }
+        if (isTutorTeachingStudentCountRequest(normalized)) {
+            return ChatIntent.MY_CLASSES;
+        }
+        if (isTutorUpcomingScheduleRequest(normalized)) {
+            return ChatIntent.CURRENT_SCHEDULE;
         }
         if (isPrivateClassCountRequest(normalized)) {
             return ChatIntent.MY_CLASSES;
@@ -74,7 +80,7 @@ public class ChatIntentClassifier {
     }
 
     private ChatIntent privateIntent(String value) {
-        if (containsAny(value, List.of("lich ranh", "khung gio ranh", "availability"))) {
+        if (containsAny(value, List.of("lich ranh", "thoi gian ranh", "khung gio ranh", "availability"))) {
             return ChatIntent.AVAILABILITY;
         }
         if (containsAny(value, List.of("quyet toan", "giai ngan", "settlement", "thu nhap", "payout"))) {
@@ -86,11 +92,12 @@ public class ChatIntentClassifier {
         if (containsAny(value, List.of("hop dong", "contract"))) {
             return ChatIntent.CONTRACT_STATUS;
         }
-        if (containsAny(value, List.of("yeu cau tham gia", "yeu cau hoc", "yeu cau vao lop", "enrollment request", "dang cho"))) {
-            return ChatIntent.ENROLLMENT_REQUESTS;
-        }
-        if (containsAny(value, List.of("bai tap", "homework", "chua nop", "cho cham", "can cham", "sap het han"))) {
+        if (containsAny(value, List.of("bai tap", "homework", "chua nop", "chua cham", "cho cham", "can cham", "sap het han"))) {
             return ChatIntent.HOMEWORK;
+        }
+        if (containsAny(value, List.of("yeu cau tham gia", "yeu cau hoc", "yeu cau vao lop", "xin vao lop", "enrollment request"))
+                || (value.contains("dang cho") && containsAny(value, List.of("yeu cau", "xin vao lop", "tham gia lop")))) {
+            return ChatIntent.ENROLLMENT_REQUESTS;
         }
         if (containsAny(value, List.of("lich hoc", "lich day", "hom nay", "ngay mai", "tuan nay", "schedule"))) {
             return ChatIntent.CURRENT_SCHEDULE;
@@ -102,7 +109,7 @@ public class ChatIntentClassifier {
     }
 
     private boolean isMyClassesRequest(String value) {
-        if (containsAny(value, List.of("lop cua toi", "lop cua minh", "lop dang hoc", "lop dang day", "my class", "my classes"))) {
+        if (containsAny(value, List.of("lop cua toi", "lop cua minh", "lop toi day", "lop minh day", "lop dang hoc", "lop dang day", "my class", "my classes"))) {
             return true;
         }
         return value.contains("lop")
@@ -123,10 +130,27 @@ public class ChatIntentClassifier {
                 || value.contains("giai thich ai matching");
     }
 
+    private boolean isAboutEduConnectContractKnowledge(String value) {
+        return value.contains("educonnect")
+                && containsAny(value, List.of("hop dong dien tu", "hop dong thong minh", "smart contract"))
+                && !containsAny(value, List.of("cua toi", "cua minh", "hop dong toi", "hop dong cua toi"));
+    }
+
     private boolean isPrivateClassCountRequest(String value) {
         return value.contains("toi")
                 && value.contains("lop")
                 && containsAny(value, List.of("bao nhieu", "co may", "so luong", "may lop"));
+    }
+
+    private boolean isTutorTeachingStudentCountRequest(String value) {
+        return value.contains("toi")
+                && containsAny(value, List.of("dang day", "day bao nhieu", "quan ly bao nhieu"))
+                && containsAny(value, List.of("hoc vien", "student"));
+    }
+
+    private boolean isTutorUpcomingScheduleRequest(String value) {
+        return containsAny(value, List.of("sap dien ra", "sap toi", "gan toi", "lich day", "ca day"))
+                && containsAny(value, List.of("lop", "buoi", "lich", "day"));
     }
 
     private boolean isPublicTutorLookupRequest(String value) {

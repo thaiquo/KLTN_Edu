@@ -120,9 +120,15 @@ public class ChatPrivateToolAdapter {
     }
 
     private ChatMatchingResult tutorResponse(String message, ChatIntent intent, AiUserContext userContext) {
+        if (isStudentPrivateQuestion(message, intent)) {
+            return roleMismatch(
+                    "tutor",
+                    "Bạn đang ở vai trò Tutor, nên tôi không thể xem dữ liệu riêng của vai trò Student trong ngữ cảnh hiện tại. Hãy chuyển sang vai trò Student nếu muốn xem lớp đang học, bài cần nộp hoặc bài tập của bạn."
+            );
+        }
         return switch (intent) {
             case MY_CLASSES -> buildLearningResult(
-                    () -> tutorClasses(learningClient.tutorClasses()),
+                    () -> tutorClasses(learningClient.tutorClasses(), message),
                     ChatTool.TUTOR_MY_CLASSES,
                     NavigationAction.OPEN_TUTOR_CLASSES,
                     "Mở lớp đang dạy",
@@ -143,7 +149,7 @@ public class ChatPrivateToolAdapter {
                     userContext
             );
             case ENROLLMENT_REQUESTS -> buildLearningResult(
-                    () -> enrollmentRequests("TUTOR_ENROLLMENT_REQUESTS", learningClient.tutorEnrollmentRequests()),
+                    () -> enrollmentRequests("TUTOR_ENROLLMENT_REQUESTS", pendingRequests(learningClient.tutorEnrollmentRequests())),
                     ChatTool.TUTOR_ENROLLMENT_REQUESTS,
                     NavigationAction.OPEN_TUTOR_ENROLLMENT_REQUESTS,
                     "Mở yêu cầu tham gia",
@@ -223,13 +229,19 @@ public class ChatPrivateToolAdapter {
         return view("STUDENT_CLASSES", items, classes.size(), "Tôi tìm thấy " + classes.size() + " lớp học trong tài khoản Student của bạn.");
     }
 
-    private PrivateToolView tutorClasses(List<Map<String, Object>> classes) {
+    private PrivateToolView tutorClasses(List<Map<String, Object>> classes, String message) {
         List<Map<String, Object>> items = classes.stream()
                 .limit(ITEM_LIMIT)
                 .map(this::classItem)
                 .toList();
         if (classes.isEmpty()) {
             return view("TUTOR_CLASSES", items, 0, "Hi\u1ec7n t\u1ea1i b\u1ea1n ch\u01b0a qu\u1ea3n l\u00fd l\u1edbp h\u1ecdc n\u00e0o.");
+        }
+        if (asksTeachingStudentCount(message)) {
+            int studentCount = classes.stream()
+                    .mapToInt(item -> intValue(item.get("acceptedCount")))
+                    .sum();
+            return view("TUTOR_CLASSES", items, classes.size(), "Bạn hiện đang dạy " + studentCount + " học viên trong " + classes.size() + " lớp.");
         }
         return view("TUTOR_CLASSES", items, classes.size(), "Tôi tìm thấy " + classes.size() + " lớp bạn đang quản lý.");
     }
@@ -267,10 +279,11 @@ public class ChatPrivateToolAdapter {
                 sessions.add(safe);
             }
         }
-        List<Map<String, Object>> filtered = filterByTimeHint(sessions, message).stream()
+        List<Map<String, Object>> filteredAll = filterByTimeHint(sessions, message);
+        List<Map<String, Object>> filtered = filteredAll.stream()
                 .limit(ITEM_LIMIT)
                 .toList();
-        return view("TUTOR_SCHEDULE", filtered, sessions.size(), "Tôi tìm thấy " + sessions.size() + " buổi dạy từ các lớp đang hoạt động của bạn.");
+        return view("TUTOR_SCHEDULE", filtered, filteredAll.size(), tutorScheduleMessage(filteredAll.size(), message));
     }
 
     private PrivateToolView studentHomework(List<Map<String, Object>> homework) {
@@ -299,6 +312,12 @@ public class ChatPrivateToolAdapter {
                 .map(this::requestItem)
                 .toList();
         return view(type, items, requests.size(), "Tôi tìm thấy " + requests.size() + " yêu cầu tham gia lớp liên quan đến tài khoản của bạn.");
+    }
+
+    private List<Map<String, Object>> pendingRequests(List<Map<String, Object>> requests) {
+        return requests.stream()
+                .filter(item -> "PENDING".equalsIgnoreCase(text(item, "status")))
+                .toList();
     }
 
     private PrivateToolView contracts(String type, List<Map<String, Object>> agreements) {
@@ -359,6 +378,8 @@ public class ChatPrivateToolAdapter {
                 "startDate", text(item, "startDate"),
                 "endDate", text(item, "endDate"),
                 "pricePerSession", item.get("pricePerSession"),
+                "acceptedCount", item.get("acceptedCount"),
+                "maxStudents", item.get("maxStudents"),
                 "availableSlots", item.get("availableSlots")
         );
     }
@@ -473,12 +494,14 @@ public class ChatPrivateToolAdapter {
 
     private List<Map<String, Object>> filterByTimeHint(List<Map<String, Object>> sessions, String message) {
         String normalized = normalize(message);
-        if (!normalized.contains("hom nay") && !normalized.contains("ngay mai") && !normalized.contains("tuan nay")) {
+        if (!normalized.contains("hom nay") && !normalized.contains("ngay mai") && !normalized.contains("tuan nay")
+                && !normalized.contains("sap dien ra") && !normalized.contains("sap toi") && !normalized.contains("gan toi")) {
             return sessions;
         }
         LocalDate now = LocalDate.now(ZoneId.systemDefault());
         LocalDate start = now;
-        LocalDate end = now.plusDays(normalized.contains("tuan nay") ? 7 : 0);
+        LocalDate end = now.plusDays((normalized.contains("tuan nay") || normalized.contains("sap dien ra")
+                || normalized.contains("sap toi") || normalized.contains("gan toi")) ? 7 : 0);
         if (normalized.contains("ngay mai")) {
             start = now.plusDays(1);
             end = start;
@@ -495,6 +518,44 @@ public class ChatPrivateToolAdapter {
                     }
                 })
                 .toList();
+    }
+
+    private String tutorScheduleMessage(int count, String message) {
+        String normalized = normalize(message);
+        if (normalized.contains("hom nay")) {
+            return count == 0
+                    ? "Hôm nay bạn chưa có buổi dạy nào trong dữ liệu hiện tại."
+                    : "Hôm nay bạn có " + count + " buổi dạy.";
+        }
+        if (normalized.contains("tuan nay")) {
+            return count == 0
+                    ? "Tuần này bạn chưa có lịch dạy nào trong dữ liệu hiện tại."
+                    : "Tuần này bạn có " + count + " buổi dạy.";
+        }
+        if (normalized.contains("sap dien ra") || normalized.contains("sap toi") || normalized.contains("gan toi")) {
+            return count == 0
+                    ? "Hiện chưa có buổi dạy nào sắp diễn ra trong 7 ngày tới."
+                    : "Bạn có " + count + " buổi dạy sắp diễn ra trong 7 ngày tới.";
+        }
+        return "Tôi tìm thấy " + count + " buổi dạy từ các lớp đang hoạt động của bạn.";
+    }
+
+    private boolean isStudentPrivateQuestion(String message, ChatIntent intent) {
+        String normalized = normalize(message);
+        if (intent == ChatIntent.MY_CLASSES && containsAny(normalized, List.of("dang hoc", "hoc lop nao", "lop dang hoc"))) {
+            return true;
+        }
+        return intent == ChatIntent.HOMEWORK
+                && containsAny(normalized, List.of("chua nop", "can nop", "bai tap cua toi", "bai nao chua nop"));
+    }
+
+    private boolean asksTeachingStudentCount(String message) {
+        String normalized = normalize(message);
+        return containsAny(normalized, List.of("bao nhieu hoc vien", "may hoc vien", "so luong hoc vien", "bao nhieu student"));
+    }
+
+    private boolean containsAny(String value, List<String> hints) {
+        return hints.stream().anyMatch(value::contains);
     }
 
     @SuppressWarnings("unchecked")

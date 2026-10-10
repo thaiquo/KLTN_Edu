@@ -391,6 +391,211 @@ class ChatbotControllerTest {
     }
 
     @Test
+    void authenticatedTutorClassQuestionUsesTutorClassesAndCanDeriveStudentCount() throws Exception {
+        when(privateLearningClient.tutorClasses())
+                .thenReturn(List.of(
+                        Map.of("id", 22, "name", "To\u00e1n 12", "status", "ACTIVE", "acceptedCount", 3, "maxStudents", 6),
+                        Map.of("id", 23, "name", "V\u1eadt l\u00fd 11", "status", "PUBLISHED", "acceptedCount", 2, "maxStudents", 5)
+                ));
+
+        mockMvc.perform(post("/api/ai/chat")
+                        .with(csrf())
+                        .cookie(accessToken(202L, "tutor@gmail.com", "TUTOR", List.of("STUDENT", "TUTOR")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "message": "T\u00f4i \u0111ang d\u1ea1y bao nhi\u00eau h\u1ecdc vi\u00ean?" }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("MY_CLASSES"))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("5 h\u1ecdc vi\u00ean")))
+                .andExpect(jsonPath("$.toolResult.type").value("TUTOR_CLASSES"))
+                .andExpect(jsonPath("$.toolResult.totalCount").value(2))
+                .andExpect(jsonPath("$.toolResult.items[0].acceptedCount").value(3));
+
+        verify(privateLearningClient).tutorClasses();
+        verifyNoInteractions(geminiTextClient, privateContractClient);
+    }
+
+    @Test
+    void authenticatedTutorScheduleQuestionUsesTutorScheduleToolInsteadOfPublicClassLookup() throws Exception {
+        when(privateLearningClient.tutorClasses())
+                .thenReturn(List.of(Map.of("id", 22, "name", "To\u00e1n 12", "status", "ACTIVE")));
+        when(privateLearningClient.classSessions(22L))
+                .thenReturn(List.of(Map.of(
+                        "id", 31,
+                        "classRoomId", 22,
+                        "sequenceNumber", 4,
+                        "topic", "\u00d4n h\u00e0m s\u1ed1",
+                        "sessionDate", java.time.LocalDate.now().toString(),
+                        "startTime", "19:00",
+                        "endTime", "20:30",
+                        "status", "SCHEDULED"
+                )));
+
+        mockMvc.perform(post("/api/ai/chat")
+                        .with(csrf())
+                        .cookie(accessToken(202L, "tutor@gmail.com", "TUTOR", List.of("TUTOR")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "message": "H\u00f4m nay t\u00f4i d\u1ea1y g\u00ec?" }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("CURRENT_SCHEDULE"))
+                .andExpect(jsonPath("$.toolResult.type").value("TUTOR_SCHEDULE"))
+                .andExpect(jsonPath("$.toolResult.totalCount").value(1))
+                .andExpect(jsonPath("$.toolResult.items[0].className").value("To\u00e1n 12"));
+
+        verify(privateLearningClient).tutorClasses();
+        verify(privateLearningClient).classSessions(22L);
+        verifyNoInteractions(learningPublicClassClient, geminiTextClient, privateContractClient);
+    }
+
+    @Test
+    void authenticatedTutorEnrollmentRequestToolReturnsOnlyPendingRequests() throws Exception {
+        when(privateLearningClient.tutorEnrollmentRequests())
+                .thenReturn(List.of(
+                        Map.of("id", 1, "classRoomId", 22, "className", "To\u00e1n 12", "studentName", "An", "status", "PENDING"),
+                        Map.of("id", 2, "classRoomId", 22, "className", "To\u00e1n 12", "studentName", "B\u00ecnh", "status", "ACCEPTED")
+                ));
+
+        mockMvc.perform(post("/api/ai/chat")
+                        .with(csrf())
+                        .cookie(accessToken(202L, "tutor@gmail.com", "TUTOR", List.of("TUTOR")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "message": "C\u00f3 y\u00eau c\u1ea7u tham gia l\u1edbp n\u00e0o \u0111ang ch\u1edd kh\u00f4ng?" }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("ENROLLMENT_REQUESTS"))
+                .andExpect(jsonPath("$.toolResult.type").value("TUTOR_ENROLLMENT_REQUESTS"))
+                .andExpect(jsonPath("$.toolResult.totalCount").value(1))
+                .andExpect(jsonPath("$.toolResult.items[0].studentName").value("An"));
+
+        verify(privateLearningClient).tutorEnrollmentRequests();
+        verifyNoInteractions(geminiTextClient, privateContractClient);
+    }
+
+    @Test
+    void tutorActiveRoleCannotUseStudentPrivateClassOrHomeworkTools() throws Exception {
+        mockMvc.perform(post("/api/ai/chat")
+                        .with(csrf())
+                        .cookie(accessToken(202L, "tutor@gmail.com", "TUTOR", List.of("STUDENT", "TUTOR")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "message": "T\u00f4i \u0111ang h\u1ecdc l\u1edbp n\u00e0o?" }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("MY_CLASSES"))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("vai tr\u00f2 Tutor")))
+                .andExpect(jsonPath("$.toolResult").doesNotExist());
+
+        mockMvc.perform(post("/api/ai/chat")
+                        .with(csrf())
+                        .cookie(accessToken(202L, "tutor@gmail.com", "TUTOR", List.of("STUDENT", "TUTOR")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "message": "T\u00f4i c\u00f2n b\u00e0i n\u00e0o ch\u01b0a n\u1ed9p?" }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("HOMEWORK"))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("vai tr\u00f2 Tutor")))
+                .andExpect(jsonPath("$.toolResult").doesNotExist());
+
+        verifyNoInteractions(privateLearningClient, privateContractClient, geminiTextClient);
+    }
+
+    @Test
+    void authenticatedTutorContractSettlementAndAvailabilityToolsRemainReadOnly() throws Exception {
+        when(privateContractClient.agreements(anyInt()))
+                .thenReturn(List.of(Map.of(
+                        "id", "agreement-1",
+                        "className", "To\u00e1n 12",
+                        "status", "ACTIVE",
+                        "totalAmountUsdc", 25.6,
+                        "onchainFunded", true
+                )));
+        when(privateContractClient.settlements("agreement-1"))
+                .thenReturn(List.of(Map.of(
+                        "id", "settlement-1",
+                        "sessionId", 31,
+                        "status", "PENDING_FINALIZATION",
+                        "tutorAmountUsdc", 21.76
+                )));
+        when(privateLearningClient.tutorAvailability())
+                .thenReturn(List.of(Map.of("dayOfWeek", 2, "startTime", "19:00", "endTime", "21:00")));
+
+        mockMvc.perform(post("/api/ai/chat")
+                        .with(csrf())
+                        .cookie(accessToken(202L, "tutor@gmail.com", "TUTOR", List.of("TUTOR")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "message": "H\u1ee3p \u0111\u1ed3ng c\u1ee7a t\u00f4i \u0111ang th\u1ebf n\u00e0o?" }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("CONTRACT_STATUS"))
+                .andExpect(jsonPath("$.toolResult.type").value("TUTOR_CONTRACTS"));
+
+        mockMvc.perform(post("/api/ai/chat")
+                        .with(csrf())
+                        .cookie(accessToken(202L, "tutor@gmail.com", "TUTOR", List.of("TUTOR")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "message": "Kho\u1ea3n quy\u1ebft to\u00e1n c\u1ee7a t\u00f4i th\u1ebf n\u00e0o?" }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("SETTLEMENTS"))
+                .andExpect(jsonPath("$.toolResult.type").value("TUTOR_SETTLEMENTS"))
+                .andExpect(jsonPath("$.toolResult.items[0].tutorAmountUsdc").value(21.76));
+
+        mockMvc.perform(post("/api/ai/chat")
+                        .with(csrf())
+                        .cookie(accessToken(202L, "tutor@gmail.com", "TUTOR", List.of("TUTOR")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "message": "L\u1ecbch r\u1ea3nh c\u1ee7a t\u00f4i hi\u1ec7n ra sao?" }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("AVAILABILITY"))
+                .andExpect(jsonPath("$.toolResult.type").value("TUTOR_AVAILABILITY"))
+                .andExpect(jsonPath("$.toolResult.totalCount").value(1));
+
+        verifyNoInteractions(geminiTextClient);
+    }
+
+    @Test
+    void authenticatedTutorCanStillUsePublicTutorAndClassLookup() throws Exception {
+        when(learningCatalogClient.groundingSnapshot()).thenReturn(catalogSnapshot());
+        when(accountPublicTutorLookupClient.search(10L, null, 3))
+                .thenReturn(new TutorSearchPage(List.of(), 0, 3, 7, 3, false));
+        when(learningPublicClassClient.searchPublicClasses(10L, null, null, 3))
+                .thenReturn(new PublicClassSearchPage(List.of(), 0, 3, 4, 2, "newest"));
+
+        mockMvc.perform(post("/api/ai/chat")
+                        .with(csrf())
+                        .cookie(accessToken(202L, "tutor@gmail.com", "TUTOR", List.of("TUTOR")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "message": "C\u00f3 bao nhi\u00eau gia s\u01b0 d\u1ea1y To\u00e1n?" }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("PUBLIC_TUTOR_LOOKUP"))
+                .andExpect(jsonPath("$.toolResult.total").value(7));
+
+        mockMvc.perform(post("/api/ai/chat")
+                        .with(csrf())
+                        .cookie(accessToken(202L, "tutor@gmail.com", "TUTOR", List.of("TUTOR")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                { "message": "C\u00f3 bao nhi\u00eau l\u1edbp To\u00e1n?" }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.intent").value("PUBLIC_CLASS_LOOKUP"))
+                .andExpect(jsonPath("$.toolResult.total").value(4));
+
+        verifyNoInteractions(privateLearningClient, privateContractClient, geminiTextClient);
+    }
+
+    @Test
     void studentActiveRoleCannotUseTutorAvailabilityTool() throws Exception {
         mockMvc.perform(post("/api/ai/chat")
                         .with(csrf())
