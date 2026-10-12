@@ -420,6 +420,7 @@ class SessionAttendanceServiceTest {
         List<ClassSessionDtos.SessionAttendanceResponse> result =
                 sessionAttendanceService.getAttendancesBySessionId(1L, "tutor@edu.vn");
 
+        verify(sessionAccessControl).requireCanView(classRoom);
         assertThat(result).singleElement().satisfies(response -> {
             assertThat(response.enrollmentStatus()).isEqualTo(EnrollmentRequestStatus.CANCELLED);
             assertThat(response.attendanceLocked()).isTrue();

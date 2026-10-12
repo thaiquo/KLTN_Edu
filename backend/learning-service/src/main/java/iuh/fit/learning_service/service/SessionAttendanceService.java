@@ -112,7 +112,7 @@ public class SessionAttendanceService {
         ClassSession session = classSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Buổi học không tồn tại: " + sessionId));
 
-        sessionAccessControl.requireTutor(session.getClassRoom());
+        sessionAccessControl.requireCanView(session.getClassRoom());
         List<SessionAttendance> attendances = sessionAttendanceRepository.findBySessionId(sessionId);
         Map<Long, EnrollmentRequestStatus> enrollmentStatuses = enrollmentRequestRepository
                 .findByClassRoomIdWithDetails(session.getClassRoom().getId()).stream()

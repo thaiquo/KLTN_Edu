@@ -56,11 +56,13 @@ export function ChangePasswordPage({ embedded = false, onTabChange = null }) {
       });
 
       setForm(INITIAL_FORM);
-      feedback.showImportantSuccess({
+      await feedback.showImportantSuccess({
         title: 'Mật khẩu đã được cập nhật',
-        message: 'Bạn vẫn tiếp tục đăng nhập trên phiên hiện tại.',
-        actionText: 'Đã hiểu'
+        message: 'Vì lý do bảo mật, vui lòng đăng nhập lại bằng mật khẩu mới.',
+        actionText: 'Đăng nhập lại'
       });
+      await refreshUser().catch(() => null);
+      navigate('/login', { replace: true, state: { from: { pathname: '/profile/password' } } });
     } catch (changeError) {
       if (changeError.status === 401) {
         await refreshUser().catch(() => null);
@@ -208,8 +210,8 @@ export function ChangePasswordPage({ embedded = false, onTabChange = null }) {
               <div className="flex items-start gap-3 text-sm font-semibold text-slate-600">
                 <ShieldCheck size={18} className="mt-0.5 shrink-0 text-[#147b77]" />
                 <p>
-                  Sau khi đổi mật khẩu thành công, bạn vẫn tiếp tục đăng nhập trên phiên hiện tại.
-                  Hãy đăng xuất khỏi thiết bị công cộng sau khi sử dụng.
+                  Sau khi đổi mật khẩu thành công, hệ thống sẽ thu hồi phiên cũ.
+                  Hãy đăng nhập lại bằng mật khẩu mới trên thiết bị tin cậy.
                 </p>
               </div>
             </div>

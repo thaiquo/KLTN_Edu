@@ -39,6 +39,7 @@ import {
 import { EtherscanLink } from '../common/EtherscanLink';
 import { DEFAULT_CHAIN_ID } from '../../web3/web3Config';
 import { contractsApi, DisputeDto } from '../../api/contractsApi';
+import { fetchUserDirectory, getUserDisplayName, UserSummary } from '../../utils/userDisplay';
 import { Loader2 } from 'lucide-react';
 
 export interface DisputeItem {
@@ -169,12 +170,17 @@ export function DisputeManagementPanel({
 
   // Real data
   const [disputes, setDisputes] = useState<DisputeDto[]>([]);
+  const [users, setUsers] = useState<UserSummary[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [dataError, setDataError] = useState('');
   const [historyStatus, setHistoryStatus] = useState('ALL');
   const [historyOrigin, setHistoryOrigin] = useState('ALL');
   const [historyPage, setHistoryPage] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    fetchUserDirectory().then((list) => setUsers(Array.isArray(list) ? list : []));
+  }, []);
 
   // Dispute Detail Modal state
   const [selectedDisputeForDetail, setSelectedDisputeForDetail] = useState<DisputeDto | null>(null);
@@ -950,7 +956,8 @@ export function DisputeManagementPanel({
                           {group.classroomReviewerEmail && (
                             <span className="flex items-center gap-1.5">
                               <Building2 className="w-4 h-4 text-amber-400" />
-                              Staff phụ trách: <span className="font-mono text-amber-200">{group.classroomReviewerEmail}</span>
+                              Staff phụ trách: <strong className="text-white">{getUserDisplayName(group.classroomReviewerEmail, users).fullName}</strong>
+                              <span className="font-mono text-amber-200/80 text-[10px]">({group.classroomReviewerEmail})</span>
                             </span>
                           )}
                         </div>
@@ -1412,7 +1419,7 @@ export function DisputeManagementPanel({
                         <div>Email gia sư: <span className="font-mono text-slate-600">{selectedDisputeForDetail.tutorEmail}</span></div>
                       )}
                       <div>
-                        Staff phụ trách thẩm định: <strong className="text-indigo-900">{selectedDisputeForDetail.classroomReviewerEmail || 'Ban Quản Trị Hệ Thống'}</strong>
+                        Staff phụ trách thẩm định: <strong className="text-indigo-900">{getUserDisplayName(selectedDisputeForDetail.classroomReviewerEmail, users, 'Ban Quản Trị Hệ Thống').label}</strong>
                       </div>
                     </div>
 
@@ -1654,7 +1661,9 @@ export function DisputeManagementPanel({
                         {selectedDisputeForDetail.resolutionReason || 'Không có ghi chú thêm.'}
                       </p>
                       <div className="flex items-center gap-4 pt-2 border-t border-black/10 text-[11px] opacity-80 flex-wrap">
-                        <span>Phân xử bởi: <strong>{selectedDisputeForDetail.resolvedByEmail || selectedDisputeForDetail.resolvedByRole || 'Staff/Admin'}</strong></span>
+                        <span>
+                          Phân xử bởi: <strong className="text-slate-950 font-bold">{getUserDisplayName(selectedDisputeForDetail.resolvedByEmail, users, selectedDisputeForDetail.resolvedByRole || 'Staff/Admin').label}</strong>
+                        </span>
                         {selectedDisputeForDetail.resolvedAt && (
                           <span>Thời gian: {new Date(selectedDisputeForDetail.resolvedAt).toLocaleString('vi-VN')}</span>
                         )}

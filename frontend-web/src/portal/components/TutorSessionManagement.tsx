@@ -1,5 +1,5 @@
 import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   BookOpen,
   Calendar,
@@ -68,22 +68,31 @@ export const TutorSessionManagement: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [searchKeyword, setSearchKeyword] = useState("");
   const [activeFilter, setActiveFilter] = useState<"ALL" | "LIVE" | "ACTIVE">("ALL");
+  const lastFocusTimeRef = useRef(0);
 
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 20000);
+    const timer = setInterval(() => setCurrentTime(new Date()), 30000);
     return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
-    loadMyClasses();
-    const refresh = () => { if (!document.hidden) loadMyClasses(); };
+    loadMyClasses(false);
+    const refresh = () => {
+      if (document.hidden) return;
+      const now = Date.now();
+      if (now - lastFocusTimeRef.current < 30000) return;
+      lastFocusTimeRef.current = now;
+      loadMyClasses(true);
+    };
     const timer = setInterval(refresh, 60000);
     window.addEventListener('focus', refresh);
     return () => { clearInterval(timer); window.removeEventListener('focus', refresh); };
   }, []);
 
-  const loadMyClasses = async () => {
-    setLoading(true);
+  const loadMyClasses = async (isBackground = false) => {
+    if (!isBackground) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const [data, termData] = await Promise.all([
@@ -124,18 +133,26 @@ export const TutorSessionManagement: React.FC = () => {
 
       setClasses(enrichedList);
 
-      // Auto-select the live class if available, or first class
+      // Auto-select the live class if available and no previous valid selection, or maintain current selection
       const liveClass = enrichedList.find((c) => c.isLive);
-      if (liveClass) {
-        setSelectedClassId(liveClass.id);
-      } else if (enrichedList.length > 0) {
-        setSelectedClassId((prev) => (prev && enrichedList.some((c) => c.id === prev) ? prev : enrichedList[0].id));
-      }
+      setSelectedClassId((prev) => {
+        if (prev && enrichedList.some((c) => c.id === prev)) {
+          return prev;
+        }
+        if (liveClass) {
+          return liveClass.id;
+        }
+        return enrichedList.length > 0 ? enrichedList[0].id : null;
+      });
     } catch (err: any) {
       console.error("Failed to load tutor classes:", err);
-      setError("Không thể tải danh sách lớp học của bạn.");
+      if (!isBackground) {
+        setError("Không thể tải danh sách lớp học của bạn.");
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      }
     }
   };
 
@@ -147,7 +164,7 @@ export const TutorSessionManagement: React.FC = () => {
     'TERMINATION_REJECTED',
     'CLASS_MUTATED',
     'CLASS_REVIEWED'
-  ], loadMyClasses);
+  ], () => loadMyClasses(true));
 
   const classes = useMemo(() => rawClasses.map((cls) => ({ ...cls,
     isLive: isClassLiveNow({ sessions: cls.sessions, classStatus: cls.status, terminationCutoffSession: cls.terminationCutoffSession, currentDate: currentTime }).isLive,
@@ -280,7 +297,7 @@ export const TutorSessionManagement: React.FC = () => {
           <AlertCircle className="w-8 h-8 text-rose-600 mx-auto mb-2" />
           <p className="text-rose-800 text-sm font-bold">{error}</p>
           <button
-            onClick={loadMyClasses}
+            onClick={() => loadMyClasses(false)}
             className="mt-3 px-4 py-2 bg-rose-600 text-white rounded-xl text-xs font-bold hover:bg-rose-700"
           >
             Thử Lại

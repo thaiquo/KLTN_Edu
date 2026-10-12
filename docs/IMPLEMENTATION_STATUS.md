@@ -17,7 +17,7 @@
 | Service | Status | Notes |
 | --- | --- | --- |
 | `api-gateway` | IMPLEMENTED | Routes current REST and WebSocket families with credentialed CORS/cookie forwarding. |
-| `account-service` | IMPLEMENTED + TESTED | Auth, roles, active role, Student/Tutor profiles, Tutor application identity data and internal notification recipient lookup. Full suite: 151 PASS. |
+| `account-service` | IMPLEMENTED + TESTED | Auth, roles, active role, Student/Tutor profiles, Tutor application identity data, internal notification recipient lookup and Admin user control hardening. Full suite: 158 PASS. |
 | `learning-service` | IMPLEMENTED + TESTED | Catalog, tutor authorization/registrations, availability, classes, enrollment, sessions, attendance, homework, reviews, Community, Tutor Follow, public share UUIDs and Learning termination sync. Compact Flyway V1..V11; full suite: 201 PASS. |
 | `contract-service` | IMPLEMENTED/PARTIAL | Contract, signing, final PDF/artifacts, escrow, settlement, dispute, termination governance/outbox and blockchain reconciliation are implemented; production ops remains limited. Contract V17..V19 cover termination governance/outbox/classification. |
 | `notification-service` | IMPLEMENTED + TESTED | Persisted Bell notifications, event consumers, human chat REST/WebSocket, media attachments and structured Class/Post cards. Full suite: 74 PASS. |
@@ -62,6 +62,7 @@
 - IMPLEMENTED: Student/Tutor profile, avatar, password and wallet update.
 - IMPLEMENTED: Tutor application identity evidence and Staff approval.
 - IMPLEMENTED + TESTED: internal active Staff/Admin notification recipient lookup for Contract termination notifications; requires scoped service JWT.
+- IMPLEMENTED + TESTED: Admin staff user provisioning (POST /api/admin/users/staff) with system-aligned 8+ character initial password, lock/unlock for non-Admin accounts, soft delete / account deactivation (DELETE /api/admin/users/{userId}), self-lock/Admin target protection, disabled-account restore protection and immediate refresh session revocation. Staff can self-change password through `/api/users/me/password` or self-reset through forgot/reset password. 158 PASS.
 
 ## 5. Learning
 

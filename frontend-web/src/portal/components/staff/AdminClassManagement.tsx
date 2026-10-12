@@ -1,5 +1,6 @@
 import { selectTerminationCase } from "../../../utils/terminationState";
 import React, { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
   BookOpen,
@@ -18,8 +19,10 @@ import {
   XCircle,
 } from "lucide-react";
 import { classApi } from "../../../api/classes";
+import { adminUsersApi } from "../../../api/adminUsers";
 import { terminationsApi, TerminationView } from "../../../api/terminationsApi";
 import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
+import { fetchUserDirectory, getUserDisplayName, UserSummary } from "../../../utils/userDisplay";
 
 type PortalRole = "student" | "tutor" | "staff" | "admin";
 
@@ -76,22 +79,35 @@ const STATUS_OPTIONS = [
 
 export function AdminClassManagement({ activeRole }: { activeRole: PortalRole }) {
   const isAdmin = activeRole === "admin";
+  const [searchParams] = useSearchParams();
+  const initialStatus = searchParams.get("status") || "ALL";
+
   const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [terminationCases, setTerminationCases] = useState<TerminationView[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<ClassItem | null>(null);
-  const [status, setStatus] = useState("ALL");
+  const [status, setStatus] = useState(initialStatus);
   const [keyword, setKeyword] = useState("");
+
+  useEffect(() => {
+    const urlStatus = searchParams.get("status");
+    if (urlStatus && urlStatus !== status) {
+      setStatus(urlStatus);
+    }
+  }, [searchParams]);
 
   async function load() {
     setLoading(true);
     try {
-      const [data, termData] = await Promise.all([
+      const [data, termData, userRows] = await Promise.all([
         classApi.adminGetAllClasses({ reviewedByMe: !isAdmin }),
-        terminationsApi.list().catch(() => [] as TerminationView[])
+        terminationsApi.list().catch(() => [] as TerminationView[]),
+        fetchUserDirectory()
       ]);
       setClasses(Array.isArray(data) ? data : []);
       setTerminationCases(Array.isArray(termData) ? termData : []);
+      setUsers(Array.isArray(userRows) ? userRows : []);
     } finally {
       setLoading(false);
     }
@@ -271,8 +287,15 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
                       <p className="font-black text-slate-900">{money(item.pricePerSession)}/buổi</p>
                       <p className="mt-0.5 text-[11px] text-slate-400">{item.totalSessions} buổi</p>
                     </td>
-                    <td className="max-w-[180px] px-4 py-3">
-                      <p className="truncate font-bold text-slate-700" title={item.reviewedByEmail}>{item.reviewedByEmail || "--"}</p>
+                    <td className="max-w-[200px] px-4 py-3">
+                      <p className="truncate font-bold text-slate-700" title={getUserDisplayName(item.reviewedByEmail, users).label}>
+                        {getUserDisplayName(item.reviewedByEmail, users).fullName || "--"}
+                      </p>
+                      {item.reviewedByEmail && (
+                        <p className="truncate text-[11px] text-slate-400 font-mono" title={item.reviewedByEmail}>
+                          {item.reviewedByEmail}
+                        </p>
+                      )}
                       <p className="mt-0.5 text-[11px] text-slate-400">{formatDate(item.reviewedAt)}</p>
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -296,6 +319,7 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
       {selected && (
         <ClassDetailModal
           item={selected}
+          users={users}
           termCase={selectTerminationCase(terminationCases, { classroomId: selected.id, wholeClassOnly: true })}
           onClose={() => setSelected(null)}
         />
@@ -325,10 +349,12 @@ function StatCard({ label, value, icon, active, onClick, tone = "slate" }: any) 
 
 function ClassDetailModal({
   item,
+  users,
   termCase,
   onClose,
 }: {
   item: ClassItem;
+  users: any[];
   termCase?: TerminationView;
   onClose: () => void;
 }) {
@@ -368,6 +394,27 @@ function ClassDetailModal({
           </section>
         )}
 
+        <section className={`mt-4 rounded-xl border p-4 text-xs ${
+          item.status === "PENDING_APPROVAL"
+            ? "border-amber-200 bg-amber-50"
+            : item.status === "REJECTED"
+            ? "border-rose-200 bg-rose-50"
+            : "border-emerald-200 bg-emerald-50"
+        }`}>
+          <p className="font-black uppercase tracking-wider text-slate-500">Dấu vết phê duyệt lớp</p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <Info label="Người xử lý" value={item.reviewedByEmail ? getUserDisplayName(item.reviewedByEmail, users).label : (item.status === "PENDING_APPROVAL" ? "Chưa duyệt" : "--")} />
+            <Info label="Thời gian xử lý" value={formatDate(item.reviewedAt)} />
+            <Info label="Kết quả" value={statusText(item.status)} />
+          </div>
+          {item.rejectReason && (
+            <div className="mt-3 rounded-xl border border-rose-200 bg-white p-3 font-semibold text-rose-800">
+              <p className="font-black">Lý do từ chối / yêu cầu chỉnh sửa</p>
+              <p className="mt-1 whitespace-pre-wrap">{item.rejectReason}</p>
+            </div>
+          )}
+        </section>
+
         <div className="mt-5 grid gap-3 text-xs sm:grid-cols-3">
           <Info label="Trạng thái" value={statusText(item.status)} />
           <Info label="Hình thức" value={item.learningMode === "ONLINE" ? "Online" : "Offline"} />
@@ -375,7 +422,7 @@ function ClassDetailModal({
           <Info label="Học phí / buổi" value={money(item.pricePerSession)} />
           <Info label="Tổng buổi" value={`${item.totalSessions} buổi`} />
           <Info label="Thời gian" value={`${formatDate(item.startDate)} - ${formatDate(item.endDate)}`} />
-          <Info label="Người duyệt" value={item.reviewedByEmail || "--"} />
+          <Info label="Người duyệt" value={item.reviewedByEmail ? getUserDisplayName(item.reviewedByEmail, users).label : "--"} />
           <Info label="Thời gian duyệt" value={formatDate(item.reviewedAt)} />
           <Info label="Chế độ vào lớp" value={item.joinMode === "INVITE_KEY" ? `Mã mời: ${item.joinKey || "--"}` : "Gửi yêu cầu"} />
         </div>
@@ -489,6 +536,13 @@ function statusText(status: string) {
 
 function tutorName(item: ClassItem) {
   return item.tutorFullName?.trim() || item.tutorEmail;
+}
+
+function reviewerDisplayName(item: ClassItem, users: any[]) {
+  const email = item.reviewedByEmail?.trim();
+  if (!email) return "";
+  const user = users.find((row) => row?.email?.toLowerCase() === email.toLowerCase());
+  return user?.fullName || user?.name || email;
 }
 
 function money(value?: number) {

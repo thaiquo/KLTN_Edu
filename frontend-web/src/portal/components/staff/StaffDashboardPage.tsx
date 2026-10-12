@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { AlertCircle, RefreshCw, Eye, FileText, X, BookOpen, GraduationCap, UserCheck } from "lucide-react";
 import { useAuth } from "../../../hooks/useAuth";
 import { useFeedback } from "../../../components/feedback/useFeedback";
@@ -7,16 +8,31 @@ import { TeachingRegistrationReview } from "./TeachingRegistrationReview";
 import { ClassApprovalReview } from "./ClassApprovalReview";
 import { TutorProfileApprovalReview } from "./TutorProfileApprovalReview";
 import { teachingRegistrationApi } from "../../../api/teachingRegistrations";
+import { fetchUserDirectory, getUserDisplayName, UserSummary } from "../../../utils/userDisplay";
 
 export function StaffDashboardPage() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const feedback = useFeedback();
-  const isAdmin = user?.activeRole === "ADMIN";
+  const staffEmail = user?.email || "";
+  const isAdmin = String(user?.activeRole || "").toUpperCase() === "ADMIN" || user?.roles?.includes("ADMIN");
   const [error, setError] = useState("");
   const [teachingPendingCount, setTeachingPendingCount] = useState(0);
   const [tutorProfilePendingCount, setTutorProfilePendingCount] = useState(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [activeTab, setActiveTab] = useState<"TUTOR_PROFILES" | "TEACHING_REGISTRATION" | "CLASS_ROOMS">("CLASS_ROOMS");
+
+  const subtabParam = searchParams.get("subtab");
+  const initialTab: "TUTOR_PROFILES" | "TEACHING_REGISTRATION" | "CLASS_ROOMS" =
+    subtabParam === "TEACHING_REGISTRATION" ? "TEACHING_REGISTRATION" :
+    subtabParam === "TUTOR_PROFILES" ? "TUTOR_PROFILES" : "CLASS_ROOMS";
+
+  const [activeTab, setActiveTab] = useState<"TUTOR_PROFILES" | "TEACHING_REGISTRATION" | "CLASS_ROOMS">(initialTab);
+
+  useEffect(() => {
+    if (subtabParam === "TEACHING_REGISTRATION" || subtabParam === "TUTOR_PROFILES" || subtabParam === "CLASS_ROOMS") {
+      setActiveTab(subtabParam);
+    }
+  }, [subtabParam]);
 
   const [historyItems, setHistoryItems] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -25,7 +41,8 @@ export function StaffDashboardPage() {
     setHistoryLoading(true);
     try {
       const data = await teachingRegistrationApi.adminHistory();
-      setHistoryItems(Array.isArray(data) ? data : []);
+      const rows = Array.isArray(data) ? data : [];
+      setHistoryItems(isAdmin ? rows : rows.filter((item) => sameEmail(item.reviewedByEmail, staffEmail)));
     } catch (err: any) {
       setError(err?.message || "Không thể tải lịch sử duyệt.");
     } finally {
@@ -67,7 +84,7 @@ export function StaffDashboardPage() {
             Quản trị / <span className="text-[#073554]">Phê duyệt hồ sơ & Lớp học</span>
           </p>
           <h1 className="mt-1 font-display text-2xl font-black uppercase tracking-tight text-[#073554]">
-            Admin Duyệt Hồ Sơ & Lớp Học
+            {isAdmin ? "Admin Duyệt Hồ Sơ & Lớp Học" : "Staff Duyệt Hồ Sơ & Lớp Phụ Trách"}
           </h1>
           <p className="mt-1 text-xs font-semibold text-slate-500">
             {isAdmin
@@ -176,8 +193,17 @@ export function StaffDashboardPage() {
   );
 }
 
+function sameEmail(a?: string | null, b?: string | null) {
+  return Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
+}
+
 function TeachingRegistrationHistorySection({ items, loading, onReload }: { items: any[]; loading: boolean; onReload: () => void }) {
   const [selected, setSelected] = useState<any>();
+  const [users, setUsers] = useState<UserSummary[]>([]);
+
+  useEffect(() => {
+    fetchUserDirectory().then((list) => setUsers(Array.isArray(list) ? list : []));
+  }, []);
 
   return (
     <section className="mt-5 border border-[#d7dde6] bg-white p-5 shadow-sm">
@@ -211,6 +237,7 @@ function TeachingRegistrationHistorySection({ items, loading, onReload }: { item
                 const isProposal = Boolean(item.proposedSubjectName);
                 const isApproved = item.status === "APPROVED";
                 const tutorName = tutorDisplayName(item);
+                const reviewer = getUserDisplayName(item.reviewedByEmail, users, "Staff/Admin");
                 return (
                   <tr key={item.id} className="hover:bg-slate-50/50">
                     <td className="py-3 px-2 min-w-[150px]">
@@ -230,8 +257,11 @@ function TeachingRegistrationHistorySection({ items, loading, onReload }: { item
                     <td className="py-3 px-2 whitespace-nowrap">
                       {item.reviewedAt ? new Date(item.reviewedAt).toLocaleString("vi-VN") : "--"}
                     </td>
-                    <td className="py-3 px-2 truncate max-w-[120px]" title={item.reviewedByEmail}>
-                      {item.reviewedByEmail || "--"}
+                    <td className="py-3 px-2 max-w-[160px]">
+                      <p className="font-bold text-[#073554] truncate" title={reviewer.fullName}>{reviewer.fullName}</p>
+                      {item.reviewedByEmail && (
+                        <p className="text-[10px] text-slate-400 font-semibold truncate" title={item.reviewedByEmail}>{item.reviewedByEmail}</p>
+                      )}
                     </td>
                     <td className="py-3 px-2">
                       <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase ${
@@ -253,15 +283,16 @@ function TeachingRegistrationHistorySection({ items, loading, onReload }: { item
         </div>
       )}
 
-      {selected && <HistoryDetailModal item={selected} onClose={() => setSelected(null)} />}
+      {selected && <HistoryDetailModal item={selected} users={users} onClose={() => setSelected(null)} />}
     </section>
   );
 }
 
-function HistoryDetailModal({ item, onClose }: any) {
+function HistoryDetailModal({ item, users, onClose }: { item: any; users: UserSummary[]; onClose: () => void }) {
   const isApproved = item.status === "APPROVED";
   const isProposal = Boolean(item.proposedSubjectName);
   const tutorName = tutorDisplayName(item);
+  const reviewer = getUserDisplayName(item.reviewedByEmail, users, "Staff/Admin");
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#061827]/65 p-4 sm:p-8" onClick={onClose}>
       <div className="my-auto w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -283,7 +314,11 @@ function HistoryDetailModal({ item, onClose }: any) {
           <p className="text-xs font-semibold leading-5 text-slate-600"><strong className="text-[#073554]">Lớp / Trình độ:</strong> {isProposal ? item.proposedLevelName : (item.levels || []).map((l: any) => l.name).join(", ")}</p>
           <p className="text-xs font-semibold leading-5 text-slate-600"><strong className="text-[#073554]">Số năm kinh nghiệm:</strong> {item.experienceYears} năm</p>
           <p className="text-xs font-semibold leading-5 text-slate-600"><strong className="text-[#073554]">Học phí đề xuất:</strong> {new Intl.NumberFormat("vi-VN").format(item.tuitionMin)} - {new Intl.NumberFormat("vi-VN").format(item.tuitionMax)}đ / buổi</p>
-          <p className="text-xs font-semibold leading-5 text-slate-600"><strong className="text-[#073554]">Người duyệt:</strong> {item.reviewedByEmail || "--"} vào lúc {item.reviewedAt ? new Date(item.reviewedAt).toLocaleString("vi-VN") : "--"}</p>
+          <p className="text-xs font-semibold leading-5 text-slate-600">
+            <strong className="text-[#073554]">Người duyệt:</strong> {reviewer.fullName}
+            {item.reviewedByEmail && ` (${item.reviewedByEmail})`}
+            {" "}vào lúc {item.reviewedAt ? new Date(item.reviewedAt).toLocaleString("vi-VN") : "--"}
+          </p>
 
           <div className="rounded-lg border border-slate-200 p-3 bg-slate-50">
             <p className="font-bold text-[#073554]">Mô tả năng lực:</p>

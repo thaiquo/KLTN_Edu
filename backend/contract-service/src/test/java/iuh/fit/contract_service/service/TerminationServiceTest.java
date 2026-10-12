@@ -357,10 +357,11 @@ class TerminationServiceTest {
         assertThat(result.refundedUnits()).isEqualTo("4200000");
         assertThat(result.remainingUnits()).isEqualTo("0");
     }
-    @Test void adminCannotUseStaffRecommendationAction() {
+    @Test void adminCanUseStaffRecommendationActionAndIsAudited() {
         var c = request("REQUESTED", false);
-        assertThatThrownBy(() -> service.act(c.getId(), "RECOMMEND", "Review complete", user(1, "admin@test.vn", "ADMIN")))
-                .hasMessageContaining("Only assigned Staff can recommend termination");
+        service.act(c.getId(), "RECOMMEND", "Review complete", user(1, "admin@test.vn", "ADMIN"));
+        assertThat(c.getStatus()).isEqualTo("RECOMMENDED");
+        assertThat(c.getAuditJson()).contains("admin@test.vn").contains("ADMIN").contains("RECOMMEND");
         verify(items, never()).save(any());
     }
     @Test void managerRejectionReleasesOperationalHold() {

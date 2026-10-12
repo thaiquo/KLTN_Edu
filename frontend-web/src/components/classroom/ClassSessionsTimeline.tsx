@@ -1,5 +1,5 @@
 import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Calendar,
@@ -253,9 +253,17 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [mySettlementBySession, setMySettlementBySession] = useState<Record<number, SettlementDto>>({});
 
+  const lastFocusTimeRef = useRef(0);
+
   useEffect(() => {
-    fetchSessions();
-    const refresh = () => { if (!document.hidden) fetchSessions(); };
+    fetchSessions(false);
+    const refresh = () => {
+      if (document.hidden) return;
+      const now = Date.now();
+      if (now - lastFocusTimeRef.current < 30000) return;
+      lastFocusTimeRef.current = now;
+      fetchSessions(true);
+    };
     const timer = setInterval(refresh, 60000);
     window.addEventListener('focus', refresh);
     return () => { clearInterval(timer); window.removeEventListener('focus', refresh); };
@@ -303,23 +311,34 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
     setTimeout(() => setToastMessage(null), 4000);
   };
 
-  const fetchSessions = async () => {
-    setLoading(true);
+  const fetchSessions = async (isBackground = false) => {
+    if (!isBackground) {
+      setLoading(true);
+    }
     setLoadError('');
     try {
       const data = await apiRequest(`/api/learning/classes/${classRoomId}/sessions`);
       if (Array.isArray(data)) {
         setSessions(data);
+        setActiveSession((prev) => {
+          if (!prev) return null;
+          const updated = data.find((s) => s.id === prev.id);
+          return updated ? { ...prev, ...updated } : prev;
+        });
       }
     } catch (err) {
-      setSessions([]);
-      setLoadError(err instanceof Error ? err.message : 'Không thể tải lịch học.');
+      if (!isBackground) {
+        setSessions([]);
+        setLoadError(err instanceof Error ? err.message : 'Không thể tải lịch học.');
+      }
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      }
     }
   };
 
-  useRealtimeRefresh(['TERMINATION_UPDATED', 'TERMINATION_COMPLETED', 'CLASS_MUTATED'], fetchSessions);
+  useRealtimeRefresh(['TERMINATION_UPDATED', 'TERMINATION_COMPLETED', 'CLASS_MUTATED'], () => fetchSessions(true));
 
   const handleGenerateInitialSessions = async () => {
     setActionLoading(true);
@@ -331,7 +350,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
         setSessions(data);
         showToast("Đã mở thành công các buổi học của tuần đầu tiên!", "success");
       } else {
-        await fetchSessions();
+        await fetchSessions(sessions.length > 0);
         showToast("Đã cập nhật danh sách buổi học!", "success");
       }
     } catch (err: any) {
@@ -407,7 +426,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       } else {
         showToast("Điểm danh vào học thành công! Chúc bạn có buổi học hiệu quả.", "success");
       }
-      fetchSessions();
+      fetchSessions(true);
     } catch (err: any) {
       showToast(err.message || "Không thể điểm danh ngoài khung giờ học!", "error");
     } finally {
@@ -453,7 +472,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
         prev.map((a) => (a.id === attId ? { ...a, gradeScore: updated.gradeScore, tutorFeedback: updated.tutorFeedback, gradedAt: updated.gradedAt } : a))
       );
       showToast("Đã lưu điểm và nhận xét thành công!", "success");
-      fetchSessions();
+      fetchSessions(true);
     } catch (err: any) {
       showToast(err.message || "Lỗi khi lưu chấm điểm", "error");
     } finally {
@@ -462,6 +481,11 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   };
 
   const handleTutorDirectCheckin = async (sessionId: number) => {
+    const targetSession = sessions.find((s) => s.id === sessionId);
+    if (!targetSession || !isStrictSessionActive(targetSession)) {
+      showToast("Chỉ có thể điểm danh gia sư trong đúng ngày và khung giờ của buổi học.", "error");
+      return;
+    }
     setActionLoading(true);
     try {
       await apiRequest(`/api/learning/sessions/${sessionId}/tutor-attendance`, {
@@ -469,7 +493,11 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
         body: JSON.stringify({})
       });
       showToast("Điểm danh vào dạy thành công!", "success");
-      fetchSessions();
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, myCheckedIn: true, tutorCheckedIn: true } : s))
+      );
+      setActiveSession((prev) => (prev && prev.id === sessionId ? { ...prev, myCheckedIn: true, tutorCheckedIn: true } : prev));
+      fetchSessions(true);
     } catch (err: any) {
       showToast(err.message || "Không thể điểm danh ngoài khung giờ học!", "error");
     } finally {
@@ -479,6 +507,11 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
   const handleTutorFinalizeAttendance = async () => {
     if (!activeSession) return;
+    const targetSession = sessions.find((s) => s.id === activeSession.id) || activeSession;
+    if (!isStrictSessionActive(targetSession)) {
+      showToast("Chỉ có thể điểm danh gia sư trong đúng ngày và khung giờ của buổi học.", "error");
+      return;
+    }
     setActionLoading(true);
     try {
       await apiRequest(`/api/learning/sessions/${activeSession.id}/tutor-attendance`, {
@@ -486,8 +519,11 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
         body: JSON.stringify({})
       });
       showToast("Đã ghi nhận gia sư vào dạy. Học viên tự điểm danh trên tài khoản của mình.", "success");
-      setShowAttendanceModal(false);
-      fetchSessions();
+      setSessions((prev) =>
+        prev.map((s) => (s.id === activeSession.id ? { ...s, myCheckedIn: true, tutorCheckedIn: true } : s))
+      );
+      setActiveSession((prev) => (prev ? { ...prev, myCheckedIn: true, tutorCheckedIn: true } : prev));
+      fetchSessions(true);
     } catch (err: any) {
       showToast(err.message || "Lỗi khi cập nhật điểm danh", "error");
     } finally {
@@ -517,7 +553,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       });
       showToast("Đã cập nhật bài tập và tài liệu buổi học!", "success");
       setShowAssignmentModal(false);
-      fetchSessions();
+      fetchSessions(true);
     } catch (err: any) {
       showToast(err.message || "Lỗi kết nối", "error");
     } finally {
@@ -570,7 +606,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       showToast("Đã nộp bài tập thành công.", "success");
       setShowHomeworkModal(false);
       setStudentSubmissionFile(null);
-      fetchSessions();
+      fetchSessions(true);
     } catch (err: any) {
       showToast(err.message || "Không thể nộp bài tập.", "error");
     } finally {
@@ -595,7 +631,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       setStudentSubmissionFileUrl("");
       setStudentSubmissionFile(null);
       setShowHomeworkModal(false);
-      fetchSessions();
+      fetchSessions(true);
     } catch (err: any) {
       showToast(err.message || "Không thể gỡ bài nộp.", "error");
     } finally {
@@ -730,7 +766,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       showToast("Đã cập nhật link phòng học hiện hành; các buổi tiếp theo sẽ dùng link mới!", "success");
       setCurrentMeetingLink(newMeetingLink.trim());
       setShowEditMeetingModal(false);
-      await fetchSessions();
+      await fetchSessions(true);
     } catch (err: any) {
       showToast(err.message || "Lỗi cập nhật link phòng học", "error");
     } finally {
@@ -2576,6 +2612,10 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
       {/* Modal 4: Tutor Attendance Roster & Submissions */}
       {showAttendanceModal && activeSession && (() => {
+        const currentSession = sessions.find((s) => s.id === activeSession.id) || activeSession;
+        const isTutorCheckedIn = Boolean(currentSession.myCheckedIn || currentSession.tutorCheckedIn);
+        const isTutorCheckinOpen = isStrictSessionActive(currentSession);
+        const canShowTutorAttendanceAction = isSessionAvailable(currentSession) && currentUserRole === "TUTOR";
         const checkedInCount = attendanceList.filter((a) => a.studentChecked).length;
         const absentCount = attendanceList.length - checkedInCount;
         const submittedCount = attendanceList.filter((a) => a.submissionText || a.submissionFileUrl || a.submissionFileName).length;
@@ -2586,26 +2626,40 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               {/* Header */}
               <div className="flex items-start justify-between pb-3 border-b border-slate-100">
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-lg font-bold text-slate-900">
-                      Danh Sách Điểm Danh & Bài Nộp — Buổi #{activeSession.sequenceNumber}
+                      Danh Sách Điểm Danh & Bài Nộp — Buổi #{currentSession.sequenceNumber}
                     </h3>
-                    {activeSession.status === "COMPLETED" ? (
+                    {currentSession.status === "COMPLETED" ? (
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
                         ĐÃ CHỐT SỔ
                       </span>
-                    ) : activeSession.status === "CANCELLED" ? (
+                    ) : currentSession.status === "CANCELLED" ? (
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-200 text-slate-700">
                         ĐÃ HỦY
                       </span>
-                    ) : (
+                    ) : isTutorCheckinOpen ? (
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 animate-pulse">
                         ĐANG ĐIỂM DANH
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                        CHƯA ĐẾN GIỜ
+                      </span>
+                    )}
+                    {currentUserRole === "TUTOR" && (
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                        isTutorCheckedIn
+                          ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                          : "bg-amber-100 text-amber-800 border border-amber-300"
+                      }`}>
+                        <CheckCircle2 className={`w-3 h-3 ${isTutorCheckedIn ? "text-emerald-600" : "text-amber-600"}`} />
+                        <span>Gia sư: {isTutorCheckedIn ? "Đã điểm danh vào dạy" : "Chưa điểm danh vào dạy"}</span>
                       </span>
                     )}
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    {activeSession.topic || "Buổi học"} • Ngày {activeSession.sessionDate} ({activeSession.startTime} - {activeSession.endTime})
+                    {currentSession.topic || "Buổi học"} • Ngày {currentSession.sessionDate} ({currentSession.startTime} - {currentSession.endTime})
                   </p>
                 </div>
               </div>
@@ -2803,29 +2857,47 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-5 pt-4 border-t border-slate-100">
                 <div className="text-xs text-slate-500">
                   <span>Có mặt: <b className="text-emerald-700">{checkedInCount}</b>/{attendanceList.length} học viên</span>
-                  {isSessionAvailable(activeSession) && currentUserRole === "TUTOR" && (
-                    <span className="block text-[11px] text-amber-700 mt-0.5">
-                      ⏳ Hệ thống sẽ tự động chốt kết quả và giải ngân sau buổi học
-                    </span>
+                  {canShowTutorAttendanceAction && (
+                    isTutorCheckinOpen ? (
+                      <span className="block text-[11px] text-amber-700 mt-0.5">
+                        ⏳ Hệ thống sẽ tự động chốt kết quả và giải ngân sau buổi học
+                      </span>
+                    ) : (
+                      <span className="block text-[11px] text-slate-500 mt-0.5">
+                        Điểm danh gia sư chỉ mở vào đúng ngày {currentSession.sessionDate}, khung giờ {currentSession.startTime} - {currentSession.endTime}.
+                      </span>
+                    )
                   )}
                 </div>
 
-                <div className="flex gap-2.5 shrink-0">
+                <div className="flex items-center gap-2.5 shrink-0">
                   <button
                     onClick={() => setShowAttendanceModal(false)}
                     className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100"
                   >
                     Đóng
                   </button>
-                  {isSessionAvailable(activeSession) && currentUserRole === "TUTOR" && (
-                    <button
-                      disabled={actionLoading}
-                      onClick={handleTutorFinalizeAttendance}
-                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md flex items-center gap-1.5 transition-all"
-                    >
-                      {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                      <span>Ghi Nhận Gia Sư Vào Dạy</span>
-                    </button>
+                  {canShowTutorAttendanceAction && (
+                    isTutorCheckedIn ? (
+                      <span className="px-4 py-2 bg-emerald-50 text-emerald-700 border border-emerald-300 rounded-lg text-xs font-bold shadow-xs flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>Gia Sư Đã Điểm Danh Vào Dạy</span>
+                      </span>
+                    ) : isTutorCheckinOpen ? (
+                      <button
+                        disabled={actionLoading}
+                        onClick={handleTutorFinalizeAttendance}
+                        className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md flex items-center gap-1.5 transition-all"
+                      >
+                        {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                        <span>Ghi Nhận Gia Sư Vào Dạy</span>
+                      </button>
+                    ) : (
+                      <span className="px-4 py-2 bg-slate-100 text-slate-500 border border-slate-200 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-not-allowed">
+                        <Clock className="w-4 h-4" />
+                        <span>Chưa Đến Giờ Dạy</span>
+                      </span>
+                    )
                   )}
                 </div>
               </div>

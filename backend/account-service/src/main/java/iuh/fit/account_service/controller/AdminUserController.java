@@ -4,11 +4,15 @@ import iuh.fit.account_service.dto.user.AdminUserDetailResponse;
 import iuh.fit.account_service.dto.user.AdminUserResponse;
 import iuh.fit.account_service.enums.AccountStatus;
 import iuh.fit.account_service.service.AdminUserService;
+import iuh.fit.account_service.dto.user.CreateStaffRequest;
+import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -42,7 +46,16 @@ public class AdminUserController {
         return ResponseEntity.ok(adminUserService.getUserDetail(userId));
     }
 
+    @PostMapping("/staff")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<AdminUserResponse> createStaff(
+            @Valid @RequestBody CreateStaffRequest request
+    ) {
+        return ResponseEntity.ok(adminUserService.createStaff(request));
+    }
+
     @PatchMapping("/{userId}/status")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<AdminUserResponse> updateUserStatus(
             @PathVariable Long userId,
             @RequestBody Map<String, String> body
@@ -50,5 +63,11 @@ public class AdminUserController {
         String statusStr = body.get("status");
         AccountStatus status = AccountStatus.valueOf(statusStr.toUpperCase());
         return ResponseEntity.ok(adminUserService.updateUserStatus(userId, status));
+    }
+
+    @DeleteMapping("/{userId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<AdminUserResponse> deleteUser(@PathVariable Long userId) {
+        return ResponseEntity.ok(adminUserService.deleteUser(userId));
     }
 }

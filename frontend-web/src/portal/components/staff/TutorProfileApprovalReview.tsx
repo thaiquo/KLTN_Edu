@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { staffTutorApi } from "../../../api/staffTutors";
 import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
+import { fetchUserDirectory, getUserDisplayName, UserSummary } from "../../../utils/userDisplay";
 
 const TEACHING_MODE_LABELS: Record<string, string> = {
   ONLINE: "Trực tuyến",
@@ -43,6 +44,7 @@ export function TutorProfileApprovalReview({
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<any>(null);
+  const [users, setUsers] = useState<UserSummary[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
 
   // Rejection modal
@@ -95,6 +97,7 @@ export function TutorProfileApprovalReview({
   useEffect(() => {
     loadPending();
     loadHistory();
+    fetchUserDirectory().then((list) => setUsers(Array.isArray(list) ? list : []));
   }, []);
 
   const openDetail = async (applicationId: number) => {
@@ -393,9 +396,18 @@ export function TutorProfileApprovalReview({
                           {[item.communeName || item.applicantCommuneName, item.provinceName || item.applicantProvinceName].filter(Boolean).join(", ") || "--"}
                         </p>
                       </td>
-                      <td className="py-3.5 px-3">
-                        <p className="font-bold text-slate-800">{item.reviewedByName || "Admin/Staff"}</p>
-                        <p className="text-[10px] text-slate-400 font-semibold">{item.reviewedByEmail || "--"}</p>
+                      <td className="py-3.5 px-3 max-w-[160px]">
+                        {(() => {
+                          const reviewer = getUserDisplayName(item.reviewedByEmail, users, item.reviewedByName || "Admin/Staff");
+                          return (
+                            <>
+                              <p className="font-bold text-slate-800 truncate" title={reviewer.fullName}>{reviewer.fullName}</p>
+                              {item.reviewedByEmail && (
+                                <p className="text-[10px] text-slate-400 font-semibold truncate" title={item.reviewedByEmail}>{item.reviewedByEmail}</p>
+                              )}
+                            </>
+                          );
+                        })()}
                       </td>
                       <td className="py-3.5 px-3 text-slate-500 whitespace-nowrap">
                         {item.reviewedAt ? new Date(item.reviewedAt).toLocaleString("vi-VN") : "--"}
@@ -583,27 +595,53 @@ export function TutorProfileApprovalReview({
                   })()}
                 </div>
 
-                {/* Actions: Approve / Reject */}
-                <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={() => setRejectingId(selectedId)}
-                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-xs font-black text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50"
-                  >
-                    <XCircle size={15} />
-                    Từ chối hồ sơ
-                  </button>
-                  <button
-                    type="button"
-                    disabled={submitting}
-                    onClick={() => setApprovingId(selectedId)}
-                    className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 text-xs font-black text-white hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50"
-                  >
-                    <CheckCircle2 size={15} />
-                    Phê duyệt hồ sơ
-                  </button>
-                </div>
+                {/* Review result or Actions: Approve / Reject */}
+                {detail.application?.status === "APPROVED" || detail.application?.status === "REJECTED" ? (
+                  <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                    detail.application?.status === "APPROVED" ? "bg-emerald-50/70 border-emerald-200 text-emerald-950" : "bg-red-50/70 border-red-200 text-red-950"
+                  }`}>
+                    <div className="space-y-1">
+                      <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase ${
+                        detail.application?.status === "APPROVED" ? "bg-emerald-600 text-white" : "bg-red-600 text-white"
+                      }`}>
+                        {detail.application?.status === "APPROVED" ? "✓ Hồ sơ đã được duyệt" : "✕ Hồ sơ đã bị từ chối"}
+                      </span>
+                      <p className="text-xs font-semibold text-slate-700">
+                        Người xử lý: <strong className="text-slate-900">{getUserDisplayName(detail.application?.reviewedByEmail, users, detail.application?.reviewedByName || "Staff/Admin").label}</strong>
+                        {detail.application?.reviewedAt && (
+                          <span className="text-slate-500 font-normal"> vào lúc {new Date(detail.application.reviewedAt).toLocaleString("vi-VN")}</span>
+                        )}
+                      </p>
+                      {detail.application?.rejectionReason && (
+                        <p className="text-xs text-red-700 font-semibold">Lý do từ chối: {detail.application.rejectionReason}</p>
+                      )}
+                      {detail.application?.reviewNote && (
+                        <p className="text-xs text-slate-600 font-semibold">Ghi chú: {detail.application.reviewNote}</p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => setRejectingId(selectedId)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-xs font-black text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50"
+                    >
+                      <XCircle size={15} />
+                      Từ chối hồ sơ
+                    </button>
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => setApprovingId(selectedId)}
+                      className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 text-xs font-black text-white hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50"
+                    >
+                      <CheckCircle2 size={15} />
+                      Phê duyệt hồ sơ
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -10,8 +10,15 @@ export const adminUsersApi = {
     return apiRequest('/api/users/admin' + (qs ? `?${qs}` : ''));
   },
   detail: (userId) => apiRequest(`/api/users/admin/${userId}`),
+  createStaff: (payload) => apiRequest('/api/users/admin/staff', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }),
   updateStatus: (userId, status) => apiRequest(`/api/users/admin/${userId}/status`, {
     method: 'PATCH',
     body: JSON.stringify({ status })
+  }),
+  deleteUser: (userId) => apiRequest(`/api/users/admin/${userId}`, {
+    method: 'DELETE'
   })
 };

@@ -34,12 +34,24 @@ import {
 import { adminUsersApi } from "../../api/adminUsers";
 import { staffTutorApi } from "../../api/staffTutors";
 import { useFeedback } from "../../components/feedback/useFeedback";
+import { useAuth } from "../../hooks/useAuth";
 
 export function AdminPortal() {
+  const { user } = useAuth();
   const feedback = useFeedback();
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Create staff modal state
+  const [isCreateStaffOpen, setIsCreateStaffOpen] = useState(false);
+  const [staffForm, setStaffForm] = useState({
+    fullName: "",
+    email: "",
+    phone: "",
+    password: ""
+  });
+  const [createStaffLoading, setCreateStaffLoading] = useState(false);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -133,6 +145,61 @@ export function AdminPortal() {
     }
   };
 
+  const generateRandomPassword = () => {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%";
+    let pwd = "";
+    for (let i = 0; i < 14; i++) {
+      pwd += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setStaffForm(prev => ({ ...prev, password: pwd }));
+  };
+
+  const handleCreateStaffSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!staffForm.fullName.trim() || !staffForm.email.trim() || !staffForm.password) {
+      feedback.error("Vui lòng điền đầy đủ họ tên, email và mật khẩu.");
+      return;
+    }
+    if (staffForm.password.length < 8) {
+      feedback.error("Mật khẩu khởi tạo phải có ít nhất 8 ký tự.");
+      return;
+    }
+    setCreateStaffLoading(true);
+    try {
+      await adminUsersApi.createStaff(staffForm);
+      feedback.success(`Đã cấp tài khoản Staff thành công cho ${staffForm.email}!`);
+      setIsCreateStaffOpen(false);
+      setStaffForm({ fullName: "", email: "", phone: "", password: "" });
+      loadUsers();
+    } catch (err: any) {
+      feedback.error(err?.message || "Không thể cấp tài khoản nhân viên.");
+    } finally {
+      setCreateStaffLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (userId: number, nameOrEmail: string) => {
+    const accepted = await feedback.confirm({
+      title: "Vô hiệu hóa tài khoản?",
+      message: `Bạn có chắc chắn muốn vô hiệu hóa tài khoản "${nameOrEmail}"? Tài khoản này sẽ bị thu hồi toàn bộ quyền đăng nhập và các phiên hoạt động.`,
+      confirmText: "Vô hiệu hóa tài khoản",
+      cancelText: "Hủy",
+      variant: "destructive"
+    });
+    if (!accepted) return;
+
+    try {
+      await adminUsersApi.deleteUser(userId);
+      feedback.success("Đã vô hiệu hóa tài khoản thành công.");
+      loadUsers();
+      if (selectedUserId === userId) {
+        setSelectedUserId(null);
+      }
+    } catch (err: any) {
+      feedback.error(err?.message || "Không thể vô hiệu hóa tài khoản.");
+    }
+  };
+
   const handleApproveTutor = async (applicationId: number) => {
     const accepted = await feedback.confirm({
       title: "Phê duyệt hồ sơ gia sư?",
@@ -215,6 +282,13 @@ export function AdminPortal() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsCreateStaffOpen(true)}
+            className="px-4 py-2.5 bg-[#073554] hover:bg-[#147b77] text-white rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-sm cursor-pointer"
+          >
+            <UserPlus className="w-3.5 h-3.5" />
+            + CẤP TÀI KHOẢN STAFF
+          </button>
           <button
             onClick={loadUsers}
             className="px-4 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-2xs cursor-pointer"
@@ -366,6 +440,8 @@ export function AdminPortal() {
               <tbody className="divide-y divide-slate-100">
                 {users.map((u) => {
                   const isTutor = u.roles?.includes("TUTOR");
+                  const isTargetAdmin = u.roles?.includes("ADMIN");
+                  const isSelf = user?.id === u.id || (user?.email && user?.email.toLowerCase() === u.email?.toLowerCase());
                   return (
                     <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3.5 px-5">
@@ -411,10 +487,12 @@ export function AdminPortal() {
                           className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold ${
                             u.accountStatus === "ACTIVE"
                               ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              : u.accountStatus === "DISABLED"
+                              ? "bg-slate-100 text-slate-700 border border-slate-300"
                               : "bg-rose-50 text-rose-700 border border-rose-200"
                           }`}
                         >
-                          {u.accountStatus === "ACTIVE" ? "ACTIVE" : "LOCKED"}
+                          {u.accountStatus === "ACTIVE" ? "ACTIVE" : u.accountStatus === "DISABLED" ? "DISABLED" : "LOCKED"}
                         </span>
                       </td>
                       <td className="py-3.5 px-4">
@@ -452,18 +530,35 @@ export function AdminPortal() {
                             <Eye size={13} />
                             <span>Chi tiết {isTutor ? "& CCCD" : ""}</span>
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleStatus(u.id, u.accountStatus)}
-                            title={u.accountStatus === "ACTIVE" ? "Khóa tài khoản" : "Mở khóa tài khoản"}
-                            className={`p-1.5 rounded-lg border transition-colors ${
-                              u.accountStatus === "ACTIVE"
-                                ? "border-slate-200 text-slate-500 hover:text-red-600 hover:bg-red-50"
-                                : "border-emerald-200 text-emerald-600 bg-emerald-50 hover:bg-emerald-100"
-                            }`}
-                          >
-                            {u.accountStatus === "ACTIVE" ? <Lock size={14} /> : <Unlock size={14} />}
-                          </button>
+                          {isSelf && (
+                            <span className="text-[10px] font-black text-slate-400 bg-slate-100 px-2 py-1 rounded-md">
+                              (Bạn)
+                            </span>
+                          )}
+                          {!isTargetAdmin && !isSelf && u.accountStatus !== "DISABLED" && (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleStatus(u.id, u.accountStatus)}
+                              title={u.accountStatus === "ACTIVE" ? "Khóa tài khoản" : "Mở khóa tài khoản"}
+                              className={`p-1.5 rounded-lg border transition-colors ${
+                                u.accountStatus === "ACTIVE"
+                                  ? "border-slate-200 text-slate-500 hover:text-red-600 hover:bg-red-50"
+                                  : "border-emerald-200 text-emerald-600 bg-emerald-50 hover:bg-emerald-100"
+                              }`}
+                            >
+                              {u.accountStatus === "ACTIVE" ? <Lock size={14} /> : <Unlock size={14} />}
+                            </button>
+                          )}
+                          {!isTargetAdmin && !isSelf && u.accountStatus !== "DISABLED" && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteUser(u.id, u.fullName || u.email)}
+                              title="Xóa / Vô hiệu hóa tài khoản"
+                              className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -635,6 +730,129 @@ export function AdminPortal() {
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Create Staff Account Modal */}
+      {isCreateStaffOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl space-y-5">
+            <header className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-wider text-[#147b77]">Quản trị viên tối cao</p>
+                <h3 className="text-lg font-black text-slate-900">Cấp tài khoản Nhân viên (Staff)</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreateStaffOpen(false);
+                  setStaffForm({ fullName: "", email: "", phone: "", password: "" });
+                }}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X size={18} />
+              </button>
+            </header>
+
+            <form onSubmit={handleCreateStaffSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Họ và tên nhân viên <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={staffForm.fullName}
+                  onChange={(e) => setStaffForm(prev => ({ ...prev, fullName: e.target.value }))}
+                  placeholder="Ví dụ: Nguyễn Văn Quản Trị"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:border-[#147b77] focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Email nhân viên <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={staffForm.email}
+                  onChange={(e) => setStaffForm(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="Ví dụ: staff.support@educonnect.vn"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:border-[#147b77] focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Số điện thoại
+                </label>
+                <input
+                  type="tel"
+                  value={staffForm.phone}
+                  onChange={(e) => setStaffForm(prev => ({ ...prev, phone: e.target.value }))}
+                  placeholder="Ví dụ: 0912345678"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:border-[#147b77] focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Mật khẩu khởi tạo <span className="text-red-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={generateRandomPassword}
+                    className="text-[11px] font-black text-[#147b77] hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Sparkles size={12} /> Tạo mật khẩu ngẫu nhiên
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  required
+                  minLength={8}
+                  maxLength={100}
+                  value={staffForm.password}
+                  onChange={(e) => setStaffForm(prev => ({ ...prev, password: e.target.value }))}
+                  placeholder="Tối thiểu 8 ký tự"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:border-[#147b77] focus:outline-hidden font-mono"
+                />
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200/60 rounded-xl p-3 text-[11px] text-amber-800 leading-relaxed font-medium">
+                Tài khoản được cấp sẽ có vai trò <strong>STAFF</strong>, tự động xác thực email và có thể đăng nhập ngay để thực hiện xét duyệt hồ sơ và giám sát lớp học.
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCreateStaffOpen(false);
+                    setStaffForm({ fullName: "", email: "", phone: "", password: "" });
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={createStaffLoading}
+                  className="px-5 py-2 rounded-xl bg-[#073554] hover:bg-[#147b77] text-white text-xs font-black transition-colors disabled:opacity-50 flex items-center gap-1.5 shadow-xs"
+                >
+                  {createStaffLoading ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Đang cấp tài khoản...
+                    </>
+                  ) : (
+                    "Xác nhận cấp tài khoản"
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

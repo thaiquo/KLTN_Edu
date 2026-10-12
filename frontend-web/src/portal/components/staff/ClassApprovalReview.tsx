@@ -6,6 +6,7 @@ import {
   ChevronRight, Calendar, UserCheck, X 
 } from "lucide-react";
 import { classApi } from "../../../api/classes";
+import { adminUsersApi } from "../../../api/adminUsers";
 import { useFeedback } from "../../../components/feedback/useFeedback";
 import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
 
@@ -43,6 +44,8 @@ interface ClassItem {
   syllabusFileUrl?: string;
   status: "DRAFT" | "PENDING_APPROVAL" | "ACTIVE" | "REJECTED" | "CLOSED" | "CANCELLED" | "PRIVATE" | "PUBLISHED" | string;
   rejectReason?: string;
+  reviewedByEmail?: string;
+  reviewedAt?: string;
   schedules: Array<{ id: number; dayOfWeek: number; startTime: string; endTime: string }>;
   chapters: Array<{ id: number; title: string; description: string; expectedSessions: number; orderIndex: number }>;
   createdAt: string;
@@ -61,6 +64,7 @@ const VIETNAMESE_DAYS = [
 export function ClassApprovalReview() {
   const feedback = useFeedback();
   const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedClass, setSelectedClass] = useState<ClassItem | null>(null);
   const [rejectingClass, setRejectingClass] = useState<ClassItem | null>(null);
@@ -76,8 +80,12 @@ export function ClassApprovalReview() {
   const loadClasses = async () => {
     setLoading(true);
     try {
-      const data = await classApi.adminGetAllClasses();
+      const [data, userRows] = await Promise.all([
+        classApi.adminGetAllClasses(),
+        adminUsersApi.list().catch(() => [])
+      ]);
       setClasses(data || []);
+      setUsers(Array.isArray(userRows) ? userRows : []);
     } catch (err: any) {
       console.error("Failed to load classes for admin", err);
     } finally {
@@ -382,6 +390,7 @@ export function ClassApprovalReview() {
                   <th className="py-3 px-4">Học phí</th>
                   <th className="py-3 px-4">Lộ trình</th>
                   <th className="py-3 px-4">Trạng thái</th>
+                  <th className="py-3 px-4">Người xử lý</th>
                   <th className="py-3 px-4 text-right">Hành động</th>
                 </tr>
               </thead>
@@ -427,6 +436,18 @@ export function ClassApprovalReview() {
 
                     <td className="py-3.5 px-4">
                       {renderStatusBadge(cls.status)}
+                    </td>
+
+                    <td className="py-3.5 px-4 max-w-[180px]">
+                      <div className="font-bold text-slate-700 truncate" title={cls.reviewedByEmail}>
+                        {reviewerDisplayName(cls, users) || (cls.status === "PENDING_APPROVAL" ? "Chưa duyệt" : "--")}
+                      </div>
+                      {reviewerDisplayName(cls, users) && cls.reviewedByEmail && (
+                        <div className="text-[10px] text-slate-400 truncate" title={cls.reviewedByEmail}>{cls.reviewedByEmail}</div>
+                      )}
+                      <div className="text-[10px] text-slate-400">
+                        {cls.reviewedAt ? new Date(cls.reviewedAt).toLocaleString("vi-VN") : "--"}
+                      </div>
                     </td>
 
                     <td className="py-3.5 px-4 text-right">
@@ -495,6 +516,43 @@ export function ClassApprovalReview() {
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+
+            {/* Review / audit trail */}
+            <div className={`rounded-2xl border p-4 text-xs ${
+              selectedClass.status === "PENDING_APPROVAL"
+                ? "border-amber-200 bg-amber-50"
+                : selectedClass.status === "REJECTED"
+                ? "border-rose-200 bg-rose-50"
+                : "border-emerald-200 bg-emerald-50"
+            }`}>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    <UserCheck className="h-3.5 w-3.5" />
+                    Dấu vết phê duyệt
+                  </p>
+                  <p className="mt-1 font-black text-slate-900">{reviewSummary(selectedClass)}</p>
+                  <p className="mt-1 font-semibold text-slate-600">
+                    Người xử lý: <strong>{reviewerDisplayName(selectedClass, users) || "--"}</strong>
+                    {reviewerDisplayName(selectedClass, users) && selectedClass.reviewedByEmail && (
+                      <span className="ml-1 text-slate-500">({selectedClass.reviewedByEmail})</span>
+                    )}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-white/70 bg-white/70 px-3 py-2 text-left sm:text-right">
+                  <p className="text-[10px] font-black uppercase text-slate-400">Thời điểm xử lý</p>
+                  <p className="mt-1 font-black text-slate-800">
+                    {selectedClass.reviewedAt ? new Date(selectedClass.reviewedAt).toLocaleString("vi-VN") : "--"}
+                  </p>
+                </div>
+              </div>
+              {selectedClass.rejectReason && (
+                <div className="mt-3 rounded-xl border border-rose-200 bg-white p-3 font-semibold text-rose-800">
+                  <p className="font-black">Lý do từ chối / yêu cầu chỉnh sửa</p>
+                  <p className="mt-1 whitespace-pre-wrap">{selectedClass.rejectReason}</p>
+                </div>
+              )}
             </div>
 
             {/* General Info Grid */}
@@ -688,4 +746,24 @@ export function ClassApprovalReview() {
 
 function getTutorDisplayName(classRoom: ClassItem) {
   return classRoom.tutorFullName?.trim() || classRoom.tutorEmail;
+}
+
+function reviewSummary(classRoom: ClassItem) {
+  if (classRoom.status === "PENDING_APPROVAL") {
+    return "Lớp đang chờ Staff/Admin thẩm định, chưa có người duyệt.";
+  }
+  if (classRoom.status === "REJECTED") {
+    return "Lớp đã bị từ chối sau khi thẩm định.";
+  }
+  if (classRoom.reviewedByEmail || classRoom.reviewedAt) {
+    return "Lớp đã được phê duyệt/thẩm định và đang lưu dấu vết người xử lý.";
+  }
+  return "Chưa có thông tin người xử lý trong dữ liệu hiện tại.";
+}
+
+function reviewerDisplayName(classRoom: ClassItem, users: any[]) {
+  const email = classRoom.reviewedByEmail?.trim();
+  if (!email) return "";
+  const user = users.find((item) => item?.email?.toLowerCase() === email.toLowerCase());
+  return user?.fullName || user?.name || email;
 }

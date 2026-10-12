@@ -309,7 +309,9 @@ public class TerminationService {
                 if (user.hasActiveAuthority("TUTOR")) c.setTutorRespondedAt(OffsetDateTime.now());
             }
             case "RECOMMEND" -> {
-                if (!user.hasActiveAuthority("STAFF")) fail(HttpStatus.FORBIDDEN, "Only assigned Staff can recommend termination");
+                if (!user.hasActiveAuthority("STAFF") && !user.hasActiveAuthority("ADMIN")) {
+                    fail(HttpStatus.FORBIDDEN, "Only Staff/Admin can recommend termination");
+                }
                 requireStatus(c, "REQUESTED");
                 requireAutomaticWarningReady(c);
                 requireNoPendingDisputes(c);

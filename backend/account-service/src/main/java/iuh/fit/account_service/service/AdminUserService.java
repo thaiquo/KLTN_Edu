@@ -14,6 +14,12 @@ import iuh.fit.account_service.repository.TutorApplicationRepository;
 import iuh.fit.account_service.repository.UserRepository;
 import iuh.fit.account_service.repository.UserRoleRepository;
 import iuh.fit.account_service.service.storage.FileStorageService;
+import iuh.fit.account_service.dto.user.CreateStaffRequest;
+import iuh.fit.account_service.exception.BadRequestException;
+import iuh.fit.account_service.util.EmailNormalizer;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -32,19 +38,25 @@ public class AdminUserService {
     private final TutorApplicationRepository tutorApplicationRepository;
     private final TutorApprovalService tutorApprovalService;
     private final FileStorageService fileStorageService;
+    private final PasswordEncoder passwordEncoder;
+    private final RefreshTokenService refreshTokenService;
 
     public AdminUserService(
             UserRepository userRepository,
             UserRoleRepository userRoleRepository,
             TutorApplicationRepository tutorApplicationRepository,
             TutorApprovalService tutorApprovalService,
-            FileStorageService fileStorageService
+            FileStorageService fileStorageService,
+            PasswordEncoder passwordEncoder,
+            RefreshTokenService refreshTokenService
     ) {
         this.userRepository = userRepository;
         this.userRoleRepository = userRoleRepository;
         this.tutorApplicationRepository = tutorApplicationRepository;
         this.tutorApprovalService = tutorApprovalService;
         this.fileStorageService = fileStorageService;
+        this.passwordEncoder = passwordEncoder;
+        this.refreshTokenService = refreshTokenService;
     }
 
     @Transactional(readOnly = true)
@@ -119,12 +131,44 @@ public class AdminUserService {
     }
 
     @Transactional
+    public AdminUserResponse createStaff(CreateStaffRequest request) {
+        String normalizedEmail = EmailNormalizer.normalize(request.getEmail());
+        if (userRepository.existsByEmailIgnoreCase(normalizedEmail)) {
+            throw new BadRequestException("Email đã được sử dụng trong hệ thống");
+        }
+
+        User user = User.builder()
+                .email(normalizedEmail)
+                .password(passwordEncoder.encode(request.getPassword()))
+                .fullName(request.getFullName().trim())
+                .phone(request.getPhone() != null && !request.getPhone().isBlank() ? request.getPhone().trim() : null)
+                .emailVerified(true)
+                .accountStatus(AccountStatus.ACTIVE)
+                .build();
+
+        User savedUser = userRepository.save(user);
+
+        UserRole userRole = new UserRole();
+        userRole.setUser(savedUser);
+        userRole.setRole(Role.STAFF);
+        userRoleRepository.save(userRole);
+
+        return toAdminResponse(savedUser, Set.of("STAFF"), null);
+    }
+
+    @Transactional
     public AdminUserResponse updateUserStatus(Long userId, AccountStatus status) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
+        validateAdminSelfOrTargetProtection(user, status);
+
         user.setAccountStatus(status);
         User saved = userRepository.save(user);
+
+        if (status == AccountStatus.LOCKED || status == AccountStatus.DISABLED) {
+            refreshTokenService.revokeAllForUser(user);
+        }
 
         Set<String> roles = userRoleRepository.findByUserId(userId).stream()
                 .map(ur -> ur.getRole().name())
@@ -132,6 +176,32 @@ public class AdminUserService {
 
         TutorApplication app = tutorApplicationRepository.findByUserId(userId).orElse(null);
         return toAdminResponse(saved, roles, app);
+    }
+
+    @Transactional
+    public AdminUserResponse deleteUser(Long userId) {
+        return updateUserStatus(userId, AccountStatus.DISABLED);
+    }
+
+    private void validateAdminSelfOrTargetProtection(User targetUser, AccountStatus nextStatus) {
+        if (targetUser.getAccountStatus() == AccountStatus.DISABLED && nextStatus == AccountStatus.ACTIVE) {
+            throw new BadRequestException("Tài khoản đã bị vô hiệu hóa không thể mở khóa bằng thao tác khóa/mở khóa thông thường");
+        }
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getName() != null) {
+            String currentEmail = auth.getName();
+            if (targetUser.getEmail() != null
+                    && targetUser.getEmail().equalsIgnoreCase(currentEmail)
+                    && (nextStatus == AccountStatus.LOCKED || nextStatus == AccountStatus.DISABLED)) {
+                throw new BadRequestException("Bạn không thể tự khóa hoặc vô hiệu hóa tài khoản của chính mình");
+            }
+        }
+
+        boolean isTargetAdmin = userRoleRepository.existsByUserIdAndRole(targetUser.getId(), Role.ADMIN);
+        if (isTargetAdmin && (nextStatus == AccountStatus.LOCKED || nextStatus == AccountStatus.DISABLED)) {
+            throw new BadRequestException("Không thể khóa hoặc vô hiệu hóa tài khoản Quản trị viên");
+        }
     }
 
     private AdminUserResponse toAdminResponse(User u, Set<String> roles, TutorApplication app) {

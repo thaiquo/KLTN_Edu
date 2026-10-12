@@ -68,22 +68,24 @@ export function Sidebar({
         ];
       case "admin":
         return [
-          { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+          { id: "dashboard", label: "Tổng quan giám sát", icon: LayoutDashboard },
           { id: "admin-finance", label: "Tài chính & Dòng tiền", icon: WalletCards },
-          { id: "tutor-approval", label: "Tutor Approval", icon: CheckCircle2 },
+          { id: "tutor-approval", label: "Duyệt hồ sơ gia sư", icon: CheckCircle2 },
           { id: "contracts", label: "Hợp đồng Escrow", icon: ShieldCheck },
           { id: "complaints", label: "Phân xử Khiếu nại", icon: ShieldAlert },
-          { id: "user-management", label: "User Management", icon: Users },
-          { id: "class-management", label: "Class Management", icon: BookOpen },
+          { id: "user-management", label: "Quản lý người dùng", icon: Users },
+          { id: "class-management", label: "Quản lý lớp học", icon: BookOpen },
           { id: "subject-catalog", label: "Quản lý môn học", icon: Layers3 },
-          { id: "settings", label: "Settings", icon: Settings },
+          { id: "reports", label: "Báo cáo nghiệp vụ", icon: BarChart3 },
+          { id: "settings", label: "Cài đặt hệ thống", icon: Settings },
         ];
       case "staff":
         return [
           { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
           { id: "tutor-approval", label: "Duyệt hồ sơ gia sư", icon: CheckCircle2 },
-          { id: "complaints", label: "Quản lý khiếu nại", icon: ShieldAlert },
           { id: "class-management", label: "Lớp / nội dung", icon: BookOpen },
+          { id: "contracts", label: "Hợp đồng & Thanh lý", icon: ShieldCheck },
+          { id: "complaints", label: "Quản lý khiếu nại", icon: ShieldAlert },
           { id: "reports", label: "Báo cáo nghiệp vụ", icon: BarChart3 },
         ];
       default:
@@ -160,11 +162,13 @@ export function Sidebar({
             <span>Trang chủ Tra cứu</span>
           </button>
         )}
-        {activeRole === "tutor" && (
+        {(activeRole === "tutor" || activeRole === "staff") && (
           <button
             type="button"
             onClick={() => onNavigate("settings")}
-            className="flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left font-display text-xs font-bold tracking-wider text-brand-text-variant/80 transition-all hover:bg-brand-container/30 hover:text-brand-text"
+            className={`flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left font-display text-xs font-bold tracking-wider transition-all ${
+              isStaff ? "text-white/70 hover:bg-white/8 hover:text-white" : "text-brand-text-variant/80 hover:bg-brand-container/30 hover:text-brand-text"
+            }`}
           >
             <Settings className="h-4 w-4" />
             <span>Tài khoản</span>

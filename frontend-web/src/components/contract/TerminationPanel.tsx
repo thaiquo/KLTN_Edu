@@ -37,6 +37,7 @@ import { contractsApi, AgreementSummary, DisputeDto } from '../../api/contractsA
 import { useAuth } from '../../hooks/useAuth';
 import { terminationsApi, TerminationView } from '../../api/terminationsApi';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
+import { fetchUserDirectory, getUserDisplayName, UserSummary } from '../../utils/userDisplay';
 import { TerminationRequestModal } from './TerminationRequestModal';
 import { terminationCaseLabel, terminationItemLabel, terminationProgressText, terminationWaitingDetail } from './terminationStatus';
 
@@ -44,7 +45,7 @@ const labels: Record<string, string> = {
   HOLD_PENDING: 'Đang tạm dừng lịch học',
   RELEASE_PENDING: 'Đang khôi phục lịch học',
   REQUESTED: 'Đang chờ Staff thẩm định',
-  RECOMMENDED: 'Staff đã đề xuất (Chờ Admin duyệt)',
+  RECOMMENDED: 'Đã thẩm định (Chờ Admin duyệt)',
   APPROVED: 'Admin đã duyệt - đang quyết toán, chưa hoàn tiền xong',
   REJECTED: 'Đã từ chối (Khôi phục lớp học)',
   COMPLETED: 'Hoàn tất chấm dứt & hoàn tiền',
@@ -55,7 +56,7 @@ const labels: Record<string, string> = {
   TRANSACTION_FAILED: 'Giao dịch cần kiểm tra lại',
   WAITING_REFUND_EVENT: 'Chờ hoàn tiền Escrow Smart Contract',
   RESPOND: 'Phản hồi/giải trình từ bên hợp đồng',
-  RECOMMEND: 'Staff đề xuất chấm dứt',
+  RECOMMEND: 'Staff/Admin thẩm định chấm dứt',
   APPROVE: 'Admin phê duyệt chấm dứt',
   FORCE_APPROVE: 'Admin quyết định hủy khẩn cấp',
   REJECT: 'Từ chối đề xuất',
@@ -142,6 +143,7 @@ export function TerminationPanel({
   const [requests, setRequests] = useState<TerminationView[]>([]);
   const [agreements, setAgreements] = useState<AgreementSummary[]>(initialAgreements || []);
   const [disputes, setDisputes] = useState<DisputeDto[]>([]);
+  const [users, setUsers] = useState<UserSummary[]>([]);
   const [error, setError] = useState('');
   const [refreshError, setRefreshError] = useState('');
   const [complaintBlockWarning, setComplaintBlockWarning] = useState('');
@@ -231,7 +233,12 @@ export function TerminationPanel({
 
   const load = useCallback(async () => {
     try {
-      setRequests(await terminationsApi.list());
+      const [termList, userList] = await Promise.all([
+        terminationsApi.list(),
+        fetchUserDirectory()
+      ]);
+      setRequests(Array.isArray(termList) ? termList : []);
+      setUsers(Array.isArray(userList) ? userList : []);
       setRefreshError('');
     } catch (e) {
       setRefreshError(message(e));
@@ -1842,44 +1849,59 @@ export function TerminationPanel({
                   </div>
                 )}
 
-                {/* REVIEW & ACTIVITY HISTORY WITH NUMBERED ROUNDS */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-4.5 space-y-3.5">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                {/* REVIEW & ACTIVITY HISTORY WITH CONNECTED TIMELINE STEPPER */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <span className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
                       <History className="w-4 h-4 text-indigo-600" />
-                      Lịch sử các lần gửi hồ sơ & Thẩm định đối soát
+                      Tiến trình xét duyệt & Dòng thời gian đối soát (Audit Timeline)
                     </span>
                     <span className="text-[11px] font-bold text-slate-500">
-                      Tổng số mốc: {1 + auditEntries.filter((e) => e.action !== 'REQUESTED').length} mốc
+                      Tổng cộng: {1 + auditEntries.filter((e) => e.action !== 'REQUESTED').length} mốc thời gian
                     </span>
                   </div>
 
-                  <div className="space-y-3 pt-1">
+                  <div className="relative pl-7 before:absolute before:left-3 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-200 space-y-4 pt-1">
                     {/* MỐC LẦN 1: KHỞI TẠO HỒ SƠ */}
-                    <div className="p-3.5 rounded-xl border border-blue-200 bg-blue-50/40 space-y-2 text-xs">
-                      <div className="flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-blue-600 text-white shadow-2xs">
-                            LẦN 1: KHỞI TẠO HỒ SƠ
-                          </span>
-                          <span className="font-bold text-slate-900">
-                            {c.wholeClass ? `Gia sư (${tutorName})` : `Học viên (${studentName})`}
-                          </span>
-                          <span className="text-slate-400">&bull;</span>
-                          <span className="text-slate-600 font-medium">{c.requestedBy}</span>
+                    {(() => {
+                      const requester = getUserDisplayName(c.requestedBy, users, c.wholeClass ? tutorName : studentName);
+                      return (
+                        <div className="relative space-y-2">
+                          {/* Stepper Dot */}
+                          <div className="absolute -left-7 top-1 w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-xs ring-4 ring-white">
+                            <FileText className="w-3.5 h-3.5" />
+                          </div>
+
+                          <div className="p-3.5 rounded-xl border border-blue-200 bg-blue-50/40 space-y-2 text-xs">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-blue-600 text-white shadow-2xs">
+                                  LẦN 1: KHỞI TẠO HỒ SƠ
+                                </span>
+                                <strong className="text-slate-900">{requester.fullName}</strong>
+                                {requester.email && (
+                                  <span className="text-slate-500 font-normal">({requester.email})</span>
+                                )}
+                                <span className="text-slate-400">&bull;</span>
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
+                                  {c.wholeClass ? 'Gia sư mở lớp' : 'Học viên'}
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-blue-900 font-mono font-bold flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {new Date(c.createdAt).toLocaleString('vi-VN')}
+                              </span>
+                            </div>
+                            <div className="pl-3 border-l-2 border-blue-400">
+                              <span className="text-[10px] font-bold text-slate-500 block mb-0.5">Lý do ban đầu khi gửi:</span>
+                              <p className="text-slate-800 font-semibold whitespace-pre-wrap leading-relaxed">
+                                "{c.reason}"
+                              </p>
+                            </div>
+                          </div>
                         </div>
-                        <span className="text-[11px] text-blue-900 font-mono font-bold flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {new Date(c.createdAt).toLocaleString('vi-VN')}
-                        </span>
-                      </div>
-                      <div className="pl-2 border-l-2 border-blue-300">
-                        <span className="text-[10px] font-bold text-slate-500 block mb-0.5">Lý do ban đầu khi gửi:</span>
-                        <p className="text-slate-800 font-semibold whitespace-pre-wrap leading-relaxed">
-                          "{c.reason}"
-                        </p>
-                      </div>
-                    </div>
+                      );
+                    })()}
 
                     {/* CÁC MỐC TIẾP THEO: LẦN 2, LẦN 3... HOẶC THẨM ĐỊNH */}
                     {(() => {
@@ -1887,6 +1909,7 @@ export function TerminationPanel({
                       return auditEntries
                         .filter((e) => e.action !== 'REQUESTED')
                         .map((entry, index) => {
+                          const actorDisplay = getUserDisplayName(entry.actor, users, entry.role);
                           const isStaffActor = entry.role?.toUpperCase() === 'STAFF';
                           const isAdminActor = entry.role?.toUpperCase() === 'ADMIN';
                           const isStudentActor = entry.role?.toUpperCase() === 'STUDENT';
@@ -1894,61 +1917,83 @@ export function TerminationPanel({
                           const isRespond = entry.action === 'RESPOND';
                           if (isRespond) studentRound++;
 
-                          let badgeLabel = `LẦN ${studentRound}: BỔ SUNG THÔNG TIN`;
+                          let badgeLabel = `LẦN ${studentRound}: BỔ SUNG MINH CHỨNG / GIẢI TRÌNH`;
                           let badgeStyle = 'bg-indigo-600 text-white';
                           let boxStyle = 'border-indigo-200 bg-indigo-50/30';
                           let borderAccent = 'border-indigo-300';
+                          let dotColor = 'bg-indigo-600';
+                          let StepIcon = Paperclip;
 
                           if (entry.action === 'RECOMMEND') {
                             badgeLabel = 'STAFF ĐỀ XUẤT CHẤM DỨT';
                             badgeStyle = 'bg-purple-600 text-white';
                             boxStyle = 'border-purple-200 bg-purple-50/30';
-                            borderAccent = 'border-purple-300';
+                            borderAccent = 'border-purple-400';
+                            dotColor = 'bg-purple-600';
+                            StepIcon = ClipboardCheck;
                           } else if (entry.action === 'APPROVE') {
-                            badgeLabel = 'ADMIN PHÊ DUYỆT & QUYẾT TOÁN';
+                            badgeLabel = 'ADMIN PHÊ DUYỆT & QUYẾT TOÁN ESCROW';
                             badgeStyle = 'bg-emerald-600 text-white';
                             boxStyle = 'border-emerald-200 bg-emerald-50/30';
-                            borderAccent = 'border-emerald-300';
+                            borderAccent = 'border-emerald-400';
+                            dotColor = 'bg-emerald-600';
+                            StepIcon = ShieldCheck;
+                          } else if (entry.action === 'FORCE_APPROVE') {
+                            badgeLabel = 'ADMIN QUYẾT ĐỊNH HỦY KHẨN CẤP';
+                            badgeStyle = 'bg-emerald-700 text-white';
+                            boxStyle = 'border-emerald-200 bg-emerald-50/40';
+                            borderAccent = 'border-emerald-500';
+                            dotColor = 'bg-emerald-700';
+                            StepIcon = ShieldCheck;
                           } else if (entry.action === 'REJECT') {
-                            badgeLabel = 'TỪ CHỐI ĐỀ XUẤT (KHÔI PHỤC LỚP)';
+                            badgeLabel = 'TỪ CHỐI ĐỀ XUẤT (KHÔI PHỤC LỚP HỌC)';
                             badgeStyle = 'bg-rose-600 text-white';
                             boxStyle = 'border-rose-200 bg-rose-50/30';
-                            borderAccent = 'border-rose-300';
+                            borderAccent = 'border-rose-400';
+                            dotColor = 'bg-rose-600';
+                            StepIcon = XCircle;
                           }
 
                           return (
-                            <div
-                              key={index}
-                              className={`p-3.5 rounded-xl border ${boxStyle} space-y-2 text-xs`}
-                            >
-                              <div className="flex items-center justify-between gap-2 flex-wrap">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${badgeStyle} shadow-2xs`}>
-                                    {badgeLabel}
-                                  </span>
-                                  <strong className="text-slate-900">{entry.actor}</strong>
-                                  <span className="text-slate-400">&bull;</span>
-                                  <span className="text-slate-600 font-medium">
-                                    {isStudentActor
-                                      ? 'Học viên'
-                                      : isTutorActor
-                                      ? 'Gia sư'
-                                      : isStaffActor
-                                      ? 'Staff kiểm duyệt'
-                                      : isAdminActor
-                                      ? 'Admin quản trị'
-                                      : entry.role}
+                            <div key={index} className="relative space-y-2">
+                              {/* Stepper Dot */}
+                              <div className={`absolute -left-7 top-1 w-6 h-6 rounded-full ${dotColor} text-white flex items-center justify-center shadow-xs ring-4 ring-white`}>
+                                <StepIcon className="w-3.5 h-3.5" />
+                              </div>
+
+                              <div className={`p-3.5 rounded-xl border ${boxStyle} space-y-2 text-xs`}>
+                                <div className="flex items-center justify-between gap-2 flex-wrap">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider ${badgeStyle} shadow-2xs`}>
+                                      {badgeLabel}
+                                    </span>
+                                    <strong className="text-slate-900">{actorDisplay.fullName}</strong>
+                                    {actorDisplay.email && (
+                                      <span className="text-slate-500 font-normal">({actorDisplay.email})</span>
+                                    )}
+                                    <span className="text-slate-400">&bull;</span>
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/80 border border-black/10 text-slate-700">
+                                      {isStudentActor
+                                        ? 'Học viên'
+                                        : isTutorActor
+                                        ? 'Gia sư'
+                                        : isStaffActor
+                                        ? 'Staff kiểm duyệt'
+                                        : isAdminActor
+                                        ? 'Admin quản trị'
+                                        : entry.role}
+                                    </span>
+                                  </div>
+                                  <span className="text-[11px] text-slate-500 font-mono font-bold flex items-center gap-1">
+                                    <Clock className="w-3 h-3" />
+                                    {entry.at ? new Date(entry.at).toLocaleString('vi-VN') : ''}
                                   </span>
                                 </div>
-                                <span className="text-[11px] text-slate-500 font-mono font-bold flex items-center gap-1">
-                                  <Clock className="w-3 h-3" />
-                                  {entry.at ? new Date(entry.at).toLocaleString('vi-VN') : ''}
-                                </span>
-                              </div>
-                              <div className={`pl-2 border-l-2 ${borderAccent}`}>
-                                <p className="text-slate-800 font-semibold whitespace-pre-wrap leading-relaxed">
-                                  {entry.reason}
-                                </p>
+                                <div className={`pl-3 border-l-2 ${borderAccent}`}>
+                                  <p className="text-slate-800 font-semibold whitespace-pre-wrap leading-relaxed">
+                                    {entry.reason}
+                                  </p>
+                                </div>
                               </div>
                             </div>
                           );
@@ -2008,7 +2053,7 @@ export function TerminationPanel({
                         {c.status === 'RECOMMENDED' && (
                           <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-900 flex items-center gap-2">
                             <ClipboardCheck className="w-4 h-4 text-indigo-600 shrink-0" />
-                            <span>Staff kiểm duyệt đã thẩm định hồ sơ này và gửi đề xuất chấm dứt lên Admin.</span>
+                            <span>Staff/Admin đã thẩm định hồ sơ này và gửi đề xuất chấm dứt lên bước phê duyệt cuối.</span>
                           </div>
                         )}
 
@@ -2020,6 +2065,17 @@ export function TerminationPanel({
                         )}
 
                         <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                          {c.status === 'REQUESTED' && (
+                            <button
+                              className="px-4 py-2.5 rounded-xl bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                              onClick={() => {
+                                beginManagerAction({ request: c, items, evidence }, 'RECOMMEND');
+                              }}
+                              disabled={busy || !warningReadyForNormalReview}
+                            >
+                              <ClipboardCheck size={15} /> Thẩm định thay Staff · Gửi đề xuất
+                            </button>
+                          )}
                           {['REQUESTED', 'RECOMMENDED'].includes(c.status) && (
                             <>
                               <button
