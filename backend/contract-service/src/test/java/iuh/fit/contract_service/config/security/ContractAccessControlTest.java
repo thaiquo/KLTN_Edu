@@ -134,14 +134,17 @@ class ContractAccessControlTest {
     }
 
     @Test
-    void studentAndTutorCanOpenDisputeOnlyForTheirOwnAgreement() {
+    void onlyStudentCanOpenDisputeForOwnAgreement() {
         ContractAgreement agreement = agreement(1L, "student@example.com", 2L, "tutor@example.com", "staff@example.com");
         ContractUserPrincipal student = user(1L, "student@example.com", "STUDENT", "STUDENT");
         ContractUserPrincipal tutor = user(2L, "tutor@example.com", "TUTOR", "TUTOR");
         ContractUserPrincipal otherTutor = user(3L, "other-tutor@example.com", "TUTOR", "TUTOR");
 
         accessControl.requireCanOpenDispute(agreement, student);
-        accessControl.requireCanOpenDispute(agreement, tutor);
+
+        assertThatThrownBy(() -> accessControl.requireCanOpenDispute(agreement, tutor))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("403");
 
         assertThatThrownBy(() -> accessControl.requireCanOpenDispute(agreement, otherTutor))
                 .isInstanceOf(ResponseStatusException.class)

@@ -39,8 +39,11 @@ export function TeachingRegistrationReview({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  async function load() {
-    setLoading(true);
+  async function load(opts?: boolean | unknown) {
+    const isSilent = opts === true;
+    if (!isSilent) {
+      setLoading(true);
+    }
     try {
       const [items, pendingSubjectRequests] = await Promise.all([
         teachingRegistrationApi.adminPending(),
@@ -59,7 +62,9 @@ export function TeachingRegistrationReview({
     } catch (error: any) {
       onError(error?.message || "Không thể tải hàng chờ duyệt quyền dạy.");
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   }
 
@@ -68,10 +73,10 @@ export function TeachingRegistrationReview({
     "TEACHING_REGISTRATION_REVIEWED",
     "SUBJECT_REQUEST_SUBMITTED",
     "SUBJECT_REQUEST_REVIEWED",
-  ], load);
+  ], () => load(true));
 
   useEffect(() => {
-    load();
+    load(false);
   }, [isAdmin]);
 
   async function approveRegistration(item: any, note: string) {

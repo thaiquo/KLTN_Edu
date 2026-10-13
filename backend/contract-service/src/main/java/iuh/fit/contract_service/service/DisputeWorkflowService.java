@@ -34,6 +34,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -150,6 +151,9 @@ public class DisputeWorkflowService {
                     .submittedAt(Instant.now())
                     .status(DisputeStatus.OPENING)
                     .build();
+            if ("STUDENT".equals(normalizedRole)) {
+                inheritSessionTutorResponseIfPresent(dispute, agreement, settlement.getSessionId());
+            }
             disputeRepository.save(dispute);
         }
 
@@ -291,6 +295,9 @@ public class DisputeWorkflowService {
         dispute.setTutorRespondedAt(Instant.now());
         Dispute saved = disputeRepository.save(dispute);
         saveEvidenceIfPresent(saved, tutorId, "TUTOR", evidenceObjectKey, evidenceContentType, evidenceSha256);
+        propagateTutorResponseToSessionDisputes(
+                saved, agreement, dispute.getSettlement().getSessionId(),
+                normalizedResponse, evidenceObjectKey, evidenceContentType, evidenceSha256);
 
         notificationDispatcher.sendAsync(
                 agreement.getStudentEmail(),
@@ -422,6 +429,14 @@ public class DisputeWorkflowService {
         }
         if (dispute.getTutorResponse() != null && !dispute.getTutorResponse().isBlank()) {
             return true;
+        }
+        ContractAgreement agreement = dispute.getSettlement() != null ? dispute.getSettlement().getAgreement() : null;
+        if (agreement != null && agreement.getClassroomId() != null && dispute.getSettlement().getSessionId() != null) {
+            List<Dispute> sessionResponses = disputeRepository.findBySettlement_Agreement_ClassroomIdAndSettlement_SessionIdAndTutorResponseIsNotNullOrderByTutorRespondedAtDesc(
+                    agreement.getClassroomId(), dispute.getSettlement().getSessionId());
+            if (!sessionResponses.isEmpty()) {
+                return true;
+            }
         }
         Instant deadline = getTutorResponseDeadline(dispute);
         return deadline != null && now != null && !now.isBefore(deadline);
@@ -587,5 +602,64 @@ public class DisputeWorkflowService {
             return value != null ? value : "";
         }
         return value.substring(0, maxLength - 1) + "…";
+    }
+
+    private void inheritSessionTutorResponseIfPresent(Dispute dispute, ContractAgreement agreement, Long sessionId) {
+        if (agreement == null || agreement.getClassroomId() == null || sessionId == null) {
+            return;
+        }
+        List<Dispute> existingDisputes = disputeRepository.findBySettlement_Agreement_ClassroomIdAndSettlement_SessionIdAndTutorResponseIsNotNullOrderByTutorRespondedAtDesc(
+                agreement.getClassroomId(), sessionId);
+        if (existingDisputes.isEmpty()) {
+            return;
+        }
+        Dispute source = existingDisputes.get(0);
+        dispute.setTutorResponse(source.getTutorResponse());
+        dispute.setTutorRespondedAt(source.getTutorRespondedAt());
+        List<DisputeEvidence> sourceEvidences = disputeEvidenceRepository.findByDisputeIdOrderByCreatedAtAsc(source.getId());
+        for (DisputeEvidence ev : sourceEvidences) {
+            if ("TUTOR".equalsIgnoreCase(ev.getSubmittedByRole())) {
+                saveEvidenceIfPresent(dispute, ev.getSubmittedByUserId(), "TUTOR", ev.getObjectKey(), ev.getContentType(), ev.getSha256());
+            }
+        }
+    }
+
+    private void propagateTutorResponseToSessionDisputes(
+            Dispute sourceDispute,
+            ContractAgreement agreement,
+            Long sessionId,
+            String responseText,
+            String evidenceObjectKey,
+            String evidenceContentType,
+            String evidenceSha256) {
+        if (agreement == null || agreement.getClassroomId() == null || sessionId == null) {
+            return;
+        }
+        List<Dispute> otherOpenDisputes = disputeRepository.findBySettlement_Agreement_ClassroomIdAndSettlement_SessionIdAndStatus(
+                agreement.getClassroomId(), sessionId, DisputeStatus.OPEN);
+        for (Dispute other : otherOpenDisputes) {
+            if (other.getId().equals(sourceDispute.getId())) {
+                continue;
+            }
+            if ("STUDENT".equalsIgnoreCase(other.getComplainantRole())) {
+                other.setTutorResponse(responseText);
+                other.setTutorRespondedAt(sourceDispute.getTutorRespondedAt());
+                disputeRepository.save(other);
+                saveEvidenceIfPresent(other, agreement.getTutorId(), "TUTOR", evidenceObjectKey, evidenceContentType, evidenceSha256);
+
+                ContractAgreement otherAgreement = other.getSettlement() != null ? other.getSettlement().getAgreement() : null;
+                if (otherAgreement != null && otherAgreement.getStudentEmail() != null && otherAgreement.getStudentId() != null) {
+                    notificationDispatcher.sendAsync(
+                            otherAgreement.getStudentEmail(),
+                            otherAgreement.getStudentId(),
+                            "Gia sư đã phản hồi đối chất Buổi #" + sessionId,
+                            "Gia sư đã gửi nội dung đối chất và minh chứng cho khiếu nại Buổi #" + sessionId
+                                    + " ở " + safeClassName(otherAgreement) + ". Vui lòng vào mục Khiếu nại lớp học để theo dõi.",
+                            "DISPUTE_UPDATED",
+                            "DISPUTE",
+                            other.getId().toString());
+                }
+            }
+        }
     }
 }

@@ -1,5 +1,5 @@
 import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Calendar,
@@ -8,6 +8,10 @@ import {
   FileText,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
+  X,
+  Info,
+  ShieldCheck,
   Edit3,
   ExternalLink,
   Users,
@@ -195,7 +199,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   const meetingLink = isOffline ? "" : (unlockedMeetingLink || baseClassMeetingLink);
   const [loading, setLoading] = useState<boolean>(true);
   const [loadError, setLoadError] = useState('');
-  const [activeTab, setActiveTab] = useState<"FOCUSED" | "ALL" | "UPCOMING" | "COMPLETED">("FOCUSED");
+  const [activeTab, setActiveTab] = useState<"ALL" | "UPCOMING" | "COMPLETED" | "DISPUTABLE" | "FOCUSED">("ALL");
 
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -252,6 +256,37 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   const [actionLoading, setActionLoading] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
   const [mySettlementBySession, setMySettlementBySession] = useState<Record<number, SettlementDto>>({});
+  const [myAgreementIdBySession, setMyAgreementIdBySession] = useState<Record<number, string>>({});
+
+  // Student In-Place Dispute Modal State
+  const [showDisputeModal, setShowDisputeModal] = useState<boolean>(false);
+  const [disputingSession, setDisputingSession] = useState<ClassSessionItem | null>(null);
+  const [disputeReason, setDisputeReason] = useState<string>("");
+  const [disputeEvidenceFile, setDisputeEvidenceFile] = useState<File | null>(null);
+  const [disputeEvidenceUrl, setDisputeEvidenceUrl] = useState<string>("");
+  const [disputeSubmitting, setDisputeSubmitting] = useState<boolean>(false);
+  const [disputeError, setDisputeError] = useState<string>("");
+
+  const formatRemainingTime = (deadline: string, nowMs: number): string => {
+    const remainingMs = Math.max(0, new Date(deadline).getTime() - nowMs);
+    const totalMinutes = Math.ceil(remainingMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return hours > 0 ? `${hours} giờ ${minutes} phút` : `${minutes} phút`;
+  };
+
+  const formatExactTime = (dateStr?: string | null): string => {
+    if (!dateStr) return 'N/A';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return String(dateStr);
+    return d.toLocaleString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
 
   const lastFocusTimeRef = useRef(0);
 
@@ -269,42 +304,101 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
     return () => { clearInterval(timer); window.removeEventListener('focus', refresh); };
   }, [classRoomId]);
 
-  useEffect(() => {
-    let cancelled = false;
+  const reloadSettlements = useCallback(async () => {
     if (currentUserRole !== "STUDENT") {
       setMySettlementBySession({});
-      return () => { cancelled = true; };
+      setMyAgreementIdBySession({});
+      return;
     }
 
-    contractsApi.listAgreements({ page: 0, size: 100 })
-      .then(async (page) => {
-        const agreements = page.content.filter((agreement) => agreement.classroomId === classRoomId);
-        const groups = await Promise.all(agreements.map(async (agreement) => ({
-          settlements: await contractsApi.getSettlements(agreement.id),
-        })));
-        if (cancelled) return;
+    try {
+      const page = await contractsApi.listAgreements({ page: 0, size: 100 });
+      const agreements = (page?.content || []).filter((agreement) => agreement.classroomId === classRoomId);
+      const groups = await Promise.all(agreements.map(async (agreement) => ({
+        agreement,
+        settlements: await contractsApi.getSettlements(agreement.id).catch(() => []),
+      })));
 
-        const latestBySession: Record<number, SettlementDto> = {};
-        for (const group of groups) {
-          for (const settlement of group.settlements) {
-            const previous = latestBySession[settlement.sessionId];
-            const currentTime = new Date(settlement.updatedAt || settlement.createdAt).getTime();
-            const previousTime = previous
-              ? new Date(previous.updatedAt || previous.createdAt).getTime()
-              : Number.NEGATIVE_INFINITY;
-            if (!previous || currentTime >= previousTime) {
-              latestBySession[settlement.sessionId] = settlement;
-            }
+      const latestBySession: Record<number, SettlementDto> = {};
+      const agreementBySession: Record<number, string> = {};
+      for (const group of groups) {
+        for (const settlement of group.settlements) {
+          const previous = latestBySession[settlement.sessionId];
+          const currentTime = new Date(settlement.updatedAt || settlement.createdAt).getTime();
+          const previousTime = previous
+            ? new Date(previous.updatedAt || previous.createdAt).getTime()
+            : Number.NEGATIVE_INFINITY;
+          if (!previous || currentTime >= previousTime) {
+            latestBySession[settlement.sessionId] = settlement;
+            agreementBySession[settlement.sessionId] = group.agreement.id;
           }
         }
-        setMySettlementBySession(latestBySession);
-      })
-      .catch(() => {
-        if (!cancelled) setMySettlementBySession({});
-      });
-
-    return () => { cancelled = true; };
+      }
+      setMySettlementBySession(latestBySession);
+      setMyAgreementIdBySession(agreementBySession);
+    } catch {
+      setMySettlementBySession({});
+      setMyAgreementIdBySession({});
+    }
   }, [classRoomId, currentUserRole]);
+
+  useEffect(() => {
+    reloadSettlements();
+  }, [reloadSettlements]);
+
+  const handleOpenDisputeModal = (session: ClassSessionItem) => {
+    setDisputingSession(session);
+    setDisputeReason("");
+    setDisputeEvidenceFile(null);
+    setDisputeEvidenceUrl("");
+    setDisputeError("");
+    setShowDisputeModal(true);
+  };
+
+  const handleSubmitDispute = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!disputingSession) return;
+    if (!disputeReason.trim()) {
+      setDisputeError("Vui lòng nhập lý do khiếu nại cụ thể.");
+      return;
+    }
+    const resolvedAgreementId = myAgreementIdBySession[disputingSession.sequenceNumber];
+    if (!resolvedAgreementId) {
+      setDisputeError("Buổi học này chưa có đề xuất quyết toán còn hiệu lực để khiếu nại.");
+      return;
+    }
+
+    setDisputeSubmitting(true);
+    setDisputeError("");
+    try {
+      if (disputeEvidenceFile) {
+        await contractsApi.openDisputeWithFile(
+          resolvedAgreementId,
+          disputingSession.sequenceNumber,
+          disputeReason.trim(),
+          disputeEvidenceFile
+        );
+      } else {
+        await contractsApi.openDispute(
+          resolvedAgreementId,
+          disputingSession.sequenceNumber,
+          {
+            reason: disputeReason.trim(),
+            evidenceObjectKey: disputeEvidenceUrl.trim() || undefined,
+          }
+        );
+      }
+      showToast("Đã ghi nhận khiếu nại buổi học. Hệ thống sẽ giữ quy trình quyết toán và thông báo cho gia sư nộp minh chứng đối chất.", "success");
+      setShowDisputeModal(false);
+      setDisputingSession(null);
+      await reloadSettlements();
+      fetchSessions(true);
+    } catch (err: any) {
+      setDisputeError(err?.message || "Lỗi khi gửi khiếu nại buổi học.");
+    } finally {
+      setDisputeSubmitting(false);
+    }
+  };
 
   const showToast = (text: string, type: "success" | "error" = "success") => {
     setToastMessage({ text, type });
@@ -338,7 +432,20 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
     }
   };
 
-  useRealtimeRefresh(['TERMINATION_UPDATED', 'TERMINATION_COMPLETED', 'CLASS_MUTATED'], () => fetchSessions(true));
+  useRealtimeRefresh([
+    'TERMINATION_UPDATED',
+    'TERMINATION_COMPLETED',
+    'CLASS_MUTATED',
+    'SETTLEMENT_PROPOSED',
+    'SESSION_SETTLED',
+    'DISPUTE_MUTATED',
+    'DISPUTE_OPENED',
+    'DISPUTE_UPDATED',
+    'DISPUTE_RESOLVED'
+  ], () => {
+    fetchSessions(true);
+    reloadSettlements();
+  });
 
   const handleGenerateInitialSessions = async () => {
     setActionLoading(true);
@@ -784,7 +891,21 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
     [sessions]
   );
 
-  // 2 buổi trọng tâm mặc định: buổi gần nhất đã qua và buổi tiếp theo
+  // Buổi học có thể khiếu nại (dành riêng cho học viên khi buổi BOTH_PRESENT đang trong thời hạn 24 giờ)
+  const disputableSessions = useMemo(() => {
+    if (currentUserRole !== "STUDENT") return [];
+    return sessions.filter((s) => {
+      if (s.status !== "COMPLETED") return false;
+      const settlement = mySettlementBySession[s.sequenceNumber];
+      if (!settlement) return false;
+      return settlement.status === "PROPOSED"
+        && settlement.outcome === "BOTH_PRESENT"
+        && Boolean(settlement.disputeDeadline)
+        && new Date(settlement.disputeDeadline).getTime() > now.getTime();
+    });
+  }, [currentUserRole, sessions, mySettlementBySession, now]);
+
+  // 2 buổi trọng tâm: buổi gần nhất đã qua và buổi tiếp theo
   const focusedSessions = useMemo(() => {
     const lastCompleted = completedSessions.length > 0 ? completedSessions[completedSessions.length - 1] : null;
     const nextUpcoming = upcomingSessions.length > 0 ? upcomingSessions[0] : null;
@@ -805,8 +926,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
     if (activeTab === "FOCUSED") return focusedSessions;
     if (activeTab === "UPCOMING") return upcomingSessions;
     if (activeTab === "COMPLETED") return completedSessions;
+    if (activeTab === "DISPUTABLE") return disputableSessions;
     return sessions;
-  }, [sessions, activeTab, focusedSessions, upcomingSessions, completedSessions]);
+  }, [sessions, activeTab, focusedSessions, upcomingSessions, completedSessions, disputableSessions]);
 
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
@@ -1063,7 +1185,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                     {spotlight.topic || `Buổi học #${spotlight.sequenceNumber}`}
                   </h3>
 
-                  {spotlight.assignmentTitle && (
+                  {spotlight.assignmentTitle && (currentUserRole !== 'STUDENT' || isCheckedIn) && (
                     <p className="text-xs text-slate-600 mt-1 flex items-center gap-1.5">
                       <FileText className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                       <span>Bài tập về nhà: <strong className="text-slate-900">{spotlight.assignmentTitle}</strong></span>
@@ -1341,73 +1463,106 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
         );
       })()}
 
-      {/* 3. Tab Filter Bar (Mặc định hiển thị 2 buổi: gần nhất đã qua & buổi tiếp theo) */}
+      {/* 3. Tab Filter Bar */}
       {sessions.length > 0 && (
-        <div className="border-b border-slate-200 bg-slate-50/80 p-3.5 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="border-b border-slate-200 bg-slate-50/80 p-3 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="text-xs font-black text-slate-500 uppercase tracking-wider">Danh Sách Buổi Học</span>
-            {activeTab === "FOCUSED" && (
-              <span className="text-[11px] text-slate-500 font-medium hidden md:inline">
-                (Đang hiển thị 2 buổi: gần nhất đã qua & tiếp theo)
-              </span>
-            )}
+            <span className="text-[11px] text-slate-400 font-medium">({filteredSessions.length}/{sessions.length} buổi)</span>
           </div>
 
           <div className="flex items-center gap-1.5 bg-slate-200/70 p-1 rounded-xl flex-wrap">
             <button
               type="button"
-              onClick={() => setActiveTab("FOCUSED")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                activeTab === "FOCUSED"
+              onClick={() => setActiveTab("ALL")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === "ALL"
                   ? "bg-white text-indigo-700 shadow-xs font-black"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Gần nhất & Tiếp theo ({focusedSessions.length})</span>
+              <span>Tất cả ({sessions.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab("UPCOMING")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === "UPCOMING"
                   ? "bg-white text-indigo-700 shadow-xs font-black"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
-              Sắp tới ({upcomingSessions.length})
+              <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Sắp tới ({upcomingSessions.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab("COMPLETED")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                 activeTab === "COMPLETED"
                   ? "bg-white text-indigo-700 shadow-xs font-black"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
               <History className="w-3.5 h-3.5" />
-              <span>Lịch sử buổi đã học ({completedSessions.length})</span>
+              <span>Đã diễn ra ({completedSessions.length})</span>
             </button>
+            {currentUserRole === "STUDENT" && (
+              <button
+                type="button"
+                onClick={() => setActiveTab("DISPUTABLE")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  activeTab === "DISPUTABLE"
+                    ? "bg-rose-600 text-white shadow-xs font-black"
+                    : disputableSessions.length > 0
+                    ? "bg-rose-50 text-rose-700 border border-rose-200 font-extrabold hover:bg-rose-100"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <ShieldAlert className="w-3.5 h-3.5" />
+                <span>Trong hạn khiếu nại ({disputableSessions.length})</span>
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setActiveTab("ALL")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                activeTab === "ALL"
+              onClick={() => setActiveTab("FOCUSED")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeTab === "FOCUSED"
                   ? "bg-white text-indigo-700 shadow-xs font-black"
                   : "text-slate-600 hover:text-slate-900"
               }`}
+              title="Chỉ hiển thị 2 buổi trọng tâm (buổi gần nhất vừa qua và buổi kế tiếp)"
             >
-              Tất cả ({sessions.length})
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Gần đây & Kế tiếp ({focusedSessions.length})</span>
             </button>
           </div>
         </div>
       )}
 
+      {/* Disputable Notice Banner */}
+      {currentUserRole === "STUDENT" && disputableSessions.length > 0 && activeTab !== "DISPUTABLE" && (
+        <div className="mx-4 sm:mx-6 mt-4 p-3.5 bg-gradient-to-r from-amber-50 to-rose-50 border border-amber-200 rounded-xl flex items-center justify-between text-xs text-amber-950 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>
+              Bạn có <strong>{disputableSessions.length} buổi học</strong> đã hoàn thành đang trong thời hạn 24 giờ có thể gửi khiếu nại bảo vệ học phí.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab("DISPUTABLE")}
+            className="font-black text-rose-700 hover:text-rose-900 underline ml-2 shrink-0 cursor-pointer"
+          >
+            Lọc các buổi này ngay →
+          </button>
+        </div>
+      )}
+
       {/* Focus Mode Notice when only 2 sessions are shown */}
       {activeTab === "FOCUSED" && sessions.length > focusedSessions.length && (
-        <div className="mx-6 mt-4 p-3 bg-indigo-50/80 border border-indigo-200/80 rounded-xl flex items-center justify-between text-xs text-indigo-950 shadow-2xs">
-          <span>💡 Mặc định hiển thị 2 buổi trọng tâm (buổi gần nhất đã qua và buổi tiếp theo).</span>
+        <div className="mx-4 sm:mx-6 mt-4 p-3 bg-indigo-50/80 border border-indigo-200/80 rounded-xl flex items-center justify-between text-xs text-indigo-950 shadow-2xs">
+          <span>💡 Đang hiển thị 2 buổi trọng tâm (buổi gần nhất đã qua và buổi tiếp theo).</span>
           <button
             type="button"
             onClick={() => setActiveTab("ALL")}
@@ -1428,7 +1583,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
         ) : loadError ? (
           <div role="alert" className="p-6 text-red-700">
             <p>{loadError}</p>
-            <button type="button" onClick={fetchSessions} className="mt-2 underline font-bold">Thử lại</button>
+            <button type="button" onClick={() => fetchSessions(false)} className="mt-2 underline font-bold">Thử lại</button>
           </div>
         ) : sessions.length === 0 ? (
           <div className="text-center py-12 bg-slate-50 rounded-2xl border border-dashed border-slate-300 p-6">
@@ -1452,9 +1607,13 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
             )}
           </div>
         ) : filteredSessions.length === 0 ? (
-          <div className="text-center py-10 bg-slate-50 rounded-xl text-slate-400 text-xs">
-            {activeTab === "COMPLETED"
-              ? "Chưa có buổi học nào hoàn thành trong lịch sử."
+          <div className="text-center py-10 bg-slate-50 rounded-2xl border border-slate-200 text-slate-500 text-xs p-6">
+            {activeTab === "DISPUTABLE"
+              ? "Hiện tại không có buổi học nào đang trong thời hạn 24 giờ khiếu nại."
+              : activeTab === "COMPLETED"
+              ? "Chưa có buổi học nào hoàn thành trong lịch sử khóa học."
+              : activeTab === "UPCOMING"
+              ? "Không có buổi học nào sắp tới. Tất cả buổi học đã hoàn thành."
               : "Không có buổi học nào trong danh mục này."}
           </div>
         ) : (
@@ -1584,83 +1743,164 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                         </div>
 
                         {/* Completed Session Detailed Summary */}
-                        {isCompleted && (
-                          <div className="mt-2.5 p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-100 flex flex-wrap items-center justify-between gap-2 text-xs">
-                            <div className="flex items-center gap-3 flex-wrap">
-                              <span className="font-semibold text-slate-700 flex items-center gap-1">
-                                {session.tutorCheckedIn === true
-                                  ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                  : <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
-                                Gia sư:{" "}
-                                <strong className={`font-bold ${session.tutorCheckedIn === true ? "text-emerald-700" : "text-rose-700"}`}>
-                                  {session.tutorCheckedIn === true ? "Đã vào dạy" : session.tutorCheckedIn === false ? "Vắng" : "Chưa có dữ liệu"}
-                                </strong>
-                              </span>
-                              <span className="text-slate-300">•</span>
-                              <span className="font-semibold text-slate-700 flex items-center gap-1">
-                                {(session.presentCount || 0) > 0
-                                  ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                  : <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
-                                Học viên:{" "}
-                                <strong className={`font-bold ${(session.presentCount || 0) > 0 ? "text-emerald-700" : "text-rose-700"}`}>
-                                  {session.presentCount || 0}/{session.totalAttendees || 0} có mặt
-                                </strong>
-                              </span>
-                              <span className="text-slate-300">•</span>
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                tutorWasPresent && finalizedOutcomeCount > 0 && (session.studentAbsentCount || 0) === 0
-                                  ? "bg-blue-100 text-blue-800"
-                                  : "bg-rose-100 text-rose-800"
-                              }`}>
-                                Kết quả: {completedOutcomeLabel}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {mySettlement ? (
-                                <div className={`text-[11px] font-bold flex items-center gap-1 px-2 py-0.5 rounded-md border ${
-                                  mySettlement.status === "REFUNDED"
-                                    ? "text-emerald-800 bg-emerald-50 border-emerald-200"
-                                    : mySettlement.status === "SETTLED"
-                                      ? "text-blue-800 bg-blue-50 border-blue-200"
-                                      : mySettlement.status === "DISPUTED" || mySettlement.status === "DISPUTE_OPENING"
-                                        ? "text-rose-800 bg-rose-50 border-rose-200"
-                                        : "text-indigo-700 bg-white/80 border-indigo-200"
-                                }`}>
-                                  {mySettlement.status === "REFUNDED" || mySettlement.status === "SETTLED"
-                                    ? <CheckCircle2 className="w-3 h-3" />
-                                    : <Clock className="w-3 h-3" />}
-                                  <span>
-                                    {mySettlement.status === "REFUNDED"
-                                      ? `Đã hoàn ${mySettlement.studentRefundUsdc.toLocaleString("vi-VN")} USDC về ví học viên`
-                                      : mySettlement.status === "SETTLED" && mySettlement.studentRefundUsdc > 0
-                                        ? `Đã quyết toán và hoàn ${mySettlement.studentRefundUsdc.toLocaleString("vi-VN")} USDC`
-                                        : mySettlement.status === "SETTLED"
-                                          ? "Đã quyết toán on-chain"
-                                          : mySettlement.status === "DISPUTED" || mySettlement.status === "DISPUTE_OPENING"
-                                            ? "Đang giữ tiền chờ xử lý khiếu nại"
-                                            : mySettlement.status === "FINALIZE_PENDING" || mySettlement.status === "FAILED_RETRYABLE"
-                                              ? "Đang chuyển tiền on-chain"
-                                              : `Đề xuất quyết toán · chờ đến ${mySettlement.disputeDeadline ? new Date(mySettlement.disputeDeadline).toLocaleString("vi-VN") : "hết 24 giờ"}`}
+                        {isCompleted && (() => {
+                          const isDisputable = currentUserRole === "STUDENT"
+                            && mySettlement?.status === "PROPOSED"
+                            && mySettlement?.outcome === "BOTH_PRESENT"
+                            && Boolean(mySettlement?.disputeDeadline)
+                            && new Date(mySettlement.disputeDeadline).getTime() > now.getTime();
+                          const isDisputed = currentUserRole === "STUDENT"
+                            && (mySettlement?.status === "DISPUTED" || mySettlement?.status === "DISPUTE_OPENING");
+                          const isDisputeExpired = currentUserRole === "STUDENT"
+                            && mySettlement?.status === "PROPOSED"
+                            && Boolean(mySettlement?.disputeDeadline)
+                            && new Date(mySettlement.disputeDeadline).getTime() <= now.getTime();
+                          const isSettled = mySettlement?.status === "SETTLED";
+                          const isRefunded = mySettlement?.status === "REFUNDED";
+
+                          return (
+                            <div className={`mt-3 p-3.5 rounded-2xl border transition-all ${
+                              isDisputable
+                                ? "bg-amber-50/70 border-amber-300 ring-2 ring-amber-400/20"
+                                : isDisputed
+                                ? "bg-rose-50/60 border-rose-200"
+                                : "bg-indigo-50/50 border-indigo-100"
+                            }`}>
+                              <div className="flex flex-wrap items-center justify-between gap-2.5 text-xs">
+                                <div className="flex items-center gap-3 flex-wrap">
+                                  <span className="font-semibold text-slate-700 flex items-center gap-1">
+                                    {session.tutorCheckedIn === true
+                                      ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                      : <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
+                                    Gia sư:{" "}
+                                    <strong className={`font-bold ${session.tutorCheckedIn === true ? "text-emerald-700" : "text-rose-700"}`}>
+                                      {session.tutorCheckedIn === true ? "Đã vào dạy" : session.tutorCheckedIn === false ? "Vắng" : "Chưa có dữ liệu"}
+                                    </strong>
+                                  </span>
+                                  <span className="text-slate-300">•</span>
+                                  <span className="font-semibold text-slate-700 flex items-center gap-1">
+                                    {(session.presentCount || 0) > 0
+                                      ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                      : <AlertCircle className="w-3.5 h-3.5 text-rose-600" />}
+                                    Học viên:{" "}
+                                    <strong className={`font-bold ${(session.presentCount || 0) > 0 ? "text-emerald-700" : "text-rose-700"}`}>
+                                      {session.presentCount || 0}/{session.totalAttendees || 0} có mặt
+                                    </strong>
+                                  </span>
+                                  <span className="text-slate-300">•</span>
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    tutorWasPresent && finalizedOutcomeCount > 0 && (session.studentAbsentCount || 0) === 0
+                                      ? "bg-blue-100 text-blue-800"
+                                      : "bg-rose-100 text-rose-800"
+                                  }`}>
+                                    Kết quả: {completedOutcomeLabel}
                                   </span>
                                 </div>
-                              ) : session.settlementDispatched && (
-                                <div className="text-[11px] font-bold text-indigo-700 flex items-center gap-1 bg-white/80 px-2 py-0.5 rounded-md border border-indigo-200">
-                                  <Clock className="w-3 h-3 text-indigo-500" />
-                                  <span>Đã gửi quyết toán</span>
+
+                                {/* Status Badge */}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {mySettlement ? (
+                                    <div className={`text-[11px] font-bold flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${
+                                      isRefunded
+                                        ? "text-emerald-800 bg-emerald-50 border-emerald-200"
+                                        : isSettled
+                                        ? "text-blue-800 bg-blue-50 border-blue-200"
+                                        : isDisputed
+                                        ? "text-rose-800 bg-rose-50 border-rose-200 font-black animate-pulse"
+                                        : isDisputable
+                                        ? "text-amber-900 bg-amber-100/90 border-amber-300 font-black"
+                                        : "text-indigo-700 bg-white border-indigo-200"
+                                    }`}>
+                                      {isRefunded || isSettled ? (
+                                        <CheckCircle2 className="w-3.5 h-3.5" />
+                                      ) : isDisputed ? (
+                                        <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                                      ) : (
+                                        <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                      )}
+                                      <span>
+                                        {isRefunded
+                                          ? `Đã hoàn ${mySettlement.studentRefundUsdc.toLocaleString("vi-VN")} USDC về ví học viên`
+                                          : isSettled && mySettlement.studentRefundUsdc > 0
+                                          ? `Đã quyết toán và hoàn ${mySettlement.studentRefundUsdc.toLocaleString("vi-VN")} USDC`
+                                          : isSettled
+                                          ? "Đã quyết toán on-chain"
+                                          : isDisputed
+                                          ? "Đang giữ tiền on-chain chờ phân xử khiếu nại"
+                                          : isDisputable
+                                          ? `Còn hạn khiếu nại (còn ${formatRemainingTime(mySettlement.disputeDeadline!, now.getTime())})`
+                                          : isDisputeExpired
+                                          ? "Đã hết hạn khiếu nại 24h · Chờ giải ngân on-chain"
+                                          : `Đề xuất quyết toán · Chờ đến ${mySettlement.disputeDeadline ? formatExactTime(mySettlement.disputeDeadline) : "hết 24 giờ"}`}
+                                      </span>
+                                    </div>
+                                  ) : session.settlementDispatched ? (
+                                    <div className="text-[11px] font-bold text-indigo-700 flex items-center gap-1 bg-white px-2.5 py-1 rounded-lg border border-indigo-200">
+                                      <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                                      <span>Đã gửi quyết toán</span>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+
+                              {/* Action Bar for Completed Session: Complaint / Settlement Actions */}
+                              {currentUserRole === "STUDENT" && (
+                                <div className="mt-2.5 pt-2.5 border-t border-slate-200/80 flex items-center justify-between gap-3 flex-wrap">
+                                  {isDisputable ? (
+                                    <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenDisputeModal(session)}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-xs transition-colors cursor-pointer active:scale-95"
+                                      >
+                                        <ShieldAlert className="w-3.5 h-3.5" />
+                                        <span>Gửi khiếu nại buổi này (Còn {formatRemainingTime(mySettlement.disputeDeadline!, now.getTime())})</span>
+                                      </button>
+                                      <a
+                                        href={`/student/complaints?classroomId=${session.classRoomId}&sessionId=${session.sequenceNumber}`}
+                                        className="text-[11px] font-bold text-rose-700 hover:underline inline-flex items-center gap-1"
+                                      >
+                                        <span>Xem trang khiếu nại & đối chất</span>
+                                        <ChevronRight className="w-3 h-3" />
+                                      </a>
+                                    </div>
+                                  ) : isDisputed ? (
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-[11px] font-bold text-rose-700 flex items-center gap-1">
+                                        <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                                        Buổi học đang trong quy trình phân xử
+                                      </span>
+                                      <a
+                                        href={`/student/complaints?classroomId=${session.classRoomId}&sessionId=${session.sequenceNumber}`}
+                                        className="inline-flex items-center gap-1 px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded-lg text-xs font-bold transition-colors"
+                                      >
+                                        <span>Xem tiến độ khiếu nại</span>
+                                        <ChevronRight className="w-3 h-3" />
+                                      </a>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center justify-between w-full text-[11px] text-slate-500 font-medium">
+                                      <span>
+                                        {isSettled
+                                          ? "Buổi học đã hoàn tất quyết toán hợp đồng on-chain."
+                                          : isDisputeExpired
+                                          ? "Đã hết thời hạn 24 giờ để gửi khiếu nại cho buổi học này."
+                                          : "Thông tin quyết toán buổi học"}
+                                      </span>
+                                      <a
+                                        href={`/student/complaints?classroomId=${session.classRoomId}`}
+                                        className="text-slate-600 hover:text-slate-900 font-bold hover:underline inline-flex items-center gap-1"
+                                      >
+                                        <span>Lịch sử khiếu nại</span>
+                                        <ChevronRight className="w-3 h-3" />
+                                      </a>
+                                    </div>
+                                  )}
                                 </div>
                               )}
-                              <a
-                                href={currentUserRole === "STUDENT"
-                                  ? `/student/complaints?classroomId=${session.classRoomId}&sessionId=${session.sequenceNumber}`
-                                  : "/dashboard?tab=complaints"}
-                                className="text-[11px] font-bold text-rose-700 hover:text-rose-900 flex items-center gap-1 bg-rose-50 hover:bg-rose-100 px-2.5 py-0.5 rounded-md border border-rose-200 transition-colors"
-                              >
-                                <ShieldAlert className="w-3 h-3 text-rose-600" />
-                                <span>Khiếu nại / Lịch sử phản ánh</span>
-                              </a>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
 
                         {/* Assignment & Lecture Materials Section */}
                         {Boolean(hasAssignmentContent || hasMaterialContent) ? (
@@ -1960,7 +2200,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                               <div className="text-xs flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-bold text-slate-800 text-sm">
-                                    Bài tập & Tài liệu Buổi #{session.sequenceNumber}: {session.assignmentTitle || "Bài tập về nhà"}
+                                    Bài tập & Tài liệu Buổi #{session.sequenceNumber}
                                   </span>
                                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 flex items-center gap-1 border border-amber-200">
                                     <Lock className="w-3 h-3 text-amber-700" />
@@ -2120,16 +2360,54 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                             </>
                           )}
 
-                          {isCompleted && onDisputeClick && (
-                            <button
-                              onClick={() => onDisputeClick(session)}
-                              className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all"
-                              title="Khiếu nại nếu gia sư không dạy thật trong buổi này"
-                            >
-                              <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
-                              <span>Khiếu Nại (24h)</span>
-                            </button>
-                          )}
+                          {isCompleted && (() => {
+                            const isDisputable = mySettlement?.status === "PROPOSED"
+                              && mySettlement?.outcome === "BOTH_PRESENT"
+                              && Boolean(mySettlement?.disputeDeadline)
+                              && new Date(mySettlement.disputeDeadline).getTime() > now.getTime();
+                            const isDisputed = mySettlement?.status === "DISPUTED" || mySettlement?.status === "DISPUTE_OPENING";
+
+                            if (isDisputable) {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => onDisputeClick ? onDisputeClick(session) : handleOpenDisputeModal(session)}
+                                  className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-black flex items-center gap-1.5 transition-all shadow-xs active:scale-95 cursor-pointer"
+                                  title="Gửi khiếu nại buổi học này trong thời hạn 24 giờ"
+                                >
+                                  <ShieldAlert className="w-3.5 h-3.5" />
+                                  <span>Gửi Khiếu Nại (24h)</span>
+                                </button>
+                              );
+                            }
+
+                            if (isDisputed) {
+                              return (
+                                <a
+                                  href={`/student/complaints?classroomId=${session.classRoomId}&sessionId=${session.sequenceNumber}`}
+                                  className="px-3 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all"
+                                >
+                                  <ShieldAlert className="w-3.5 h-3.5 text-purple-600" />
+                                  <span>Đang Khiếu Nại</span>
+                                </a>
+                              );
+                            }
+
+                            if (onDisputeClick) {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => onDisputeClick(session)}
+                                  className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all"
+                                >
+                                  <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                                  <span>Khiếu Nại</span>
+                                </button>
+                              );
+                            }
+
+                            return null;
+                          })()}
                         </>
                       )}
 
@@ -2905,6 +3183,113 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
           </div>
         );
       })()}
+
+      {/* Student In-Place Dispute Modal */}
+      {showDisputeModal && disputingSession && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 my-8">
+            <div className="bg-gradient-to-r from-rose-600 to-red-700 px-6 py-5 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-white/10 flex items-center justify-center backdrop-blur-md">
+                  <ShieldAlert className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-display font-black text-lg text-white">Gửi Khiếu Nại Buổi Học #{disputingSession.sequenceNumber}</h3>
+                  <p className="text-xs text-rose-100 font-semibold">{classRoomName || `Lớp học #${classRoomId}`}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDisputeModal(false)}
+                className="text-white/80 hover:text-white p-1 rounded-xl bg-white/10 hover:bg-white/20 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitDispute} className="p-6 space-y-4">
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900">
+                <div className="font-bold flex items-center gap-1.5 mb-1">
+                  <Clock className="w-4 h-4 text-amber-700" />
+                  <span>
+                    Thời hạn khiếu nại còn lại: {mySettlementBySession[disputingSession.sequenceNumber]?.disputeDeadline ? formatRemainingTime(mySettlementBySession[disputingSession.sequenceNumber].disputeDeadline!, now.getTime()) : 'Trong vòng 24 giờ'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Khi gửi khiếu nại, hệ thống sẽ giữ quy trình quyết toán của buổi học và thông báo cho gia sư nộp minh chứng đối chất trong 24 giờ. Staff/Admin xử lý theo minh chứng hiện có sau khi gia sư phản hồi hoặc hết hạn.
+                </p>
+              </div>
+
+              {disputeError && (
+                <div className="p-3 bg-rose-50 rounded-xl border border-rose-200 text-xs text-rose-800 font-bold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{disputeError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs font-black uppercase tracking-wider text-slate-700 block mb-1">
+                  Lý do khiếu nại chi tiết <span className="text-rose-600">*</span>
+                </label>
+                <textarea
+                  rows={3}
+                  value={disputeReason}
+                  onChange={(e) => setDisputeReason(e.target.value)}
+                  placeholder="Mô tả cụ thể sự việc (ví dụ: gia sư không vào dạy, điểm danh không chính xác, thời lượng dạy không đúng...)"
+                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:border-rose-500 bg-slate-50 focus:bg-white transition-colors"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-black uppercase tracking-wider text-slate-700 block mb-1">
+                  Tải file minh chứng (ảnh, video, audio, tài liệu)
+                </label>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,audio/*,application/pdf,text/plain,.doc,.docx,.xls,.xlsx"
+                  onChange={(e) => setDisputeEvidenceFile(e.target.files?.[0] || null)}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-rose-50 file:px-3 file:py-1.5 file:font-bold file:text-rose-700 file:cursor-pointer"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">Hỗ trợ tối đa 50 MB. Mã băm SHA-256 sẽ được bảo chứng an toàn trên blockchain.</p>
+              </div>
+
+              <div>
+                <label className="text-xs font-black uppercase tracking-wider text-slate-700 block mb-1">
+                  Hoặc đường dẫn bằng chứng
+                </label>
+                <input
+                  type="text"
+                  value={disputeEvidenceUrl}
+                  onChange={(e) => setDisputeEvidenceUrl(e.target.value)}
+                  disabled={!!disputeEvidenceFile}
+                  placeholder="Link Google Drive, video quay lại buổi học..."
+                  className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-rose-500 disabled:bg-slate-100 bg-slate-50 focus:bg-white"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowDisputeModal(false)}
+                  disabled={disputeSubmitting}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={disputeSubmitting || !disputeReason.trim()}
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 shadow-md disabled:opacity-50 transition-all cursor-pointer"
+                >
+                  {disputeSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{disputeSubmitting ? "Đang gửi khiếu nại..." : "Xác nhận gửi khiếu nại"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

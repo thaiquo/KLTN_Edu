@@ -54,9 +54,12 @@ export function ContractAuditTimeline({
   const [actionBusy, setActionBusy] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
-  const loadAuditData = async () => {
+  const loadAuditData = async (opts?: boolean | unknown) => {
+    const isSilent = opts === true;
     if (!agreementId) return;
-    setLoading(true);
+    if (!isSilent) {
+      setLoading(true);
+    }
     try {
       const [agr, acc, setl, txs] = await Promise.all([
         contractsApi.getAgreement(agreementId).catch(() => null),
@@ -72,13 +75,15 @@ export function ContractAuditTimeline({
     } catch (err) {
       console.error("Failed to load audit data:", err);
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadAuditData();
-    const timer = window.setInterval(loadAuditData, 15000);
+    loadAuditData(false);
+    const timer = window.setInterval(() => loadAuditData(true), 30000);
     return () => window.clearInterval(timer);
   }, [agreementId]);
 

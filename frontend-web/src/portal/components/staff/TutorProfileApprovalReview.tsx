@@ -63,8 +63,11 @@ export function TutorProfileApprovalReview({
   // Document preview state
   const [previewDoc, setPreviewDoc] = useState<{ url: string; title: string; contentType: string } | null>(null);
 
-  const loadPending = async () => {
-    setLoading(true);
+  const loadPending = async (opts?: boolean | unknown) => {
+    const isSilent = opts === true;
+    if (!isSilent) {
+      setLoading(true);
+    }
     try {
       const data = await staffTutorApi.pending();
       const list = Array.isArray(data) ? data : [];
@@ -73,30 +76,37 @@ export function TutorProfileApprovalReview({
     } catch (err: any) {
       onError(err?.message || "Không thể tải danh sách hồ sơ gia sư chờ duyệt.");
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   };
 
-  const loadHistory = async () => {
-    setHistoryLoading(true);
+  const loadHistory = async (opts?: boolean | unknown) => {
+    const isSilent = opts === true;
+    if (!isSilent) {
+      setHistoryLoading(true);
+    }
     try {
       const data = await staffTutorApi.history();
       setHistoryItems(Array.isArray(data) ? data : []);
     } catch (err: any) {
       console.error("Failed to load tutor application review history:", err);
     } finally {
-      setHistoryLoading(false);
+      if (!isSilent) {
+        setHistoryLoading(false);
+      }
     }
   };
 
   useRealtimeRefresh(
     ["TUTOR_APPLICATION_SUBMITTED", "TUTOR_APPLICATION_REVIEWED"],
-    () => { loadPending(); loadHistory(); }
+    () => { loadPending(true); loadHistory(true); }
   );
 
   useEffect(() => {
-    loadPending();
-    loadHistory();
+    loadPending(false);
+    loadHistory(false);
     fetchUserDirectory().then((list) => setUsers(Array.isArray(list) ? list : []));
   }, []);
 

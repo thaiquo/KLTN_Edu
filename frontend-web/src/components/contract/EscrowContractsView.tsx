@@ -155,8 +155,9 @@ export function EscrowContractsView({
   const [error, setError] = useState('');
   const [totalElements, setTotalElements] = useState(0);
 
-  const fetchAgreements = useCallback(async () => {
-    setLoading(true);
+  const fetchAgreements = useCallback(async (opts?: boolean | unknown) => {
+    const isSilent = opts === true;
+    if (!isSilent) setLoading(true);
     setError('');
     try {
       const isTutor = activeRole === 'tutor';
@@ -249,7 +250,7 @@ export function EscrowContractsView({
     } catch (err: any) {
       setError(err?.message || 'Không thể tải danh sách hợp đồng.');
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, [activeRole]);
 
@@ -258,29 +259,32 @@ export function EscrowContractsView({
     'AGREEMENT_ACTIVATED',
     'AGREEMENT_REGISTERED',
     'AGREEMENT_FUNDED',
+    'SETTLEMENT_PROPOSED',
     'SESSION_SETTLED',
     'DISPUTE_OPENED',
+    'DISPUTE_UPDATED',
     'DISPUTE_RESOLVED',
+    'DISPUTE_MUTATED',
     'TERMINATION_UPDATED',
     'TERMINATION_COMPLETED',
     'TERMINATION_EVIDENCE_SUBMITTED',
     'TERMINATION_REQUESTED',
     'TERMINATION_APPROVED',
     'TERMINATION_REJECTED'
-  ], fetchAgreements);
+  ], () => fetchAgreements(true));
 
   useEffect(() => {
     fetchAgreements();
   }, [fetchAgreements]);
 
   useEffect(() => {
-    const timer = window.setInterval(fetchAgreements, 30000);
+    const timer = window.setInterval(() => fetchAgreements(true), 30000);
     return () => window.clearInterval(timer);
   }, [fetchAgreements]);
 
   useEffect(() => {
     const handleContractUpdate = () => {
-      fetchAgreements();
+      fetchAgreements(true);
     };
     window.addEventListener('contract-state-updated', handleContractUpdate);
     return () => window.removeEventListener('contract-state-updated', handleContractUpdate);

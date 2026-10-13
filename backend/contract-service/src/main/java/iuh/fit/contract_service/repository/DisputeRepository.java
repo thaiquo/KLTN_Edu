@@ -32,4 +32,10 @@ public interface DisputeRepository extends JpaRepository<Dispute, UUID> {
     Optional<Dispute> findByOnchainIdentifiers(
             @Param("onchainAgreementId") String onchainAgreementId,
             @Param("onchainSessionId") String onchainSessionId);
+
+    List<Dispute> findBySettlement_Agreement_ClassroomIdAndSettlement_SessionIdAndTutorResponseIsNotNullOrderByTutorRespondedAtDesc(
+            Long classroomId, Long sessionId);
+
+    List<Dispute> findBySettlement_Agreement_ClassroomIdAndSettlement_SessionIdAndStatus(
+            Long classroomId, Long sessionId, DisputeStatus status);
 }

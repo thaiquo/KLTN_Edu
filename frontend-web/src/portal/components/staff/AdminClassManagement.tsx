@@ -97,8 +97,11 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
     }
   }, [searchParams]);
 
-  async function load() {
-    setLoading(true);
+  async function load(opts?: boolean | unknown) {
+    const isSilent = opts === true;
+    if (!isSilent) {
+      setLoading(true);
+    }
     try {
       const [data, termData, userRows] = await Promise.all([
         classApi.adminGetAllClasses({ reviewedByMe: !isAdmin }),
@@ -109,7 +112,9 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
       setTerminationCases(Array.isArray(termData) ? termData : []);
       setUsers(Array.isArray(userRows) ? userRows : []);
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   }
 
@@ -124,11 +129,11 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
       "TERMINATION_REQUESTED",
       "TERMINATION_APPROVED"
     ],
-    load
+    () => load(true)
   );
 
   useEffect(() => {
-    load();
+    load(false);
   }, [isAdmin]);
 
   const filtered = useMemo(() => {

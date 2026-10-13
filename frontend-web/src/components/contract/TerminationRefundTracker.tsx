@@ -34,7 +34,7 @@ export function TerminationRefundTracker({ viewerRole = 'student' }: { viewerRol
       }
     };
     void load();
-    const timer = window.setInterval(load, 15000);
+    const timer = window.setInterval(load, 30000);
     return () => { active = false; window.clearInterval(timer); };
   }, [revision]);
 

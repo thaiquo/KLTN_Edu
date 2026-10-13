@@ -178,13 +178,13 @@ export function ClassMarketplacePage() {
     }
   }, [filters.levelIds, levelOptions]);
 
-  const loadClasses = useCallback(async () => {
+  const loadClasses = useCallback(async (isSilent = false) => {
     if (activeMode === 'AI' && aiClassResult) {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
       setError('');
       return;
     }
-    setLoading(true);
+    if (!isSilent) setLoading(true);
     setError('');
     try {
       const data = await classApi.getPublicClasses({
@@ -209,7 +209,7 @@ export function ClassMarketplacePage() {
       setError(err?.message || 'Không thể tải danh sách lớp học.');
       setResult((prev) => ({ ...prev, content: [], totalElements: 0, totalPages: 0 }));
     } finally {
-      setLoading(false);
+      if (!isSilent) setLoading(false);
     }
   }, [activeMode, aiClassResult, filters, page, sort]);
 
@@ -243,7 +243,7 @@ export function ClassMarketplacePage() {
     return () => window.clearTimeout(timer);
   }, [authLoading, loadClasses, sessionRestored]);
 
-  useRealtimeRefresh(['CLASS_REVIEWED', 'CLASS_MUTATED'], loadClasses);
+  useRealtimeRefresh(['CLASS_REVIEWED', 'CLASS_MUTATED'], () => loadClasses(true));
 
   useEffect(() => {
     if (!sessionRestored) return;

@@ -16,6 +16,7 @@ import { teachingRegistrationApi } from "../../api/teachingRegistrations";
 import { classApi } from "../../api/classes";
 import { contractsApi } from "../../api/contractsApi";
 import { terminationsApi, TerminationView } from "../../api/terminationsApi";
+import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
 
 type AuditItem = {
   id: string;
@@ -68,8 +69,11 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedAudit, setSelectedAudit] = useState<AuditItem | null>(null);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (opts?: boolean | unknown) => {
+    const isSilent = opts === true;
+    if (!isSilent) {
+      setLoading(true);
+    }
     setError("");
     try {
       const [userRows, financialOverview, txPage, settlementPage, disputePage, terminationRows, tutorRows, teachingRows, classRows] = await Promise.all([
@@ -99,13 +103,33 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
     } catch (err: any) {
       setError(err?.message || "Không thể tải bảng điều hành Admin.");
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    load();
+    load(false);
   }, []);
+
+  useRealtimeRefresh(
+    [
+      "DISPUTE_OPENED",
+      "DISPUTE_UPDATED",
+      "DISPUTE_RESOLVED",
+      "DISPUTE_MUTATED",
+      "SESSION_SETTLED",
+      "TERMINATION_REQUESTED",
+      "TERMINATION_RECOMMENDED",
+      "TERMINATION_APPROVED",
+      "CLASS_MUTATED",
+      "CLASS_REVIEWED",
+      "TUTOR_APPLICATION_SUBMITTED",
+      "TUTOR_APPLICATION_REVIEWED",
+    ],
+    () => load(true)
+  );
 
   const userNameByEmail = useMemo(() => {
     return new Map(

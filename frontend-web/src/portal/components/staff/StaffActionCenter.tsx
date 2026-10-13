@@ -67,8 +67,11 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
   const [tutorHistory, setTutorHistory] = useState<any[]>([]);
   const [teachingHistory, setTeachingHistory] = useState<any[]>([]);
 
-  const loadAll = async () => {
-    setLoading(true);
+  const loadAll = async (opts?: boolean | unknown) => {
+    const isSilent = opts === true;
+    if (!isSilent) {
+      setLoading(true);
+    }
     setError("");
     try {
       const [
@@ -102,7 +105,9 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
     } catch (err: any) {
       setError(err?.message || "Không thể tải dữ liệu Trung tâm tác nghiệp.");
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -114,16 +119,19 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
       "CLASS_REVIEWED",
       "CLASS_MUTATED",
       "DISPUTE_OPENED",
+      "DISPUTE_UPDATED",
       "DISPUTE_RESOLVED",
+      "DISPUTE_MUTATED",
+      "SESSION_SETTLED",
       "TERMINATION_REQUESTED",
       "TERMINATION_RECOMMENDED",
       "TERMINATION_APPROVED"
     ],
-    loadAll
+    () => loadAll(true)
   );
 
   useEffect(() => {
-    loadAll();
+    loadAll(false);
   }, []);
 
   // Filter pending classes

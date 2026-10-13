@@ -77,8 +77,11 @@ export function ClassApprovalReview() {
   const [selectedSubject, setSelectedSubject] = useState<string>("ALL");
   const [searchKeyword, setSearchKeyword] = useState("");
 
-  const loadClasses = async () => {
-    setLoading(true);
+  const loadClasses = async (opts?: boolean | unknown) => {
+    const isSilent = opts === true;
+    if (!isSilent) {
+      setLoading(true);
+    }
     try {
       const [data, userRows] = await Promise.all([
         classApi.adminGetAllClasses(),
@@ -89,14 +92,16 @@ export function ClassApprovalReview() {
     } catch (err: any) {
       console.error("Failed to load classes for admin", err);
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   };
 
-  useRealtimeRefresh(["CLASS_SUBMITTED", "CLASS_REVIEWED", "CLASS_MUTATED"], loadClasses);
+  useRealtimeRefresh(["CLASS_SUBMITTED", "CLASS_REVIEWED", "CLASS_MUTATED"], () => loadClasses(true));
 
   useEffect(() => {
-    loadClasses();
+    loadClasses(false);
   }, []);
 
   // Distinct lists for filters

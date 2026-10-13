@@ -1252,7 +1252,7 @@ public class ContractManagementController {
                             agreement.getStudentEmail(),
                             agreement.getStudentId(),
                             "Quyết toán Buổi #" + sessionId,
-                            "Buổi học #" + sessionId + " đã hoàn thành (" + outcome.name() + "). Thời hạn khiếu nại 24h đã được kích hoạt.",
+                            "Buổi học #" + sessionId + " đã hoàn thành (" + outcome.name() + "). Đề xuất quyết toán đang chờ xác nhận on-chain; thời hạn khiếu nại 24h chỉ bắt đầu sau khi giao dịch được xác nhận.",
                             "SETTLEMENT_PROPOSED",
                             "CONTRACT_AGREEMENT",
                             agreement.getId().toString()

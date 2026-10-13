@@ -292,7 +292,7 @@ export function TerminationPanel({
     const timer = window.setInterval(() => {
       void load();
       refreshRelated();
-    }, 15000);
+    }, 30000);
     return () => {
       active = false;
       window.clearInterval(timer);

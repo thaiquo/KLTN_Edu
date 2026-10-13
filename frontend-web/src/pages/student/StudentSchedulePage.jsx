@@ -74,8 +74,10 @@ export function StudentSchedulePage() {
   // Quick Detail Modal State
   const [detailModal, setDetailModal] = useState(null); // { type: 'SESSION' | 'RECURRING', data: any }
 
-  const loadSchedule = async () => {
-    setLoading(true);
+  const loadSchedule = async (isSilent = false) => {
+    if (!isSilent) {
+      setLoading(true);
+    }
     setError('');
     try {
       const res = await classApi.getStudentSchedule();
@@ -88,15 +90,17 @@ export function StudentSchedulePage() {
     } catch (err) {
       setError(err?.message || 'Không thể tải lịch học của bạn.');
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadSchedule();
+    loadSchedule(false);
   }, []);
 
-  useRealtimeRefresh(['TERMINATION_UPDATED', 'TERMINATION_COMPLETED', 'ENROLLMENT_ACCEPTED', 'CLASS_MUTATED', 'ATTENDANCE_MARKED'], loadSchedule);
+  useRealtimeRefresh(['TERMINATION_UPDATED', 'TERMINATION_COMPLETED', 'ENROLLMENT_ACCEPTED', 'CLASS_MUTATED', 'ATTENDANCE_MARKED'], () => loadSchedule(true));
 
   const currentWeekStart = useMemo(() => {
     const today = new Date();

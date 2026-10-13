@@ -101,11 +101,9 @@ public class ContractAccessControl {
     public void requireCanOpenDispute(ContractAgreement agreement, ContractUserPrincipal user) {
         boolean ownStudentAgreement = user.hasActiveAuthority("STUDENT")
                 && (user.matchesUserId(agreement.getStudentId()) || user.matchesEmail(agreement.getStudentEmail()));
-        boolean ownTutorAgreement = user.hasActiveAuthority("TUTOR")
-                && (user.matchesUserId(agreement.getTutorId()) || user.matchesEmail(agreement.getTutorEmail()));
-        if (!ownStudentAgreement && !ownTutorAgreement) {
+        if (!ownStudentAgreement) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Only the Student or Tutor belonging to this agreement can open a dispute.");
+                    "Only the Student belonging to this agreement can open a dispute. Tutor must respond with evidence after a Student complaint is opened.");
         }
     }
 

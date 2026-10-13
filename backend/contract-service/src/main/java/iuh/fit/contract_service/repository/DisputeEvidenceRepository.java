@@ -11,5 +11,7 @@ import java.util.UUID;
 public interface DisputeEvidenceRepository extends JpaRepository<DisputeEvidence, UUID> {
     List<DisputeEvidence> findByDisputeId(UUID disputeId);
 
+    List<DisputeEvidence> findByDisputeIdOrderByCreatedAtAsc(UUID disputeId);
+
     boolean existsByDisputeIdAndObjectKey(UUID disputeId, String objectKey);
 }

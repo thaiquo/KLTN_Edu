@@ -240,8 +240,10 @@ export function TutorClassManagement() {
 
   const { data: tutorApp } = useTutorApplication();
 
-  const loadClasses = async () => {
-    setLoading(true);
+  const loadClasses = async (isSilent = false) => {
+    if (!isSilent) {
+      setLoading(true);
+    }
     try {
       const [data] = await Promise.all([
         classApi.getMyClasses(),
@@ -260,19 +262,21 @@ export function TutorClassManagement() {
         console.error("Failed to load classes", err);
       }
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   };
 
   useRealtimeRefresh(
     ["CLASS_REVIEWED", "CLASS_MUTATED", "CLASS_STATUS_CHANGED", "CLASSROOM_STATUS_CHANGED"],
-    loadClasses
+    () => loadClasses(true)
   );
 
   useRealtimeRefresh(
     ["ENROLLMENT_REQUESTED", "ENROLLMENT_CANCELLED"],
     () => {
-      loadClasses();
+      loadClasses(true);
 
       if (detailModalClass) {
         loadRequestsForClass(detailModalClass.id);
@@ -291,7 +295,7 @@ export function TutorClassManagement() {
       "TERMINATION_PROCESSED"
     ],
     () => {
-      loadClasses();
+      loadClasses(true);
       loadTerminations();
       if (detailModalClass) {
         loadRequestsForClass(detailModalClass.id);
@@ -300,7 +304,7 @@ export function TutorClassManagement() {
   );
 
   useEffect(() => {
-    loadClasses();
+    loadClasses(false);
     loadTerminations();
   }, []);
 

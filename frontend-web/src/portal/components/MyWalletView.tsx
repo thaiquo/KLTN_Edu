@@ -98,10 +98,12 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
 
   // Fetch Escrow Contracts & Detailed Transactions for User
   useEffect(() => {
-    async function fetchUserAgreementsAndTxs() {
+    async function fetchUserAgreementsAndTxs(isSilent = false) {
       const email = userEmail || user?.email;
       if (!email && !user?.id) return;
-      setLoadingAgreements(true);
+      if (!isSilent) {
+        setLoadingAgreements(true);
+      }
       try {
         const [data, terminationCases] = await Promise.all([
           contractsApi.listAgreements({
@@ -286,11 +288,13 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
       } catch (err) {
         console.warn("Could not load agreements for wallet overview:", err);
       } finally {
-        setLoadingAgreements(false);
+        if (!isSilent) {
+          setLoadingAgreements(false);
+        }
       }
     }
-    fetchUserAgreementsAndTxs();
-    const refreshTimer = window.setInterval(fetchUserAgreementsAndTxs, 15000);
+    fetchUserAgreementsAndTxs(false);
+    const refreshTimer = window.setInterval(() => fetchUserAgreementsAndTxs(true), 30000);
     return () => window.clearInterval(refreshTimer);
   }, [userEmail, isTutor, user?.id, user?.email]);
 

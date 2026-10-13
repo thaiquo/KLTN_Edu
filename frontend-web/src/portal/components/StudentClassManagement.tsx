@@ -123,9 +123,12 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadMyClasses = useCallback(async () => {
+  const loadMyClasses = useCallback(async (opts?: boolean | unknown) => {
+    const isSilent = opts === true;
     if (!user) return;
-    setLoading(true);
+    if (!isSilent) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const studentEmail = (user.email || "").trim().toLowerCase();
@@ -290,7 +293,9 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
       console.error("Failed to load student classes:", err);
       setError("Không thể tải danh sách lớp học của bạn.");
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   }, [user]);
 
@@ -309,12 +314,12 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
       'TERMINATION_REQUESTED',
       'TERMINATION_APPROVED'
     ],
-    loadMyClasses
+    () => loadMyClasses(true)
   );
 
   useEffect(() => {
     if (user?.email) {
-      loadMyClasses();
+      loadMyClasses(false);
     }
   }, [user?.email, loadMyClasses]);
 

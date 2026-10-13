@@ -119,8 +119,10 @@ export function StudentMyClassesPage() {
     return () => clearInterval(timer);
   }, []);
 
-  async function loadRequests() {
-    setLoading(true);
+  async function loadRequests(isSilent = false) {
+    if (!isSilent) {
+      setLoading(true);
+    }
     setError('');
     try {
       const [data, agreementsData, sched, refundsData] = await Promise.all([
@@ -143,7 +145,9 @@ export function StudentMyClassesPage() {
     } catch (err) {
       setError(err?.message || 'Không thể tải yêu cầu học của bạn.');
     } finally {
-      setLoading(false);
+      if (!isSilent) {
+        setLoading(false);
+      }
     }
   }
 
@@ -162,14 +166,14 @@ export function StudentMyClassesPage() {
       'TERMINATION_REQUESTED',
       'TERMINATION_APPROVED'
     ],
-    loadRequests
+    () => loadRequests(true)
   );
 
   useEffect(() => {
-    loadRequests();
+    loadRequests(false);
   }, []);
 
-  useRealtimeRefresh(['TERMINATION_UPDATED', 'TERMINATION_COMPLETED', 'ENROLLMENT_ACCEPTED', 'ENROLLMENT_REJECTED', 'ENROLLMENT_CANCELLED', 'AGREEMENT_FUNDED', 'AGREEMENT_EXPIRED'], loadRequests);
+  useRealtimeRefresh(['TERMINATION_UPDATED', 'TERMINATION_COMPLETED', 'ENROLLMENT_ACCEPTED', 'ENROLLMENT_REJECTED', 'ENROLLMENT_CANCELLED', 'AGREEMENT_FUNDED', 'AGREEMENT_EXPIRED'], () => loadRequests(true));
 
   // Calculate counts
   const enrolledClasses = useMemo(() => {
@@ -338,7 +342,7 @@ export function StudentMyClassesPage() {
           {selectedClass ? (
             <>
               <Link
-                to="/student/complaints"
+                to={`/student/complaints?classroomId=${selectedClass.classRoomId}`}
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50/70 px-4 text-xs font-extrabold text-rose-700 transition-colors hover:bg-rose-100 shadow-xs"
               >
                 <ShieldAlert size={16} />
