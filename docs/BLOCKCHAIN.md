@@ -187,11 +187,20 @@ Yêu cầu runtime: `BLOCKCHAIN_ENABLED=true`, `BLOCKCHAIN_OPERATOR_ENABLED=true
 - Learning quét session quá giờ khi application ready và mỗi 60 giây.
 - Learning gửi lại completed session chưa acknowledged sau initial 5 giây và mỗi 30 giây.
 - Contract quét `PROPOSED` quá deadline sau initial 30 giây và mỗi 60 giây.
-- Dispatcher/receipt watcher chạy mỗi 5 giây.
-- Event poller đọc log theo `BLOCKCHAIN_EVENT_BLOCK_BATCH_SIZE`; cấu hình local
-  chuẩn là `10` block/lần quét để tránh nghẽn/throttle RPC Sepolia. Nếu copy env
-  sang `frontend-web/.env`, giá trị này vẫn chỉ phục vụ cấu hình dùng chung; mã
-  trình duyệt chỉ đọc các biến `VITE_*`.
+- Cấu hình local tiết kiệm RPC nhưng vẫn giữ phản hồi gần realtime: event poll mỗi
+  15 giây, dispatcher mỗi 10 giây, receipt watcher mỗi 15 giây (tối đa 10
+  transaction/vòng), và receipt-event reconciliation dự phòng mỗi 90 giây (tối
+  đa 10 transaction/vòng).
+- Event poller catch-up tối đa `50` block logic/lần quét theo
+  `BLOCKCHAIN_EVENT_BLOCK_BATCH_SIZE`, nhưng client luôn chia thành các request
+  `eth_getLogs` tối đa `10` block theo `BLOCKCHAIN_EVENT_LOG_REQUEST_BLOCK_RANGE`
+  để phù hợp Alchemy Free. Khi gần chain head, mỗi vòng thường chỉ cần một request.
+  Frontend cũng đọc `.env` gốc, nhưng mã trình duyệt chỉ nhận các biến `VITE_*`.
+- Reconciliation chỉ chọn transaction `CONFIRMED` chưa có dấu mốc
+  `event_reconciled_at`. Dấu mốc chỉ được ghi sau khi toàn bộ receipt đã được đọc,
+  đối chiếu transaction/block hash và xử lý thành công; không suy luận receipt đã
+  hoàn tất chỉ vì đã tồn tại một `processed_event`. Receipt rỗng được đưa xuống
+  cuối hàng chờ để không chặn các transaction khác.
 
 Nếu tất cả service tắt, không có giao dịch được gửi trong thời gian tắt. Sau restart worker đọc state bền vững và catch up. Dispute đang mở không bao giờ bị auto-finalize.
 
@@ -214,7 +223,15 @@ V1 không có rescue/sweep cho excess raw-transfer balance; tài liệu không �
 ## 14. Giới hạn vận hành
 
 - Một operator instance, chưa có distributed nonce/signer coordination.
-- Một primary RPC, chưa có multi-provider failover.
+- Contract Service dùng RPC theo thứ tự ưu tiên: `BLOCKCHAIN_RPC_URL_ALCHEMY`, rồi
+  `BLOCKCHAIN_RPC_URL_PUBLICNODE`/`BLOCKCHAIN_RPC_URL`. Lỗi transport, HTTP hoặc
+  provider throttle (`429`, `-32005`) kích hoạt failover; sau cooldown
+  `BLOCKCHAIN_RPC_PRIMARY_RETRY_DELAY_MS` (mặc định 60 giây), service tự thử lại
+  primary. Mỗi endpoint phải trả đúng `BLOCKCHAIN_CHAIN_ID` trước khi được dùng;
+  lỗi nghiệp vụ JSON-RPC/revert không kích hoạt failover.
+- Frontend đọc `VITE_SEPOLIA_RPC_URL` từ `.env` gốc và mặc định dùng PublicNode;
+  URL/key Alchemy của backend không được đặt trong biến `VITE_*` vì các biến này
+  được đóng vào JavaScript gửi xuống trình duyệt.
 - Sepolia/test USDC là môi trường thử nghiệm, không phải production mainnet accounting.
 - Phải giám sát ETH gas, RPC, event cursor, failed intent, overdue proposal và S3.
 - Không dùng `docker compose down -v` nếu muốn giữ PostgreSQL volume.

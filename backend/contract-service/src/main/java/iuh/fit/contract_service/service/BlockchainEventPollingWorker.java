@@ -18,7 +18,7 @@ public class BlockchainEventPollingWorker {
 
     @Scheduled(
             initialDelayString = "${blockchain.event-poll-initial-delay-ms:5000}",
-            fixedDelayString = "${blockchain.event-poll-interval-ms:5000}")
+            fixedDelayString = "${blockchain.event-poll-interval-ms:15000}")
     public void pollConfirmedEvents() {
         if (!running.compareAndSet(false, true)) {
             return;
@@ -35,8 +35,8 @@ public class BlockchainEventPollingWorker {
     }
 
     @Scheduled(
-            initialDelayString = "${blockchain.event-reconcile-initial-delay-ms:15000}",
-            fixedDelayString = "${blockchain.event-reconcile-interval-ms:30000}")
+            initialDelayString = "${blockchain.event-reconcile-initial-delay-ms:30000}",
+            fixedDelayString = "${blockchain.event-reconcile-interval-ms:90000}")
     public void reconcileConfirmedTransactionEvents() {
         if (!running.compareAndSet(false, true)) {
             return;

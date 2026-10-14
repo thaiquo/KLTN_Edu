@@ -9,6 +9,7 @@ import iuh.fit.contract_service.config.BlockchainProperties;
 import iuh.fit.contract_service.enums.ContractAgreementStatus;
 import iuh.fit.contract_service.repository.ContractAgreementRepository;
 import iuh.fit.contract_service.repository.BlockchainEventCursorRepository;
+import iuh.fit.contract_service.repository.BlockchainTransactionRepository;
 import iuh.fit.contract_service.repository.EscrowPaymentRepository;
 import iuh.fit.contract_service.repository.ProcessedEventRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.web3j.abi.EventEncoder;
 import org.web3j.abi.FunctionEncoder;
@@ -55,6 +57,9 @@ class BlockchainEventIngestionServiceIntegrationTest {
 
     @Autowired
     private ProcessedEventRepository eventRepository;
+
+    @Autowired
+    private BlockchainTransactionRepository transactionRepository;
 
     @Autowired
     private ContractAgreementRepository agreementRepository;
@@ -252,6 +257,58 @@ class BlockchainEventIngestionServiceIntegrationTest {
         assertEquals(ContractAgreementStatus.ACTIVE, agreement.getStatus());
         assertEquals(1, eventRepository.count());
         assertEquals(0, cursorRepository.count());
+    }
+
+    @Test
+    void confirmedTransactionStopsBeingCandidateOnlyAfterFullReceiptReconciliation() {
+        String txHash = "0x" + "88".repeat(32);
+        jdbcTemplate.update("""
+                INSERT INTO blockchain_transaction (
+                    id, idempotency_key, action, chain_id, from_address, to_address,
+                    calldata_hash, transaction_hash, receipt_status, block_number, block_hash,
+                    status, attempt_count, version, created_at, updated_at
+                ) VALUES (?, ?, 'REGISTER', ?, ?, ?, ?, ?, 1, 10, ?,
+                    'CONFIRMED', 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """,
+                UUID.randomUUID(), "REGISTER:test:" + UUID.randomUUID(), properties.getChainId(),
+                STUDENT, ESCROW, "0x" + "99".repeat(32), txHash, "0x" + "aa".repeat(32));
+
+        assertEquals(1, transactionRepository.findConfirmedPendingEventReconciliation(
+                PageRequest.of(0, 10)).size());
+
+        BlockchainLog processedLog = fundedLog(10, "0x" + "aa".repeat(32), 0, "88");
+        eventRepository.saveAndFlush(iuh.fit.contract_service.entity.ProcessedEvent.blockchainLog(
+                properties.getChainId(), ESCROW, processedLog, "AgreementFunded", "{}",
+                java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC)));
+
+        // A legacy/partial event row must not hide the rest of the transaction receipt.
+        assertEquals(1, transactionRepository.findConfirmedPendingEventReconciliation(
+                PageRequest.of(0, 10)).size());
+
+        rpc.blocks.put(10L, block(10, "aa"));
+        rpc.transactionLogs.put(txHash, List.of(
+                registeredLog(10, rpc.blocks.get(10L).hash(), 1, "88", 1_780_000_000L)));
+        service = new BlockchainEventIngestionService(
+                properties,
+                rpc,
+                new EduConnectEscrowEventDecoder(),
+                cursorRepository,
+                eventRepository,
+                transactionRepository,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                objectMapper,
+                transactionManager);
+
+        assertEquals(1, service.reconcileConfirmedTransactionEvents());
+        assertEquals(2, eventRepository.count());
+        assertTrue(transactionRepository.findConfirmedPendingEventReconciliation(
+                PageRequest.of(0, 10)).isEmpty());
+        assertTrue(transactionRepository.findAll().getFirst().getEventReconciledAt() != null);
     }
 
     private static BlockchainLog fundedLog(long block, String blockHash, long logIndex, String txByte) {

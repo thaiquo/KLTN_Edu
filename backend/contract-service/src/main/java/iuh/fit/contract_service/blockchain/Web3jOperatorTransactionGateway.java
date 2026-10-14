@@ -16,6 +16,7 @@ import org.web3j.utils.Numeric;
 
 import java.io.IOException;
 import java.math.BigInteger;
+import java.util.Locale;
 import java.util.Optional;
 
 public class Web3jOperatorTransactionGateway implements OperatorTransactionGateway {
@@ -85,6 +86,9 @@ public class Web3jOperatorTransactionGateway implements OperatorTransactionGatew
     public String broadcast(PreparedOperatorTransaction transaction) {
         try {
             EthSendTransaction response = web3j.ethSendRawTransaction(transaction.signedRawTransaction()).send();
+            if (response.hasError() && isAlreadyKnown(response.getError().getMessage())) {
+                return transaction.transactionHash();
+            }
             requireNoError(response.hasError(), response.getError() == null
                     ? null : response.getError().getMessage(), "eth_sendRawTransaction");
             return response.getTransactionHash();
@@ -128,5 +132,13 @@ public class Web3jOperatorTransactionGateway implements OperatorTransactionGatew
         if (hasError) {
             throw new OperatorTransactionException(method + " failed: " + message);
         }
+    }
+
+    private static boolean isAlreadyKnown(String message) {
+        if (message == null) {
+            return false;
+        }
+        String normalized = message.toLowerCase(Locale.ROOT);
+        return normalized.contains("already known") || normalized.contains("already imported");
     }
 }

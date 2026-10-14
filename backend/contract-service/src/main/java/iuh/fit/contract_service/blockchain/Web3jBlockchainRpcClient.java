@@ -21,9 +21,18 @@ import java.util.List;
 
 public class Web3jBlockchainRpcClient implements BlockchainRpcClient, BlockchainEventRpcClient {
     private final Web3j web3j;
+    private final int maxLogRequestBlockRange;
 
     public Web3jBlockchainRpcClient(Web3j web3j) {
+        this(web3j, 10);
+    }
+
+    public Web3jBlockchainRpcClient(Web3j web3j, int maxLogRequestBlockRange) {
+        if (maxLogRequestBlockRange < 1 || maxLogRequestBlockRange > 10) {
+            throw new IllegalArgumentException("Log request block range must be between 1 and 10");
+        }
         this.web3j = web3j;
+        this.maxLogRequestBlockRange = maxLogRequestBlockRange;
     }
 
     @Override
@@ -102,10 +111,9 @@ public class Web3jBlockchainRpcClient implements BlockchainRpcClient, Blockchain
 
     @Override
     public List<BlockchainLog> getLogs(long fromBlock, long toBlock, String contractAddress) {
-        long maxChunkSize = 10L;
         List<BlockchainLog> allLogs = new java.util.ArrayList<>();
-        for (long chunkFrom = fromBlock; chunkFrom <= toBlock; chunkFrom += maxChunkSize) {
-            long chunkTo = Math.min(toBlock, chunkFrom + maxChunkSize - 1);
+        for (long chunkFrom = fromBlock; chunkFrom <= toBlock; chunkFrom += maxLogRequestBlockRange) {
+            long chunkTo = Math.min(toBlock, chunkFrom + maxLogRequestBlockRange - 1L);
             EthFilter filter = new EthFilter(
                     DefaultBlockParameter.valueOf(BigInteger.valueOf(chunkFrom)),
                     DefaultBlockParameter.valueOf(BigInteger.valueOf(chunkTo)),

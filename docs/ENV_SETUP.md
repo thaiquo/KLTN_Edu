@@ -46,18 +46,15 @@ Stopping application processes does not delete database state. Learning and
 Contract catch up durable overdue work on the next start. Avoid
 `docker compose down -v` unless deleting PostgreSQL/RabbitMQ volumes is intended.
 
-The root `.env` and `frontend-web/.env` are intentionally kept compatible so a
-developer can use one master local env file in both locations:
+Vite is configured with the repository root as its `envDir`, so the frontend and
+all backend startup scripts use the same root `.env`. Do not create or distribute
+a second `frontend-web/.env`; legacy copies in that location are ignored. Vite
+only exposes variables prefixed with `VITE_` to browser code. Keep secrets out of
+`VITE_*` and restart Vite after changing the root environment.
 
-```powershell
-Copy-Item .\.env .\frontend-web\.env
-```
-
-Vite only exposes variables prefixed with `VITE_` to browser code; backend-only
-keys in `frontend-web/.env` are ignored by Vite runtime. Keep secrets out of
-`VITE_*`. Restart Vite after changing environment.
-
-For Sepolia RPC stability, keep `BLOCKCHAIN_EVENT_BLOCK_BATCH_SIZE=10` unless a
-higher-throughput private RPC plan is confirmed. Larger ranges such as 500 can
-cause public/free RPC providers to throttle log scans and delay settlement or
-refund catch-up.
+For Sepolia RPC stability, use `BLOCKCHAIN_EVENT_BLOCK_BATCH_SIZE=50` as the
+logical cursor batch and keep `BLOCKCHAIN_EVENT_LOG_REQUEST_BLOCK_RANGE=10`.
+The client splits each logical batch into at most five sequential `eth_getLogs`
+requests, each within Alchemy Free's 10-block limit. Near the chain head the
+logical range naturally shrinks, so ordinary polling normally uses one request.
+Do not raise the per-request range above 10 while using the Free tier.
