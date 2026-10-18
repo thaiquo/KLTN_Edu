@@ -3,6 +3,7 @@ package iuh.fit.learning_service.entity;
 import iuh.fit.learning_service.enums.LearningMode;
 import iuh.fit.learning_service.enums.PostStatus;
 import iuh.fit.learning_service.enums.PostType;
+import iuh.fit.learning_service.enums.CommunityModerationStatus;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -68,6 +69,25 @@ public class CommunityPost {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private PostStatus status = PostStatus.OPEN;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "moderation_status", nullable = false, length = 20)
+    private CommunityModerationStatus moderationStatus = CommunityModerationStatus.NOT_CHECKED;
+
+    @Column(name = "content_revision", nullable = false)
+    private Long contentRevision = 1L;
+
+    @Column(name = "moderation_categories", columnDefinition = "TEXT")
+    private String moderationCategories;
+
+    @Column(name = "moderation_reason", length = 500)
+    private String moderationReason;
+
+    @Column(name = "moderation_prompt_version", length = 100)
+    private String moderationPromptVersion;
+
+    @Column(name = "moderated_at")
+    private LocalDateTime moderatedAt;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "linked_class_id")

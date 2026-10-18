@@ -26,7 +26,6 @@ import {
   UploadCloud,
   FileCheck,
   Eye,
-  MessageSquare,
   History,
   Sparkles,
   BarChart3,
@@ -39,6 +38,8 @@ import {
 import { apiRequest } from "../../api/client";
 import { classApi } from "../../api/classes";
 import { contractsApi, type SettlementDto } from "../../api/contractsApi";
+import { learningCopilotApi } from "../../api/learningCopilot";
+import { SessionNoteCard } from "./SessionNoteCard";
 
 export interface SessionFileItem {
   id: number;
@@ -118,6 +119,28 @@ export interface AttendanceRecord {
   submissionFileSize?: number;
 }
 
+interface LessonDraftResponse {
+  draftId: string;
+  promptVersion: string;
+  generatedAt: string;
+  lessonPlan?: {
+    title?: string;
+    objectives?: string[];
+    outline?: Array<{ title?: string; durationMinutes?: number; description?: string }>;
+    warmup?: string;
+    practiceActivities?: string[];
+    keyPoints?: string[];
+    homeworkSuggestion?: string;
+    nextSessionSuggestion?: string;
+  };
+  sourceSummary?: {
+    subject?: string;
+    level?: string;
+    durationMinutes?: number;
+  };
+  warnings?: string[];
+}
+
 interface Props {
   classRoomId: number;
   classRoomName?: string;
@@ -159,6 +182,8 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 }) => {
   const [sessions, setSessions] = useState<ClassSessionItem[]>([]);
   const [unlockedMeetingLink, setUnlockedMeetingLink] = useState<string>('');
+  const [studentMeetingLinkState, setStudentMeetingLinkState] = useState<"IDLE" | "LOADING" | "READY" | "MISSING" | "ERROR">("IDLE");
+  const [checkedInSessionIds, setCheckedInSessionIds] = useState<Set<number>>(() => new Set());
   const [currentMeetingLink, setCurrentMeetingLink] = useState(configuredMeetingLink || '');
   const [classDetail, setClassDetail] = useState<{
     learningMode?: string;
@@ -222,6 +247,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   const [assignmentDueAt, setAssignmentDueAt] = useState<string>("");
   const [assignmentMaterialUrl, setAssignmentMaterialUrl] = useState<string>("");
   const [assignmentMaterialDesc, setAssignmentMaterialDesc] = useState<string>("");
+  const [lessonDraft, setLessonDraft] = useState<LessonDraftResponse | null>(null);
+  const [lessonDraftLoading, setLessonDraftLoading] = useState<boolean>(false);
+  const [lessonDraftError, setLessonDraftError] = useState<string>("");
 
   // Quick grading state in attendance roster
   const [gradingScoreMap, setGradingScoreMap] = useState<Record<number, string>>({});
@@ -487,31 +515,43 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
     return currentMinutes >= startMinutes && currentMinutes < endMinutes;
   };
 
+  const isStudentCheckedInForSession = useCallback((session?: ClassSessionItem | null): boolean => {
+    return Boolean(session?.myCheckedIn || (session?.id && checkedInSessionIds.has(session.id)));
+  }, [checkedInSessionIds]);
+
   useEffect(() => {
-    if (currentUserRole !== 'STUDENT' || isOffline) return;
-    const checkedSession = sessions.find((session) => session.myCheckedIn && isStrictSessionActive(session));
+    if (currentUserRole !== 'STUDENT' || isOffline) {
+      setStudentMeetingLinkState('IDLE');
+      return;
+    }
+    const checkedSession = sessions.find((session) => isStudentCheckedInForSession(session) && isStrictSessionActive(session));
     if (!checkedSession) {
       setUnlockedMeetingLink('');
+      setStudentMeetingLinkState('IDLE');
       return;
     }
     let cancelled = false;
+    setStudentMeetingLinkState('LOADING');
     apiRequest(`/api/learning/sessions/${checkedSession.id}/student-meeting-link`)
       .then((result) => {
         if (!cancelled && result?.meetingLink) {
           setUnlockedMeetingLink(result.meetingLink);
-        } else if (!cancelled && baseClassMeetingLink) {
-          setUnlockedMeetingLink(baseClassMeetingLink);
+          setStudentMeetingLinkState('READY');
+        } else if (!cancelled) {
+          setUnlockedMeetingLink('');
+          setStudentMeetingLinkState('MISSING');
         }
       })
       .catch(() => {
-        if (!cancelled && baseClassMeetingLink) {
-          setUnlockedMeetingLink(baseClassMeetingLink);
+        if (!cancelled) {
+          setUnlockedMeetingLink('');
+          setStudentMeetingLinkState('ERROR');
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [currentUserRole, isOffline, sessions, now, baseClassMeetingLink]);
+  }, [currentUserRole, isOffline, sessions, now, isStudentCheckedInForSession]);
 
   const handleStudentCheckin = async (sessionId: number) => {
     setActionLoading(true);
@@ -519,21 +559,31 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       await apiRequest(`/api/learning/sessions/${sessionId}/student-checkin`, {
         method: "POST"
       });
+      setCheckedInSessionIds((prev) => {
+        const next = new Set(prev);
+        next.add(sessionId);
+        return next;
+      });
+      setSessions((prev) => prev.map((session) => (
+        session.id === sessionId ? { ...session, myCheckedIn: true } : session
+      )));
+      setActiveSession((prev) => (prev && prev.id === sessionId ? { ...prev, myCheckedIn: true } : prev));
       if (!isOffline) {
+        setStudentMeetingLinkState('LOADING');
         try {
           const linkResult = await apiRequest(`/api/learning/sessions/${sessionId}/student-meeting-link`);
-          setUnlockedMeetingLink(linkResult?.meetingLink || baseClassMeetingLink);
+          setUnlockedMeetingLink(linkResult?.meetingLink || '');
+          setStudentMeetingLinkState(linkResult?.meetingLink ? 'READY' : 'MISSING');
           showToast("Điểm danh vào học thành công! Đã mở khóa link vào phòng học và bài tập.", "success");
         } catch {
-          if (baseClassMeetingLink) {
-            setUnlockedMeetingLink(baseClassMeetingLink);
-          }
-          showToast("Điểm danh vào học thành công! Đã mở khóa link vào phòng học.", "success");
+          setUnlockedMeetingLink('');
+          setStudentMeetingLinkState('ERROR');
+          showToast("Điểm danh vào học thành công! Chưa lấy được link phòng học, vui lòng thử tải lại danh sách buổi học.", "success");
         }
       } else {
         showToast("Điểm danh vào học thành công! Chúc bạn có buổi học hiệu quả.", "success");
       }
-      fetchSessions(true);
+      await fetchSessions(true);
     } catch (err: any) {
       showToast(err.message || "Không thể điểm danh ngoài khung giờ học!", "error");
     } finally {
@@ -665,6 +715,125 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       showToast(err.message || "Lỗi kết nối", "error");
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const formatLessonDraftForNotes = (draft: LessonDraftResponse | null) => {
+    const plan = draft?.lessonPlan;
+    if (!plan) return "";
+    const sections: string[] = [];
+    if (plan.objectives?.length) {
+      sections.push(`Mục tiêu:\n${plan.objectives.map((item) => `- ${item}`).join("\n")}`);
+    }
+    if (plan.warmup) {
+      sections.push(`Khởi động:\n${plan.warmup}`);
+    }
+    if (plan.outline?.length) {
+      sections.push(`Tiến trình:\n${plan.outline.map((item) => {
+        const duration = item.durationMinutes ? ` (${item.durationMinutes} phút)` : "";
+        return `- ${item.title || "Hoạt động"}${duration}: ${item.description || ""}`;
+      }).join("\n")}`);
+    }
+    if (plan.practiceActivities?.length) {
+      sections.push(`Hoạt động luyện tập:\n${plan.practiceActivities.map((item) => `- ${item}`).join("\n")}`);
+    }
+    if (plan.keyPoints?.length) {
+      sections.push(`Trọng tâm cần chốt:\n${plan.keyPoints.map((item) => `- ${item}`).join("\n")}`);
+    }
+    if (plan.homeworkSuggestion) {
+      sections.push(`Gợi ý bài tập tham khảo (chưa tự động giao):\n${plan.homeworkSuggestion}`);
+    }
+    if (plan.nextSessionSuggestion) {
+      sections.push(`Gợi ý buổi sau:\n${plan.nextSessionSuggestion}`);
+    }
+    return sections.join("\n\n");
+  };
+
+  const formatLessonDraftForSavedNotes = (draft: LessonDraftResponse | null) => {
+    const plan = draft?.lessonPlan;
+    if (!plan) return "";
+
+    const sections: string[] = [];
+    const usedItems = new Set<string>();
+    const normalizeItem = (item: string) => item.trim().replace(/\s+/g, " ").toLocaleLowerCase("vi-VN");
+    const toBullets = (value?: string, limit = 1) => {
+      const bullets: string[] = [];
+      for (const rawItem of (value || "").split(/\r?\n/)) {
+        if (bullets.length >= limit) break;
+        const item = rawItem.replace(/^[-•]\s*/, "").trim();
+        if (!item) continue;
+        const key = normalizeItem(item);
+        if (usedItems.has(key)) continue;
+        usedItems.add(key);
+        bullets.push(item);
+      }
+      return bullets;
+    };
+    const collectBullets = (values: Array<string | undefined>, limit: number) => {
+      const bullets: string[] = [];
+      for (const value of values) {
+        bullets.push(...toBullets(value, limit - bullets.length));
+        if (bullets.length >= limit) break;
+      }
+      return bullets;
+    };
+    const addSection = (heading: string, items: string[]) => {
+      if (items.length) sections.push(`${heading}:\n${items.map((item) => `- ${item}`).join("\n")}`);
+    };
+
+    addSection("Mục tiêu", collectBullets(plan.objectives || [], 3));
+    addSection("Khởi động", toBullets(plan.warmup, 2));
+    addSection("Tiến trình buổi học", collectBullets((plan.outline || []).map((item) => {
+      const duration = item.durationMinutes ? `: ${item.durationMinutes} phút` : "";
+      return `${item.title || "Hoạt động"}${duration}`;
+    }), 3));
+    addSection("Hoạt động luyện tập", collectBullets(plan.practiceActivities || [], 3));
+    addSection("Trọng tâm cần đạt", collectBullets(plan.keyPoints || [], 3));
+    addSection("Bài tập sau buổi học", toBullets(plan.homeworkSuggestion, 2));
+    addSection("Buổi học tiếp theo", toBullets(plan.nextSessionSuggestion, 2));
+
+    return sections.join("\n\n");
+  };
+
+  const handleGenerateLessonDraft = async () => {
+    if (!editingSession) return;
+    setLessonDraftLoading(true);
+    setLessonDraftError("");
+    setLessonDraft(null);
+    try {
+      const draft = await learningCopilotApi.generateLessonDraft({
+        classId: classRoomId,
+        sessionId: editingSession.id
+      });
+      setLessonDraft(draft as LessonDraftResponse);
+    } catch (err: any) {
+      setLessonDraftError(err?.message || "Không thể tạo giáo án AI lúc này.");
+    } finally {
+      setLessonDraftLoading(false);
+    }
+  };
+
+  const handleApplyLessonDraftToForm = () => {
+    const plan = lessonDraft?.lessonPlan;
+    if (!plan) return;
+    if (plan.title) {
+      setAssignmentTopic(plan.title);
+    }
+    const notes = formatLessonDraftForSavedNotes(lessonDraft);
+    if (notes) {
+      setAssignmentMaterialDesc(notes);
+    }
+    showToast("Đã chèn bản nháp AI vào form. Gia sư vẫn cần kiểm tra và bấm lưu.", "success");
+  };
+
+  const handleCopyLessonDraft = async () => {
+    const notes = formatLessonDraftForNotes(lessonDraft);
+    if (!notes) return;
+    try {
+      await navigator.clipboard.writeText(notes);
+      showToast("Đã sao chép giáo án AI.", "success");
+    } catch {
+      showToast("Trình duyệt không cho phép sao chép tự động.", "error");
     }
   };
 
@@ -961,9 +1130,16 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
           .filter((s) => isSessionAvailable(s) && s.sessionDate >= todayStr)
           .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate) || a.sequenceNumber - b.sequenceNumber)[0]
          ;
-        const isStudentCheckedInForCurrent = Boolean(activeSessionForStudent?.myCheckedIn);
+        const isStudentCheckedInForCurrent = isStudentCheckedInForSession(activeSessionForStudent);
         const isSessionActiveNow = Boolean(activeSessionForStudent);
-        const canAccessMeetingLink = !historyMode && Boolean(activeSessionForStudent) && (currentUserRole === 'TUTOR' || (currentUserRole === 'STUDENT' && isStudentCheckedInForCurrent));
+        const accessibleMeetingLink = currentUserRole === 'STUDENT' ? unlockedMeetingLink : meetingLink;
+        const canAccessMeetingLink = !historyMode && Boolean(activeSessionForStudent)
+          && (currentUserRole === 'TUTOR' || (currentUserRole === 'STUDENT' && isStudentCheckedInForCurrent));
+        const studentCheckedInNoLinkLabel = studentMeetingLinkState === 'LOADING'
+          ? 'Đang lấy link phòng học...'
+          : studentMeetingLinkState === 'ERROR'
+            ? 'Chưa lấy được link phòng học'
+            : 'Gia sư chưa cập nhật link phòng học';
 
         return (
           <div className="p-6 bg-gradient-to-r from-indigo-950 via-slate-900 to-blue-950 text-white flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -991,7 +1167,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                 </div>
               </div>
             ) : isOffline ? (
-              <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-xl border border-white/20">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-xl border border-white/20 max-w-full">
                 <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 bg-emerald-600 text-white shadow-xs">
                   <MapPin className="w-5 h-5" />
                 </div>
@@ -1003,7 +1179,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-xl border border-white/20">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-xl border border-white/20 max-w-full">
                 <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
                   !canAccessMeetingLink
                     ? "bg-amber-500/20 text-amber-300 border border-amber-400/30"
@@ -1011,9 +1187,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                 }`}>
                   {!canAccessMeetingLink ? <Lock className="w-5 h-5" /> : <Video className="w-5 h-5" />}
                 </div>
-                <div className="max-w-[230px]">
+                <div className="min-w-0 max-w-[280px]">
                   <div className="text-xs text-indigo-200 font-medium">Link Phòng Học Trực Tuyến</div>
-                  <div className="text-sm font-semibold truncate text-white">
+                  <div className="text-sm font-semibold text-white min-w-0">
                     {!canAccessMeetingLink ? (
                       <span className="text-amber-200 text-xs font-bold flex items-center gap-1">
                         {isSessionActiveNow ? (
@@ -1027,15 +1203,15 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                         )}
                       </span>
                     ) : (
-                      <span className="text-white text-xs font-semibold break-all">
-                        {meetingLink || (effectiveLearningMode === "ONLINE" ? `https://meet.google.com/edu-class-${classRoomId}` : "Chưa thiết lập")}
+                      <span className="text-white text-xs font-semibold break-all [overflow-wrap:anywhere]">
+                        {accessibleMeetingLink || (currentUserRole === 'TUTOR' && effectiveLearningMode === "ONLINE" ? `https://meet.google.com/edu-class-${classRoomId}` : studentCheckedInNoLinkLabel)}
                       </span>
                     )}
                   </div>
                 </div>
-                {canAccessMeetingLink && meetingLink && (
+                {canAccessMeetingLink && accessibleMeetingLink && (
                   <a
-                    href={meetingLink.startsWith("http") ? meetingLink : `https://${meetingLink}`}
+                    href={accessibleMeetingLink.startsWith("http") ? accessibleMeetingLink : `https://${accessibleMeetingLink}`}
                     target="_blank"
                     rel="noreferrer"
                     className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-md shrink-0"
@@ -1127,8 +1303,13 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
         const isToday = spotlight.sessionDate === todayStr;
         const isActiveNow = isStrictSessionActive(spotlight);
-        const isCheckedIn = spotlight.myCheckedIn === true;
+        const isCheckedIn = isStudentCheckedInForSession(spotlight);
         const dayName = getDayOfWeekName(spotlight.sessionDate);
+        const studentCheckedInNoLinkLabel = studentMeetingLinkState === 'LOADING'
+          ? 'Đang lấy link phòng học...'
+          : studentMeetingLinkState === 'ERROR'
+            ? 'Chưa lấy được link phòng học'
+            : 'Gia sư chưa cập nhật link phòng học';
 
         return (
           <div className={`p-5 sm:p-6 border-b transition-all ${
@@ -1203,9 +1384,9 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                         <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                         Đã Điểm Danh Có Mặt
                       </span>
-                      {!isOffline && meetingLink && isActiveNow && (
+                      {!isOffline && unlockedMeetingLink && isActiveNow && (
                         <a
-                          href={(meetingLink).startsWith("http") ? (meetingLink) : `https://${meetingLink}`}
+                          href={unlockedMeetingLink.startsWith("http") ? unlockedMeetingLink : `https://${unlockedMeetingLink}`}
                           target="_blank"
                           rel="noreferrer"
                           className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md active:scale-95 animate-pulse"
@@ -1214,6 +1395,12 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                           <span>Vào Phòng Học</span>
                           <ExternalLink className="w-3.5 h-3.5" />
                         </a>
+                      )}
+                      {!isOffline && !unlockedMeetingLink && isActiveNow && (
+                        <span className="px-3.5 py-2 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold flex items-center gap-1.5">
+                          <AlertCircle className="w-4 h-4 text-amber-600" />
+                          <span>{studentCheckedInNoLinkLabel}</span>
+                        </span>
                       )}
                     </div>
                   ) : isActiveNow ? (
@@ -1624,7 +1811,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               const isCompleted = session.status === "COMPLETED";
               const isPassedOrDone = isCompleted || isCancelled;
               const isTutorOrAdmin = currentUserRole === "TUTOR" || currentUserRole === "ADMIN" || currentUserRole === "STAFF";
-              const isStudentUnlocked = session.myCheckedIn === true;
+              const isStudentUnlocked = isStudentCheckedInForSession(session);
               const canAccessAssignment = isTutorOrAdmin || isStudentUnlocked;
               const hasSubmittedHomework = !!(session.mySubmissionText || session.mySubmissionFileUrl || session.mySubmissionFileName);
               const hasAssignmentContent = Boolean(
@@ -1728,7 +1915,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                               </span>
                             </div>
                           )}
-                          {currentUserRole === "STUDENT" && session.myCheckedIn && (
+                          {currentUserRole === "STUDENT" && isStudentUnlocked && (
                             <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3" />
                               Bạn đã điểm danh
@@ -1902,6 +2089,8 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                           );
                         })()}
 
+                        <SessionNoteCard note={session.materialDescription} className="mt-3.5" />
+
                         {/* Assignment & Lecture Materials Section */}
                         {Boolean(hasAssignmentContent || hasMaterialContent) ? (
                           canAccessAssignment ? (
@@ -2067,20 +2256,6 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                       </div>
                                     )}
 
-                                    {/* Ghi chú slide & dặn dò từ gia sư */}
-                                    {session.materialDescription && (
-                                      <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200 text-xs flex items-start gap-2">
-                                        <MessageSquare className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                                        <div>
-                                          <span className="font-black text-amber-900 block text-[11px] uppercase tracking-wider">
-                                            Ghi chú bài giảng từ gia sư:
-                                          </span>
-                                          <p className="text-amber-950 font-semibold mt-0.5 leading-relaxed italic">
-                                            "{session.materialDescription}"
-                                          </p>
-                                        </div>
-                                      </div>
-                                    )}
                                   </div>
                                 </div>
                               ) : null}
@@ -2241,6 +2416,8 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                 setAssignmentDueAt(session.assignmentDueAt ? session.assignmentDueAt.slice(0, 16) : "");
                                 setAssignmentMaterialUrl(session.materialUrl || "");
                                 setAssignmentMaterialDesc(session.materialDescription || "");
+                                setLessonDraft(null);
+                                setLessonDraftError("");
                                 setShowAssignmentModal(true);
                               }}
                               className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all"
@@ -2310,7 +2487,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                             </span>
                           ) : (
                             <>
-                              {!isPassedOrDone && !session.myCheckedIn && (
+                              {!isPassedOrDone && !isStudentUnlocked && (
                                 <div className="flex flex-col items-end gap-1.5">
                                   <button
                                     disabled={!active || actionLoading}
@@ -2336,15 +2513,15 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                 </div>
                               )}
 
-                              {!isCompleted && session.myCheckedIn && (
+                              {!isCompleted && isStudentUnlocked && (
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="px-3 py-2 bg-emerald-100 text-emerald-800 rounded-lg text-xs font-bold flex items-center gap-1.5 border border-emerald-300 shadow-2xs">
                                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                                     <span>Đã Điểm Danh Có Mặt</span>
                                   </span>
-                                  {meetingLink && (
+                                  {unlockedMeetingLink && (
                                     <a
-                                      href={meetingLink.startsWith("http") ? meetingLink : `https://${meetingLink}`}
+                                      href={unlockedMeetingLink.startsWith("http") ? unlockedMeetingLink : `https://${unlockedMeetingLink}`}
                                       target="_blank"
                                       rel="noreferrer"
                                       className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-md animate-pulse"
@@ -2354,6 +2531,18 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                       <span>Vào Phòng Học</span>
                                       <ExternalLink className="w-3.5 h-3.5" />
                                     </a>
+                                  )}
+                                  {!isOffline && active && !unlockedMeetingLink && (
+                                    <span className="px-3 py-2 bg-amber-50 text-amber-800 border border-amber-200 rounded-lg text-xs font-bold flex items-center gap-1.5">
+                                      <AlertCircle className="w-4 h-4 text-amber-600" />
+                                      <span>
+                                        {studentMeetingLinkState === 'LOADING'
+                                          ? 'Đang lấy link phòng học...'
+                                          : studentMeetingLinkState === 'ERROR'
+                                            ? 'Chưa lấy được link phòng học'
+                                            : 'Gia sư chưa cập nhật link phòng học'}
+                                      </span>
+                                    </span>
                                   )}
                                 </div>
                               )}
@@ -2489,6 +2678,116 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
             </div>
 
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 [scrollbar-width:thin] [scrollbar-color:#cbd5e1_transparent] sm:px-6 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-track]:bg-transparent">
+              <section className="rounded-xl border border-indigo-100 bg-indigo-50/70 p-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h4 className="flex items-center gap-2 text-sm font-black text-indigo-950">
+                      <Sparkles className="h-4 w-4 text-indigo-600" />
+                      Soạn buổi học với AI
+                    </h4>
+                    <p className="mt-1 text-xs leading-relaxed text-indigo-800">
+                      AI dùng context lớp và buổi học hiện tại để tạo bản nháp giáo án. Gia sư cần kiểm tra trước khi lưu.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGenerateLessonDraft}
+                    disabled={lessonDraftLoading}
+                    className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-60"
+                  >
+                    {lessonDraftLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    <span>{lessonDraftLoading ? "Đang soạn..." : "Gợi ý giáo án với AI"}</span>
+                  </button>
+                </div>
+
+                {lessonDraftError && (
+                  <div className="mt-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{lessonDraftError}</span>
+                  </div>
+                )}
+
+                {lessonDraft?.lessonPlan && (
+                  <div className="mt-4 rounded-xl border border-indigo-200 bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-2 border-b border-slate-100 pb-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-[11px] font-black uppercase tracking-wide text-indigo-500">Bản nháp AI</p>
+                        <h5 className="mt-1 text-base font-black text-slate-900">{lessonDraft.lessonPlan.title || "Giáo án buổi học"}</h5>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {lessonDraft.sourceSummary?.subject || "Môn học"} · {lessonDraft.sourceSummary?.level || "Cấp độ"} · {lessonDraft.sourceSummary?.durationMinutes || "?"} phút
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={handleApplyLessonDraftToForm}
+                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700"
+                        >
+                          Chèn vào form
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCopyLessonDraft}
+                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                        >
+                          Sao chép
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid gap-3 text-xs text-slate-700 md:grid-cols-2">
+                      {lessonDraft.lessonPlan.objectives?.length ? (
+                        <div>
+                          <p className="mb-1 font-black text-slate-900">Mục tiêu</p>
+                          <ul className="space-y-1">
+                            {lessonDraft.lessonPlan.objectives.map((item, index) => <li key={index}>- {item}</li>)}
+                          </ul>
+                        </div>
+                      ) : null}
+                      {lessonDraft.lessonPlan.keyPoints?.length ? (
+                        <div>
+                          <p className="mb-1 font-black text-slate-900">Trọng tâm</p>
+                          <ul className="space-y-1">
+                            {lessonDraft.lessonPlan.keyPoints.map((item, index) => <li key={index}>- {item}</li>)}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {lessonDraft.lessonPlan.outline?.length ? (
+                      <div className="mt-3">
+                        <p className="mb-2 text-xs font-black text-slate-900">Tiến trình buổi học</p>
+                        <div className="space-y-2">
+                          {lessonDraft.lessonPlan.outline.map((item, index) => (
+                            <div key={index} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs">
+                              <div className="flex items-center justify-between gap-2 font-bold text-slate-900">
+                                <span>{item.title || "Hoạt động"}</span>
+                                {item.durationMinutes ? <span className="text-indigo-600">{item.durationMinutes} phút</span> : null}
+                              </div>
+                              {item.description ? <p className="mt-1 text-slate-600">{item.description}</p> : null}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {(lessonDraft.lessonPlan.warmup || lessonDraft.lessonPlan.homeworkSuggestion || lessonDraft.lessonPlan.nextSessionSuggestion) && (
+                      <div className="mt-3 grid gap-3 text-xs md:grid-cols-3">
+                        {lessonDraft.lessonPlan.warmup ? <div className="rounded-lg bg-amber-50 p-3 text-amber-900"><b>Khởi động:</b> {lessonDraft.lessonPlan.warmup}</div> : null}
+                        {lessonDraft.lessonPlan.homeworkSuggestion ? <div className="rounded-lg bg-blue-50 p-3 text-blue-900"><b>Gợi ý bài tập:</b> {lessonDraft.lessonPlan.homeworkSuggestion}</div> : null}
+                        {lessonDraft.lessonPlan.nextSessionSuggestion ? <div className="rounded-lg bg-slate-50 p-3 text-slate-700"><b>Buổi sau:</b> {lessonDraft.lessonPlan.nextSessionSuggestion}</div> : null}
+                      </div>
+                    )}
+
+                    {lessonDraft.warnings?.length ? (
+                      <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        {lessonDraft.warnings.map((warning, index) => <p key={index}>- {warning}</p>)}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </section>
+
               <section className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
                 <h4 className="mb-3 text-[11px] font-black uppercase tracking-wide text-slate-500">
                   Nội dung buổi học
@@ -2709,7 +3008,11 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
             <div className="flex shrink-0 justify-end gap-2.5 border-t border-slate-200 bg-white px-5 py-4 sm:px-6">
               <button
-                onClick={() => setShowAssignmentModal(false)}
+                onClick={() => {
+                  setShowAssignmentModal(false);
+                  setLessonDraft(null);
+                  setLessonDraftError("");
+                }}
                 className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100"
               >
                 Hủy

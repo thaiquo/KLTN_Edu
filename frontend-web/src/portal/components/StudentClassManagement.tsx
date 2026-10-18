@@ -645,7 +645,7 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
                     </span>
                   </div>
                   <h2 className="text-xl font-black text-slate-900">{selectedClass.name}</h2>
-                  <p className="text-xs text-slate-500 mt-1 line-clamp-1">{selectedClass.description}</p>
+                  <p className="text-xs text-slate-500 mt-1 line-clamp-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{selectedClass.description}</p>
                   <div className="mt-3 flex items-center gap-2 flex-wrap">
                     {selectedClassWeeklySummary && (
                       <div className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-900">

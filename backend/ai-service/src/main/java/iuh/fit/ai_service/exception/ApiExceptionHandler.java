@@ -42,6 +42,21 @@ public class ApiExceptionHandler {
                 ));
     }
 
+    @ExceptionHandler(LearningCopilotException.class)
+    public ResponseEntity<ErrorResponse> handleLearningCopilot(LearningCopilotException exception) {
+        HttpStatus status = switch (exception.reason()) {
+            case UNAUTHORIZED -> HttpStatus.UNAUTHORIZED;
+            case FORBIDDEN -> HttpStatus.FORBIDDEN;
+            case BAD_REQUEST -> HttpStatus.BAD_REQUEST;
+            case DOWNSTREAM_UNAVAILABLE -> HttpStatus.BAD_GATEWAY;
+        };
+        return ResponseEntity.status(status)
+                .body(new ErrorResponse(
+                        "Lesson draft request could not be completed",
+                        List.of(safeMessage(exception.getMessage()))
+                ));
+    }
+
     @ExceptionHandler(CatalogGroundingUnavailableException.class)
     public ResponseEntity<ErrorResponse> handleCatalogUnavailable(CatalogGroundingUnavailableException exception) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)

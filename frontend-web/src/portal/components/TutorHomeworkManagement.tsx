@@ -35,6 +35,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { classApi } from "../../api/classes";
+import { learningCopilotApi } from "../../api/learningCopilot";
 
 export interface SessionFileItem {
   id: number;
@@ -96,6 +97,20 @@ export interface HomeworkSessionItem {
   materialExternalUrl?: string;
 }
 
+interface HomeworkFeedbackDraft {
+  draftId: string;
+  promptVersion: string;
+  generatedAt: string;
+  feedback: {
+    summary?: string;
+    strengths?: string[];
+    improvements?: string[];
+    nextSteps?: string[];
+    finalComment?: string;
+  };
+  warnings?: string[];
+}
+
 interface Props {
   onNavigate?: (page: string) => void;
 }
@@ -126,6 +141,10 @@ export const TutorHomeworkManagement: React.FC<Props> = ({ onNavigate }) => {
   const [activeAttendanceId, setActiveAttendanceId] = useState<number | null>(null);
   const [gradeScoreInput, setGradeScoreInput] = useState<string>("");
   const [tutorFeedbackInput, setTutorFeedbackInput] = useState<string>("");
+  const [selectedQuickFeedback, setSelectedQuickFeedback] = useState<string[]>([]);
+  const [feedbackDraft, setFeedbackDraft] = useState<HomeworkFeedbackDraft | null>(null);
+  const [feedbackDraftLoading, setFeedbackDraftLoading] = useState<boolean>(false);
+  const [feedbackDraftError, setFeedbackDraftError] = useState<string>("");
   const [gradingSubmitting, setGradingSubmitting] = useState<boolean>(false);
   const [gradingSuccessMsg, setGradingSuccessMsg] = useState<string | null>(null);
 
@@ -287,7 +306,70 @@ export const TutorHomeworkManagement: React.FC<Props> = ({ onNavigate }) => {
     setActiveAttendanceId(att.id);
     setGradeScoreInput(att.gradeScore || "");
     setTutorFeedbackInput(att.tutorFeedback || "");
+    setSelectedQuickFeedback([]);
+    setFeedbackDraft(null);
+    setFeedbackDraftError("");
     setGradingSuccessMsg(null);
+  };
+
+  const toggleQuickFeedback = (template: string) => {
+    setSelectedQuickFeedback((previous) => previous.includes(template)
+      ? previous.filter((item) => item !== template)
+      : [...previous, template]);
+    setFeedbackDraft(null);
+    setFeedbackDraftError("");
+  };
+
+  const formatFeedbackDraftForInput = (draft: HomeworkFeedbackDraft | null) => {
+    return draft?.feedback?.finalComment?.trim() || "";
+  };
+
+  const handleGenerateFeedbackDraft = async () => {
+    if (!gradingSession || !activeAttendanceId) return;
+    if (!gradeScoreInput.trim() && selectedQuickFeedback.length === 0 && !tutorFeedbackInput.trim()) {
+      setFeedbackDraftError("Vui lòng nhập điểm hoặc chọn/ghi một số nhận xét trước khi dùng AI.");
+      return;
+    }
+    setFeedbackDraftLoading(true);
+    setFeedbackDraftError("");
+    setFeedbackDraft(null);
+    try {
+      const draft = await learningCopilotApi.generateHomeworkFeedbackDraft({
+        classId: gradingSession.classRoomId,
+        sessionId: gradingSession.sessionId,
+        attendanceId: activeAttendanceId,
+        score: gradeScoreInput.trim(),
+        selectedFeedback: selectedQuickFeedback,
+        tutorNotes: tutorFeedbackInput.trim()
+      });
+      setFeedbackDraft(draft as HomeworkFeedbackDraft);
+    } catch (error: any) {
+      setFeedbackDraftError(error?.message || "Không thể tạo gợi ý nhận xét AI lúc này.");
+    } finally {
+      setFeedbackDraftLoading(false);
+    }
+  };
+
+  const handleInsertFeedbackDraft = () => {
+    const generated = formatFeedbackDraftForInput(feedbackDraft);
+    if (!generated) return;
+    if (tutorFeedbackInput.trim()) {
+      const normalize = (value: string) => value.normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
+      const current = normalize(tutorFeedbackInput);
+      const candidate = normalize(generated);
+      if (current.includes(candidate) || candidate.includes(current)) {
+        setFeedbackDraftError("Bản nháp AI trùng với nhận xét hiện có nên không được chèn lại.");
+        return;
+      }
+      if (!window.confirm("Ô nhận xét hiện có nội dung. Bạn muốn chèn thêm bản nháp AI thay vì ghi đè?")) return;
+      setTutorFeedbackInput((previous) => `${previous.trim()}\n\n${generated}`);
+      return;
+    }
+    setTutorFeedbackInput(generated);
   };
 
   const studentCounts = useMemo(() => {
@@ -1924,17 +2006,15 @@ export const TutorHomeworkManagement: React.FC<Props> = ({ onNavigate }) => {
                               <button
                                 key={idx}
                                 type="button"
-                                onClick={() => {
-                                  if (!tutorFeedbackInput.trim()) {
-                                    setTutorFeedbackInput(tmpl);
-                                  } else {
-                                    setTutorFeedbackInput((prev) => `${prev}. ${tmpl}`);
-                                  }
-                                }}
-                                className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-emerald-50 hover:text-emerald-800 text-slate-600 text-[11px] font-medium transition border border-slate-200 cursor-pointer"
+                                onClick={() => toggleQuickFeedback(tmpl)}
+                                className={`px-2 py-1 rounded-lg text-[11px] font-medium transition border cursor-pointer ${
+                                  selectedQuickFeedback.includes(tmpl)
+                                    ? "bg-emerald-600 text-white border-emerald-600"
+                                    : "bg-slate-100 hover:bg-emerald-50 hover:text-emerald-800 text-slate-600 border-slate-200"
+                                }`}
                                 title="Bấm để đưa mẫu nhận xét vào ô bên dưới"
                               >
-                                + {tmpl}
+                                {selectedQuickFeedback.includes(tmpl) ? "✓ " : "+ "}{tmpl}
                               </button>
                             ))}
                           </div>
@@ -1952,6 +2032,48 @@ export const TutorHomeworkManagement: React.FC<Props> = ({ onNavigate }) => {
                             placeholder="Nhận xét ưu điểm, phần cần cải thiện, hoặc lời nhắc nhở học viên hoàn thành bài..."
                             className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800"
                           />
+                        </div>
+
+                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-xs font-black text-indigo-900">Gợi ý nhận xét với AI</p>
+                              <p className="text-[11px] text-indigo-700">AI chỉ dùng điểm, nhận xét đã chọn và ghi chú của gia sư; không đọc tệp bài nộp.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleGenerateFeedbackDraft}
+                              disabled={feedbackDraftLoading}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-indigo-700 disabled:opacity-60"
+                            >
+                              {feedbackDraftLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                              {feedbackDraftLoading ? "Đang tạo..." : "Gợi ý nhận xét với AI"}
+                            </button>
+                          </div>
+                          {feedbackDraftError && <p className="text-xs font-semibold text-rose-700">{feedbackDraftError}</p>}
+                          {feedbackDraft && (
+                            <div className="rounded-lg border border-indigo-100 bg-white p-3 space-y-2">
+                              {[
+                                ["Điểm tích cực", feedbackDraft.feedback.strengths],
+                                ["Cần cải thiện", feedbackDraft.feedback.improvements],
+                                ["Gợi ý tiếp theo", feedbackDraft.feedback.nextSteps]
+                              ].map(([title, items]) => Array.isArray(items) && items.length > 0 && (
+                                <div key={title as string}>
+                                  <p className="text-[11px] font-black text-slate-700">{title as string}</p>
+                                  <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px] text-slate-700">
+                                    {(items as string[]).map((item) => <li key={item}>{item}</li>)}
+                                  </ul>
+                                </div>
+                              ))}
+                              {feedbackDraft.feedback.finalComment && <p className="text-xs text-slate-700">{feedbackDraft.feedback.finalComment}</p>}
+                              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2">
+                                <p className="text-[10px] text-slate-500">{feedbackDraft.warnings?.[0]}</p>
+                                <button type="button" onClick={handleInsertFeedbackDraft} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-700">
+                                  Chèn vào nhận xét
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         {gradingSuccessMsg && (

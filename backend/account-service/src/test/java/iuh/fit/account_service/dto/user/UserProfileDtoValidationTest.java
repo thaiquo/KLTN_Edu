@@ -63,6 +63,20 @@ class UserProfileDtoValidationTest {
     }
 
     @Test
+    void profileGenderOnlyAllowsProductValues() {
+        UpdateUserProfileRequest request = validUpdateRequest();
+        request.setGender("OTHER");
+
+        assertThat(validator.validate(request))
+                .extracting(violation -> violation.getPropertyPath().toString())
+                .contains("gender");
+
+        request.setGender("PREFER_NOT_TO_SAY");
+
+        assertThat(validator.validate(request)).isEmpty();
+    }
+
+    @Test
     void shortNewPasswordIsInvalid() {
         ChangePasswordRequest request = new ChangePasswordRequest();
         request.setCurrentPassword("oldPassword123");

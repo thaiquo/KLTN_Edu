@@ -611,7 +611,7 @@ export function ClassApprovalReview() {
             <div className="space-y-1 text-xs">
               <span className="text-[10px] font-black uppercase text-slate-400 block">Mô tả khóa học</span>
               <p className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-slate-700 leading-relaxed">
-                {selectedClass.description}
+                <span className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{selectedClass.description}</span>
               </p>
             </div>
 

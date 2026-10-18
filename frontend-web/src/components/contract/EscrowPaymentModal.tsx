@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -14,7 +14,10 @@ import {
   Info
 } from 'lucide-react';
 import { useWeb3Wallet } from '../../web3/useWeb3Wallet';
-import { EscrowContractService } from '../../web3/escrowContractService';
+import {
+  EscrowContractService,
+  UNSUPPORTED_DELEGATED_FUNDING_MESSAGE,
+} from '../../web3/escrowContractService';
 import { EtherscanLink } from '../common/EtherscanLink';
 import { DEFAULT_CHAIN_ID } from '../../web3/web3Config';
 import { ethers } from 'ethers';
@@ -45,6 +48,38 @@ interface EscrowPaymentModalProps {
 
 type PaymentStep = 'REVIEW' | 'APPROVING' | 'FUNDING' | 'SUCCESS' | 'ERROR';
 
+function getFundingErrorMessage(err: any): string {
+  const combined = [
+    err?.reason,
+    err?.shortMessage,
+    err?.message,
+    err?.error?.message,
+    err?.info?.error?.message,
+  ].filter(Boolean).join(' ');
+  const normalized = combined.toLowerCase();
+
+  if (combined.includes(UNSUPPORTED_DELEGATED_FUNDING_MESSAGE) || combined.includes('OnlyStudent')) {
+    return UNSUPPORTED_DELEGATED_FUNDING_MESSAGE;
+  }
+  if (err?.code === 4001 || err?.code === 'ACTION_REJECTED' || normalized.includes('user rejected')) {
+    return 'Bạn đã hủy ký giao dịch trong ví. Chưa có giao dịch ký quỹ nào được gửi.';
+  }
+  if (normalized.includes('insufficient funds')) {
+    return 'Ví không đủ Sepolia ETH để trả phí gas cho giao dịch ký quỹ.';
+  }
+  if (combined.includes('InvalidAgreementStatus')) {
+    return 'Hợp đồng on-chain không còn ở trạng thái chờ ký quỹ. Vui lòng tải lại hợp đồng để đồng bộ trạng thái mới nhất.';
+  }
+  if (combined.includes('PaymentDeadlinePassed')) {
+    return 'Hạn thanh toán on-chain đã hết. Vui lòng liên hệ gia sư hoặc hỗ trợ để tạo lại hợp đồng.';
+  }
+  if (normalized.includes('missing revert data') || normalized.includes('execution reverted')) {
+    return 'Smart Contract từ chối giao dịch ký quỹ trong bước mô phỏng trước khi gửi. Vui lòng tải lại trang và kiểm tra đúng ví học viên, hạn thanh toán và trạng thái hợp đồng.';
+  }
+
+  return err?.reason || err?.shortMessage || err?.message || 'Lỗi khi thực hiện ký quỹ vào Smart Contract.';
+}
+
 export function EscrowPaymentModal({
   isOpen,
   onClose,
@@ -69,6 +104,8 @@ export function EscrowPaymentModal({
   const [fundingTxHash, setFundingTxHash] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const approvalInFlightRef = useRef(false);
+  const fundingInFlightRef = useRef(false);
 
   const requiredChainId = agreement.chainId || DEFAULT_CHAIN_ID;
   const walletOnRequiredChain = chainId === requiredChainId;
@@ -102,6 +139,8 @@ export function EscrowPaymentModal({
       setFundingTxHash(null);
       setErrorMessage(null);
       setIsProcessing(false);
+      approvalInFlightRef.current = false;
+      fundingInFlightRef.current = false;
       if (walletOnRequiredChain) {
         checkAllowance();
       } else {
@@ -123,12 +162,16 @@ export function EscrowPaymentModal({
 
   // Step 1: Approve USDC spending
   const handleApproveUsdc = async () => {
+    if (approvalInFlightRef.current || isProcessing) {
+      return;
+    }
     if (!signer || !address) {
       await connectWallet();
       return;
     }
 
     try {
+      approvalInFlightRef.current = true;
       if (!walletOnRequiredChain) {
         throw new Error(`Vui lòng chuyển ví sang đúng mạng chain ID ${requiredChainId} trước khi phê duyệt USDC.`);
       }
@@ -157,6 +200,7 @@ export function EscrowPaymentModal({
       setCurrentStep('ERROR');
       setErrorMessage(err?.reason || err?.message || 'Không thể phê duyệt (Approve) USDC.');
     } finally {
+      approvalInFlightRef.current = false;
       setIsProcessing(false);
       refreshBalances();
     }
@@ -164,12 +208,16 @@ export function EscrowPaymentModal({
 
   // Step 2: Fund Escrow Contract
   const handleFundEscrow = async () => {
+    if (fundingInFlightRef.current || isProcessing) {
+      return;
+    }
     if (!signer || !address) {
       await connectWallet();
       return;
     }
 
     try {
+      fundingInFlightRef.current = true;
       if (!walletOnRequiredChain) {
         throw new Error(`Vui lòng chuyển ví sang đúng mạng chain ID ${requiredChainId} trước khi ký quỹ.`);
       }
@@ -191,15 +239,24 @@ export function EscrowPaymentModal({
         throw new Error('Hạn thanh toán của hợp đồng đã hết.');
       }
 
+      const latestAllowance = await escrowService.getUsdcAllowance(signer, address);
+      setAllowance(latestAllowance);
+      if (latestAllowance < totalAmountUnits) {
+        throw new Error('Quyền chi tiêu USDC hiện chưa đủ để ký quỹ. Vui lòng approve đúng số tiền trước khi gửi giao dịch ký quỹ.');
+      }
+
+      await escrowService.preflightFundAgreement(signer, agreement.onchainAgreementId);
+
       let txHash = '';
       try {
         const tx = await escrowService.fundAgreement(signer, agreement.onchainAgreementId);
         setFundingTxHash(tx.hash);
+        const sentToExpectedEscrow = escrowService.isExpectedEscrowTarget(tx.to);
         const receipt = await tx.wait(1);
         if (receipt && receipt.status === 1) {
           txHash = tx.hash;
         } else {
-          throw new Error('Giao dịch Ký quỹ Escrow thất bại.');
+          throw new Error(sentToExpectedEscrow ? 'Giao dịch ký quỹ Escrow thất bại trên blockchain.' : UNSUPPORTED_DELEGATED_FUNDING_MESSAGE);
         }
       } catch (onchainErr: any) {
         console.warn('Smart contract fundAgreement failed; raw USDC transfer fallback is not supported:', onchainErr);
@@ -221,8 +278,9 @@ export function EscrowPaymentModal({
     } catch (err: any) {
       console.error('Funding failed:', err);
       setCurrentStep('ERROR');
-      setErrorMessage(err?.reason || err?.message || 'Lỗi khi thực hiện ký quỹ vào Smart Contract.');
+      setErrorMessage(getFundingErrorMessage(err));
     } finally {
+      fundingInFlightRef.current = false;
       setIsProcessing(false);
     }
   };

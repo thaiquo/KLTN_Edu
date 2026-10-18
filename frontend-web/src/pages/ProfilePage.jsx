@@ -29,6 +29,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useInvalidateTutorApplication, useTutorApplication } from '../hooks/useTutorApplication';
 import {
   ProfileEditForm,
+  GENDER_OPTIONS,
   mapValidationErrors,
   normalizeOptional,
   toFormState,
@@ -50,14 +51,6 @@ const STATUS_LABELS = {
   DISABLED: 'Đã vô hiệu hóa',
   DELETED: 'Đã xóa'
 };
-
-const GENDER_OPTIONS = [
-  { value: '', label: 'Chưa chọn' },
-  { value: 'FEMALE', label: 'Nữ' },
-  { value: 'MALE', label: 'Nam' },
-  { value: 'OTHER', label: 'Khác' },
-  { value: 'PREFER_NOT_TO_SAY', label: 'Không muốn chia sẻ' }
-];
 
 const TEACHING_MODE_OPTIONS = [
   { value: 'ONLINE', label: 'Trực tuyến', icon: Video },
@@ -1443,7 +1436,8 @@ function roleLabel(role) {
 }
 
 function genderLabel(value) {
-  return GENDER_OPTIONS.find((option) => option.value === value)?.label || value;
+  const normalized = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  return GENDER_OPTIONS.find((option) => option.value === normalized)?.label || 'Không muốn chia sẻ';
 }
 
 function getAvatarUrl(profile) {

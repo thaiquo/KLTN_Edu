@@ -196,7 +196,7 @@ public class UserService {
         user.setFullName(request.getFullName().trim());
         user.setPhone(normalizeOptional(request.getPhone()));
         user.setDateOfBirth(request.getDateOfBirth());
-        user.setGender(normalizeOptional(request.getGender()));
+        user.setGender(normalizeGender(request.getGender()));
         applyStructuredAddress(user, request);
         user.setAddressDetail(normalizeOptional(request.getAddressDetail()));
         user.setBio(normalizeOptional(request.getBio()));
@@ -491,6 +491,18 @@ public class UserService {
 
         String normalized = value.trim();
         return normalized.isBlank() ? null : normalized;
+    }
+
+    private String normalizeGender(String value) {
+        String normalized = normalizeOptional(value);
+        if (normalized == null) {
+            return null;
+        }
+        String canonical = normalized.toUpperCase(Locale.ROOT);
+        if ("MALE".equals(canonical) || "FEMALE".equals(canonical) || "PREFER_NOT_TO_SAY".equals(canonical)) {
+            return canonical;
+        }
+        throw new BadRequestException("Gender must be MALE, FEMALE, or PREFER_NOT_TO_SAY");
     }
 
     private void applyStructuredAddress(User user, UpdateUserProfileRequest request) {

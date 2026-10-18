@@ -100,6 +100,7 @@ class SessionAttendanceServiceTest {
         session.setAssignmentTitle("Bài tập hàm số");
         session.setAssignmentDescription("Làm câu 1-10");
         session.setAssignmentFileUrl("https://storage/baitap1.pdf");
+        session.setMaterialDescription("Mục tiêu:\n- Ôn tập hàm số");
         session.setStatus(ClassSessionStatus.SCHEDULED);
         session.setCreatedAt(LocalDateTime.now().minusDays(2));
     }
@@ -175,6 +176,7 @@ class SessionAttendanceServiceTest {
         // Must be null because student has not checked in
         assertThat(res.assignmentDescription()).isNull();
         assertThat(res.assignmentFileUrl()).isNull();
+        assertThat(res.materialDescription()).isEqualTo("Mục tiêu:\n- Ôn tập hàm số");
         assertThat(res.myCheckedIn()).isFalse();
     }
 

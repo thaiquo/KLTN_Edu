@@ -696,7 +696,7 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiR
             </span>
           )) : <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-extrabold text-slate-500">Chưa công bố hình thức học</span>}
         </div>
-        <p className="line-clamp-3 text-sm font-semibold leading-7 text-slate-600">{description || 'Gia sư đã được xét duyệt trên EduConnect. Xem hồ sơ để biết thêm thông tin giảng dạy và các lớp đang mở.'}</p>
+        <p className="line-clamp-3 whitespace-pre-wrap break-words text-sm font-semibold leading-7 text-slate-600 [overflow-wrap:anywhere]">{description || 'Gia sư đã được xét duyệt trên EduConnect. Xem hồ sơ để biết thêm thông tin giảng dạy và các lớp đang mở.'}</p>
         {isAiResult && matchingReasons.length > 0 && (
           <section className="rounded-[8px] border border-emerald-100 bg-emerald-50 p-3">
             <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-emerald-700">Vì sao phù hợp</p>
@@ -738,45 +738,47 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiR
           </details>
         )}
       </div>
-      <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+      <div className="mt-5 grid gap-3 border-t border-slate-100 pt-4">
+        <div className="min-w-0">
           <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Mức nhận dạy / buổi</p>
           <strong className="mt-1 block font-display text-xl font-extrabold text-slate-950">{hasSubjectFilter ? formatTuitionRange(capability.tuitionMin, capability.tuitionMax) : startingTuitionLabel(tutor.startingTuition)}</strong>
         </div>
-        {canChat && (
-          <button
-            type="button"
-            onClick={() => startTutorConversation(tutor.userId)}
-            disabled={startingChat}
-            data-chat-user-id={tutor.userId || ''}
-            aria-label={`Nhắn tin với ${tutor.fullName || 'gia sư'}`}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-primary px-5 text-sm font-black text-white transition-colors hover:bg-primary-dark disabled:cursor-wait disabled:opacity-70"
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Link
+            to={`/tutors/${tutor.tutorId}`}
+            state={{ marketplaceReturnTo }}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-slate-900 px-5 text-sm font-black text-white transition-colors hover:bg-primary sm:col-span-2"
           >
-            <MessageCircle size={16} /> {startingChat ? 'Đang mở...' : 'Nhắn tin'}
-          </button>
-        )}
-        {canFollow && (
-          <button
-            type="button"
-            onClick={handleToggleFollow}
-            disabled={followLoading}
-            title={followStatus.isFollowed ? 'Bỏ theo dõi gia sư' : 'Theo dõi gia sư'}
-            className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] border px-4 text-sm font-black transition-colors disabled:cursor-wait disabled:opacity-70 ${
-              followStatus.isFollowed
-                ? 'border-slate-300 bg-slate-100 text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700'
-                : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
-            }`}
-          >
-            <UsersRound size={16} /> {followLoading ? 'Đang xử lý...' : followStatus.isFollowed ? 'Đang theo dõi' : 'Theo dõi'}
-          </button>
-        )}
-        <Link
-          to={`/tutors/${tutor.tutorId}`}
-          state={{ marketplaceReturnTo }}
-          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-slate-900 px-5 text-sm font-black text-white transition-colors hover:bg-primary"
-        >
-          Xem hồ sơ <ArrowRight size={16} />
-        </Link>
+            Xem hồ sơ <ArrowRight size={16} />
+          </Link>
+          {canChat && (
+            <button
+              type="button"
+              onClick={() => startTutorConversation(tutor.userId)}
+              disabled={startingChat}
+              data-chat-user-id={tutor.userId || ''}
+              aria-label={`Nhắn tin với ${tutor.fullName || 'gia sư'}`}
+              className="inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-[8px] border border-blue-200 bg-blue-50 px-4 text-sm font-black text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-wait disabled:opacity-70"
+            >
+              <MessageCircle size={16} className="shrink-0" /> <span className="truncate">{startingChat ? 'Đang mở...' : 'Nhắn tin'}</span>
+            </button>
+          )}
+          {canFollow && (
+            <button
+              type="button"
+              onClick={handleToggleFollow}
+              disabled={followLoading}
+              title={followStatus.isFollowed ? 'Bỏ theo dõi gia sư' : 'Theo dõi gia sư'}
+              className={`inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-[8px] border px-4 text-sm font-black transition-colors disabled:cursor-wait disabled:opacity-70 ${
+                followStatus.isFollowed
+                  ? 'border-slate-300 bg-slate-100 text-slate-700 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700'
+                  : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+              }`}
+            >
+              <UsersRound size={16} className="shrink-0" /> <span className="truncate">{followLoading ? 'Đang xử lý...' : followStatus.isFollowed ? 'Đang theo dõi' : 'Theo dõi'}</span>
+            </button>
+          )}
+        </div>
       </div>
     </article>
   );

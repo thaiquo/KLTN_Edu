@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   X,
@@ -79,7 +79,7 @@ function normalizeList(res) {
   return res?.data || res || [];
 }
 
-export function CreatePostModal({ isOpen, onClose, onPostCreated, userRole, editingPost = null }) {
+export function CreatePostModal({ isOpen, onClose, onPostCreated, userRole, editingPost = null, startWithAiRewrite = false }) {
   const navigate = useNavigate();
   const defaultType = userRole === 'TUTOR' ? 'TUTOR_ANNOUNCEMENT' : 'STUDENT_FIND_TUTOR';
   const feedback = useFeedback();
@@ -102,6 +102,20 @@ export function CreatePostModal({ isOpen, onClose, onPostCreated, userRole, edit
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [activeAnnouncementPreset, setActiveAnnouncementPreset] = useState(null);
+  const [rewriteLoading, setRewriteLoading] = useState(false);
+  const [rewriteSuggestion, setRewriteSuggestion] = useState(null);
+  const [rewriteError, setRewriteError] = useState(null);
+  const [rewriteSourceRevision, setRewriteSourceRevision] = useState(null);
+  const createRequestTokenRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      createRequestTokenRef.current = null;
+    } else if (!editingPost && !createRequestTokenRef.current) {
+      createRequestTokenRef.current = globalThis.crypto?.randomUUID?.()
+        || `community-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+  }, [isOpen, editingPost]);
 
   const pollQuestion = editingPost?.poll?.question || 'Bạn học được vào khung giờ nào dưới đây?';
   const [minVotesTarget, setMinVotesTarget] = useState(editingPost?.poll?.minVotesTarget || 10);
@@ -215,6 +229,9 @@ Học viên quan tâm vui lòng xem chi tiết lớp học bên dưới và gử
     if (!isOpen) return;
 
     setError(null);
+    setRewriteError(null);
+    setRewriteSuggestion(null);
+    setRewriteSourceRevision(null);
     setLoadingOptions(true);
     setActiveAnnouncementPreset(null);
     setPostType(editingPost?.postType || defaultType);
@@ -290,6 +307,35 @@ Học viên quan tâm vui lòng xem chi tiết lớp học bên dưới và gử
 
     loadOptions();
   }, [isOpen, editingPost, userRole, defaultType]);
+
+  useEffect(() => {
+    if (!isOpen || !editingPost || !startWithAiRewrite) return;
+    let active = true;
+    const revision = editingPost.pendingContentRevision ?? editingPost.contentRevision;
+    async function requestRewrite() {
+      setRewriteLoading(true);
+      setRewriteError(null);
+      try {
+        const suggestion = await communityApi.requestAiRewrite(editingPost.id, revision);
+        if (active) setRewriteSuggestion(suggestion);
+      } catch (err) {
+        if (active) setRewriteError(err.message || 'Hiện chưa thể tạo gợi ý chỉnh sửa. Vui lòng thử lại.');
+      } finally {
+        if (active) setRewriteLoading(false);
+      }
+    }
+    requestRewrite();
+    return () => { active = false; };
+  }, [isOpen, editingPost, startWithAiRewrite]);
+
+  const applyRewriteSuggestion = () => {
+    if (!rewriteSuggestion?.canRewrite) return;
+    setTitle(rewriteSuggestion.suggestedTitle || '');
+    setContent(rewriteSuggestion.suggestedContent || '');
+    setRewriteSourceRevision(rewriteSuggestion.sourceRevision);
+    setRewriteSuggestion(null);
+    feedback.success('Đã chèn gợi ý. Bạn có thể chỉnh sửa trước khi lưu.');
+  };
 
   useEffect(() => {
     if (!selectedClass || postType !== 'TUTOR_CLASS_SHARE') return;
@@ -426,11 +472,15 @@ Học viên quan tâm vui lòng xem chi tiết lớp học bên dưới và gử
 
     setSubmitting(true);
     try {
+      const expectedRevision = rewriteSourceRevision
+        ?? editingPost?.pendingContentRevision
+        ?? editingPost?.contentRevision;
       const saved = editingPost
-        ? await communityApi.updatePost(editingPost.id, payload)
-        : await communityApi.createPost(payload);
-      feedback.success(editingPost ? 'Đã lưu chỉnh sửa bài viết thành công.' : 'Đã đăng bài viết thành công.');
+        ? await communityApi.updatePost(editingPost.id, payload, expectedRevision)
+        : await communityApi.createPost(payload, createRequestTokenRef.current);
+      feedback.info('AI đang kiểm tra nội dung...');
       onPostCreated?.(saved);
+      createRequestTokenRef.current = null;
       onClose();
     } catch (err) {
       setError(err.message || err.response?.data?.message || 'Có lỗi xảy ra khi đăng bài');
@@ -477,6 +527,77 @@ Học viên quan tâm vui lòng xem chi tiết lớp học bên dưới và gử
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               <span>{error}</span>
             </div>
+          )}
+
+          {(rewriteLoading || rewriteSuggestion || rewriteError) && (
+            <section className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 text-xs">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 font-bold text-indigo-900">
+                  <Sparkles className="h-4 w-4" />
+                  Gợi ý chỉnh sửa từ AI
+                </div>
+                {!rewriteLoading && (
+                  <button
+                    type="button"
+                    onClick={() => { setRewriteSuggestion(null); setRewriteError(null); }}
+                    className="rounded-md p-1 text-slate-500 hover:bg-white hover:text-slate-800"
+                    title="Đóng gợi ý"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              {rewriteLoading && (
+                <p className="flex items-center gap-2 text-indigo-700">
+                  <RefreshCw className="h-4 w-4 animate-spin" /> Đang tạo gợi ý an toàn...
+                </p>
+              )}
+              {rewriteError && <p className="text-rose-700">{rewriteError}</p>}
+              {rewriteSuggestion && !rewriteSuggestion.canRewrite && (
+                <p className="text-amber-800">{rewriteSuggestion.summaryOfChanges}</p>
+              )}
+              {rewriteSuggestion?.canRewrite && (
+                <div className="space-y-3">
+                  <p className="text-slate-600">{rewriteSuggestion.summaryOfChanges}</p>
+                  <div>
+                    <label className="mb-1 block font-bold text-slate-700">Tiêu đề gợi ý</label>
+                    <input
+                      value={rewriteSuggestion.suggestedTitle}
+                      maxLength={255}
+                      onChange={event => setRewriteSuggestion(current => ({ ...current, suggestedTitle: event.target.value }))}
+                      className="w-full rounded-lg border border-indigo-200 bg-white px-3 py-2 text-slate-800 outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block font-bold text-slate-700">Nội dung gợi ý</label>
+                    <textarea
+                      rows={5}
+                      value={rewriteSuggestion.suggestedContent}
+                      maxLength={10000}
+                      onChange={event => setRewriteSuggestion(current => ({ ...current, suggestedContent: event.target.value }))}
+                      className="w-full resize-y rounded-lg border border-indigo-200 bg-white px-3 py-2 text-slate-800 outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRewriteSuggestion(null)}
+                      className="rounded-lg px-3 py-2 font-bold text-slate-600 hover:bg-white"
+                    >
+                      Giữ nội dung gốc
+                    </button>
+                    <button
+                      type="button"
+                      onClick={applyRewriteSuggestion}
+                      disabled={!rewriteSuggestion.suggestedTitle.trim() || !rewriteSuggestion.suggestedContent.trim()}
+                      className="rounded-lg bg-indigo-600 px-3 py-2 font-bold text-white hover:bg-indigo-700 disabled:opacity-50"
+                    >
+                      Dùng gợi ý
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
           )}
 
           <div>

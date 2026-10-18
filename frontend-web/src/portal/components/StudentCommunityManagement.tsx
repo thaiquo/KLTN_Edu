@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Compass,
   Layers,
@@ -28,6 +28,8 @@ import communityApi from '../../api/community';
 import { useFeedback } from '../../components/feedback/useFeedback';
 import { CreatePostModal } from '../../components/community/CreatePostModal';
 import { CommunityFeedPage } from '../../pages/community/CommunityFeedPage';
+import { ModerationStatusBanner } from '../../components/community/ModerationStatusBanner';
+import { evaluateCommunityModerationEvent } from '../../utils/communityModerationEvents';
 
 interface StudentCommunityManagementProps {
   onNavigate?: (pageId: string) => void;
@@ -88,10 +90,13 @@ export function StudentCommunityManagement({
   const [searchKeyword, setSearchKeyword] = useState('');
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [retryingPostId, setRetryingPostId] = useState<number | null>(null);
+  const seenModerationEvents = useRef(new Set<string>());
 
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<any | null>(null);
+  const [startWithAiRewrite, setStartWithAiRewrite] = useState(false);
 
   // Expanded comments
   const [expandedCommentsPostId, setExpandedCommentsPostId] = useState<number | null>(null);
@@ -130,6 +135,20 @@ export function StudentCommunityManagement({
     }
   }, [statusFilter, page]);
 
+  const retryModeration = async (postId: number) => {
+    if (retryingPostId === postId) return;
+    setRetryingPostId(postId);
+    try {
+      await communityApi.retryModeration(postId);
+      feedback.info('AI đang kiểm tra lại nội dung...');
+      await loadMyPosts(true);
+    } catch (err: any) {
+      feedback.error(err.message || 'Không thể thử lại kiểm duyệt.');
+    } finally {
+      setRetryingPostId(null);
+    }
+  };
+
   useEffect(() => {
     loadMyPosts(true);
   }, [statusFilter]);
@@ -142,6 +161,19 @@ export function StudentCommunityManagement({
 
       if (detail?.type === 'COMMUNITY_POST_DELETED') {
         setPosts(current => current.filter(post => Number(post.id) !== postId));
+      } else if (detail?.type === 'COMMUNITY_POST_MODERATION_COMPLETED') {
+        const evaluation = evaluateCommunityModerationEvent(detail, posts, seenModerationEvents.current);
+        if (evaluation.decision === 'ignore') return;
+        if (evaluation.decision === 'refresh') {
+          loadMyPosts(true);
+          return;
+        }
+        const moderationStatus = detail.payload?.moderationStatus;
+        if (moderationStatus === 'ALLOWED') feedback.success('Bài viết đã được đăng.');
+        else if (moderationStatus === 'NEEDS_EDIT') feedback.warning(detail.payload?.reason || 'Bài viết cần được chỉnh sửa.');
+        else if (moderationStatus === 'REJECTED') feedback.error(detail.payload?.reason || 'Không thể đăng bài vì nội dung chưa phù hợp.');
+        else if (moderationStatus === 'FAILED') feedback.error('Hiện chưa thể kiểm tra nội dung. Vui lòng thử lại.');
+        loadMyPosts(true);
       } else if (detail?.type === 'COMMUNITY_POST_UPDATED') {
         setPosts(current => current.map(post => Number(post.id) === postId
           ? {
@@ -158,7 +190,7 @@ export function StudentCommunityManagement({
 
     window.addEventListener('realtime:event', handleRealtimeCommunityEvent);
     return () => window.removeEventListener('realtime:event', handleRealtimeCommunityEvent);
-  }, []);
+  }, [feedback, loadMyPosts, posts]);
 
   // KPI Quick Statistics
   const stats = useMemo(() => {
@@ -551,6 +583,18 @@ export function StudentCommunityManagement({
                     key={post.id}
                     className="bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all overflow-hidden"
                   >
+                    <div className="px-5 pt-4">
+                      <ModerationStatusBanner
+                        post={post}
+                        onRetry={() => retryModeration(post.id)}
+                        retrying={retryingPostId === post.id}
+                        onRewrite={() => {
+                          setEditingPost(post.pendingContent ? { ...post, ...post.pendingContent } : post);
+                          setStartWithAiRewrite(true);
+                          setIsCreateModalOpen(true);
+                        }}
+                      />
+                    </div>
                     {/* Post Card Header */}
                     <div className="p-5 border-b border-slate-100 flex flex-wrap items-start justify-between gap-3">
                       <div className="space-y-1.5 flex-1 min-w-[260px]">
@@ -593,7 +637,8 @@ export function StudentCommunityManagement({
                             <button
                               type="button"
                               onClick={() => {
-                                setEditingPost(post);
+                                setEditingPost(post.pendingContent ? { ...post, ...post.pendingContent } : post);
+                                setStartWithAiRewrite(false);
                                 setIsCreateModalOpen(true);
                               }}
                               className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
@@ -916,15 +961,17 @@ export function StudentCommunityManagement({
           onClose={() => {
             setIsCreateModalOpen(false);
             setEditingPost(null);
+            setStartWithAiRewrite(false);
           }}
           onPostCreated={() => {
             setIsCreateModalOpen(false);
             setEditingPost(null);
             loadMyPosts(true);
-            showToast('success', editingPost ? 'Đã cập nhật bài viết thành công.' : 'Đã đăng bài viết kết nối thành công!');
+            showToast('success', 'AI đang kiểm tra nội dung...');
           }}
           userRole="STUDENT"
           editingPost={editingPost}
+          startWithAiRewrite={startWithAiRewrite}
         />
       )}
     </div>

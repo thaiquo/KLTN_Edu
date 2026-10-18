@@ -690,7 +690,7 @@ function PublicClassCard({ classRoom, onOpen, onTutorOpen, onShare, detailLoadin
 
       <button type="button" onClick={onOpen} className="mt-4 text-left">
         <h3 className="line-clamp-2 text-xl font-black leading-snug text-slate-950 group-hover:text-emerald-700">{classRoom.name}</h3>
-        <p className="mt-2 line-clamp-2 text-sm font-medium leading-6 text-slate-600">{classRoom.description || 'Lớp học đang được cập nhật mô tả chi tiết.'}</p>
+        <p className="mt-2 line-clamp-2 whitespace-pre-wrap break-words text-sm font-medium leading-6 text-slate-600 [overflow-wrap:anywhere]">{classRoom.description || 'Lớp học đang được cập nhật mô tả chi tiết.'}</p>
       </button>
 
       {topicChips.length > 0 && (
@@ -741,12 +741,12 @@ function PublicClassCard({ classRoom, onOpen, onTutorOpen, onShare, detailLoadin
         </InfoRow>
       </div>
 
-      <div className="mt-auto flex items-end justify-between gap-4 border-t border-slate-100 pt-4">
-        <div>
+      <div className="mt-auto flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
           <p className="text-xs font-bold text-slate-500">Học phí</p>
           <p className="text-xl font-black text-slate-950">{price > 0 ? price.toLocaleString('vi-VN') : 'Miễn phí'} <span className="text-xs font-extrabold text-slate-500">đ / buổi</span></p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
             onClick={onShare}
@@ -755,8 +755,8 @@ function PublicClassCard({ classRoom, onOpen, onTutorOpen, onShare, detailLoadin
           >
             <Share2 size={16} />
           </button>
-          <button type="button" onClick={onOpen} className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-black text-white hover:bg-emerald-700">
-            <Eye size={16} /> {detailLoading ? 'Đang mở...' : 'Xem chi tiết'}
+          <button type="button" onClick={onOpen} className="inline-flex min-h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-black text-white hover:bg-emerald-700 sm:flex-none">
+            <Eye size={16} className="shrink-0" /> <span className="truncate">{detailLoading ? 'Đang mở...' : 'Xem chi tiết'}</span>
           </button>
         </div>
       </div>

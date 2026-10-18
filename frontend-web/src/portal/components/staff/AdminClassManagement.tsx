@@ -434,7 +434,7 @@ function ClassDetailModal({
 
         <section className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs">
           <p className="font-black text-slate-900">Mô tả lớp học</p>
-          <p className="mt-2 whitespace-pre-wrap font-semibold leading-6 text-slate-600">{item.description || "--"}</p>
+          <p className="mt-2 whitespace-pre-wrap break-words font-semibold leading-6 text-slate-600 [overflow-wrap:anywhere]">{item.description || "--"}</p>
         </section>
 
         <section className="mt-4 rounded-xl border border-slate-200 p-4 text-xs">

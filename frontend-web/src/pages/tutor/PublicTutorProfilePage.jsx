@@ -267,7 +267,7 @@ export function PublicTutorProfilePage() {
               <div className="space-y-7">
                 <section className="border border-slate-200 bg-white p-6 shadow-[0_18px_42px_rgba(15,23,42,.06)] md:p-7">
                   <SectionHeader eyebrow="Hồ sơ công khai" title="Giới thiệu" />
-                  <p className="mt-4 text-base font-semibold leading-8 text-slate-600">
+                  <p className="mt-4 whitespace-pre-wrap break-words text-base font-semibold leading-8 text-slate-600 [overflow-wrap:anywhere]">
                     {tutor.bio || 'Gia sư chưa cập nhật phần giới thiệu công khai.'}
                   </p>
                 </section>
@@ -380,6 +380,12 @@ export function PublicTutorProfilePage() {
                 <section className="border border-slate-200 bg-white p-6 shadow-[0_18px_42px_rgba(15,23,42,.06)]">
                   <h2 className="font-display text-xl font-extrabold text-slate-950">Hành động</h2>
                   <div className="mt-4 grid gap-3">
+                    <a
+                      href="#classes"
+                      className="inline-flex min-h-11 items-center justify-center gap-2 bg-slate-900 px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-primary"
+                    >
+                      Xem lớp đang mở <ArrowRight size={16} />
+                    </a>
                     {canFollow && (
                       <button
                         type="button"
@@ -407,12 +413,6 @@ export function PublicTutorProfilePage() {
                         <MessageCircle size={16} /> {startingChat ? 'Đang mở tin nhắn...' : 'Nhắn tin'}
                       </button>
                     )}
-                    <a
-                      href="#classes"
-                      className="inline-flex items-center justify-center gap-2 bg-primary px-4 py-3 text-sm font-extrabold text-white transition-colors hover:bg-primary-dark"
-                    >
-                      Xem lớp đang mở <ArrowRight size={16} />
-                    </a>
                     <a
                       href="#reviews"
                       className="inline-flex items-center justify-center gap-2 border border-slate-200 bg-white px-4 py-3 text-sm font-extrabold text-slate-800 transition-colors hover:border-primary hover:text-primary"
@@ -496,7 +496,7 @@ function CapabilityCard({ capability, highlighted }) {
         </div>
       </div>
       {capability.description && (
-        <p className="mt-4 text-sm font-semibold leading-7 text-slate-600">{capability.description}</p>
+        <p className="mt-4 whitespace-pre-wrap break-words text-sm font-semibold leading-7 text-slate-600 [overflow-wrap:anywhere]">{capability.description}</p>
       )}
     </article>
   );
@@ -518,7 +518,7 @@ function PublicClassCard({ classRoom, onOpen }) {
           </span>
         </div>
         <h3 className="mt-3 font-display text-lg font-extrabold leading-6 text-slate-950">{classRoom.name}</h3>
-        <p className="mt-2 line-clamp-3 text-sm font-semibold leading-6 text-slate-600">{classRoom.description || 'Lớp học chưa có mô tả công khai.'}</p>
+        <p className="mt-2 line-clamp-3 whitespace-pre-wrap break-words text-sm font-semibold leading-6 text-slate-600 [overflow-wrap:anywhere]">{classRoom.description || 'Lớp học chưa có mô tả công khai.'}</p>
 
         <div className="mt-4 grid gap-2 text-xs font-bold text-slate-600">
           <span className="inline-flex items-center gap-2">

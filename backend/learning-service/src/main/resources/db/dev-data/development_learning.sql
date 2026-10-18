@@ -637,6 +637,104 @@ SELECT class_room.id, seed.title, seed.description, seed.expected_sessions, seed
 FROM chapter_seed seed
 JOIN class_rooms class_room ON LOWER(class_room.tutor_email) = seed.email AND class_room.name = seed.class_name;
 
+WITH lesson_demo_class AS (
+    SELECT id
+    FROM class_rooms
+    WHERE LOWER(tutor_email) = 'tutor1@gmail.com'
+      AND name = 'Toán 12 Hình học không gian từng bước'
+    ORDER BY id
+    LIMIT 1
+),
+lesson_session_seed(sequence_number, topic, session_date, start_time, end_time, assignment_title, assignment_description, status) AS (
+    VALUES
+        (1, 'Dựng hình và nhận diện quan hệ vuông góc', DATE '2026-10-08', '18:30', '20:00',
+         'Bài luyện dựng hình cơ bản', 'Vẽ lại hình, xác định các cặp đường thẳng vuông góc và ghi rõ giả thiết đã dùng.', 'COMPLETED'),
+        (2, 'Vector trong không gian và chuyển đổi dữ kiện hình học', DATE '2026-10-12', '18:30', '20:00',
+         'Bài tập vector không gian', 'Làm 5 bài chuyển dữ kiện hình học sang biểu thức vector, chú ý kiểm tra điều kiện song song.', 'COMPLETED'),
+        (3, 'Khoảng cách từ điểm đến mặt phẳng', DATE '2026-10-16', '18:30', '20:00',
+         NULL, NULL, 'SCHEDULED')
+)
+INSERT INTO class_sessions (
+    class_room_id, sequence_number, topic, session_date, start_time, end_time,
+    assignment_title, assignment_description, submission_required, late_submission_allowed,
+    material_description, status, settlement_dispatched
+)
+SELECT demo.id, seed.sequence_number, seed.topic, seed.session_date, seed.start_time, seed.end_time,
+       seed.assignment_title, seed.assignment_description,
+       seed.assignment_title IS NOT NULL, TRUE,
+       CASE
+           WHEN seed.sequence_number = 3 THEN 'Buổi demo cho Learning Copilot: AI sẽ gợi ý giáo án dựa trên chương học và hai buổi trước.'
+           ELSE NULL
+       END,
+       seed.status, FALSE
+FROM lesson_demo_class demo
+CROSS JOIN lesson_session_seed seed
+ON CONFLICT (class_room_id, sequence_number) DO UPDATE
+SET topic = EXCLUDED.topic,
+    session_date = EXCLUDED.session_date,
+    start_time = EXCLUDED.start_time,
+    end_time = EXCLUDED.end_time,
+    assignment_title = EXCLUDED.assignment_title,
+    assignment_description = EXCLUDED.assignment_description,
+    submission_required = EXCLUDED.submission_required,
+    late_submission_allowed = EXCLUDED.late_submission_allowed,
+    material_description = EXCLUDED.material_description,
+    status = EXCLUDED.status,
+    updated_at = CURRENT_TIMESTAMP;
+
+WITH lesson_demo_class AS (
+    SELECT id
+    FROM class_rooms
+    WHERE LOWER(tutor_email) = 'tutor1@gmail.com'
+      AND name = 'Toán 12 Hình học không gian từng bước'
+    ORDER BY id
+    LIMIT 1
+),
+lesson_demo_sessions AS (
+    SELECT session.id, session.sequence_number
+    FROM class_sessions session
+    JOIN lesson_demo_class demo ON demo.id = session.class_room_id
+    WHERE session.sequence_number IN (1, 2, 3)
+)
+INSERT INTO session_attendances (
+    session_id, student_id, student_email, student_name, tutor_id,
+    tutor_checked, tutor_checked_at, student_checked, student_checked_at,
+    final_outcome, submission_text, submitted_at, grade_score, tutor_feedback, graded_at, graded_by_tutor_email
+)
+SELECT session.id,
+       910001,
+       'student1@gmail.com',
+       'Nguyễn An Nhiên',
+       920001,
+       session.sequence_number IN (1, 2),
+       CASE WHEN session.sequence_number IN (1, 2) THEN TIMESTAMP '2026-10-12 20:05:00' ELSE NULL END,
+       session.sequence_number IN (1, 2),
+       CASE WHEN session.sequence_number IN (1, 2) THEN TIMESTAMP '2026-10-12 18:35:00' ELSE NULL END,
+       CASE WHEN session.sequence_number IN (1, 2) THEN 'BOTH_PRESENT' ELSE NULL END,
+       CASE WHEN session.sequence_number = 2 THEN 'Em đã làm bài vector và ghi lại phần còn nhầm về điều kiện song song.' ELSE NULL END,
+       CASE WHEN session.sequence_number = 2 THEN TIMESTAMP '2026-10-13 20:10:00' ELSE NULL END,
+       CASE WHEN session.sequence_number = 2 THEN '8.5' ELSE NULL END,
+       CASE WHEN session.sequence_number = 2 THEN 'Nắm ý chính tốt, cần trình bày bước kiểm tra giả thiết rõ hơn.' ELSE NULL END,
+       CASE WHEN session.sequence_number = 2 THEN TIMESTAMP '2026-10-14 09:00:00' ELSE NULL END,
+       CASE WHEN session.sequence_number = 2 THEN 'tutor1@gmail.com' ELSE NULL END
+FROM lesson_demo_sessions session
+ON CONFLICT (session_id, student_id) DO UPDATE
+SET student_email = EXCLUDED.student_email,
+    student_name = EXCLUDED.student_name,
+    tutor_id = EXCLUDED.tutor_id,
+    tutor_checked = EXCLUDED.tutor_checked,
+    tutor_checked_at = EXCLUDED.tutor_checked_at,
+    student_checked = EXCLUDED.student_checked,
+    student_checked_at = EXCLUDED.student_checked_at,
+    final_outcome = EXCLUDED.final_outcome,
+    submission_text = EXCLUDED.submission_text,
+    submitted_at = EXCLUDED.submitted_at,
+    grade_score = EXCLUDED.grade_score,
+    tutor_feedback = EXCLUDED.tutor_feedback,
+    graded_at = EXCLUDED.graded_at,
+    graded_by_tutor_email = EXCLUDED.graded_by_tutor_email,
+    updated_at = CURRENT_TIMESTAMP;
+
 WITH review_seed(tutor_email, class_name, student_email, rating, comment, created_at, updated_at) AS (
     VALUES
         ('tutor1@gmail.com', 'Lớp lịch sử Toán 12 - tutor1', 'student1@gmail.com', 5, 'Thầy cô hệ thống phần hàm số rất dễ hiểu, mỗi dạng bài đều có ví dụ và cách kiểm tra lỗi sai rõ ràng.', TIMESTAMP '2026-06-06 09:15:00', TIMESTAMP '2026-06-06 09:15:00'),
@@ -752,4 +850,6 @@ ON CONFLICT (student_id, classroom_id) DO NOTHING;
 SELECT setval('tutor_subject_registrations_id_seq', GREATEST((SELECT COALESCE(MAX(id), 1) FROM tutor_subject_registrations), nextval('tutor_subject_registrations_id_seq')), TRUE);
 SELECT setval('tutor_availabilities_id_seq', GREATEST((SELECT COALESCE(MAX(id), 1) FROM tutor_availabilities), nextval('tutor_availabilities_id_seq')), TRUE);
 SELECT setval('class_rooms_id_seq', GREATEST((SELECT COALESCE(MAX(id), 1) FROM class_rooms), nextval('class_rooms_id_seq')), TRUE);
+SELECT setval('class_sessions_id_seq', GREATEST((SELECT COALESCE(MAX(id), 1) FROM class_sessions), nextval('class_sessions_id_seq')), TRUE);
+SELECT setval('session_attendances_id_seq', GREATEST((SELECT COALESCE(MAX(id), 1) FROM session_attendances), nextval('session_attendances_id_seq')), TRUE);
 SELECT setval('tutor_reviews_id_seq', GREATEST((SELECT COALESCE(MAX(id), 1) FROM tutor_reviews), nextval('tutor_reviews_id_seq')), TRUE);

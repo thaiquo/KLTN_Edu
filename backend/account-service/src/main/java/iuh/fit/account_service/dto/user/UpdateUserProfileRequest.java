@@ -22,7 +22,10 @@ public class UpdateUserProfileRequest {
     @PastOrPresent(message = "Date of birth must not be in the future")
     private LocalDate dateOfBirth;
 
-    @Size(max = 30, message = "Gender must not exceed 30 characters")
+    @Pattern(
+            regexp = "^(MALE|FEMALE|PREFER_NOT_TO_SAY)?$",
+            message = "Gender must be MALE, FEMALE, or PREFER_NOT_TO_SAY"
+    )
     private String gender;
 
     @Size(max = 30, message = "Province code must not exceed 30 characters")

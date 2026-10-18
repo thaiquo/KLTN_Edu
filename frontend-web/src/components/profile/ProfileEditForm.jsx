@@ -2,12 +2,17 @@ import { FormField } from '../FormField';
 import { Save, X } from 'lucide-react';
 
 export const GENDER_OPTIONS = [
-  { value: '', label: 'Chưa chọn' },
-  { value: 'FEMALE', label: 'Nữ' },
   { value: 'MALE', label: 'Nam' },
-  { value: 'OTHER', label: 'Khác' },
+  { value: 'FEMALE', label: 'Nữ' },
   { value: 'PREFER_NOT_TO_SAY', label: 'Không muốn chia sẻ' }
 ];
+
+const VALID_GENDER_VALUES = new Set(GENDER_OPTIONS.map((option) => option.value));
+
+export function normalizeGenderForForm(value) {
+  const normalized = typeof value === 'string' ? value.trim().toUpperCase() : '';
+  return VALID_GENDER_VALUES.has(normalized) ? normalized : 'PREFER_NOT_TO_SAY';
+}
 
 export function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -23,7 +28,7 @@ export function toFormState(profile) {
     fullName: profile?.fullName || '',
     phone: profile?.phone || '',
     dateOfBirth: toDateInputValue(profile?.dateOfBirth),
-    gender: profile?.gender || '',
+    gender: normalizeGenderForForm(profile?.gender),
     provinceCode: profile?.provinceCode || '',
     province: profile?.province || '',
     communeCode: profile?.communeCode || '',

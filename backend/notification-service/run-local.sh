@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -e
 
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SERVICE_DIR="$SCRIPT_DIR"
 
@@ -62,20 +61,22 @@ if (( ${#missing_vars[@]} > 0 )); then
 fi
 
 echo "Environment configuration loaded."
+echo "Cleaning previous build artifacts..."
 echo "Starting notification-service..."
 
 cd "$SERVICE_DIR"
 
 if command -v powershell.exe >/dev/null 2>&1 && [[ -f ./mvnw.cmd ]]; then
-  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "./mvnw.cmd spring-boot:run" "$@"
+  powershell.exe -NoProfile -ExecutionPolicy Bypass \
+    -Command "./mvnw.cmd clean spring-boot:run" "$@"
 elif [[ -f ./mvnw ]]; then
   if [[ -x ./mvnw ]]; then
-    ./mvnw spring-boot:run "$@"
+    ./mvnw clean spring-boot:run "$@"
   else
-    sh ./mvnw spring-boot:run "$@"
+    sh ./mvnw clean spring-boot:run "$@"
   fi
 elif [[ -f ./mvnw.cmd ]]; then
-  ./mvnw.cmd spring-boot:run "$@"
+  ./mvnw.cmd clean spring-boot:run "$@"
 else
-  mvn spring-boot:run "$@"
+  mvn clean spring-boot:run "$@"
 fi

@@ -105,7 +105,7 @@ class UserServiceTest {
         request.setFullName("  Updated User  ");
         request.setPhone("  +84901234567  ");
         request.setDateOfBirth(LocalDate.of(1999, 5, 6));
-        request.setGender("  Female  ");
+        request.setGender("  female  ");
         request.setProvinceCode("HO_CHI_MINH");
         request.setCommuneCode("HCM_GO_VAP");
         request.setAddressDetail("  12 Nguyen Van Bao  ");
@@ -123,7 +123,7 @@ class UserServiceTest {
         assertThat(user.getFullName()).isEqualTo("Updated User");
         assertThat(user.getPhone()).isEqualTo("+84901234567");
         assertThat(user.getDateOfBirth()).isEqualTo(LocalDate.of(1999, 5, 6));
-        assertThat(user.getGender()).isEqualTo("Female");
+        assertThat(user.getGender()).isEqualTo("FEMALE");
         assertThat(user.getProvinceCode()).isEqualTo("HO_CHI_MINH");
         assertThat(user.getProvince()).isEqualTo("Thành phố Hồ Chí Minh");
         assertThat(user.getCommuneCode()).isEqualTo("HCM_GO_VAP");

@@ -1184,7 +1184,7 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, refunds = 
             </h2>
 
             {classroomDetails?.description && (
-              <p className="text-xs text-slate-500 mt-1 line-clamp-2 max-w-3xl">
+              <p className="text-xs text-slate-500 mt-1 line-clamp-2 max-w-3xl whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                 {classroomDetails.description}
               </p>
             )}

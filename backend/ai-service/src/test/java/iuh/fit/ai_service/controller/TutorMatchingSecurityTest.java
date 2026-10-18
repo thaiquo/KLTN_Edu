@@ -30,6 +30,9 @@ import iuh.fit.ai_service.service.ClassRequirementExtractionClient;
 import iuh.fit.ai_service.service.CatalogGroundingService.CatalogGroundingUnavailableException;
 import iuh.fit.ai_service.service.CatalogGroundingService.LocationGroundingUnavailableException;
 import iuh.fit.ai_service.service.GeminiService.GeminiUnavailableException;
+import iuh.fit.ai_service.service.HomeworkFeedbackDraftService;
+import iuh.fit.ai_service.dto.LearningCopilotDtos.HomeworkFeedback;
+import iuh.fit.ai_service.dto.LearningCopilotDtos.HomeworkFeedbackDraftResponse;
 import iuh.fit.ai_service.service.semantic.ClassSemanticIndexService;
 import iuh.fit.ai_service.service.semantic.ClassSemanticSearchService;
 import iuh.fit.ai_service.service.semantic.ClassSemanticVectorStore;
@@ -54,6 +57,7 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -112,6 +116,9 @@ class TutorMatchingSecurityTest {
 
     @MockBean
     private ClassSemanticSearchService classSemanticSearchService;
+
+    @MockBean
+    private HomeworkFeedbackDraftService homeworkFeedbackDraftService;
 
     @Test
     void unauthenticatedMatchingRequestReturns401() throws Exception {
@@ -573,6 +580,51 @@ class TutorMatchingSecurityTest {
         verifyNoInteractions(learningPublicClassClient);
     }
 
+    @Test
+    void unauthenticatedHomeworkFeedbackDraftReturns401() throws Exception {
+        mockMvc.perform(post("/api/ai/learning-copilot/homework-feedback-draft")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(homeworkFeedbackRequestBody()))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(homeworkFeedbackDraftService);
+    }
+
+    @Test
+    void studentCannotGenerateHomeworkFeedbackDraft() throws Exception {
+        mockMvc.perform(post("/api/ai/learning-copilot/homework-feedback-draft")
+                        .with(csrf())
+                        .cookie(accessToken("student@gmail.com", "STUDENT", List.of("STUDENT")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(homeworkFeedbackRequestBody()))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(homeworkFeedbackDraftService);
+    }
+
+    @Test
+    void tutorCanGenerateHomeworkFeedbackDraft() throws Exception {
+        when(homeworkFeedbackDraftService.generate(org.mockito.ArgumentMatchers.any())).thenReturn(
+                new HomeworkFeedbackDraftResponse(
+                        UUID.randomUUID(), "homework-feedback-v1", Instant.now(),
+                        new HomeworkFeedback("Tóm tắt", List.of("Điểm tích cực"), List.of("Cần cải thiện"),
+                                List.of("Làm thêm bài"), "Nhận xét cuối."),
+                        List.of("AI không đọc tệp bài nộp.")
+                )
+        );
+
+        mockMvc.perform(post("/api/ai/learning-copilot/homework-feedback-draft")
+                        .with(csrf())
+                        .cookie(accessToken("tutor@gmail.com", "TUTOR", List.of("TUTOR")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(homeworkFeedbackRequestBody()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.promptVersion").value("homework-feedback-v1"));
+
+        verify(homeworkFeedbackDraftService).generate(org.mockito.ArgumentMatchers.any());
+    }
+
     private Cookie accessToken(String email, String activeRole, List<String> roles) {
         return accessToken(email, activeRole, roles, 900);
     }
@@ -589,6 +641,19 @@ class TutorMatchingSecurityTest {
                 .signWith(key)
                 .compact();
         return new Cookie("access_token", token);
+    }
+
+    private String homeworkFeedbackRequestBody() {
+        return """
+                {
+                  "classId": 42,
+                  "sessionId": 4,
+                  "attendanceId": 99,
+                  "score": "7.5",
+                  "selectedFeedback": ["Đã nắm được kiến thức trọng tâm"],
+                  "tutorNotes": "Cần cẩn thận hơn ở bước tính"
+                }
+                """;
     }
 
     private String requestBody() {

@@ -250,7 +250,7 @@ public class SessionAttendanceService {
     /**
      * Học viên lấy link phòng học sau khi đã điểm danh thành công.
      */
-    @Transactional(readOnly = true)
+    @Transactional
     public String getMeetingLinkAfterStudentCheckIn(Long sessionId, Long studentId) {
         ClassSession session = classSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResourceNotFoundException("Buổi học không tồn tại: " + sessionId));
@@ -267,9 +267,9 @@ public class SessionAttendanceService {
 
         String meetingLink = session.getClassRoom().getMeetingLink();
         if (meetingLink == null || meetingLink.isBlank()) {
-            meetingLink = "https://meet.google.com/edu-class-" + (session.getClassRoom().getId() != null ? session.getClassRoom().getId() : sessionId);
+            return null;
         }
-        return meetingLink;
+        return meetingLink.trim();
     }
 
     /**
@@ -1262,7 +1262,7 @@ public class SessionAttendanceService {
                 canAccessMaterialsAndHomework ? session.isSubmissionRequired() : null,
                 canAccessMaterialsAndHomework ? session.isLateSubmissionAllowed() : null,
                 canAccessMaterialsAndHomework ? session.getMaterialUrl() : null,
-                canAccessMaterialsAndHomework ? session.getMaterialDescription() : null,
+                session.getMaterialDescription(),
                 session.getStatus(),
                 session.getCreatedAt(),
                 session.getUpdatedAt(),

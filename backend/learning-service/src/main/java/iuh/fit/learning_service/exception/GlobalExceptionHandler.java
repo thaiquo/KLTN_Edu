@@ -34,6 +34,11 @@ public class GlobalExceptionHandler {
         return error(HttpStatus.FORBIDDEN, ex.getMessage());
     }
 
+    @ExceptionHandler(CommunityRewriteUnavailableException.class)
+    ResponseEntity<Map<String, Object>> rewriteUnavailable(RuntimeException ex) {
+        return error(HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<Map<String, Object>> validation(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getFieldErrors().stream()

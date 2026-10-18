@@ -33,14 +33,26 @@ export const communityApi = {
     return apiRequest(`/api/community/posts/bookmarked?page=${page}&size=${size}`);
   },
 
-  createPost: (data) => apiRequest('/api/community/posts', {
+  createPost: (data, idempotencyKey) => apiRequest('/api/community/posts', {
     method: 'POST',
+    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
     body: JSON.stringify(data)
   }),
 
-  updatePost: (id, data) => apiRequest(`/api/community/posts/${id}`, {
+  updatePost: (id, data, expectedContentRevision) => apiRequest(
+    `/api/community/posts/${id}${expectedContentRevision != null ? `?expectedContentRevision=${encodeURIComponent(expectedContentRevision)}` : ''}`,
+    {
     method: 'PUT',
     body: JSON.stringify(data)
+    }
+  ),
+
+  retryModeration: (id) => apiRequest(`/api/community/posts/${id}/moderation/retry`, {
+    method: 'POST'
+  }),
+  requestAiRewrite: (id, contentRevision) => apiRequest(`/api/community/posts/${id}/ai-rewrite`, {
+    method: 'POST',
+    body: JSON.stringify({ contentRevision })
   }),
 
   deletePost: (id) => apiRequest(`/api/community/posts/${id}`, {

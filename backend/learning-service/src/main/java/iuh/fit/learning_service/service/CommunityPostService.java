@@ -17,7 +17,12 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -29,6 +34,7 @@ import java.util.stream.Collectors;
 @Service
 @Transactional
 public class CommunityPostService {
+    private static final Logger log = LoggerFactory.getLogger(CommunityPostService.class);
 
     private final CommunityPostRepository postRepository;
     private final PostPollRepository pollRepository;
@@ -45,6 +51,11 @@ public class CommunityPostService {
     private final TutorFollowRepository tutorFollowRepository;
     private final LearningEventPublisher eventPublisher;
     private final RealtimeEventHub realtimeEventHub;
+    private final CommunityPostPendingRevisionRepository pendingRevisionRepository;
+    private final CommunityModerationPolicy moderationPolicy;
+    private final ApplicationEventPublisher moderationEventPublisher;
+    private final CommunityCreateRequestStore createRequestStore;
+    private final ObjectMapper pendingObjectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
     public CommunityPostService(
             CommunityPostRepository postRepository,
@@ -61,7 +72,11 @@ public class CommunityPostService {
             EnrollmentRequestRepository enrollmentRequestRepository,
             TutorFollowRepository tutorFollowRepository,
             LearningEventPublisher eventPublisher,
-            RealtimeEventHub realtimeEventHub
+            RealtimeEventHub realtimeEventHub,
+            CommunityPostPendingRevisionRepository pendingRevisionRepository,
+            CommunityModerationPolicy moderationPolicy,
+            ApplicationEventPublisher moderationEventPublisher,
+            CommunityCreateRequestStore createRequestStore
     ) {
         this.postRepository = postRepository;
         this.pollRepository = pollRepository;
@@ -78,6 +93,10 @@ public class CommunityPostService {
         this.tutorFollowRepository = tutorFollowRepository;
         this.eventPublisher = eventPublisher;
         this.realtimeEventHub = realtimeEventHub;
+        this.pendingRevisionRepository = pendingRevisionRepository;
+        this.moderationPolicy = moderationPolicy;
+        this.moderationEventPublisher = moderationEventPublisher;
+        this.createRequestStore = createRequestStore;
     }
 
     @Transactional(readOnly = true)
@@ -140,6 +159,9 @@ public class CommunityPostService {
                     : builder.equal(root.get("status"), status);
         };
 
+        spec = spec.and((root, query, builder) -> root.get("moderationStatus").in(
+                CommunityModerationStatus.ALLOWED, CommunityModerationStatus.NOT_CHECKED));
+
         if (Boolean.TRUE.equals(followingOnly)) {
             spec = spec.and((root, query, builder) -> builder.and(
                     builder.equal(builder.upper(root.get("authorRole")), "TUTOR"),
@@ -199,34 +221,48 @@ public class CommunityPostService {
                         : builder.equal(root.get("status"), status)
         );
         return postRepository.findAll(spec, pageable)
-                .map(post -> mapToSummaryDto(post, principal.userId()));
+                .map(post -> mapToAuthorSummaryDto(post, principal.userId()));
     }
 
     public PostSummaryDto getPostDetail(Long postId, Long currentUserId) {
-        if (postRepository.incrementViewCount(postId) == 0) {
-            throw new ResourceNotFoundException("Community post not found: " + postId);
-        }
         CommunityPost post = postRepository.findById(postId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bài viết ID: " + postId));
-        if (post.getStatus() == PostStatus.HIDDEN) {
-            throw new ResourceNotFoundException("Không tìm thấy bài viết ID: " + postId);
-        }
+        ensurePublicPostVisible(post);
+        postRepository.incrementViewCount(postId);
+        post = postRepository.findById(postId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bài viết ID: " + postId));
+        ensurePublicPostVisible(post);
         return mapToSummaryDto(post, currentUserId);
     }
 
     public PostSummaryDto getSharedPost(UUID publicShareId, Long currentUserId) {
         CommunityPost post = postRepository.findByPublicShareId(publicShareId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shared community post not found"));
-        ensurePostVisible(post);
+        ensurePublicPostVisible(post);
         return mapToSummaryDto(post, currentUserId);
     }
 
     public PostSummaryDto createPost(CreatePostRequest request, LearningUserPrincipal principal, String fullName, String avatar) {
+        return createPost(request, principal, fullName, avatar, null);
+    }
+
+    public PostSummaryDto createPost(CreatePostRequest request, LearningUserPrincipal principal, String fullName,
+                                     String avatar, String idempotencyKey) {
         if (principal == null || principal.userId() == null) {
             throw new BadRequestException("Vui lòng đăng nhập để tạo bài viết");
         }
 
         String role = principal.activeRole() == null ? "" : principal.activeRole().trim().toUpperCase(Locale.ROOT);
+        CommunityCreateRequestStore.Claim createClaim = createRequestStore.claim(
+                principal.userId(), role, idempotencyKey);
+        if (createClaim.replayed()) {
+            CommunityPost existing = postRepository.findById(createClaim.existingPostId())
+                    .filter(post -> Objects.equals(post.getAuthorId(), principal.userId())
+                            && Objects.equals(post.getAuthorRole(), role))
+                    .orElseThrow(() -> new ConflictException("The original create result is no longer available"));
+            log.info("operation=community-create-replay postId={} authorId={}", existing.getId(), principal.userId());
+            return mapToAuthorSummaryDto(existing, principal.userId());
+        }
 
         Subject validatedSubject = null;
         ClassRoom linkedClass = null;
@@ -303,6 +339,8 @@ public class CommunityPostService {
         post.setTargetPricePerSession(request.getTargetPricePerSession());
         post.setAddress(request.getAddress());
         post.setStatus(PostStatus.OPEN);
+        post.setModerationStatus(CommunityModerationStatus.MODERATING);
+        post.setContentRevision(1L);
         post.setLikeCount(0);
         post.setCommentCount(0);
         post.setViewCount(0);
@@ -357,10 +395,18 @@ public class CommunityPostService {
             savedPost.setPoll(savedPoll);
         }
 
-        return mapToSummaryDto(savedPost, principal.userId());
+        createRequestStore.complete(principal.userId(), role, createClaim, savedPost.getId());
+        publishModerationRequest(savedPost, principal.email(), false,
+                new CommunityModerationClient.Request(savedPost.getPostType().name(), savedPost.getTitle(), savedPost.getContent()));
+        return mapToAuthorSummaryDto(savedPost, principal.userId());
     }
 
     public PostSummaryDto updatePost(Long postId, CreatePostRequest request, LearningUserPrincipal principal) {
+        return updatePost(postId, request, principal, null);
+    }
+
+    public PostSummaryDto updatePost(Long postId, CreatePostRequest request, LearningUserPrincipal principal,
+                                     Long expectedContentRevision) {
         if (principal == null || principal.userId() == null) {
             throw new ForbiddenException("Vui lòng đăng nhập để chỉnh sửa bài viết");
         }
@@ -376,6 +422,14 @@ public class CommunityPostService {
         }
         if (post.getStatus() != PostStatus.OPEN) {
             throw new ConflictException("Chỉ bài viết đang mở mới có thể chỉnh sửa");
+        }
+        if (expectedContentRevision != null) {
+            long currentRevision = pendingRevisionRepository.findById(postId)
+                    .map(CommunityPostPendingRevision::getContentRevision)
+                    .orElse(post.getContentRevision());
+            if (!Objects.equals(expectedContentRevision, currentRevision)) {
+                throw new ConflictException("Nội dung đã thay đổi. Vui lòng tải lại và tạo gợi ý mới");
+            }
         }
 
         Subject validatedSubject = null;
@@ -398,42 +452,157 @@ public class CommunityPostService {
             }
         }
 
-        post.setTitle(request.getTitle().trim());
-        post.setContent(request.getContent().trim());
-        post.setEducationLevel(request.getEducationLevel());
-        if (request.getLearningMode() != null) {
-            post.setLearningMode(request.getLearningMode());
-        }
-        post.setTargetPricePerSession(request.getTargetPricePerSession());
-        post.setAddress(request.getAddress());
-
-        if (validatedSubject != null) {
-            post.setSubject(validatedSubject);
-        } else if (request.getSubjectId() != null) {
-            Subject subject = subjectRepository.findById(request.getSubjectId())
-                    .filter(Subject::isActive)
-                    .orElseThrow(() -> new BadRequestException("Môn học không tồn tại hoặc đã ngừng hoạt động"));
-            post.setSubject(subject);
-        }
-        if (linkedClass != null) {
-            post.setLinkedClass(linkedClass);
-            if (validatedSubject != null) {
-                post.setSubject(validatedSubject);
-            }
-            post.setLearningMode(linkedClass.getLearningMode());
-            post.setTargetPricePerSession(linkedClass.getPricePerSession());
-            post.setEducationLevel(linkedClass.getLevel() != null ? linkedClass.getLevel().getName() : request.getEducationLevel());
-            post.setAddress(linkedClass.getAddress());
-        }
-
         if (post.getPostType() == PostType.TUTOR_POLL && post.getPoll() != null && request.getPoll() != null) {
-            updatePoll(post.getPoll(), request.getPoll());
+            applyStandardPollOptions(request.getPoll());
+            validatePoll(request.getPoll());
+            validatePollUpdate(post.getPoll(), request.getPoll());
         }
 
-        CommunityPost updated = postRepository.save(post);
-        PostSummaryDto result = mapToSummaryDto(updated, principal.userId());
-        publishPostUpdated(updated);
-        return result;
+        long pendingRevision = Math.max(post.getContentRevision() + 1,
+                pendingRevisionRepository.findById(postId).map(CommunityPostPendingRevision::getContentRevision)
+                        .orElse(post.getContentRevision()) + 1);
+        CommunityPostPendingRevision pending = pendingRevisionRepository.findById(postId)
+                .orElseGet(CommunityPostPendingRevision::new);
+        pending.setPostId(postId);
+        pending.setContentRevision(pendingRevision);
+        pending.setRequestJson(writePendingRequest(request));
+        pending.setModerationStatus(CommunityModerationStatus.MODERATING);
+        pending.setModerationCategories(null);
+        pending.setModerationReason(null);
+        pending.setModerationPromptVersion(null);
+        pending.setModeratedAt(null);
+        pending.setCreatedAt(LocalDateTime.now());
+        pendingRevisionRepository.save(pending);
+        publishModerationRequest(post, principal.email(), true,
+                new CommunityModerationClient.Request(post.getPostType().name(), request.getTitle().trim(), request.getContent().trim()),
+                pendingRevision);
+        return mapToAuthorSummaryDto(post, principal.userId());
+
+    }
+
+    public PostSummaryDto retryModeration(Long postId, LearningUserPrincipal principal) {
+        if (principal == null || principal.userId() == null) {
+            throw new ForbiddenException("Vui lòng đăng nhập để thử lại kiểm duyệt");
+        }
+        CommunityPost post = postRepository.findByIdForUpdate(postId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bài viết"));
+        if (!Objects.equals(post.getAuthorId(), principal.userId())) {
+            throw new ForbiddenException("Bạn không có quyền thử lại kiểm duyệt bài viết này");
+        }
+        if (post.getStatus() != PostStatus.OPEN) {
+            throw new ConflictException("Chỉ bài viết đang mở mới có thể thử lại kiểm duyệt");
+        }
+
+        CommunityPostPendingRevision pending = pendingRevisionRepository.findByPostIdForUpdate(postId).orElse(null);
+        if (pending != null) {
+            if (pending.getModerationStatus() != CommunityModerationStatus.FAILED) {
+                throw new ConflictException("Chỉ bản chỉnh sửa kiểm duyệt lỗi mới có thể thử lại");
+            }
+            CreatePostRequest request = readPendingRequest(pending.getRequestJson());
+            pending.setModerationStatus(CommunityModerationStatus.MODERATING);
+            pending.setModerationReason(null);
+            pending.setModerationCategories(null);
+            pending.setModeratedAt(null);
+            pendingRevisionRepository.save(pending);
+            log.info("operation=community-moderation-retry-accepted postId={} revision={} pendingEdit=true",
+                    postId, pending.getContentRevision());
+            publishModerationRequest(post, principal.email(), true,
+                    new CommunityModerationClient.Request(post.getPostType().name(), request.getTitle().trim(), request.getContent().trim()),
+                    pending.getContentRevision());
+        } else {
+            if (post.getModerationStatus() != CommunityModerationStatus.FAILED) {
+                throw new ConflictException("Chỉ bài viết kiểm duyệt lỗi mới có thể thử lại");
+            }
+            post.setModerationStatus(CommunityModerationStatus.MODERATING);
+            post.setModerationReason(null);
+            post.setModerationCategories(null);
+            post.setModeratedAt(null);
+            postRepository.save(post);
+            log.info("operation=community-moderation-retry-accepted postId={} revision={} pendingEdit=false",
+                    postId, post.getContentRevision());
+            publishModerationRequest(post, principal.email(), false,
+                    new CommunityModerationClient.Request(post.getPostType().name(), post.getTitle(), post.getContent()));
+        }
+        return mapToAuthorSummaryDto(post, principal.userId());
+    }
+
+    public boolean applyModerationResult(CommunityModerationRequested event, CommunityModerationPolicy.Result result) {
+        CommunityPost post = postRepository.findByIdForUpdate(event.postId()).orElse(null);
+        if (post == null) {
+            log.info("operation=community-moderation-result-noop postId={} revision={} reason=missing-post",
+                    event.postId(), event.contentRevision());
+            return false;
+        }
+        if (post.getStatus() != PostStatus.OPEN) {
+            log.info("operation=community-moderation-result-noop postId={} revision={} reason=lifecycle-conflict lifecycle={}",
+                    event.postId(), event.contentRevision(), post.getStatus());
+            return false;
+        }
+        CommunityModerationStatus outcome = moderationPolicy.map(result);
+        String categories = outcome == CommunityModerationStatus.FAILED || result == null ? null
+                : result.categories().stream().map(Enum::name).collect(Collectors.joining(","));
+        String reason = outcome == CommunityModerationStatus.FAILED || result == null ? null : result.reason();
+
+        if (event.pendingEdit()) {
+            CommunityPostPendingRevision pending = pendingRevisionRepository.findByPostIdForUpdate(event.postId()).orElse(null);
+            if (pending == null || !Objects.equals(pending.getContentRevision(), event.contentRevision())
+                    || pending.getModerationStatus() != CommunityModerationStatus.MODERATING) {
+                log.info("operation=community-moderation-result-noop postId={} revision={} reason=stale-pending",
+                        event.postId(), event.contentRevision());
+                return false;
+            }
+            CreatePostRequest request = readPendingRequest(pending.getRequestJson());
+            if (!Objects.equals(request.getTitle().trim(), event.snapshot().title())
+                    || !Objects.equals(request.getContent().trim(), event.snapshot().content())) {
+                log.info("operation=community-moderation-result-noop postId={} revision={} reason=snapshot-mismatch",
+                        event.postId(), event.contentRevision());
+                return false;
+            }
+            if (outcome == CommunityModerationStatus.ALLOWED) {
+                try {
+                    promotePendingRevision(post, request, event.contentRevision(), result, categories);
+                    pendingRevisionRepository.delete(pending);
+                    publishPostUpdated(post);
+                } catch (RuntimeException ex) {
+                    outcome = CommunityModerationStatus.FAILED;
+                    reason = null;
+                    categories = null;
+                    pending.setModerationStatus(outcome);
+                    pending.setModerationReason(null);
+                    pending.setModerationCategories(null);
+                    pending.setModeratedAt(LocalDateTime.now());
+                    pendingRevisionRepository.save(pending);
+                }
+            } else {
+                pending.setModerationStatus(outcome);
+                pending.setModerationCategories(categories);
+                pending.setModerationReason(reason);
+                pending.setModerationPromptVersion(result == null ? null : result.promptVersion());
+                pending.setModeratedAt(LocalDateTime.now());
+                pendingRevisionRepository.save(pending);
+            }
+        } else {
+            if (!Objects.equals(post.getContentRevision(), event.contentRevision())
+                    || post.getModerationStatus() != CommunityModerationStatus.MODERATING
+                    || !Objects.equals(post.getPostType().name(), event.snapshot().postType())
+                    || !Objects.equals(post.getTitle(), event.snapshot().title())
+                    || !Objects.equals(post.getContent(), event.snapshot().content())) {
+                log.info("operation=community-moderation-result-noop postId={} revision={} reason=stale-or-duplicate",
+                        event.postId(), event.contentRevision());
+                return false;
+            }
+            post.setModerationStatus(outcome);
+            post.setModerationCategories(categories);
+            post.setModerationReason(reason);
+            post.setModerationPromptVersion(result == null ? null : result.promptVersion());
+            post.setModeratedAt(LocalDateTime.now());
+            postRepository.save(post);
+        }
+
+        publishModerationCompleted(event, outcome, reason, categories);
+        log.info("operation=community-moderation-result-applied postId={} revision={} outcome={} pendingEdit={}",
+                event.postId(), event.contentRevision(), outcome, event.pendingEdit());
+        return true;
     }
 
     public PostSummaryDto closePost(Long postId, LearningUserPrincipal principal) {
@@ -442,7 +611,7 @@ public class CommunityPostService {
         }
         CommunityPost post = postRepository.findByIdForUpdate(postId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bài viết"));
-        ensurePostVisible(post);
+        ensurePublicPostVisible(post);
         if (!Objects.equals(post.getAuthorId(), principal.userId())) {
             throw new ForbiddenException("Bạn không có quyền đóng bài đăng này");
         }
@@ -451,6 +620,7 @@ public class CommunityPostService {
         }
 
         post.setStatus(PostStatus.CLOSED);
+        discardPendingRevision(post.getId(), "closed");
         if (post.getPoll() != null) {
             post.getPoll().setIsClosed(true);
             pollRepository.save(post.getPoll());
@@ -477,6 +647,7 @@ public class CommunityPostService {
         }
 
         post.setStatus(PostStatus.HIDDEN);
+        discardPendingRevision(post.getId(), "hidden");
         postRepository.save(post);
         realtimeEventHub.publishToAll("COMMUNITY_POST_DELETED", post.getId(), Map.of(
                 "postId", post.getId(),
@@ -574,6 +745,7 @@ public class CommunityPostService {
         PostPoll poll = pollRepository.findByIdForUpdate(pollId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy cuộc khảo sát"));
 
+        if (poll.getPost() != null) ensurePublicPostVisible(poll.getPost());
         if (Boolean.TRUE.equals(poll.getIsClosed()) || (poll.getExpiresAt() != null && poll.getExpiresAt().isBefore(LocalDateTime.now()))) {
             throw new BadRequestException("Cuộc khảo sát này đã kết thúc");
         }
@@ -639,6 +811,7 @@ public class CommunityPostService {
 
         PostPoll poll = pollRepository.findByIdForUpdate(pollId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy cuộc khảo sát"));
+        if (poll.getPost() != null) ensurePublicPostVisible(poll.getPost());
         if (Boolean.TRUE.equals(poll.getIsClosed())
                 || (poll.getExpiresAt() != null && !poll.getExpiresAt().isAfter(LocalDateTime.now()))
                 || poll.getPost() == null
@@ -673,7 +846,7 @@ public class CommunityPostService {
 
         CommunityPost post = postRepository.findByIdForUpdate(postId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bài viết"));
-        ensurePostVisible(post);
+        ensurePublicPostVisible(post);
 
         Optional<PostInteraction> likeOpt = interactionRepository.findByPostIdAndUserIdAndInteractionType(
                 postId, principal.userId(), InteractionType.LIKE);
@@ -705,7 +878,7 @@ public class CommunityPostService {
     public List<LikeUserDto> getPostLikes(Long postId) {
         CommunityPost post = postRepository.findById(postId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bài viết"));
-        ensurePostVisible(post);
+        ensurePublicPostVisible(post);
         return interactionRepository.findByPostIdAndInteractionTypeOrderByCreatedAtDesc(postId, InteractionType.LIKE)
                 .stream()
                 .map(i -> LikeUserDto.builder()
@@ -727,7 +900,7 @@ public class CommunityPostService {
 
         CommunityPost post = postRepository.findByIdForUpdate(postId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bài viết"));
-        ensurePostVisible(post);
+        ensurePublicPostVisible(post);
 
         Optional<PostInteraction> bookmark = interactionRepository.findByPostIdAndUserIdAndInteractionType(
                 postId, principal.userId(), InteractionType.BOOKMARK);
@@ -759,7 +932,7 @@ public class CommunityPostService {
     public Page<CommentDto> getComments(Long postId, Pageable pageable) {
         CommunityPost post = postRepository.findById(postId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bài viết"));
-        ensurePostVisible(post);
+        ensurePublicPostVisible(post);
         Page<PostInteraction> comments = interactionRepository.findByPostIdAndInteractionTypeOrderByCreatedAtAsc(
                 postId, InteractionType.COMMENT, pageable);
         return comments.map(c -> CommentDto.builder()
@@ -793,7 +966,7 @@ public class CommunityPostService {
 
         CommunityPost post = postRepository.findByIdForUpdate(postId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bài viết"));
-        ensurePostVisible(post);
+        ensurePublicPostVisible(post);
 
         PostInteraction comment = new PostInteraction();
         comment.setPost(post);
@@ -919,6 +1092,7 @@ public class CommunityPostService {
         }
         CommunityPost post = postRepository.findById(postId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bài viết: " + postId));
+        ensurePublicPostVisible(post);
         if (!Objects.equals(post.getAuthorId(), principal.userId())) {
             throw new ForbiddenException("Bạn không phải là tác giả của bài khảo sát này");
         }
@@ -1012,6 +1186,7 @@ public class CommunityPostService {
 
         CommunityPost post = postRepository.findByIdForUpdate(postId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy bài viết: " + postId));
+        ensurePublicPostVisible(post);
 
         if (!post.getAuthorId().equals(principal.userId())) {
             throw new ForbiddenException("Bạn không phải là tác giả của bài viết này");
@@ -1174,6 +1349,7 @@ public class CommunityPostService {
         // Cập nhật Post
         post.setLinkedClass(savedClass);
         post.setStatus(PostStatus.CONVERTED);
+        discardPendingRevision(post.getId(), "converted");
         poll.setIsClosed(true);
         pollRepository.save(poll);
         postRepository.save(post);
@@ -1226,6 +1402,7 @@ public class CommunityPostService {
 
         post.setLinkedClass(savedClass);
         post.setStatus(PostStatus.CONVERTED);
+        discardPendingRevision(post.getId(), "converted");
         poll.setIsClosed(true);
         pollRepository.save(poll);
         postRepository.save(post);
@@ -1511,24 +1688,101 @@ public class CommunityPostService {
         return level;
     }
 
+    private void publishModerationRequest(CommunityPost post, String authorEmail, boolean pendingEdit,
+                                          CommunityModerationClient.Request snapshot) {
+        publishModerationRequest(post, authorEmail, pendingEdit, snapshot, post.getContentRevision());
+    }
+
+    private void discardPendingRevision(Long postId, String lifecycle) {
+        pendingRevisionRepository.findByPostIdForUpdate(postId).ifPresent(pending -> {
+            long revision = pending.getContentRevision();
+            pendingRevisionRepository.delete(pending);
+            log.info("operation=community-pending-discarded postId={} revision={} lifecycle={}",
+                    postId, revision, lifecycle);
+        });
+    }
+
+    private void publishModerationRequest(CommunityPost post, String authorEmail, boolean pendingEdit,
+                                          CommunityModerationClient.Request snapshot, long revision) {
+        moderationEventPublisher.publishEvent(new CommunityModerationRequested(
+                post.getId(), revision, authorEmail, pendingEdit, snapshot));
+    }
+
+    private void publishModerationCompleted(CommunityModerationRequested event,
+                                            CommunityModerationStatus status, String reason, String categories) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("postId", event.postId());
+        payload.put("contentRevision", event.contentRevision());
+        payload.put("moderationStatus", status.name());
+        payload.put("reason", reason);
+        payload.put("categories", splitCategories(categories));
+        realtimeEventHub.publishToUser(event.authorEmail(), "COMMUNITY_POST_MODERATION_COMPLETED", event.postId(), payload);
+    }
+
+    private String writePendingRequest(CreatePostRequest request) {
+        try {
+            return pendingObjectMapper.writeValueAsString(request);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Không thể lưu bản chỉnh sửa đang chờ kiểm duyệt", ex);
+        }
+    }
+
+    private CreatePostRequest readPendingRequest(String json) {
+        try {
+            return pendingObjectMapper.readValue(json, CreatePostRequest.class);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Không thể đọc bản chỉnh sửa đang chờ kiểm duyệt", ex);
+        }
+    }
+
+    private void promotePendingRevision(CommunityPost post, CreatePostRequest request, long revision,
+                                        CommunityModerationPolicy.Result result, String categories) {
+        post.setTitle(request.getTitle().trim());
+        post.setContent(request.getContent().trim());
+        post.setEducationLevel(request.getEducationLevel());
+        post.setLearningMode(request.getLearningMode() != null ? request.getLearningMode() : LearningMode.ONLINE);
+        post.setTargetPricePerSession(request.getTargetPricePerSession());
+        post.setAddress(request.getAddress());
+        post.setSubject(request.getSubjectId() == null ? null : subjectRepository.findById(request.getSubjectId())
+                .filter(Subject::isActive)
+                .orElseThrow(() -> new IllegalStateException("Môn học của bản chỉnh sửa không còn khả dụng")));
+        post.setLinkedClass(request.getLinkedClassId() == null ? null : classRoomRepository.findById(request.getLinkedClassId())
+                .orElseThrow(() -> new IllegalStateException("Lớp học của bản chỉnh sửa không còn khả dụng")));
+        if (post.getLinkedClass() != null) {
+            ClassRoom linkedClass = post.getLinkedClass();
+            post.setLearningMode(linkedClass.getLearningMode());
+            post.setTargetPricePerSession(linkedClass.getPricePerSession());
+            post.setEducationLevel(linkedClass.getLevel() != null ? linkedClass.getLevel().getName() : request.getEducationLevel());
+            post.setAddress(linkedClass.getAddress());
+        }
+        if (post.getPostType() == PostType.TUTOR_POLL && post.getPoll() != null && request.getPoll() != null) {
+            updatePoll(post.getPoll(), request.getPoll());
+        }
+        post.setContentRevision(revision);
+        post.setModerationStatus(CommunityModerationStatus.ALLOWED);
+        post.setModerationCategories(categories);
+        post.setModerationReason(result.reason());
+        post.setModerationPromptVersion(result.promptVersion());
+        post.setModeratedAt(LocalDateTime.now());
+        postRepository.save(post);
+    }
+
+    private List<String> splitCategories(String categories) {
+        return categories == null || categories.isBlank() ? List.of()
+                : Arrays.stream(categories.split(",")).map(String::trim).filter(value -> !value.isBlank()).toList();
+    }
+
     private void updatePoll(PostPoll poll, CreatePollRequest request) {
         applyStandardPollOptions(request);
         validatePoll(request);
+        validatePollUpdate(poll, request);
         List<PostPollOption> existingOptions = pollOptionRepository
                 .findByPollIdOrderByDayOfWeekAscStartTimeAsc(poll.getId());
         boolean optionsChanged = pollOptionsChanged(existingOptions, request.getOptions());
         int totalVotes = poll.getTotalVotes() == null ? 0 : poll.getTotalVotes();
-        if (totalVotes > 0 && optionsChanged) {
-            throw new ConflictException("Không thể thay đổi ca học khi khảo sát đã có bình chọn");
-        }
         int sessionsPerWeek = request.getSessionsPerWeek() != null ? request.getSessionsPerWeek() : 2;
         int durationMinutes = request.getDurationMinutes() != null ? request.getDurationMinutes() : 90;
         int maxVotesPerUser = request.getMaxVotesPerUser() != null ? request.getMaxVotesPerUser() : sessionsPerWeek;
-        if (totalVotes > 0 && (!Objects.equals(poll.getSessionsPerWeek(), sessionsPerWeek)
-                || !Objects.equals(poll.getDurationMinutes(), durationMinutes)
-                || !Objects.equals(poll.getMaxVotesPerUser(), maxVotesPerUser))) {
-            throw new ConflictException("Không thể đổi số buổi, thời lượng hoặc giới hạn chọn khi khảo sát đã có bình chọn");
-        }
 
         poll.setQuestion(request.getQuestion().trim());
         poll.setMinVotesTarget(request.getMinVotesTarget() != null && request.getMinVotesTarget() > 0
@@ -1562,6 +1816,24 @@ public class CommunityPostService {
             }
         }
         pollRepository.save(poll);
+    }
+
+    private void validatePollUpdate(PostPoll poll, CreatePollRequest request) {
+        List<PostPollOption> existingOptions = pollOptionRepository
+                .findByPollIdOrderByDayOfWeekAscStartTimeAsc(poll.getId());
+        boolean optionsChanged = pollOptionsChanged(existingOptions, request.getOptions());
+        int totalVotes = poll.getTotalVotes() == null ? 0 : poll.getTotalVotes();
+        if (totalVotes > 0 && optionsChanged) {
+            throw new ConflictException("Không thể thay đổi ca học khi khảo sát đã có bình chọn");
+        }
+        int sessionsPerWeek = request.getSessionsPerWeek() != null ? request.getSessionsPerWeek() : 2;
+        int durationMinutes = request.getDurationMinutes() != null ? request.getDurationMinutes() : 90;
+        int maxVotesPerUser = request.getMaxVotesPerUser() != null ? request.getMaxVotesPerUser() : sessionsPerWeek;
+        if (totalVotes > 0 && (!Objects.equals(poll.getSessionsPerWeek(), sessionsPerWeek)
+                || !Objects.equals(poll.getDurationMinutes(), durationMinutes)
+                || !Objects.equals(poll.getMaxVotesPerUser(), maxVotesPerUser))) {
+            throw new ConflictException("Không thể đổi số buổi, thời lượng hoặc giới hạn chọn khi khảo sát đã có bình chọn");
+        }
     }
 
     private boolean pollOptionsChanged(
@@ -1839,6 +2111,7 @@ public class CommunityPostService {
     }
 
     private void ensurePollAcceptsVotes(PostPoll poll) {
+        if (poll.getPost() != null) ensurePublicPostVisible(poll.getPost());
         boolean expired = poll.getExpiresAt() != null && !poll.getExpiresAt().isAfter(LocalDateTime.now());
         if (Boolean.TRUE.equals(poll.getIsClosed())
                 || expired
@@ -1879,11 +2152,31 @@ public class CommunityPostService {
         }
     }
 
+    private void ensurePublicPostVisible(CommunityPost post) {
+        ensurePostVisible(post);
+        if (post.getModerationStatus() != CommunityModerationStatus.ALLOWED
+                && post.getModerationStatus() != CommunityModerationStatus.NOT_CHECKED) {
+            throw new ResourceNotFoundException("Không tìm thấy bài viết");
+        }
+    }
+
     private PostSummaryDto mapToSummaryDto(CommunityPost post, Long currentUserId) {
         List<Long> followedTutorIds = currentUserId != null
                 ? tutorFollowRepository.findFollowedTutorUserIdsByStudentUserId(currentUserId)
                 : Collections.emptyList();
         return mapToSummaryDto(post, currentUserId, followedTutorIds);
+    }
+
+    private PostSummaryDto mapToAuthorSummaryDto(CommunityPost post, Long currentUserId) {
+        PostSummaryDto dto = mapToSummaryDto(post, currentUserId);
+        pendingRevisionRepository.findById(post.getId()).ifPresent(pending -> {
+            dto.setPendingContentRevision(pending.getContentRevision());
+            dto.setPendingModerationStatus(pending.getModerationStatus());
+            dto.setPendingModerationReason(pending.getModerationReason());
+            dto.setPendingModerationCategories(splitCategories(pending.getModerationCategories()));
+            dto.setPendingContent(readPendingRequest(pending.getRequestJson()));
+        });
+        return dto;
     }
 
     private PostSummaryDto mapToSummaryDto(CommunityPost post, Long currentUserId, List<Long> followedTutorIds) {
@@ -1934,6 +2227,10 @@ public class CommunityPostService {
                 .targetPricePerSession(post.getTargetPricePerSession())
                 .address(post.getAddress())
                 .status(post.getStatus())
+                .moderationStatus(post.getModerationStatus())
+                .contentRevision(post.getContentRevision())
+                .moderationReason(post.getModerationReason())
+                .moderationCategories(splitCategories(post.getModerationCategories()))
                 .linkedClassId(linkedClass != null ? linkedClass.getId() : null)
                 .linkedClassName(linkedClass != null ? linkedClass.getName() : null)
                 .linkedClassStatus(linkedClass != null ? linkedClass.getStatus().name() : null)

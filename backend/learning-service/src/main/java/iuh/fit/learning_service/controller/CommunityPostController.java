@@ -6,6 +6,7 @@ import iuh.fit.learning_service.enums.LearningMode;
 import iuh.fit.learning_service.enums.PostStatus;
 import iuh.fit.learning_service.enums.PostType;
 import iuh.fit.learning_service.service.CommunityPostService;
+import iuh.fit.learning_service.service.CommunityRewriteService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -31,10 +32,13 @@ public class CommunityPostController {
 
     private final CommunityPostService postService;
     private final TutorFollowService tutorFollowService;
+    private final CommunityRewriteService rewriteService;
 
-    public CommunityPostController(CommunityPostService postService, TutorFollowService tutorFollowService) {
+    public CommunityPostController(CommunityPostService postService, TutorFollowService tutorFollowService,
+                                   CommunityRewriteService rewriteService) {
         this.postService = postService;
         this.tutorFollowService = tutorFollowService;
+        this.rewriteService = rewriteService;
     }
 
     private LearningUserPrincipal extractPrincipal(Authentication auth) {
@@ -107,21 +111,40 @@ public class CommunityPostController {
     @PostMapping("/posts")
     public ResponseEntity<PostSummaryDto> createPost(
             @Valid @RequestBody CreatePostRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             Authentication authentication
     ) {
         LearningUserPrincipal principal = extractPrincipal(authentication);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(postService.createPost(request, principal, null, null));
+                .body(postService.createPost(request, principal, null, null, idempotencyKey));
     }
 
     @PutMapping("/posts/{id}")
     public ResponseEntity<PostSummaryDto> updatePost(
             @PathVariable Long id,
             @Valid @RequestBody CreatePostRequest request,
+            @RequestParam Long expectedContentRevision,
             Authentication authentication
     ) {
         LearningUserPrincipal principal = extractPrincipal(authentication);
-        return ResponseEntity.ok(postService.updatePost(id, request, principal));
+        return ResponseEntity.ok(postService.updatePost(id, request, principal, expectedContentRevision));
+    }
+
+    @PostMapping("/posts/{id}/ai-rewrite")
+    public ResponseEntity<AiRewritePostResponse> rewritePost(
+            @PathVariable Long id,
+            @Valid @RequestBody AiRewritePostRequest request,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(rewriteService.rewrite(id, request, extractPrincipal(authentication)));
+    }
+
+    @PostMapping("/posts/{id}/moderation/retry")
+    public ResponseEntity<PostSummaryDto> retryModeration(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(postService.retryModeration(id, extractPrincipal(authentication)));
     }
 
     @DeleteMapping("/posts/{id}")

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Sparkles,
   Plus,
@@ -42,6 +42,8 @@ import { ShareResourceDialog } from '../../components/sharing/ShareResourceDialo
 import { CommunityFeedPage } from '../../pages/community/CommunityFeedPage';
 import { PollWeeklyCalendar } from '../../components/community/PollWeeklyCalendar';
 import PostLikesModal from '../../components/community/PostLikesModal';
+import { ModerationStatusBanner } from '../../components/community/ModerationStatusBanner';
+import { evaluateCommunityModerationEvent } from '../../utils/communityModerationEvents';
 
 interface TutorCommunityManagementProps {
   onNavigate?: (pageId: string) => void;
@@ -67,6 +69,8 @@ export function TutorCommunityManagement({
   const [searchKeyword, setSearchKeyword] = useState('');
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [retryingPostId, setRetryingPostId] = useState<number | null>(null);
+  const seenModerationEvents = useRef(new Set<string>());
   const [likesModalPostId, setLikesModalPostId] = useState<number | null>(null);
   const [sharePost, setSharePost] = useState<any | null>(null);
   const [replyingToMap, setReplyingToMap] = useState<Record<number, any>>({});
@@ -92,6 +96,7 @@ export function TutorCommunityManagement({
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<any | null>(null);
+  const [startWithAiRewrite, setStartWithAiRewrite] = useState(false);
   const [convertingPost, setConvertingPost] = useState<any | null>(null);
 
   // Expanded comments by post ID
@@ -140,6 +145,20 @@ export function TutorCommunityManagement({
     }
   }, [statusFilter, page]);
 
+  const retryModeration = async (postId: number) => {
+    if (retryingPostId === postId) return;
+    setRetryingPostId(postId);
+    try {
+      await communityApi.retryModeration(postId);
+      feedback.info('AI đang kiểm tra lại nội dung...');
+      await loadMyPosts(true);
+    } catch (err: any) {
+      feedback.error(err.message || 'Không thể thử lại kiểm duyệt.');
+    } finally {
+      setRetryingPostId(null);
+    }
+  };
+
   useEffect(() => {
     loadMyPosts(true);
   }, [statusFilter]);
@@ -162,6 +181,22 @@ export function TutorCommunityManagement({
         return;
       }
 
+      if (detail?.type === 'COMMUNITY_POST_MODERATION_COMPLETED') {
+        const evaluation = evaluateCommunityModerationEvent(detail, posts, seenModerationEvents.current);
+        if (evaluation.decision === 'ignore') return;
+        if (evaluation.decision === 'refresh') {
+          loadMyPosts(true);
+          return;
+        }
+        const moderationStatus = detail.payload?.moderationStatus;
+        if (moderationStatus === 'ALLOWED') feedback.success('Bài viết đã được đăng.');
+        else if (moderationStatus === 'NEEDS_EDIT') feedback.warning(detail.payload?.reason || 'Bài viết cần được chỉnh sửa.');
+        else if (moderationStatus === 'REJECTED') feedback.error(detail.payload?.reason || 'Không thể đăng bài vì nội dung chưa phù hợp.');
+        else if (moderationStatus === 'FAILED') feedback.error('Hiện chưa thể kiểm tra nội dung. Vui lòng thử lại.');
+        loadMyPosts(true);
+        return;
+      }
+
       if (detail?.type === 'COMMUNITY_POST_UPDATED') {
         setPosts(current => current.map(post => Number(post.id) === postId
           ? {
@@ -178,7 +213,7 @@ export function TutorCommunityManagement({
 
     window.addEventListener('realtime:event', handleRealtimeCommunityEvent);
     return () => window.removeEventListener('realtime:event', handleRealtimeCommunityEvent);
-  }, []);
+  }, [feedback, loadMyPosts, posts]);
 
   // Quick statistics
   const stats = useMemo(() => {
@@ -592,6 +627,18 @@ export function TutorCommunityManagement({
                     key={post.id}
                     className="bg-white rounded-3xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all overflow-hidden"
                   >
+                    <div className="px-6 pt-4">
+                      <ModerationStatusBanner
+                        post={post}
+                        onRetry={() => retryModeration(post.id)}
+                        retrying={retryingPostId === post.id}
+                        onRewrite={() => {
+                          setEditingPost(post.pendingContent ? { ...post, ...post.pendingContent } : post);
+                          setStartWithAiRewrite(true);
+                          setIsCreateModalOpen(true);
+                        }}
+                      />
+                    </div>
                     {/* Card Top: Badges, Status & Quick Action */}
                     <div className="p-6 pb-4">
                       <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100">
@@ -773,7 +820,8 @@ export function TutorCommunityManagement({
                         <button
                           type="button"
                           onClick={() => {
-                            setEditingPost(post);
+                            setEditingPost(post.pendingContent ? { ...post, ...post.pendingContent } : post);
+                            setStartWithAiRewrite(false);
                             setIsCreateModalOpen(true);
                           }}
                           className="p-1.5 rounded-xl text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition cursor-pointer"
@@ -964,18 +1012,17 @@ export function TutorCommunityManagement({
         onClose={() => {
           setIsCreateModalOpen(false);
           setEditingPost(null);
+          setStartWithAiRewrite(false);
         }}
         onPostCreated={savedPost => {
-          if (editingPost) {
-            setPosts(prev => prev.map(p => p.id === savedPost.id ? savedPost : p));
-            feedback.success('Đã cập nhật bài viết thành công.');
-          } else {
-            setPosts(prev => [savedPost, ...prev]);
-            feedback.success('Đã đăng bài viết mới thành công!');
-          }
+          setPosts(prev => editingPost
+            ? prev.map(p => p.id === savedPost.id ? savedPost : p)
+            : [savedPost, ...prev]);
+          feedback.info('AI đang kiểm tra nội dung...');
         }}
         userRole="TUTOR"
         editingPost={editingPost}
+        startWithAiRewrite={startWithAiRewrite}
       />
 
       {/* Convert to Class Modal */}

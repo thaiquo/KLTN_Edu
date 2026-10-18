@@ -806,7 +806,7 @@ export function TutorClassManagement() {
                   <h3 className="font-display font-black text-base text-slate-900 group-hover:text-brand-primary transition-colors line-clamp-1">
                     {cls.name}
                   </h3>
-                  <p className="text-xs text-slate-500 font-medium line-clamp-2 mt-1">{cls.description}</p>
+                  <p className="text-xs text-slate-500 font-medium line-clamp-2 mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{cls.description}</p>
                 </div>
 
                 {/* Reject Reason Banner if any */}
@@ -1259,7 +1259,7 @@ export function TutorClassManagement() {
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
                     Mô tả chi tiết lớp học:
                   </label>
-                  <p className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 leading-relaxed font-medium">
+                  <p className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 leading-relaxed font-medium whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                     {detailModalClass.description || "Chưa có mô tả chi tiết."}
                   </p>
                 </div>

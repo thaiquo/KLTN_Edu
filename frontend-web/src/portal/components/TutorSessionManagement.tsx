@@ -538,7 +538,7 @@ export const TutorSessionManagement: React.FC = () => {
                     })()}
                   </div>
                   <h2 className="text-xl font-black text-slate-900 font-display">{selectedClass.name}</h2>
-                  <p className="text-xs text-slate-500 mt-1 line-clamp-1">{selectedClass.description}</p>
+                  <p className="text-xs text-slate-500 mt-1 line-clamp-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{selectedClass.description}</p>
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0 flex-wrap">

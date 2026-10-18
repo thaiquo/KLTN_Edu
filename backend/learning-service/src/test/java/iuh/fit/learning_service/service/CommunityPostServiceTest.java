@@ -9,6 +9,7 @@ import iuh.fit.learning_service.enums.InteractionType;
 import iuh.fit.learning_service.enums.PostStatus;
 import iuh.fit.learning_service.enums.PostType;
 import iuh.fit.learning_service.enums.PollTimePeriod;
+import iuh.fit.learning_service.enums.CommunityModerationStatus;
 import iuh.fit.learning_service.enums.TutorSubjectRegistrationStatus;
 import iuh.fit.learning_service.exception.BadRequestException;
 import iuh.fit.learning_service.exception.ForbiddenException;
@@ -41,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import org.mockito.ArgumentCaptor;
+import org.springframework.context.ApplicationEventPublisher;
 
 @ExtendWith(MockitoExtension.class)
 class CommunityPostServiceTest {
@@ -90,6 +92,18 @@ class CommunityPostServiceTest {
     @Mock
     private TutorFollowRepository tutorFollowRepository;
 
+    @Mock
+    private CommunityPostPendingRevisionRepository pendingRevisionRepository;
+
+    @Mock
+    private CommunityModerationPolicy moderationPolicy;
+
+    @Mock
+    private ApplicationEventPublisher moderationEventPublisher;
+
+    @Mock
+    private CommunityCreateRequestStore createRequestStore;
+
     @InjectMocks
     private CommunityPostService postService;
 
@@ -100,6 +114,37 @@ class CommunityPostServiceTest {
     void setUp() {
         tutorPrincipal = new LearningUserPrincipal("tutor@edu.vn", 101L, "TUTOR");
         studentPrincipal = new LearningUserPrincipal("student@edu.vn", 202L, "STUDENT");
+        lenient().when(createRequestStore.claim(anyLong(), anyString(), any()))
+                .thenReturn(new CommunityCreateRequestStore.Claim(false, null, null));
+    }
+
+    @Test
+    void publicDetailRejectsUnapprovedModerationStates() {
+        CommunityPost post = new CommunityPost();
+        post.setId(91L);
+        post.setStatus(PostStatus.OPEN);
+        when(postRepository.findById(91L)).thenReturn(Optional.of(post));
+        for (CommunityModerationStatus state : List.of(CommunityModerationStatus.MODERATING,
+                CommunityModerationStatus.NEEDS_EDIT, CommunityModerationStatus.REJECTED,
+                CommunityModerationStatus.FAILED)) {
+            post.setModerationStatus(state);
+            assertThrows(ResourceNotFoundException.class, () -> postService.getPostDetail(91L, null));
+        }
+        verify(postRepository, never()).incrementViewCount(91L);
+    }
+
+    @Test
+    void publicDetailKeepsLegacyAndApprovedPostsVisible() {
+        CommunityPost post = new CommunityPost();
+        post.setId(92L);
+        post.setStatus(PostStatus.OPEN);
+        when(postRepository.findById(92L)).thenReturn(Optional.of(post));
+        for (CommunityModerationStatus state : List.of(CommunityModerationStatus.NOT_CHECKED,
+                CommunityModerationStatus.ALLOWED)) {
+            post.setModerationStatus(state);
+            assertThat(postService.getPostDetail(92L, null).getId()).isEqualTo(92L);
+        }
+        verify(postRepository, times(2)).incrementViewCount(92L);
     }
 
     @Test
@@ -127,6 +172,7 @@ class CommunityPostServiceTest {
         savedPost.setContent(request.getContent());
         savedPost.setPostType(PostType.TUTOR_POLL);
         savedPost.setStatus(PostStatus.OPEN);
+        savedPost.setModerationStatus(CommunityModerationStatus.MODERATING);
 
         PostPoll savedPoll = new PostPoll();
         savedPoll.setId(10L);
@@ -151,6 +197,13 @@ class CommunityPostServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.getTitle()).isEqualTo("Lớp ôn thi THPTQG Toán 12");
         assertThat(result.getAuthorRole()).isEqualTo("TUTOR");
+        assertThat(result.getModerationStatus()).isEqualTo(CommunityModerationStatus.MODERATING);
+        ArgumentCaptor<Object> tutorModerationEvent = ArgumentCaptor.forClass(Object.class);
+        verify(moderationEventPublisher).publishEvent(tutorModerationEvent.capture());
+        assertThat(tutorModerationEvent.getValue()).isInstanceOf(CommunityModerationRequested.class);
+        CommunityModerationRequested requested = (CommunityModerationRequested) tutorModerationEvent.getValue();
+        assertThat(requested.pendingEdit()).isFalse();
+        assertThat(requested.snapshot().postType()).isEqualTo("TUTOR_POLL");
         verify(postRepository).save(any(CommunityPost.class));
         verify(pollRepository).save(any(PostPoll.class));
         ArgumentCaptor<List<PostPollOption>> optionsCaptor = ArgumentCaptor.forClass(List.class);
@@ -943,10 +996,305 @@ class CommunityPostServiceTest {
 
     @Test
     void getPostDetail_HiddenPostIsNotPublic() {
+        CommunityPost post = new CommunityPost();
+        post.setStatus(PostStatus.HIDDEN);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
         assertThrows(ResourceNotFoundException.class, () -> postService.getPostDetail(1L, null));
-        verify(postRepository).incrementViewCount(1L);
-        verify(postRepository, never()).findById(1L);
+        verify(postRepository, never()).incrementViewCount(1L);
         verify(postRepository, never()).save(any());
+    }
+
+    @Test
+    void createPost_StartsModerationAndPublishesImmutableRequest() {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setPostType(PostType.STUDENT_FIND_TUTOR);
+        request.setTitle("Tìm gia sư Toán 11");
+        request.setContent("Cần ôn tập kiểm tra giữa kỳ");
+        CommunityPost saved = new CommunityPost();
+        saved.setId(501L);
+        saved.setAuthorId(202L);
+        saved.setAuthorRole("STUDENT");
+        saved.setAuthorName("student@edu.vn");
+        saved.setPostType(request.getPostType());
+        saved.setTitle(request.getTitle());
+        saved.setContent(request.getContent());
+        saved.setStatus(PostStatus.OPEN);
+        saved.setModerationStatus(CommunityModerationStatus.MODERATING);
+        when(postRepository.save(any(CommunityPost.class))).thenReturn(saved);
+        when(pendingRevisionRepository.findById(501L)).thenReturn(Optional.empty());
+
+        PostSummaryDto response = postService.createPost(request, studentPrincipal, null, null);
+
+        assertThat(response.getModerationStatus()).isEqualTo(CommunityModerationStatus.MODERATING);
+        ArgumentCaptor<Object> event = ArgumentCaptor.forClass(Object.class);
+        verify(moderationEventPublisher).publishEvent(event.capture());
+        CommunityModerationRequested requested = (CommunityModerationRequested) event.getValue();
+        assertThat(requested.postId()).isEqualTo(501L);
+        assertThat(requested.pendingEdit()).isFalse();
+        assertThat(requested.snapshot().title()).isEqualTo("Tìm gia sư Toán 11");
+    }
+
+    @Test
+    void approvedPendingEditPromotesContentAndEmitsTargetedEvent() {
+        CommunityPost post = moderatedStudentPost(601L, "Bản công khai");
+        CreatePostRequest edit = studentEdit("Bản chỉnh sửa", "Nội dung đã sửa");
+        when(postRepository.findByIdForUpdate(601L)).thenReturn(Optional.of(post));
+        when(pendingRevisionRepository.findById(601L)).thenReturn(Optional.empty());
+        when(pendingRevisionRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        postService.updatePost(601L, edit, studentPrincipal);
+        ArgumentCaptor<CommunityPostPendingRevision> pendingCaptor = ArgumentCaptor.forClass(CommunityPostPendingRevision.class);
+        verify(pendingRevisionRepository).save(pendingCaptor.capture());
+        CommunityPostPendingRevision pending = pendingCaptor.getValue();
+        when(pendingRevisionRepository.findByPostIdForUpdate(601L)).thenReturn(Optional.of(pending));
+        when(moderationPolicy.map(any())).thenReturn(CommunityModerationStatus.ALLOWED);
+        CommunityModerationPolicy.Result allowed = moderationResult(CommunityModerationPolicy.Recommendation.ALLOW,
+                CommunityModerationPolicy.Risk.LOW);
+        CommunityModerationRequested event = new CommunityModerationRequested(601L, 2L, "student@edu.vn", true,
+                new CommunityModerationClient.Request("STUDENT_FIND_TUTOR", "Bản chỉnh sửa", "Nội dung đã sửa"));
+
+        assertThat(postService.applyModerationResult(event, allowed)).isTrue();
+        assertThat(post.getTitle()).isEqualTo("Bản chỉnh sửa");
+        assertThat(post.getContentRevision()).isEqualTo(2L);
+        verify(pendingRevisionRepository).delete(pending);
+        verify(realtimeEventHub).publishToUser(eq("student@edu.vn"),
+                eq("COMMUNITY_POST_MODERATION_COMPLETED"), eq(601L), anyMap());
+    }
+
+    @Test
+    void rejectedPendingEditPreservesPublishedContentAndStaleResultIsIgnored() {
+        CommunityPost post = moderatedStudentPost(602L, "Bản công khai");
+        CommunityPostPendingRevision pending = new CommunityPostPendingRevision();
+        pending.setPostId(602L);
+        pending.setContentRevision(3L);
+        pending.setModerationStatus(CommunityModerationStatus.MODERATING);
+        pending.setRequestJson("{\"postType\":\"STUDENT_FIND_TUTOR\",\"title\":\"Bản mới\",\"content\":\"Nội dung mới\"}");
+        when(postRepository.findByIdForUpdate(602L)).thenReturn(Optional.of(post));
+        when(pendingRevisionRepository.findByPostIdForUpdate(602L)).thenReturn(Optional.of(pending));
+        when(moderationPolicy.map(any())).thenReturn(CommunityModerationStatus.REJECTED);
+        CommunityModerationPolicy.Result rejected = moderationResult(CommunityModerationPolicy.Recommendation.REJECT,
+                CommunityModerationPolicy.Risk.HIGH);
+
+        CommunityModerationRequested stale = new CommunityModerationRequested(602L, 2L, "student@edu.vn", true,
+                new CommunityModerationClient.Request("STUDENT_FIND_TUTOR", "Bản cũ", "Nội dung cũ"));
+        assertThat(postService.applyModerationResult(stale, rejected)).isFalse();
+        CommunityModerationRequested current = new CommunityModerationRequested(602L, 3L, "student@edu.vn", true,
+                new CommunityModerationClient.Request("STUDENT_FIND_TUTOR", "Bản mới", "Nội dung mới"));
+        assertThat(postService.applyModerationResult(current, rejected)).isTrue();
+
+        assertThat(post.getTitle()).isEqualTo("Bản công khai");
+        assertThat(pending.getModerationStatus()).isEqualTo(CommunityModerationStatus.REJECTED);
+        verify(pendingRevisionRepository, never()).delete(any());
+        verify(realtimeEventHub, times(1)).publishToUser(eq("student@edu.vn"),
+                eq("COMMUNITY_POST_MODERATION_COMPLETED"), eq(602L), anyMap());
+    }
+
+    @Test
+    void retryRequiresAuthorAndFailedCurrentAttempt() {
+        CommunityPost post = moderatedStudentPost(603L, "Bài viết");
+        post.setModerationStatus(CommunityModerationStatus.FAILED);
+        when(postRepository.findByIdForUpdate(603L)).thenReturn(Optional.of(post));
+        when(pendingRevisionRepository.findByPostIdForUpdate(603L)).thenReturn(Optional.empty());
+        assertThrows(ForbiddenException.class, () -> postService.retryModeration(603L, tutorPrincipal));
+
+        PostSummaryDto response = postService.retryModeration(603L, studentPrincipal);
+        assertThat(response.getModerationStatus()).isEqualTo(CommunityModerationStatus.MODERATING);
+        verify(moderationEventPublisher).publishEvent(any(CommunityModerationRequested.class));
+    }
+
+    @Test
+    void rewrittenDraftRequiresCurrentRevisionAndCreatesNewModeratingRevision() {
+        CommunityPost post = moderatedStudentPost(605L, "Bản công khai");
+        CommunityPostPendingRevision rejected = new CommunityPostPendingRevision();
+        rejected.setPostId(605L);
+        rejected.setContentRevision(3L);
+        rejected.setModerationStatus(CommunityModerationStatus.REJECTED);
+        rejected.setRequestJson("{\"postType\":\"STUDENT_FIND_TUTOR\",\"title\":\"Bản bị từ chối\","
+                + "\"content\":\"Nội dung bị từ chối\"}");
+        when(postRepository.findByIdForUpdate(605L)).thenReturn(Optional.of(post));
+        when(pendingRevisionRepository.findById(605L)).thenReturn(Optional.of(rejected));
+        when(pendingRevisionRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        CreatePostRequest rewritten = studentEdit("Bản AI đã sửa", "Nội dung an toàn đã được người dùng duyệt");
+        assertThrows(ConflictException.class,
+                () -> postService.updatePost(605L, rewritten, studentPrincipal, 2L));
+
+        PostSummaryDto response = postService.updatePost(605L, rewritten, studentPrincipal, 3L);
+        assertThat(rejected.getContentRevision()).isEqualTo(4L);
+        assertThat(rejected.getModerationStatus()).isEqualTo(CommunityModerationStatus.MODERATING);
+        assertThat(post.getTitle()).isEqualTo("Bản công khai");
+        assertThat(response.getPendingModerationStatus()).isEqualTo(CommunityModerationStatus.MODERATING);
+        verify(moderationEventPublisher).publishEvent(any(CommunityModerationRequested.class));
+    }
+
+    @Test
+    void newPostOutcomesEmitOnlyTargetedSafeCompletionEvents() {
+        CommunityPost post = moderatedStudentPost(604L, "Bài đang kiểm tra");
+        post.setModerationStatus(CommunityModerationStatus.MODERATING);
+        when(postRepository.findByIdForUpdate(604L)).thenReturn(Optional.of(post));
+        CommunityModerationRequested event = new CommunityModerationRequested(604L, 1L, "student@edu.vn", false,
+                new CommunityModerationClient.Request("STUDENT_FIND_TUTOR", post.getTitle(), post.getContent()));
+        List<CommunityModerationStatus> outcomes = List.of(CommunityModerationStatus.ALLOWED,
+                CommunityModerationStatus.NEEDS_EDIT, CommunityModerationStatus.REJECTED, CommunityModerationStatus.FAILED);
+        for (CommunityModerationStatus outcome : outcomes) {
+            post.setModerationStatus(CommunityModerationStatus.MODERATING);
+            when(moderationPolicy.map(any())).thenReturn(outcome);
+            CommunityModerationPolicy.Result result = outcome == CommunityModerationStatus.FAILED ? null
+                    : moderationResult(outcome == CommunityModerationStatus.REJECTED
+                            ? CommunityModerationPolicy.Recommendation.REJECT
+                            : CommunityModerationPolicy.Recommendation.ALLOW,
+                            outcome == CommunityModerationStatus.ALLOWED
+                                    ? CommunityModerationPolicy.Risk.LOW : CommunityModerationPolicy.Risk.MEDIUM);
+            assertThat(postService.applyModerationResult(event, result)).isTrue();
+        }
+        verify(realtimeEventHub, times(4)).publishToUser(eq("student@edu.vn"),
+                eq("COMMUNITY_POST_MODERATION_COMPLETED"), eq(604L), anyMap());
+        verify(realtimeEventHub, never()).publishToAll(eq("COMMUNITY_POST_MODERATION_COMPLETED"), anyLong(), anyMap());
+    }
+
+    @Test
+    void createReplayReturnsOriginalPostWithoutCreatingOrSchedulingAgain() {
+        CommunityPost existing = moderatedStudentPost(700L, "Original post");
+        when(createRequestStore.claim(202L, "STUDENT", "request-token-700"))
+                .thenReturn(new CommunityCreateRequestStore.Claim(false, "request-token-700", 700L));
+        when(postRepository.findById(700L)).thenReturn(Optional.of(existing));
+        when(pendingRevisionRepository.findById(700L)).thenReturn(Optional.empty());
+
+        PostSummaryDto result = postService.createPost(studentEdit("Ignored", "Ignored"), studentPrincipal,
+                null, null, "request-token-700");
+
+        assertThat(result.getId()).isEqualTo(700L);
+        verify(postRepository, never()).save(any());
+        verify(moderationEventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void successivePendingEditsKeepOnlyNewestRevisionAndIgnoreOlderResult() {
+        CommunityPost post = moderatedStudentPost(701L, "Published");
+        CommunityPostPendingRevision pending = new CommunityPostPendingRevision();
+        pending.setPostId(701L);
+        pending.setContentRevision(2L);
+        pending.setModerationStatus(CommunityModerationStatus.MODERATING);
+        pending.setRequestJson("{\"postType\":\"STUDENT_FIND_TUTOR\",\"title\":\"Revision 2\",\"content\":\"Content 2\"}");
+        when(postRepository.findByIdForUpdate(701L)).thenReturn(Optional.of(post));
+        when(pendingRevisionRepository.findById(701L)).thenReturn(Optional.of(pending));
+        when(pendingRevisionRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        postService.updatePost(701L, studentEdit("Revision 3", "Content 3"), studentPrincipal, 2L);
+        assertThat(pending.getContentRevision()).isEqualTo(3L);
+
+        CommunityModerationRequested stale = new CommunityModerationRequested(701L, 2L, "student@edu.vn", true,
+                new CommunityModerationClient.Request("STUDENT_FIND_TUTOR", "Revision 2", "Content 2"));
+        when(pendingRevisionRepository.findByPostIdForUpdate(701L)).thenReturn(Optional.of(pending));
+        when(moderationPolicy.map(any())).thenReturn(CommunityModerationStatus.ALLOWED);
+        assertThat(postService.applyModerationResult(stale, moderationResult(
+                CommunityModerationPolicy.Recommendation.ALLOW, CommunityModerationPolicy.Risk.LOW))).isFalse();
+        assertThat(post.getTitle()).isEqualTo("Published");
+        verify(realtimeEventHub, never()).publishToUser(anyString(),
+                eq("COMMUNITY_POST_MODERATION_COMPLETED"), anyLong(), anyMap());
+    }
+
+    @Test
+    void duplicateModerationResultIsAppliedAndPublishedOnlyOnce() {
+        CommunityPost post = moderatedStudentPost(702L, "Moderating");
+        post.setModerationStatus(CommunityModerationStatus.MODERATING);
+        when(postRepository.findByIdForUpdate(702L)).thenReturn(Optional.of(post));
+        when(moderationPolicy.map(any())).thenReturn(CommunityModerationStatus.ALLOWED);
+        CommunityModerationRequested event = new CommunityModerationRequested(702L, 1L, "student@edu.vn", false,
+                new CommunityModerationClient.Request("STUDENT_FIND_TUTOR", post.getTitle(), post.getContent()));
+        CommunityModerationPolicy.Result allowed = moderationResult(
+                CommunityModerationPolicy.Recommendation.ALLOW, CommunityModerationPolicy.Risk.LOW);
+
+        assertThat(postService.applyModerationResult(event, allowed)).isTrue();
+        assertThat(postService.applyModerationResult(event, allowed)).isFalse();
+        verify(realtimeEventHub, times(1)).publishToUser(eq("student@edu.vn"),
+                eq("COMMUNITY_POST_MODERATION_COMPLETED"), eq(702L), anyMap());
+    }
+
+    @Test
+    void lifecycleChangeDiscardsPendingAndLateResultCannotPromoteIt() {
+        CommunityPost post = moderatedStudentPost(703L, "Published");
+        CommunityPostPendingRevision pending = new CommunityPostPendingRevision();
+        pending.setPostId(703L);
+        pending.setContentRevision(2L);
+        pending.setModerationStatus(CommunityModerationStatus.MODERATING);
+        pending.setRequestJson("{\"postType\":\"STUDENT_FIND_TUTOR\",\"title\":\"Pending\",\"content\":\"Pending content\"}");
+        when(postRepository.findByIdForUpdate(703L)).thenReturn(Optional.of(post));
+        when(pendingRevisionRepository.findByPostIdForUpdate(703L))
+                .thenReturn(Optional.of(pending), Optional.empty());
+        when(postRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        postService.closePost(703L, studentPrincipal);
+        assertThat(post.getStatus()).isEqualTo(PostStatus.CLOSED);
+        verify(pendingRevisionRepository).delete(pending);
+
+        CommunityModerationRequested late = new CommunityModerationRequested(703L, 2L, "student@edu.vn", true,
+                new CommunityModerationClient.Request("STUDENT_FIND_TUTOR", "Pending", "Pending content"));
+        assertThat(postService.applyModerationResult(late, moderationResult(
+                CommunityModerationPolicy.Recommendation.ALLOW, CommunityModerationPolicy.Risk.LOW))).isFalse();
+        assertThat(post.getTitle()).isEqualTo("Published");
+    }
+
+    @Test
+    void terminalLifecycleStatesIgnoreLateModerationResults() {
+        for (PostStatus lifecycle : List.of(PostStatus.HIDDEN, PostStatus.CLOSED, PostStatus.CONVERTED)) {
+            reset(postRepository, realtimeEventHub, moderationPolicy);
+            CommunityPost post = moderatedStudentPost(705L, "Published");
+            post.setStatus(lifecycle);
+            post.setModerationStatus(CommunityModerationStatus.MODERATING);
+            when(postRepository.findByIdForUpdate(705L)).thenReturn(Optional.of(post));
+            CommunityModerationRequested late = new CommunityModerationRequested(705L, 1L,
+                    "student@edu.vn", false,
+                    new CommunityModerationClient.Request("STUDENT_FIND_TUTOR", post.getTitle(), post.getContent()));
+
+            assertThat(postService.applyModerationResult(late, moderationResult(
+                    CommunityModerationPolicy.Recommendation.ALLOW,
+                    CommunityModerationPolicy.Risk.LOW))).isFalse();
+            assertThat(post.getStatus()).isEqualTo(lifecycle);
+            verify(postRepository, never()).save(any());
+            verify(realtimeEventHub, never()).publishToUser(anyString(), anyString(), anyLong(), anyMap());
+        }
+    }
+
+    @Test
+    void repeatedRetryWhileModeratingDoesNotScheduleAnotherAttempt() {
+        CommunityPost post = moderatedStudentPost(704L, "Failed post");
+        post.setModerationStatus(CommunityModerationStatus.FAILED);
+        when(postRepository.findByIdForUpdate(704L)).thenReturn(Optional.of(post));
+        when(pendingRevisionRepository.findByPostIdForUpdate(704L)).thenReturn(Optional.empty());
+        when(pendingRevisionRepository.findById(704L)).thenReturn(Optional.empty());
+
+        postService.retryModeration(704L, studentPrincipal);
+        assertThrows(ConflictException.class, () -> postService.retryModeration(704L, studentPrincipal));
+        verify(moderationEventPublisher, times(1)).publishEvent(any(CommunityModerationRequested.class));
+    }
+
+    private CommunityPost moderatedStudentPost(Long id, String title) {
+        CommunityPost post = new CommunityPost();
+        post.setId(id);
+        post.setAuthorId(202L);
+        post.setAuthorRole("STUDENT");
+        post.setPostType(PostType.STUDENT_FIND_TUTOR);
+        post.setTitle(title);
+        post.setContent("Nội dung công khai");
+        post.setStatus(PostStatus.OPEN);
+        post.setModerationStatus(CommunityModerationStatus.ALLOWED);
+        post.setContentRevision(1L);
+        return post;
+    }
+
+    private CreatePostRequest studentEdit(String title, String content) {
+        CreatePostRequest request = new CreatePostRequest();
+        request.setPostType(PostType.STUDENT_FIND_TUTOR);
+        request.setTitle(title);
+        request.setContent(content);
+        request.setLearningMode(LearningMode.ONLINE);
+        return request;
+    }
+
+    private CommunityModerationPolicy.Result moderationResult(CommunityModerationPolicy.Recommendation recommendation,
+                                                               CommunityModerationPolicy.Risk risk) {
+        return new CommunityModerationPolicy.Result(recommendation, risk, List.of(), "Lý do an toàn", "model", "v1", "now");
     }
 
     @Test
@@ -1226,7 +1574,7 @@ class CommunityPostServiceTest {
         CommunityPost post = conversionPost(PostStatus.HIDDEN, true);
         when(postRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(post));
 
-        assertThrows(ConflictException.class, () -> postService.convertPostToClass(
+        assertThrows(ResourceNotFoundException.class, () -> postService.convertPostToClass(
                 1L, ConvertPostToClassRequest.builder().selectedOptionId(20L).build(), tutorPrincipal, "Gia sư"));
         verifyNoInteractions(classRoomService);
     }

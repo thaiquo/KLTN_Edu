@@ -5,6 +5,7 @@ import iuh.fit.learning_service.enums.LearningMode;
 import iuh.fit.learning_service.enums.PostStatus;
 import iuh.fit.learning_service.enums.PostType;
 import iuh.fit.learning_service.enums.PollTimePeriod;
+import iuh.fit.learning_service.enums.CommunityModerationStatus;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Future;
@@ -26,6 +27,28 @@ import java.util.List;
 import java.util.UUID;
 
 public class CommunityPostDtos {
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AiRewritePostRequest {
+        @NotNull(message = "Phiên bản nội dung không được để trống")
+        private Long contentRevision;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class AiRewritePostResponse {
+        private Long postId;
+        private Long sourceRevision;
+        private Boolean pendingEdit;
+        private Boolean canRewrite;
+        private String suggestedTitle;
+        private String suggestedContent;
+        private String summaryOfChanges;
+    }
 
     @Data
     @Builder
@@ -121,6 +144,15 @@ public class CommunityPostDtos {
         private BigDecimal targetPricePerSession;
         private String address;
         private PostStatus status;
+        private CommunityModerationStatus moderationStatus;
+        private Long contentRevision;
+        private String moderationReason;
+        private List<String> moderationCategories;
+        private Long pendingContentRevision;
+        private CommunityModerationStatus pendingModerationStatus;
+        private String pendingModerationReason;
+        private List<String> pendingModerationCategories;
+        private CreatePostRequest pendingContent;
         private Long linkedClassId;
         private String linkedClassName;
         private String linkedClassStatus;

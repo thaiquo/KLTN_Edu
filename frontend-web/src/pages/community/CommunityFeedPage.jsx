@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Sparkles, 
   Search, 
@@ -26,6 +26,7 @@ import { HomeHeader } from '../../components/home/HomeHeader';
 import { HomeFooter } from '../../components/home/HomeFooter';
 import { useFeedback } from '../../components/feedback/useFeedback';
 import { extractCommunityPostId } from '../../utils/shareLinks';
+import { evaluateCommunityModerationEvent } from '../../utils/communityModerationEvents';
 
 const StudentCommunityManagement = React.lazy(() =>
   import('../../portal/components/StudentCommunityManagement').then(m => ({ default: m.StudentCommunityManagement }))
@@ -49,6 +50,7 @@ export function CommunityFeedPage({
     return searchParams.get('tab') === 'mine' ? 'mine' : 'explore';
   });
   const [posts, setPosts] = useState([]);
+  const seenModerationEvents = useRef(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
@@ -192,8 +194,36 @@ export function CommunityFeedPage({
   };
 
   const handlePostCreated = (newPost) => {
-    setPosts(prev => [newPost, ...prev]);
+    if (['ALLOWED', 'NOT_CHECKED'].includes(newPost?.moderationStatus)) {
+      setPosts(prev => [newPost, ...prev]);
+    }
   };
+
+  useEffect(() => {
+    const handleModeration = (event) => {
+      const detail = event.detail;
+      if (detail?.type !== 'COMMUNITY_POST_MODERATION_COMPLETED') return;
+      const evaluation = evaluateCommunityModerationEvent(detail, posts, seenModerationEvents.current);
+      if (evaluation.decision === 'ignore') return;
+      if (evaluation.decision === 'refresh') {
+        loadPosts(true);
+        return;
+      }
+      const status = detail.payload?.moderationStatus;
+      if (status === 'ALLOWED') {
+        feedback.success('Bài viết đã được đăng.');
+        loadPosts(true);
+      } else if (status === 'NEEDS_EDIT') {
+        feedback.warning(detail.payload?.reason || 'Bài viết cần được chỉnh sửa trước khi đăng.');
+      } else if (status === 'REJECTED') {
+        feedback.error(detail.payload?.reason || 'Không thể đăng bài vì nội dung chưa phù hợp.');
+      } else if (status === 'FAILED') {
+        feedback.error('Hiện chưa thể kiểm tra nội dung. Vui lòng thử lại.');
+      }
+    };
+    window.addEventListener('realtime:event', handleModeration);
+    return () => window.removeEventListener('realtime:event', handleModeration);
+  }, [feedback, loadPosts, posts]);
 
   const handleBookmarkToggle = (postId, isBookmarked) => {
     if (activeTab === 'SAVED' && !isBookmarked) {

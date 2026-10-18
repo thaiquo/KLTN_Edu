@@ -38,7 +38,11 @@ export function computeOnchainSessionId(sessionId: number | bigint | string): st
   return ethers.keccak256(ethers.toUtf8Bytes(`EDUCONNECT:SESSION:${sessionId}`));
 }
 
-function toBytes32(id: string | number | bigint): string {
+export const FUND_AGREEMENT_SELECTOR = '0x7aaf23f6';
+export const UNSUPPORTED_DELEGATED_FUNDING_MESSAGE =
+  'Ví đang gửi giao dịch ký quỹ qua cơ chế ủy quyền/delegation nên Smart Contract không nhận đúng ví học viên. Vui lòng tắt Smart Account/Delegation trong ví hoặc dùng ví EOA thông thường rồi thử lại. Không cần approve hay nạp tiền lại.';
+
+export function formatEscrowBytes32Id(id: string | number | bigint): string {
   if (typeof id === 'string') {
     const cleaned = id.trim();
     if (cleaned.startsWith('0x') && cleaned.length === 66) {
@@ -53,6 +57,22 @@ function toBytes32(id: string | number | bigint): string {
     return ethers.zeroPadValue(ethers.toBeHex(BigInt(id)), 32);
   } catch {
     return ethers.id(String(id));
+  }
+}
+
+function assertExpectedFundAgreementTransaction(
+  txRequest: ethers.TransactionRequest,
+  expectedEscrowAddress: string
+) {
+  const actualTarget = typeof txRequest.to === 'string' ? txRequest.to.toLowerCase() : '';
+  const expectedTarget = expectedEscrowAddress.toLowerCase();
+  if (actualTarget !== expectedTarget) {
+    throw new Error(UNSUPPORTED_DELEGATED_FUNDING_MESSAGE);
+  }
+
+  const data = typeof txRequest.data === 'string' ? txRequest.data.toLowerCase() : '';
+  if (!data.startsWith(FUND_AGREEMENT_SELECTOR)) {
+    throw new Error('Dữ liệu giao dịch ký quỹ không khớp hàm fundAgreement(bytes32). Vui lòng tải lại trang và thử lại.');
   }
 }
 
@@ -111,14 +131,34 @@ export class EscrowContractService {
   /**
    * Student deposits USDC to fund the agreement on-chain
    */
+  public async preflightFundAgreement(
+    signer: ethers.JsonRpcSigner,
+    agreementId: bigint | number | string
+  ): Promise<{ formattedAgreementId: string; transaction: ethers.TransactionRequest }> {
+    const escrowContract = this.getEscrowContract(signer);
+    const addresses = this.getAddresses();
+    const formattedAgreementId = formatEscrowBytes32Id(agreementId);
+
+    await escrowContract.getFunction('fundAgreement').staticCall(formattedAgreementId);
+    const transaction = await escrowContract.getFunction('fundAgreement').populateTransaction(formattedAgreementId);
+    assertExpectedFundAgreementTransaction(transaction, addresses.escrow);
+
+    return { formattedAgreementId, transaction };
+  }
+
+  public isExpectedEscrowTarget(target?: string | null): boolean {
+    if (!target) {
+      return false;
+    }
+    return target.toLowerCase() === this.getAddresses().escrow.toLowerCase();
+  }
+
   public async fundAgreement(
     signer: ethers.JsonRpcSigner,
     agreementId: bigint | number | string
-  ): Promise<ethers.ContractTransactionResponse> {
-    const escrowContract = this.getEscrowContract(signer);
-    const formattedId = toBytes32(agreementId);
-    const tx = await escrowContract.fundAgreement(formattedId);
-    return tx;
+  ): Promise<ethers.TransactionResponse> {
+    const { transaction } = await this.preflightFundAgreement(signer, agreementId);
+    return await signer.sendTransaction(transaction);
   }
 
   /**
@@ -129,7 +169,7 @@ export class EscrowContractService {
     agreementId: bigint | number | string
   ): Promise<EscrowAgreementOnchain> {
     const escrowContract = this.getEscrowContract(runner);
-    const formattedId = toBytes32(agreementId);
+    const formattedId = formatEscrowBytes32Id(agreementId);
     const res = await escrowContract.getAgreement(formattedId);
     return {
       status: Number(res.status ?? res[12] ?? 0),
@@ -155,7 +195,7 @@ export class EscrowContractService {
     sessionId: bigint | number | string
   ): Promise<SessionSettlementOnchain> {
     const escrowContract = this.getEscrowContract(runner);
-    const onchainAgreementId = toBytes32(agreementId);
+    const onchainAgreementId = formatEscrowBytes32Id(agreementId);
     const onchainSessionId = typeof sessionId === 'string' && sessionId.startsWith('0x') && sessionId.length === 66
       ? sessionId
       : computeOnchainSessionId(sessionId);

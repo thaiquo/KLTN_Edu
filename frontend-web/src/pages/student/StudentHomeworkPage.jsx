@@ -23,12 +23,12 @@ import {
   UploadCloud,
   XCircle,
   Download,
-  MessageSquare,
   ChevronRight,
   ArrowRight
 } from 'lucide-react';
 import { classApi } from '../../api/classes';
 import { StudentEmptyState, StudentPageScaffold } from './StudentPageScaffold';
+import { SessionNoteCard } from '../../components/classroom/SessionNoteCard';
 
 export function StudentHomeworkPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -792,19 +792,7 @@ export function StudentHomeworkPage() {
                           </div>
 
                           {/* 3. Tutor Lecture Notes (Slide Notes) */}
-                          {item.materialDescription && (
-                            <div className="p-3 bg-amber-50/90 border border-amber-200 rounded-xl text-xs flex items-start gap-2 text-amber-950">
-                              <MessageSquare className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                              <div>
-                                <span className="font-black text-[11px] uppercase text-amber-900 block">
-                                  Ghi chú bài giảng từ gia sư:
-                                </span>
-                                <p className="font-semibold mt-0.5 italic leading-relaxed">
-                                  "{item.materialDescription}"
-                                </p>
-                              </div>
-                            </div>
-                          )}
+                          <SessionNoteCard note={item.materialDescription} />
 
                           {/* 4. Tutor Grade & Feedback */}
                           {isGraded && (

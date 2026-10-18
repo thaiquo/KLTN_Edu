@@ -24,6 +24,9 @@ public interface PostInteractionRepository extends JpaRepository<PostInteraction
             WHERE interaction.userId = :userId
               AND interaction.interactionType = iuh.fit.learning_service.enums.InteractionType.BOOKMARK
               AND interaction.post.status <> iuh.fit.learning_service.enums.PostStatus.HIDDEN
+              AND interaction.post.moderationStatus IN (
+                  iuh.fit.learning_service.enums.CommunityModerationStatus.ALLOWED,
+                  iuh.fit.learning_service.enums.CommunityModerationStatus.NOT_CHECKED)
             """)
     Page<CommunityPost> findBookmarkedPosts(
             @org.springframework.data.repository.query.Param("userId") Long userId,

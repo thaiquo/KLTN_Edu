@@ -15,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
 
 @RestController
 @RequestMapping("/api")
@@ -154,14 +155,17 @@ public class ClassSessionController {
 
     @GetMapping("/sessions/{sessionId}/student-meeting-link")
     @PreAuthorize("hasRole('STUDENT')")
-    public ResponseEntity<Map<String, String>> getStudentMeetingLink(
+    public ResponseEntity<Map<String, Object>> getStudentMeetingLink(
             Authentication authentication,
             @PathVariable Long sessionId
     ) {
         Long studentId = extractStudentId(authentication);
         String meetingLink = sessionAttendanceService.getMeetingLinkAfterStudentCheckIn(sessionId, studentId);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", meetingLink == null || meetingLink.isBlank() ? "MISSING" : "READY");
+        body.put("meetingLink", meetingLink);
         return ResponseEntity.ok().header("Cache-Control", "no-store")
-                .body(Map.of("meetingLink", meetingLink));
+                .body(body);
     }
 
     /**
