@@ -7,6 +7,10 @@ import org.web3j.protocol.Web3j;
 import org.web3j.protocol.core.Response;
 import org.web3j.protocol.core.methods.response.EthCall;
 import org.web3j.protocol.core.methods.response.EthChainId;
+import org.web3j.protocol.core.methods.response.EthSendTransaction;
+
+import java.math.BigInteger;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -38,5 +42,19 @@ class OperatorPreflightTest {
                 () -> gateway.prepare(11155111, credentials.getAddress(), credentials.getAddress(), "0x"));
         verify(rpc, never()).ethGetTransactionCount(anyString(), any());
         verify(rpc, never()).ethSendRawTransaction(anyString());
+    }
+
+    @Test void treatsAlreadyKnownSignedTransactionAsSuccessfulBroadcast() throws Exception {
+        Web3j rpc = mock(Web3j.class, RETURNS_DEEP_STUBS);
+        EthSendTransaction response = new EthSendTransaction();
+        response.setError(new Response.Error(-32000, "already known"));
+        when(rpc.ethSendRawTransaction("0xsigned").send()).thenReturn(response);
+        var credentials = Credentials.create("1");
+        var properties = new OperatorSignerProperties(); properties.setAddress(credentials.getAddress());
+        var gateway = new Web3jOperatorTransactionGateway(rpc, credentials, properties);
+        var transaction = new PreparedOperatorTransaction(
+                BigInteger.ONE, "0xexpectedhash", "0xsigned");
+
+        assertEquals("0xexpectedhash", gateway.broadcast(transaction));
     }
 }

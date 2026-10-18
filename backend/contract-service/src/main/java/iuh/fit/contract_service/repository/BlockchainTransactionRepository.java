@@ -46,8 +46,9 @@ public interface BlockchainTransactionRepository extends JpaRepository<Blockchai
             select transaction from BlockchainTransaction transaction
             where transaction.status = iuh.fit.contract_service.enums.BlockchainTransactionStatus.CONFIRMED
               and transaction.transactionHash is not null
+              and transaction.eventReconciledAt is null
             order by transaction.updatedAt asc
             """)
-    List<BlockchainTransaction> findConfirmedWithHash(Pageable pageable);
+    List<BlockchainTransaction> findConfirmedPendingEventReconciliation(Pageable pageable);
 
 }

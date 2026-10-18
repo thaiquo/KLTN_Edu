@@ -1,6 +1,6 @@
 # EduConnect Implementation Status
 
-> Post-merge baseline: 2026-10-10. Status describes current source evidence and recent merge validation, not production readiness. `IMPLEMENTED` means the main flow has source evidence; use explicit validation notes for tests/runtime.
+> Post-merge baseline updated: 2026-10-14. Status describes current source evidence and recent merge validation, not production readiness. `IMPLEMENTED` means the main flow has source evidence; use explicit validation notes for tests/runtime.
 
 ## 1. Status Legend
 
@@ -19,7 +19,7 @@
 | `api-gateway` | IMPLEMENTED | Routes current REST and WebSocket families with credentialed CORS/cookie forwarding. |
 | `account-service` | IMPLEMENTED + TESTED | Auth, roles, active role, Student/Tutor profiles, Tutor application identity data, internal notification recipient lookup and Admin user control hardening. Full suite: 158 PASS. |
 | `learning-service` | IMPLEMENTED + TESTED | Catalog, tutor authorization/registrations, availability, classes, enrollment, sessions, attendance, homework, reviews, Community, Tutor Follow, public share UUIDs and Learning termination sync. Compact Flyway V1..V11; full suite: 201 PASS. |
-| `contract-service` | IMPLEMENTED/PARTIAL | Contract, signing, final PDF/artifacts, escrow, settlement, dispute, termination governance/outbox and blockchain reconciliation are implemented; production ops remains limited. Contract V17..V19 cover termination governance/outbox/classification. |
+| `contract-service` | IMPLEMENTED/PARTIAL | Contract, signing, final PDF/artifacts, escrow, settlement, dispute, termination governance/outbox and blockchain reconciliation are implemented; production ops remains limited. Contract V17..V19 cover termination governance/outbox/classification; V20 tracks full receipt-event reconciliation. Full suite: 221 PASS + 7 Anvil tests skipped when Anvil is unavailable. |
 | `notification-service` | IMPLEMENTED + TESTED | Persisted Bell notifications, event consumers, human chat REST/WebSocket, media attachments and structured Class/Post cards. Full suite: 74 PASS. |
 | `ai-service` | IMPLEMENTED/PARTIAL | Tutor/Class AI Matching, Gemini analyzer/grounding, Qdrant semantic retrieval, Matching V3 explainability and chatbot RAG/tools are implemented. Full suite: 220 PASS + 4 external-runtime smoke tests skipped. |
 | `frontend-web` | IMPLEMENTED/PARTIAL | Marketplaces, portal/dashboard, Community, contracts/termination/refund, human Messages with resource cards and shared AI chatbot widget. TypeScript and production build PASS. |
@@ -83,7 +83,14 @@
 - IMPLEMENTED: settlement, payout/refund, dispute/evidence and transaction recovery pipeline.
 - IMPLEMENTED: termination governance, role-scoped cases/refunds, evidence, response/action handling, Contract -> Learning synchronization and termination notification outbox.
 - IMPLEMENTED: current blockchain/escrow reconciliation patterns; successful Sepolia evidence exists in project history, but post-merge runtime replay is not implied by this status file.
-- PARTIAL: production blockchain ops such as multi-RPC failover, monitoring and signer HA remain future hardening.
+- IMPLEMENTED: Contract Service multi-RPC HTTP failover ưu tiên Alchemy, chuyển sang
+  endpoint dự phòng khi lỗi transport/throttle, kiểm tra chain ID và tự probe lại
+  primary sau cooldown.
+- IMPLEMENTED: load-aware Sepolia polling baseline (15 giây event/receipt, 90 giây
+  reconciliation), catch-up theo batch logic 50 nhưng chia `eth_getLogs` thành
+  request tối đa 10 block; receipt reconciliation batch 10 dùng dấu mốc
+  `event_reconciled_at`, tránh lặp lại receipt đã xử lý trọn vẹn.
+- PARTIAL: production blockchain monitoring and signer HA remain future hardening.
 
 ## 7. Notification and Human Messaging
 
@@ -113,6 +120,9 @@
 - IMPLEMENTED: Student/Tutor/Staff/Admin portal flows for current class, contract, termination and refund surfaces.
 - IMPLEMENTED: human Messages UI using real Notification chat APIs, including dynamically resolved class/post share cards.
 - IMPLEMENTED: shared global AI chatbot widget.
+- IMPLEMENTED + VALIDATED: Vite reads the single repository-root `.env`; browser
+  Sepolia RPC uses PublicNode so the backend Alchemy credential is not bundled
+  into browser JavaScript. Production build PASS on 2026-10-14.
 - MERGE-FIX-C validation: frontend source integration PASS, utility tests 11 PASS, `npm run build` PASS.
 
 ## 10. Current Post-Merge Validation
@@ -123,6 +133,7 @@
 | MERGE-FIX-B | Learning compact Flyway V1..V8; clean DB migration PASS; JPA validate PASS; Learning 183 tests PASS. Follow extends the compact lineage with V9. |
 | MERGE-FIX-C | Frontend source integration PASS; utility tests 11 PASS; frontend build PASS. |
 | FULL REGRESSION 2026-10-10 | Account 151 PASS; Gateway 1 PASS; Contract 206 PASS + 7 skipped; Learning 201 PASS; Notification 74 PASS; AI 220 PASS + 4 external-runtime smoke tests skipped; frontend TypeScript/build PASS. |
+| BLOCKCHAIN/ENV HARDENING 2026-10-14 | Contract 221 PASS + 7 Anvil tests skipped; frontend production build PASS; live Contract runtime validated chain/deployment/operator, Alchemy-primary/PublicNode-fallback setup and 50-block logical polling without observed throttle/failover errors. |
 
 These are merge validations, not a blanket full production end-to-end certification.
 
@@ -132,7 +143,8 @@ These are merge validations, not a blanket full production end-to-end certificat
 2. Run the four skipped Gemini/external-runtime AI smoke tests with required credentials and dependencies.
 3. Improve mobile parity for auth, classes, contracts, messages and AI flows.
 4. Add full violation/support ticket and reporting suite if required.
-5. Continue production operations hardening for blockchain, observability, backups and multi-RPC behavior.
+5. Continue production operations hardening for blockchain observability, backups,
+   multi-RPC health metrics/alerting and signer HA.
 
 ## 12. Documentation Rule
 

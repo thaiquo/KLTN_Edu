@@ -86,6 +86,9 @@ public class BlockchainTransaction {
     @Column(name = "next_attempt_at")
     private OffsetDateTime nextAttemptAt;
 
+    @Column(name = "event_reconciled_at")
+    private OffsetDateTime eventReconciledAt;
+
     @Version
     @Column(nullable = false)
     private Long version;
@@ -269,6 +272,21 @@ public class BlockchainTransaction {
         if (status == BlockchainTransactionStatus.DISPATCHING || status == BlockchainTransactionStatus.SUBMITTED) {
             updatedAt = now;
         }
+    }
+
+    public void recordEventReconciliationAttempt(OffsetDateTime now) {
+        if (status != BlockchainTransactionStatus.CONFIRMED) {
+            throw new IllegalStateException("Only a CONFIRMED transaction can record event reconciliation");
+        }
+        updatedAt = now;
+    }
+
+    public void markEventsReconciled(OffsetDateTime now) {
+        if (status != BlockchainTransactionStatus.CONFIRMED) {
+            throw new IllegalStateException("Only a CONFIRMED transaction can complete event reconciliation");
+        }
+        eventReconciledAt = now;
+        updatedAt = now;
     }
 
     public void recordRebroadcastAttempt(String message, OffsetDateTime retryAt, OffsetDateTime now) {

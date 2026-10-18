@@ -27,7 +27,7 @@ public class BlockchainTransactionRuntimeWorker {
 
     @Scheduled(
             initialDelayString = "${blockchain.dispatcher-initial-delay-ms:5000}",
-            fixedDelayString = "${blockchain.dispatcher-interval-ms:5000}")
+            fixedDelayString = "${blockchain.dispatcher-interval-ms:10000}")
     public void dispatchPendingTransactions() {
         if (!dispatchRunning.compareAndSet(false, true)) {
             return;
@@ -51,7 +51,7 @@ public class BlockchainTransactionRuntimeWorker {
 
     @Scheduled(
             initialDelayString = "${blockchain.receipt-watch-initial-delay-ms:7000}",
-            fixedDelayString = "${blockchain.receipt-watch-interval-ms:5000}")
+            fixedDelayString = "${blockchain.receipt-watch-interval-ms:15000}")
     public void reconcilePendingReceipts() {
         if (!receiptWatchRunning.compareAndSet(false, true)) {
             return;

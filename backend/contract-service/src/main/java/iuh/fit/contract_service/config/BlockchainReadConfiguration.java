@@ -4,6 +4,7 @@ import iuh.fit.contract_service.blockchain.BlockchainNetworkSnapshot;
 import iuh.fit.contract_service.blockchain.BlockchainRpcClient;
 import iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway;
 import iuh.fit.contract_service.blockchain.Web3jBlockchainRpcClient;
+import iuh.fit.contract_service.blockchain.FailoverWeb3jService;
 import iuh.fit.contract_service.blockchain.EduConnectEscrowEventDecoder;
 import iuh.fit.contract_service.repository.BlockchainEventCursorRepository;
 import iuh.fit.contract_service.repository.ProcessedEventRepository;
@@ -23,7 +24,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.web3j.protocol.Web3j;
-import org.web3j.protocol.http.HttpService;
 import org.springframework.transaction.PlatformTransactionManager;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.scheduling.annotation.EnableScheduling;
@@ -36,13 +36,18 @@ public class BlockchainReadConfiguration {
 
     @Bean(destroyMethod = "shutdown")
     Web3j web3j(BlockchainProperties properties) {
-        log.info("Initialized Web3j client connecting to RPC: {}", properties.getRpcUrl());
-        return Web3j.build(new HttpService(properties.getRpcUrl().toString()));
+        FailoverWeb3jService rpcService = FailoverWeb3jService.create(
+                properties.getRpcUrls(),
+                properties.getRpcPrimaryRetryDelayMs(),
+                properties.getChainId());
+        log.info("Initialized Web3j with {} RPC endpoint(s), primary={}",
+                properties.getRpcUrls().size(), rpcService.primaryDescription());
+        return Web3j.build(rpcService);
     }
 
     @Bean
-    Web3jBlockchainRpcClient blockchainRpcClient(Web3j web3j) {
-        return new Web3jBlockchainRpcClient(web3j);
+    Web3jBlockchainRpcClient blockchainRpcClient(Web3j web3j, BlockchainProperties properties) {
+        return new Web3jBlockchainRpcClient(web3j, properties.getEventLogRequestBlockRange());
     }
 
     @Bean

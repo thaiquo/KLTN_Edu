@@ -137,7 +137,7 @@ Each service owns its data model even when local development uses the same Postg
 | --- | --- | --- |
 | Account | Compact V1..V2 | users, roles, refresh sessions, OTP, students, tutors, tutor profiles and tutor applications/documents. |
 | Learning | Compact V1..V11 | legacy compatibility, normalized catalog, tutor registrations, classrooms, sessions/homework/materials, reviews, Community/Tutor Follow, Tutor profile reference normalization and public share UUIDs. |
-| Contract | Continuous V1..V19 | agreements, acceptances, artifacts, escrow payments, settlements, disputes/evidence, blockchain transactions/events, termination governance/outbox. |
+| Contract | Continuous V1..V20 | agreements, acceptances, artifacts, escrow payments, settlements, disputes/evidence, blockchain transactions/events, termination governance/outbox. |
 | Notification | V1..V6 | notifications, direct conversations, text/media messages, child attachments and structured Class/Post share references. |
 
 Older high-numbered Learning migrations are not active post-merge migrations. Community is represented by compact Learning V8 and new changes must continue from V11 without rewriting applied files.
@@ -161,6 +161,7 @@ Older high-numbered Learning migrations are not active post-merge migrations. Co
 
 - Mobile does not have Web parity.
 - Some dashboard/reporting surfaces remain partial.
-- Blockchain ops still need production-grade multi-RPC/failover/monitoring hardening.
+- Blockchain HTTP multi-RPC failover is implemented; production health metrics,
+  alerting and distributed signer/nonce high availability remain future hardening.
 - Staff/Admin Community moderation is not documented as implemented.
 - Runtime behavior requires running the latest merged services; build/test success alone is not production readiness.

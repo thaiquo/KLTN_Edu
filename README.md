@@ -76,7 +76,9 @@ Cài các công cụ cần thiết cho phần bạn muốn chạy:
 
 ## Cấu hình môi trường
 
-Root `.env.example` mô tả các environment variable chính cho local. Tạo file `.env` local khi chạy service.
+Root `.env.example` mô tả các environment variable chính cho local. Tạo duy nhất
+file `.env` ở thư mục gốc khi chạy service; Vite và các backend startup script
+đều đọc file này.
 
 Không commit secret thật. Không copy hard-coded fallback secrets từ source vào documentation hoặc environment file mới.
 
@@ -158,14 +160,25 @@ CONTRACT_SERVICE_PORT=<your-value>
 BLOCKCHAIN_ENABLED=<your-value>
 BLOCKCHAIN_CHAIN_ID=<your-value>
 BLOCKCHAIN_RPC_URL=<your-value>
+BLOCKCHAIN_RPC_URL_ALCHEMY=<preferred-provider-url>
+BLOCKCHAIN_RPC_URL_PUBLICNODE=<fallback-provider-url>
+BLOCKCHAIN_RPC_URL_FALLBACK=<optional-comma-separated-fallback-urls>
+BLOCKCHAIN_RPC_PRIMARY_RETRY_DELAY_MS=<your-value>
 BLOCKCHAIN_ESCROW_ADDRESS=<your-value>
 BLOCKCHAIN_USDC_ADDRESS=<your-value>
 BLOCKCHAIN_TOKEN_DECIMALS=<your-value>
 BLOCKCHAIN_CONFIRMATIONS=<your-value>
 BLOCKCHAIN_START_BLOCK=<your-value>
 BLOCKCHAIN_EVENT_BLOCK_BATCH_SIZE=<your-value>
+BLOCKCHAIN_EVENT_LOG_REQUEST_BLOCK_RANGE=<your-value>
 BLOCKCHAIN_EVENT_POLL_INITIAL_DELAY_MS=<your-value>
 BLOCKCHAIN_EVENT_POLL_INTERVAL_MS=<your-value>
+BLOCKCHAIN_EVENT_RECONCILE_INITIAL_DELAY_MS=<your-value>
+BLOCKCHAIN_EVENT_RECONCILE_INTERVAL_MS=<your-value>
+BLOCKCHAIN_EVENT_RECONCILE_BATCH_SIZE=<your-value>
+BLOCKCHAIN_DISPATCHER_INTERVAL_MS=<your-value>
+BLOCKCHAIN_RECEIPT_WATCH_INTERVAL_MS=<your-value>
+BLOCKCHAIN_RECEIPT_WATCH_BATCH_SIZE=<your-value>
 BLOCKCHAIN_OPERATOR_ENABLED=<your-value>
 BLOCKCHAIN_OPERATOR_ADDRESS=<your-value>
 BLOCKCHAIN_OPERATOR_KEYSTORE_PATH=<your-value>
@@ -183,8 +196,7 @@ VITE_ANVIL_RPC_URL=<your-value>
 VITE_SEPOLIA_RPC_URL=<your-value>
 VITE_ESCROW_CONTRACT_ADDRESS=<your-value>
 VITE_USDC_CONTRACT_ADDRESS=<your-value>
-VITE_REOWN_PROJECT_ID=<your-value>
-VITE_WALLETCONNECT_PROJECT_ID=<your-value>
+VITE_PROJECT_ID_WALLETCONNECT=<your-value>
 ```
 
 ### Mobile

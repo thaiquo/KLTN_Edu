@@ -2,14 +2,12 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
-import fs from 'node:fs';
 
-const currentDir = fileURLToPath(new URL('.', import.meta.url));
-const parentDir = fileURLToPath(new URL('..', import.meta.url));
-const envDir = fs.existsSync(fileURLToPath(new URL('.env', import.meta.url))) ? currentDir : parentDir;
+const repositoryRoot = fileURLToPath(new URL('..', import.meta.url));
 
 export default defineConfig({
-  envDir,
+  // Keep one source of truth for local configuration. Vite exposes only VITE_*.
+  envDir: repositoryRoot,
   envPrefix: 'VITE_',
   plugins: [react(), tailwindcss()],
   server: {

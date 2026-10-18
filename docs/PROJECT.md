@@ -1,6 +1,6 @@
 # EduConnect — Tổng quan dự án
 
-> Cập nhật theo source và dữ liệu kiểm chứng ngày **2026-10-10**.  
+> Cập nhật theo source và dữ liệu kiểm chứng ngày **2026-10-14**.
 > Đây là trang bắt đầu để đọc dự án. Trạng thái chi tiết nằm ở [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 ## 1. Mục tiêu
@@ -92,7 +92,7 @@ Tỷ lệ được tính theo base unit của USDC; Tutor và Platform được 
 
 ## 8. Trạng thái ngắn gọn
 
-Audit note (2026-10-10): current compact migration lineages are Account V1..V2, Learning V1..V11, Contract V1..V19 and Notification V1..V6. Learning V8/V9 own Community and Tutor Follow, V10 normalizes Tutor profile references and V11 adds opaque public share UUIDs. Notification V6 adds validated structured Class/Community Post chat cards. Do not restore the retired high-numbered Learning migration history into this compact lineage. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and [the termination review](contract/TERMINATION_FINAL_REVIEW_2026_10_02.md).
+Audit note (2026-10-14): current compact migration lineages are Account V1..V2, Learning V1..V11, Contract V1..V20 and Notification V1..V6. Contract V20 records completed receipt-event reconciliation without assuming that one processed log represents the whole transaction. Learning V8/V9 own Community and Tutor Follow, V10 normalizes Tutor profile references and V11 adds opaque public share UUIDs. Notification V6 adds validated structured Class/Community Post chat cards. Do not restore the retired high-numbered Learning migration history into this compact lineage. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and [the termination review](contract/TERMINATION_FINAL_REVIEW_2026_10_02.md).
 
 - Đã có luồng chính Web cho Account, Tutor approval, catalog/class/enrollment, session/attendance/homework, contract/escrow/settlement/dispute và notification.
 - Sepolia đã có bằng chứng funding, payout 85/15, refund 100% và refund hoàn cọc thanh lý hợp đồng 4.80 USDC thực tế; chi tiết transaction nằm trong [BLOCKCHAIN.md](BLOCKCHAIN.md).

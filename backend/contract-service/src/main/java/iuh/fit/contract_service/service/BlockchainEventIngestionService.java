@@ -30,6 +30,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -125,16 +126,23 @@ public class BlockchainEventIngestionService {
             return 0;
         }
         int persisted = 0;
-        for (BlockchainTransaction transaction : transactionRepository.findConfirmedWithHash(PageRequest.of(0, 100))) {
-            for (BlockchainLog log : rpcClient.getTransactionLogs(transaction.getTransactionHash())) {
-                if (!properties.getEscrowAddress().equalsIgnoreCase(log.address())
-                        || eventRepository.existsByChainIdAndTransactionHashIgnoreCaseAndLogIndex(
-                        properties.getChainId(), log.transactionHash(), log.logIndex())) {
+        for (BlockchainTransaction transaction : transactionRepository.findConfirmedPendingEventReconciliation(
+                PageRequest.of(0, properties.getEventReconcileBatchSize()))) {
+            List<BlockchainLog> receiptLogs = rpcClient.getTransactionLogs(transaction.getTransactionHash());
+            boolean foundDecodedEscrowEvent = false;
+            Map<Long, String> blockHashes = new HashMap<>();
+            for (BlockchainLog log : receiptLogs) {
+                if (!properties.getEscrowAddress().equalsIgnoreCase(log.address())) {
                     continue;
                 }
-                validateLog(log, log.blockNumber(), log.blockNumber(), new HashMap<>());
+                validateConfirmedTransactionLog(transaction, log, blockHashes);
                 DecodedEscrowEvent decoded = decoder.decode(log).orElse(null);
                 if (decoded == null) {
+                    continue;
+                }
+                foundDecodedEscrowEvent = true;
+                if (eventRepository.existsByChainIdAndTransactionHashIgnoreCaseAndLogIndex(
+                        properties.getChainId(), log.transactionHash(), log.logIndex())) {
                     continue;
                 }
                 ProcessedEvent event = ProcessedEvent.blockchainLog(
@@ -144,6 +152,15 @@ public class BlockchainEventIngestionService {
                 processPersistedEvent(event);
                 persisted++;
             }
+            OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+            if (foundDecodedEscrowEvent) {
+                transaction.markEventsReconciled(now);
+            } else {
+                // A missing/empty receipt is not proof of complete reconciliation. Keep it
+                // eligible, but rotate it behind other candidates to avoid starvation.
+                transaction.recordEventReconciliationAttempt(now);
+            }
+            transactionRepository.save(transaction);
         }
         eventRepository.flush();
         return persisted;
@@ -156,7 +173,8 @@ public class BlockchainEventIngestionService {
         }
         int persisted = 0;
         for (EscrowPayment payment : escrowPaymentRepository.findByStatusAndFundTxHashIsNotNull(
-                EscrowPaymentStatus.CONFIRMING, PageRequest.of(0, 100))) {
+                EscrowPaymentStatus.CONFIRMING,
+                PageRequest.of(0, properties.getEventReconcileBatchSize()))) {
             try {
                 persisted += reconcileTransactionEvents(payment.getFundTxHash());
             } catch (RuntimeException exception) {
@@ -289,6 +307,25 @@ public class BlockchainEventIngestionService {
                 || log.logIndex() < 0) {
             throw new IllegalArgumentException("Blockchain log identity is incomplete");
         }
+    }
+
+    private void validateConfirmedTransactionLog(
+            BlockchainTransaction transaction,
+            BlockchainLog log,
+            Map<Long, String> blockHashes) {
+        if (!transaction.getTransactionHash().equalsIgnoreCase(log.transactionHash())) {
+            throw new IllegalArgumentException("RPC receipt contains a log from another transaction");
+        }
+        if (transaction.getBlockNumber() == null || transaction.getBlockNumber() != log.blockNumber()) {
+            throw new BlockchainReorgDetectedException(
+                    log.blockNumber(), transaction.getBlockHash(), log.blockHash());
+        }
+        if (transaction.getBlockHash() == null || log.blockHash() == null
+                || !transaction.getBlockHash().equalsIgnoreCase(log.blockHash())) {
+            throw new BlockchainReorgDetectedException(
+                    log.blockNumber(), transaction.getBlockHash(), log.blockHash());
+        }
+        validateLog(log, log.blockNumber(), log.blockNumber(), blockHashes);
     }
 
     private String currentBlockHash(long blockNumber, Map<Long, String> cache) {

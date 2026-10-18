@@ -7,6 +7,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.regex.Pattern;
 
 @Validated
@@ -17,6 +20,10 @@ public class BlockchainProperties {
     private boolean enabled;
     private long chainId;
     private URI rpcUrl;
+    private List<URI> fallbackRpcUrls = new ArrayList<>();
+
+    @Min(1)
+    private long rpcPrimaryRetryDelayMs = 30_000;
     private String escrowAddress;
     private String usdcAddress;
 
@@ -32,7 +39,15 @@ public class BlockchainProperties {
 
     @Min(1)
     @Max(10_000)
-    private int eventBlockBatchSize = 500;
+    private int eventBlockBatchSize = 50;
+
+    @Min(1)
+    @Max(10)
+    private int eventLogRequestBlockRange = 10;
+
+    @Min(1)
+    @Max(100)
+    private int eventReconcileBatchSize = 10;
 
     @Min(1)
     @Max(100)
@@ -58,6 +73,7 @@ public class BlockchainProperties {
         }
         return chainId > 0
                 && isHttpRpc(rpcUrl)
+                && fallbackRpcUrls.stream().allMatch(BlockchainProperties::isHttpRpc)
                 && isAddress(escrowAddress)
                 && isAddress(usdcAddress)
                 && !escrowAddress.equalsIgnoreCase(usdcAddress);
@@ -97,6 +113,31 @@ public class BlockchainProperties {
 
     public void setRpcUrl(URI rpcUrl) {
         this.rpcUrl = rpcUrl;
+    }
+
+    public List<URI> getFallbackRpcUrls() {
+        return fallbackRpcUrls;
+    }
+
+    public void setFallbackRpcUrls(List<URI> fallbackRpcUrls) {
+        this.fallbackRpcUrls = fallbackRpcUrls == null ? new ArrayList<>() : new ArrayList<>(fallbackRpcUrls);
+    }
+
+    public List<URI> getRpcUrls() {
+        LinkedHashSet<URI> urls = new LinkedHashSet<>();
+        if (rpcUrl != null) {
+            urls.add(rpcUrl);
+        }
+        urls.addAll(fallbackRpcUrls);
+        return List.copyOf(urls);
+    }
+
+    public long getRpcPrimaryRetryDelayMs() {
+        return rpcPrimaryRetryDelayMs;
+    }
+
+    public void setRpcPrimaryRetryDelayMs(long rpcPrimaryRetryDelayMs) {
+        this.rpcPrimaryRetryDelayMs = rpcPrimaryRetryDelayMs;
     }
 
     public String getEscrowAddress() {
@@ -145,6 +186,22 @@ public class BlockchainProperties {
 
     public void setEventBlockBatchSize(int eventBlockBatchSize) {
         this.eventBlockBatchSize = eventBlockBatchSize;
+    }
+
+    public int getEventLogRequestBlockRange() {
+        return eventLogRequestBlockRange;
+    }
+
+    public void setEventLogRequestBlockRange(int eventLogRequestBlockRange) {
+        this.eventLogRequestBlockRange = eventLogRequestBlockRange;
+    }
+
+    public int getEventReconcileBatchSize() {
+        return eventReconcileBatchSize;
+    }
+
+    public void setEventReconcileBatchSize(int eventReconcileBatchSize) {
+        this.eventReconcileBatchSize = eventReconcileBatchSize;
     }
 
     public int getDispatcherBatchSize() {
