@@ -6,7 +6,6 @@ import { Camera, LogOut, ShieldCheck, UserRound } from 'lucide-react-native';
 import { accountM1 } from '../../src/api/m1';
 import { useAuth } from '../../src/auth/AuthProvider';
 import { Button, FormScreen, Heading, Notice, Panel } from '../../src/components/Ui';
-import { FullScreenLoading } from '../../src/components/States';
 import { AppShell } from '../../src/components/AppShell';
 import { base, themeForRole } from '../../src/theme/tokens';
 

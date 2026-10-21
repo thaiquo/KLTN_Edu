@@ -204,11 +204,6 @@ export default function TeachingRegistrationFlow() {
     const selectedDocs = availableDocuments.filter(item => draft.evidenceIds.includes(item.id));
     let submitStage: 'upload' | 'registration' = 'upload';
     try {
-      if (__DEV__) console.info('[Teaching registration] submit', {
-        activeRole: user?.activeRole, accessTokenPresent: !!api.getToken(), stagedFiles: staged.map(item => ({
-          documentType: item.documentType, mimeType: item.asset.mimeType, size: item.asset.size,
-        })), subjectId: draft.subjectId, levelIds: draft.levelIds, categoryId: draft.categoryId,
-      });
       for (const item of staged) {
         const uploaded = await tutorM1.uploadDocument(item.documentType, item.asset);
         selectedDocs.push(uploaded);

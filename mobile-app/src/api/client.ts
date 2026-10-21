@@ -41,13 +41,8 @@ class ApiClient {
       if (init.body && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json');
       }
-      if (registrationRequest) console.info('[Teaching registration] request', {
-        url: `${gatewayUrl}${path}`, method: init.method || 'GET', bearerAttached: headers.has('Authorization'),
-        contentType: headers.get('Content-Type') || (init.body instanceof FormData ? 'multipart/automatic' : 'none'),
-      });
       const response = await fetch(`${gatewayUrl}${path}`, { ...init, headers, signal: controller.signal });
       responseStatus = response.status;
-      if (registrationRequest) console.info('[Teaching registration] response', { path, status: response.status });
       if (response.status === 401 && !skipRefresh && this.accessToken) {
         await this.refresh();
         return this.send<T>(path, { ...options, skipRefresh: true });
