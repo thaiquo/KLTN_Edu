@@ -129,6 +129,24 @@ public class CatalogGroundingService {
             return candidateResolution;
         }
 
+        // A model can include a topic after the catalog subject (for example, subject + chapter).
+        List<LearningSubject> prefixCandidates = subjects.stream()
+                .filter(subject -> normalizedHints.stream()
+                        .anyMatch(normalizedHint -> startsWithSubjectName(normalizedHint, subject.name())))
+                .toList();
+        if (!prefixCandidates.isEmpty()) {
+            int longestName = prefixCandidates.stream()
+                    .mapToInt(subject -> normalize(subject.name()).length())
+                    .max().orElse(0);
+            List<LearningSubject> mostSpecific = prefixCandidates.stream()
+                    .filter(subject -> normalize(subject.name()).length() == longestName)
+                    .toList();
+            SubjectResolution prefixResolution = resolveSubjectCandidates(mostSpecific, levelHint);
+            if (prefixResolution != null) {
+                return prefixResolution;
+            }
+        }
+
         return new SubjectResolution(null, new Clarification(
                 ClarificationField.SUBJECT,
                 ClarificationReason.NOT_FOUND,
@@ -533,6 +551,13 @@ public class CatalogGroundingService {
         return normalizedHint != null
                 && normalizedValue != null
                 && normalizedValue.contains(normalizedHint);
+    }
+
+    private boolean startsWithSubjectName(String normalizedHint, String name) {
+        String normalizedName = normalize(name);
+        return normalizedHint != null && normalizedName != null
+                && normalizedHint.startsWith(normalizedName + " ")
+                && !normalizedHint.substring(normalizedName.length() + 1).matches("^(va|hoac|hay)\\b.*");
     }
 
     private String normalize(String value) {

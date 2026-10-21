@@ -56,6 +56,7 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
     disconnectWallet,
     switchNetwork,
     refreshBalances,
+    signer,
   } = useWeb3Wallet();
 
   const [copied, setCopied] = useState(false);
@@ -299,12 +300,14 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
   }, [userEmail, isTutor, user?.id, user?.email]);
 
   async function handleSaveDefaultWallet() {
-    if (!address) return;
+    if (!address || !signer) return;
     setSavingProfileWallet(true);
     setWalletSaveSuccess(null);
     setWalletSaveError(null);
     try {
-      const res: any = await userApi.updateWallet(address);
+      const challenge = await userApi.walletChallenge(address);
+      const signature = await signer.signMessage(challenge.message);
+      const res: any = await userApi.updateWallet(address, challenge.challengeId, signature);
       setProfileWallet(res?.walletAddress || address);
       await refreshUser();
       setWalletSaveSuccess("Đã lưu địa chỉ ví này làm ví mặc định cho hồ sơ thành công!");
@@ -321,7 +324,12 @@ export function MyWalletView({ activeRole = "student", userEmail }: MyWalletView
     setWalletSaveSuccess(null);
     setWalletSaveError(null);
     try {
-      await userApi.updateWallet(null);
+      if (!signer || !profileWallet || address?.toLowerCase() !== profileWallet.toLowerCase()) {
+        throw new Error("Hãy kết nối ví đã liên kết để xác nhận gỡ ví.");
+      }
+      const challenge = await userApi.walletChallenge(profileWallet);
+      const signature = await signer.signMessage(challenge.message);
+      await userApi.updateWallet(null, challenge.challengeId, signature);
       setProfileWallet(null);
       await refreshUser();
       setWalletSaveSuccess("Đã gỡ liên kết ví mặc định khỏi hồ sơ.");

@@ -42,6 +42,7 @@ public class CommunityPostService {
     private final PostPollVoteRepository pollVoteRepository;
     private final PostInteractionRepository interactionRepository;
     private final SubjectRepository subjectRepository;
+    private final CatalogSubjectRepository catalogSubjectRepository;
     private final ClassRoomRepository classRoomRepository;
     private final TutorAvailabilityRepository availabilityRepository;
     private final TutorSubjectRegistrationRepository registrationRepository;
@@ -64,6 +65,7 @@ public class CommunityPostService {
             PostPollVoteRepository pollVoteRepository,
             PostInteractionRepository interactionRepository,
             SubjectRepository subjectRepository,
+            CatalogSubjectRepository catalogSubjectRepository,
             ClassRoomRepository classRoomRepository,
             TutorAvailabilityRepository availabilityRepository,
             TutorSubjectRegistrationRepository registrationRepository,
@@ -84,6 +86,7 @@ public class CommunityPostService {
         this.pollVoteRepository = pollVoteRepository;
         this.interactionRepository = interactionRepository;
         this.subjectRepository = subjectRepository;
+        this.catalogSubjectRepository = catalogSubjectRepository;
         this.classRoomRepository = classRoomRepository;
         this.availabilityRepository = availabilityRepository;
         this.registrationRepository = registrationRepository;
@@ -187,9 +190,14 @@ public class CommunityPostService {
                 var eduPred = builder.like(builder.lower(root.get("educationLevel")), pattern);
                 var subjectJoin = root.join("subject", jakarta.persistence.criteria.JoinType.LEFT);
                 var subjectPred = builder.like(builder.lower(subjectJoin.get("name")), pattern);
+                var catalogSubjectJoin = root.join("catalogSubject", jakarta.persistence.criteria.JoinType.LEFT);
+                var catalogSubjectPred = builder.like(builder.lower(catalogSubjectJoin.get("name")), pattern);
+                var catalogLevelJoin = root.join("catalogLevel", jakarta.persistence.criteria.JoinType.LEFT);
+                var catalogLevelPred = builder.like(builder.lower(catalogLevelJoin.get("name")), pattern);
                 var classJoin = root.join("linkedClass", jakarta.persistence.criteria.JoinType.LEFT);
                 var classPred = builder.like(builder.lower(classJoin.get("name")), pattern);
-                return builder.or(titlePred, contentPred, authorPred, eduPred, subjectPred, classPred);
+                return builder.or(titlePred, contentPred, authorPred, eduPred, subjectPred,
+                        catalogSubjectPred, catalogLevelPred, classPred);
             });
         }
         Pageable effectivePageable = prioritizeFollowedTutors && pageable.isPaged()
@@ -265,6 +273,7 @@ public class CommunityPostService {
         }
 
         Subject validatedSubject = null;
+        CatalogSelection catalogSelection = null;
         ClassRoom linkedClass = null;
 
         // Siết phân quyền loại bài đăng
@@ -296,6 +305,7 @@ public class CommunityPostService {
             if (!"STUDENT".equals(role)) {
                 throw new ForbiddenException("Chỉ học viên mới được đăng bài tìm gia sư hoặc tìm nhóm học");
             }
+            catalogSelection = resolveCatalogSelection(request, true);
         } else {
             throw new BadRequestException("Loại bài đăng không được hỗ trợ");
         }
@@ -347,6 +357,12 @@ public class CommunityPostService {
 
         if (validatedSubject != null) {
             post.setSubject(validatedSubject);
+        }
+        if (catalogSelection != null) {
+            post.setCatalogSubject(catalogSelection.subject());
+            post.setCatalogLevel(catalogSelection.level());
+            post.setSubject(null);
+            post.setEducationLevel(null);
         }
         if (linkedClass != null) {
             post.setLinkedClass(linkedClass);
@@ -433,6 +449,7 @@ public class CommunityPostService {
         }
 
         Subject validatedSubject = null;
+        CatalogSelection catalogSelection = null;
         ClassRoom linkedClass = null;
         if (isTutorPost(post.getPostType())) {
             if (post.getPostType() == PostType.TUTOR_CLASS_SHARE) {
@@ -449,6 +466,14 @@ public class CommunityPostService {
             }
             if (post.getPostType() != PostType.TUTOR_POLL && request.getPoll() != null) {
                 throw new BadRequestException("Chỉ bài khảo sát mở lớp mới được đính kèm poll");
+            }
+        } else if (isStudentPost(post.getPostType())) {
+            boolean legacyUnchanged = post.getCatalogSubject() == null
+                    && post.getCatalogLevel() == null
+                    && request.getCatalogSubjectId() == null
+                    && request.getCatalogLevelId() == null;
+            if (!legacyUnchanged) {
+                catalogSelection = resolveCatalogSelection(request, true);
             }
         }
 
@@ -1746,6 +1771,19 @@ public class CommunityPostService {
         post.setSubject(request.getSubjectId() == null ? null : subjectRepository.findById(request.getSubjectId())
                 .filter(Subject::isActive)
                 .orElseThrow(() -> new IllegalStateException("Môn học của bản chỉnh sửa không còn khả dụng")));
+        if (isStudentPost(post.getPostType())) {
+            boolean preserveLegacy = post.getCatalogSubject() == null
+                    && post.getCatalogLevel() == null
+                    && request.getCatalogSubjectId() == null
+                    && request.getCatalogLevelId() == null;
+            if (!preserveLegacy) {
+                CatalogSelection selection = resolveCatalogSelection(request, true);
+                post.setCatalogSubject(selection.subject());
+                post.setCatalogLevel(selection.level());
+                post.setSubject(null);
+                post.setEducationLevel(null);
+            }
+        }
         post.setLinkedClass(request.getLinkedClassId() == null ? null : classRoomRepository.findById(request.getLinkedClassId())
                 .orElseThrow(() -> new IllegalStateException("Lớp học của bản chỉnh sửa không còn khả dụng")));
         if (post.getLinkedClass() != null) {
@@ -1864,6 +1902,37 @@ public class CommunityPostService {
                 || postType == PostType.TUTOR_POLL
                 || postType == PostType.TUTOR_CLASS_SHARE;
     }
+
+    private boolean isStudentPost(PostType postType) {
+        return postType == PostType.STUDENT_FIND_TUTOR
+                || postType == PostType.STUDENT_GROUP_STUDY;
+    }
+
+    private CatalogSelection resolveCatalogSelection(CreatePostRequest request, boolean required) {
+        Long subjectId = request.getCatalogSubjectId();
+        Long levelId = request.getCatalogLevelId();
+        if (subjectId == null && levelId == null && !required) {
+            return null;
+        }
+        if (subjectId == null) {
+            throw new BadRequestException("Vui lòng chọn môn học trong danh mục giảng dạy");
+        }
+        if (levelId == null) {
+            throw new BadRequestException("Vui lòng chọn trình độ phù hợp với môn học");
+        }
+        CatalogSubject subject = catalogSubjectRepository.findById(subjectId)
+                .filter(CatalogSubject::isActive)
+                .orElseThrow(() -> new BadRequestException("Môn học không tồn tại hoặc đã ngừng hoạt động"));
+        CatalogLevel level = levelRepository.findById(levelId)
+                .filter(CatalogLevel::isActive)
+                .orElseThrow(() -> new BadRequestException("Trình độ không tồn tại hoặc đã ngừng hoạt động"));
+        if (level.getSubject() == null || !Objects.equals(level.getSubject().getId(), subject.getId())) {
+            throw new BadRequestException("Trình độ không thuộc môn học đã chọn");
+        }
+        return new CatalogSelection(subject, level);
+    }
+
+    private record CatalogSelection(CatalogSubject subject, CatalogLevel level) {}
 
     private String requireCommunityParticipant(LearningUserPrincipal principal, String action) {
         if (principal == null || principal.userId() == null) {
@@ -2221,8 +2290,13 @@ public class CommunityPostService {
                 .title(post.getTitle())
                 .content(post.getContent())
                 .subjectId(post.getSubject() != null ? post.getSubject().getId() : null)
-                .subjectName(post.getSubject() != null ? post.getSubject().getName() : null)
-                .educationLevel(post.getEducationLevel())
+                .catalogSubjectId(post.getCatalogSubject() != null ? post.getCatalogSubject().getId() : null)
+                .catalogLevelId(post.getCatalogLevel() != null ? post.getCatalogLevel().getId() : null)
+                .subjectName(post.getCatalogSubject() != null
+                        ? post.getCatalogSubject().getName()
+                        : post.getSubject() != null ? post.getSubject().getName() : null)
+                .levelName(post.getCatalogLevel() != null ? post.getCatalogLevel().getName() : post.getEducationLevel())
+                .educationLevel(post.getCatalogLevel() != null ? post.getCatalogLevel().getName() : post.getEducationLevel())
                 .learningMode(post.getLearningMode())
                 .targetPricePerSession(post.getTargetPricePerSession())
                 .address(post.getAddress())

@@ -1,1 +1,15 @@
-{"expo":{"name":"EduConnect","slug":"educonnect-mobile","scheme":"educonnect","plugins":["expo-router"],"experiments":{"typedRoutes":false}}}
+{
+  "expo": {
+    "name": "EduConnect",
+    "slug": "educonnect",
+    "scheme": "educonnect",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": ["expo-router", "expo-secure-store", ["expo-image-picker", {
+      "photosPermission": "EduConnect cần truy cập ảnh để cập nhật ảnh đại diện và giấy tờ xác minh Gia sư."
+    }]],
+    "ios": { "supportsTablet": true },
+    "android": { "package": "vn.educonnect.mobile" }
+  }
+}

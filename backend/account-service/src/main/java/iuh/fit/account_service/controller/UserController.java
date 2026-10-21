@@ -6,6 +6,7 @@ import iuh.fit.account_service.dto.user.UpdateUserProfileRequest;
 import iuh.fit.account_service.dto.user.UserProfileResponse;
 import iuh.fit.account_service.service.AuthCookieService;
 import iuh.fit.account_service.service.UserService;
+import iuh.fit.account_service.service.WalletOwnershipService;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
@@ -27,10 +28,13 @@ public class UserController {
 
     private final UserService userService;
     private final AuthCookieService authCookieService;
+    private final WalletOwnershipService walletOwnershipService;
 
-    public UserController(UserService userService, AuthCookieService authCookieService) {
+    public UserController(UserService userService, AuthCookieService authCookieService,
+                          WalletOwnershipService walletOwnershipService) {
         this.userService = userService;
         this.authCookieService = authCookieService;
+        this.walletOwnershipService = walletOwnershipService;
     }
 
     @GetMapping("/me")
@@ -59,10 +63,20 @@ public class UserController {
     @PutMapping("/me/wallet")
     public ResponseEntity<UserProfileResponse> updateCurrentUserWallet(
             Authentication authentication,
-            @RequestBody java.util.Map<String, String> request
+            @RequestBody WalletUpdateRequest request
     ) {
-        String walletAddress = request.get("walletAddress");
-        return ResponseEntity.ok(userService.updateCurrentUserWallet(authentication.getName(), walletAddress));
+        walletOwnershipService.verifyAndConsume(
+                authentication.getName(), request.walletAddress(), request.challengeId(), request.signature());
+        return ResponseEntity.ok(userService.updateCurrentUserWallet(authentication.getName(), request.walletAddress()));
+    }
+
+    public record WalletUpdateRequest(String walletAddress, java.util.UUID challengeId, String signature) {}
+    public record WalletChallengeRequest(String walletAddress) {}
+
+    @PostMapping("/me/wallet/challenge")
+    public WalletOwnershipService.ChallengeResponse walletChallenge(
+            Authentication authentication, @RequestBody WalletChallengeRequest request) {
+        return walletOwnershipService.create(authentication.getName(), request.walletAddress());
     }
 
     @PostMapping(value = "/me/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

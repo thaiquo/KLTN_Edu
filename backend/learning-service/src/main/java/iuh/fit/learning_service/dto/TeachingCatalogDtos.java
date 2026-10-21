@@ -23,6 +23,10 @@ public final class TeachingCatalogDtos {
             List<LevelOption> levels
     ) {}
     public record GroundingCatalogSnapshot(List<GroundingSubjectOption> subjects) {}
+    public record CommunityLevelOption(Long id, String name) {}
+    public record CommunitySubjectOption(Long id, String name, String categoryName,
+                                         List<CommunityLevelOption> levels) {}
+    public record CommunityCatalogOptions(List<CommunitySubjectOption> subjects) {}
 
     public record EvidenceRequest(
             @NotNull iuh.fit.learning_service.enums.EvidenceType evidenceType,

@@ -22,8 +22,12 @@ export const userApi = {
     method: 'PUT',
     body: JSON.stringify(payload)
   }),
-  updateWallet: (walletAddress) => apiRequest('/api/users/me/wallet', {
-    method: 'PUT',
+  walletChallenge: (walletAddress) => apiRequest('/api/users/me/wallet/challenge', {
+    method: 'POST',
     body: JSON.stringify({ walletAddress })
+  }),
+  updateWallet: (walletAddress, challengeId, signature) => apiRequest('/api/users/me/wallet', {
+    method: 'PUT',
+    body: JSON.stringify({ walletAddress, challengeId, signature })
   })
 };

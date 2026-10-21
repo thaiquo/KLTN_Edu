@@ -14,12 +14,15 @@ import {
   RefreshCw,
   PlusCircle,
   ArrowRight,
-  Target
+  Target,
+  Search,
+  ChevronDown,
+  Check
 } from 'lucide-react';
 import communityApi from '../../api/community';
 import { useFeedback } from '../feedback/useFeedback';
 import { subjectApi } from '../../api/subjects';
-import { teachingRegistrationApi } from '../../api/teachingRegistrations';
+import { teachingCatalogApi, teachingRegistrationApi } from '../../api/teachingRegistrations';
 import { classApi } from '../../api/classes';
 
 const POLL_PERIODS = [
@@ -79,6 +82,103 @@ function normalizeList(res) {
   return res?.data || res || [];
 }
 
+function SubjectCombobox({ subjects, selectedSubject, onSelect, disabled }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    setQuery(selectedSubject?.name || '');
+  }, [selectedSubject]);
+
+  useEffect(() => {
+    const closeOnOutsideClick = event => {
+      if (!containerRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const needle = removeDiacritics(query);
+    if (!needle || (selectedSubject && query === selectedSubject.name)) return subjects;
+    return subjects.filter(subject =>
+      removeDiacritics(`${subject.name} ${subject.categoryName || ''}`).includes(needle)
+    );
+  }, [query, selectedSubject, subjects]);
+
+  const choose = subject => {
+    onSelect(subject);
+    setQuery(subject.name);
+    setOpen(false);
+  };
+
+  const handleKeyDown = event => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setOpen(true);
+      setHighlightedIndex(index => Math.min(index + 1, Math.max(filtered.length - 1, 0)));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setHighlightedIndex(index => Math.max(index - 1, 0));
+    } else if (event.key === 'Enter' && open && filtered[highlightedIndex]) {
+      event.preventDefault();
+      choose(filtered[highlightedIndex]);
+    } else if (event.key === 'Escape') {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <Search className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      <input
+        type="text"
+        role="combobox"
+        aria-expanded={open}
+        aria-autocomplete="list"
+        value={query}
+        disabled={disabled}
+        onFocus={() => setOpen(true)}
+        onChange={event => {
+          setQuery(event.target.value);
+          setOpen(true);
+          setHighlightedIndex(0);
+          if (selectedSubject) onSelect(null);
+        }}
+        onKeyDown={handleKeyDown}
+        placeholder="Tìm môn học..."
+        className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-9 text-xs font-bold text-slate-800 transition focus:border-indigo-500 focus:bg-white focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+      />
+      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+      {open && !disabled && (
+        <div role="listbox" className="absolute z-40 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+          {filtered.length === 0 ? (
+            <p className="px-3 py-4 text-center text-xs font-medium text-slate-500">Không tìm thấy môn học phù hợp</p>
+          ) : filtered.map((subject, index) => (
+            <button
+              type="button"
+              role="option"
+              aria-selected={selectedSubject?.id === subject.id}
+              key={subject.id}
+              onMouseEnter={() => setHighlightedIndex(index)}
+              onClick={() => choose(subject)}
+              className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left ${index === highlightedIndex ? 'bg-indigo-50' : 'hover:bg-slate-50'}`}
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-xs font-bold text-slate-800">{subject.name}</span>
+                {subject.categoryName && <span className="block truncate text-[10px] text-slate-500">{subject.categoryName}</span>}
+              </span>
+              {selectedSubject?.id === subject.id && <Check className="h-4 w-4 shrink-0 text-indigo-600" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function CreatePostModal({ isOpen, onClose, onPostCreated, userRole, editingPost = null, startWithAiRewrite = false }) {
   const navigate = useNavigate();
   const defaultType = userRole === 'TUTOR' ? 'TUTOR_ANNOUNCEMENT' : 'STUDENT_FIND_TUTOR';
@@ -88,6 +188,11 @@ export function CreatePostModal({ isOpen, onClose, onPostCreated, userRole, edit
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [subjectId, setSubjectId] = useState('');
+  const [catalogSubjectId, setCatalogSubjectId] = useState('');
+  const [catalogLevelId, setCatalogLevelId] = useState('');
+  const [catalogSubjects, setCatalogSubjects] = useState([]);
+  const [catalogError, setCatalogError] = useState(null);
+  const [catalogRetryKey, setCatalogRetryKey] = useState(0);
   const [registrations, setRegistrations] = useState([]);
   const [selectedRegId, setSelectedRegId] = useState('');
   const [selectedLevelId, setSelectedLevelId] = useState('');
@@ -134,6 +239,13 @@ export function CreatePostModal({ isOpen, onClose, onPostCreated, userRole, edit
   const selectedClass = useMemo(() => {
     return shareableClasses.find(item => String(item.id) === String(selectedClassId)) || null;
   }, [shareableClasses, selectedClassId]);
+
+  const selectedCatalogSubject = useMemo(() => (
+    catalogSubjects.find(subject => String(subject.id) === String(catalogSubjectId)) || null
+  ), [catalogSubjectId, catalogSubjects]);
+  const availableCatalogLevels = selectedCatalogSubject?.levels || [];
+  const isLegacyStudentEdit = userRole !== 'TUTOR' && Boolean(editingPost)
+    && !editingPost?.catalogSubjectId;
 
   const generateClassShareContent = (cls) => {
     if (!cls) return { title: '', content: '' };
@@ -238,6 +350,9 @@ Học viên quan tâm vui lòng xem chi tiết lớp học bên dưới và gử
     setTitle(editingPost?.title || '');
     setContent(editingPost?.content || '');
     setSubjectId(editingPost?.subjectId ? String(editingPost.subjectId) : '');
+    setCatalogSubjectId(editingPost?.catalogSubjectId ? String(editingPost.catalogSubjectId) : '');
+    setCatalogLevelId(editingPost?.catalogLevelId ? String(editingPost.catalogLevelId) : '');
+    setCatalogError(null);
     setSelectedClassId(editingPost?.linkedClassId ? String(editingPost.linkedClassId) : '');
     setEducationLevel(editingPost?.educationLevel || 'Lớp 12');
     setLearningMode(editingPost?.learningMode || 'ONLINE');
@@ -249,10 +364,9 @@ Học viên quan tâm vui lòng xem chi tiết lớp học bên dưới và gử
 
     async function loadOptions() {
       try {
-        const subjectList = normalizeList(await subjectApi.list());
-        setSubjects(subjectList);
-
         if (userRole === 'TUTOR') {
+          const subjectList = normalizeList(await subjectApi.list({ limit: 50 }));
+          setSubjects(subjectList);
           const [regs, classes] = await Promise.all([
             teachingRegistrationApi.mine().catch(() => []),
             classApi.getMyClasses().catch(() => [])
@@ -296,17 +410,24 @@ Học viên quan tâm vui lòng xem chi tiết lớp học bên dưới và gử
           if (!editingPost?.linkedClassId && visibleClasses.length > 0) {
             setSelectedClassId(String(visibleClasses[0].id));
           }
+        } else {
+          const options = await teachingCatalogApi.communityOptions();
+          setCatalogSubjects(Array.isArray(options?.subjects) ? options.subjects : []);
         }
       } catch (err) {
         console.error('Lỗi tải dữ liệu tạo bài:', err);
-        setError('Không thể tải dữ liệu môn/lớp. Vui lòng thử lại.');
+        if (userRole === 'TUTOR') {
+          setError('Không thể tải dữ liệu môn/lớp. Vui lòng thử lại.');
+        } else {
+          setCatalogError('Không thể tải danh mục môn học. Vui lòng thử lại.');
+        }
       } finally {
         setLoadingOptions(false);
       }
     }
 
     loadOptions();
-  }, [isOpen, editingPost, userRole, defaultType]);
+  }, [isOpen, editingPost, userRole, defaultType, catalogRetryKey]);
 
   useEffect(() => {
     if (!isOpen || !editingPost || !startWithAiRewrite) return;
@@ -369,6 +490,8 @@ Học viên quan tâm vui lòng xem chi tiết lớp học bên dưới và gử
 
     let finalSubjectId = null;
     let finalEducationLevel = null;
+    let finalCatalogSubjectId = null;
+    let finalCatalogLevelId = null;
     let finalLearningMode = 'ONLINE';
     let finalTargetPrice = null;
     let finalAddress = null;
@@ -421,12 +544,22 @@ Học viên quan tâm vui lòng xem chi tiết lớp học bên dưới và gử
       }
     } else {
       // Học viên
-      if (!subjectId) {
+      const preserveLegacySelection = isLegacyStudentEdit && !catalogSubjectId && !catalogLevelId;
+      if (!catalogSubjectId && !preserveLegacySelection) {
         setError('Vui lòng chọn môn học');
         return;
       }
-      finalSubjectId = Number(subjectId);
-      finalEducationLevel = educationLevel;
+      if (catalogSubjectId && !catalogLevelId) {
+        setError('Vui lòng chọn trình độ phù hợp với môn học');
+        return;
+      }
+      if (preserveLegacySelection) {
+        finalSubjectId = editingPost.subjectId || null;
+        finalEducationLevel = editingPost.educationLevel || null;
+      } else {
+        finalCatalogSubjectId = Number(catalogSubjectId);
+        finalCatalogLevelId = Number(catalogLevelId);
+      }
       finalLearningMode = learningMode;
       finalTargetPrice = targetPrice ? Number(targetPrice) : null;
       if (learningMode === 'OFFLINE') {
@@ -443,6 +576,8 @@ Học viên quan tâm vui lòng xem chi tiết lớp học bên dưới và gử
       title: title.trim(),
       content: content.trim(),
       subjectId: finalSubjectId,
+      catalogSubjectId: finalCatalogSubjectId,
+      catalogLevelId: finalCatalogLevelId,
       educationLevel: finalEducationLevel,
       learningMode: finalLearningMode,
       targetPricePerSession: finalTargetPrice,
@@ -1133,38 +1268,54 @@ Học viên quan tâm vui lòng xem chi tiết lớp học bên dưới và gử
           {/* Phân hệ Học viên (userRole !== 'TUTOR') */}
           {userRole !== 'TUTOR' && (
             <div className="space-y-4">
+              {isLegacyStudentEdit && !catalogSubjectId && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  Bài cũ đang dùng <strong>{editingPost.subjectName || 'môn học cũ'}</strong>
+                  {editingPost.educationLevel ? ` - ${editingPost.educationLevel}` : ''}. Bạn có thể giữ nguyên hoặc chọn lại từ danh mục mới.
+                </div>
+              )}
+              {catalogError && (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  <span>{catalogError}</span>
+                  <button type="button" onClick={() => setCatalogRetryKey(key => key + 1)} className="inline-flex shrink-0 items-center gap-1 font-bold hover:text-rose-900">
+                    <RefreshCw className="h-3.5 w-3.5" /> Thử lại
+                  </button>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Môn học <span className="text-rose-500">*</span>
+                    Môn học {!isLegacyStudentEdit && <span className="text-rose-500">*</span>}
                   </label>
-                  <select
-                    value={subjectId}
-                    onChange={e => setSubjectId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:border-indigo-500 transition-all"
-                  >
-                    <option value="">-- Chọn môn học --</option>
-                    {subjects.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
+                  <SubjectCombobox
+                    subjects={catalogSubjects}
+                    selectedSubject={selectedCatalogSubject}
+                    disabled={loadingOptions || Boolean(catalogError)}
+                    onSelect={subject => {
+                      setCatalogSubjectId(subject ? String(subject.id) : '');
+                      setCatalogLevelId('');
+                    }}
+                  />
+                  {!loadingOptions && !catalogError && catalogSubjects.length === 0 && (
+                    <p className="mt-1 text-[11px] text-rose-600">Danh mục chưa có môn học khả dụng.</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Cấp độ / Lớp <span className="text-rose-500">*</span>
+                    Trình độ {!isLegacyStudentEdit && <span className="text-rose-500">*</span>}
                   </label>
                   <select
-                    value={educationLevel}
-                    onChange={e => setEducationLevel(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:border-indigo-500 transition-all"
+                    value={catalogLevelId}
+                    onChange={event => setCatalogLevelId(event.target.value)}
+                    disabled={!selectedCatalogSubject || availableCatalogLevels.length === 0}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs font-bold text-slate-800 transition focus:border-indigo-500 focus:bg-white focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    <option value="Lớp 10">Lớp 10</option>
-                    <option value="Lớp 11">Lớp 11</option>
-                    <option value="Lớp 12">Lớp 12</option>
-                    <option value="Đại học">Đại học</option>
-                    <option value="Luyện thi ĐGNL">Luyện thi ĐGNL</option>
-                    <option value="Lập trình / Công nghệ">Lập trình / Công nghệ</option>
+                    <option value="">{selectedCatalogSubject ? '-- Chọn trình độ --' : '-- Chọn môn học trước --'}</option>
+                    {availableCatalogLevels.map(level => <option key={level.id} value={level.id}>{level.name}</option>)}
                   </select>
+                  {selectedCatalogSubject && availableCatalogLevels.length === 0 && (
+                    <p className="mt-1 text-[11px] text-rose-600">Môn học này chưa có trình độ khả dụng.</p>
+                  )}
                 </div>
               </div>
 

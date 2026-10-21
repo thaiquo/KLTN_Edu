@@ -83,7 +83,8 @@ class AdminFinancialMonitoringControllerTest {
                 accessControl,
                 blockchainGateway,
                 blockchainEventIngestionService,
-                operationalFundingPolicy, org.mockito.Mockito.mock(iuh.fit.contract_service.service.TerminationService.class)
+                operationalFundingPolicy, org.mockito.Mockito.mock(iuh.fit.contract_service.service.TerminationService.class),
+                org.mockito.Mockito.mock(iuh.fit.contract_service.service.ContractSourceSnapshotClient.class)
         );
         org.mockito.Mockito.lenient().when(terminationItemRepository.findAll()).thenReturn(List.of());
     }

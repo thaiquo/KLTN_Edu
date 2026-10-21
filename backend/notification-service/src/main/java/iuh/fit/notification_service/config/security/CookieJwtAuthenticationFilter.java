@@ -33,6 +33,14 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         String token = extractToken(request);
+        boolean bearer = false;
+        if (token == null) {
+            String authorization = request.getHeader("Authorization");
+            if (authorization != null && authorization.startsWith("Bearer ")) {
+                token = authorization.substring(7).trim();
+                bearer = true;
+            }
+        }
         if (token == null || token.isBlank()) {
             filterChain.doFilter(request, response);
             return;
@@ -41,6 +49,10 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             Claims claims = Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload();
             if (claims.getExpiration() == null || claims.getExpiration().before(new Date())) {
+                if (bearer) {
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                    return;
+                }
                 filterChain.doFilter(request, response);
                 return;
             }
@@ -48,6 +60,10 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
             Long userId = extractUserId(claims.get("userId"));
             String email = claims.getSubject();
             if (userId == null || email == null || email.isBlank()) {
+                if (bearer) {
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                    return;
+                }
                 filterChain.doFilter(request, response);
                 return;
             }
@@ -63,6 +79,10 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
             );
         } catch (RuntimeException ex) {
             SecurityContextHolder.clearContext();
+            if (bearer) {
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                return;
+            }
         }
 
         filterChain.doFilter(request, response);

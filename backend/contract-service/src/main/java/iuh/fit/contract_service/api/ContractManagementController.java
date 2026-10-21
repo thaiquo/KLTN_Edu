@@ -82,6 +82,7 @@ public class ContractManagementController {
     private final iuh.fit.contract_service.service.TerminationService terminationService;
     private final org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway;
     private final ObjectProvider<BlockchainEventIngestionService> blockchainEventIngestionService;
+    private final iuh.fit.contract_service.service.ContractSourceSnapshotClient sourceSnapshotClient;
 
     public ContractManagementController(
             ContractAgreementRepository agreementRepository,
@@ -106,7 +107,8 @@ public class ContractManagementController {
             org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway,
             ObjectProvider<BlockchainEventIngestionService> blockchainEventIngestionService,
             OperationalFundingPolicy operationalFundingPolicy,
-            iuh.fit.contract_service.service.TerminationService terminationService) {
+            iuh.fit.contract_service.service.TerminationService terminationService,
+            iuh.fit.contract_service.service.ContractSourceSnapshotClient sourceSnapshotClient) {
         this.agreementRepository = agreementRepository;
         this.settlementRepository = settlementRepository;
         this.transactionRepository = transactionRepository;
@@ -130,6 +132,7 @@ public class ContractManagementController {
         this.blockchainEventIngestionService = blockchainEventIngestionService;
         this.operationalFundingPolicy = operationalFundingPolicy;
         this.terminationService = terminationService;
+        this.sourceSnapshotClient = sourceSnapshotClient;
     }
 
     public record InitiateAgreementRequest(
@@ -202,6 +205,23 @@ public class ContractManagementController {
     public ResponseEntity<AgreementDetailDto> initiateAgreement(
             @RequestBody InitiateAgreementRequest request) {
 
+        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
+        accessControl.requireCanInitiateAgreement(
+                new ContractAccessControl.ContractAgreementSeed(request.tutorId(), request.tutorEmail()), currentUser);
+        if (request.classroomId() != null && request.studentId() != null) {
+            Optional<ContractAgreement> previous = agreementRepository.findByClassroomIdAndStudentIdAndContractVersion(
+                    request.classroomId(), request.studentId(), 1);
+            if (previous.isPresent()) {
+                ContractAgreement existingAgreement = previous.get();
+                if (!currentUser.matchesUserId(existingAgreement.getTutorId())) {
+                    throw new ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN,
+                            "Agreement belongs to another tutor");
+                }
+                return ResponseEntity.ok(toAgreementDetail(existingAgreement));
+            }
+        }
+        request = sourceSnapshotClient.resolve(request, currentUser);
+
         if (request.classroomId() == null || request.classroomId() <= 0
                 || request.studentId() == null || request.studentId() <= 0
                 || request.tutorId() == null || request.tutorId() <= 0
@@ -218,11 +238,6 @@ public class ContractManagementController {
                 || request.totalSessions() == null || request.totalSessions() <= 0) {
             return ResponseEntity.badRequest().build();
         }
-
-        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-        accessControl.requireCanInitiateAgreement(
-                new ContractAccessControl.ContractAgreementSeed(request.tutorId(), request.tutorEmail()),
-                currentUser);
 
         terminationService.requireClassCanCreate(request.classroomId());
         // Return existing active/pending agreement if already initiated for this class and student

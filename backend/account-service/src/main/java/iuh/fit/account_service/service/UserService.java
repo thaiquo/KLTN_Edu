@@ -202,7 +202,10 @@ public class UserService {
         user.setBio(normalizeOptional(request.getBio()));
         if (request.getWalletAddress() != null) {
             String w = request.getWalletAddress().trim();
-            user.setWalletAddress(w.isBlank() ? null : w.toLowerCase(Locale.ROOT));
+            String current = user.getWalletAddress() == null ? "" : user.getWalletAddress();
+            if (!w.equalsIgnoreCase(current)) {
+                throw new BadRequestException("Use wallet ownership verification to change wallet address");
+            }
         }
 
         User saved = userRepository.save(user);
@@ -336,7 +339,10 @@ public class UserService {
 
         String activeRole = null;
         org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getAuthorities() != null) {
+        if (auth != null && auth.getDetails() instanceof iuh.fit.account_service.config.security.ActiveRoleAuthenticationDetails details
+                && org.springframework.util.StringUtils.hasText(details.activeRole())) {
+            activeRole = details.activeRole();
+        } else if (auth != null && auth.getAuthorities() != null) {
             for (org.springframework.security.core.GrantedAuthority ga : auth.getAuthorities()) {
                 if (ga.getAuthority().startsWith("ROLE_")) {
                     activeRole = ga.getAuthority().substring(5);

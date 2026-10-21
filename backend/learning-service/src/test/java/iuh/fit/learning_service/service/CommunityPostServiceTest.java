@@ -66,6 +66,9 @@ class CommunityPostServiceTest {
     private SubjectRepository subjectRepository;
 
     @Mock
+    private CatalogSubjectRepository catalogSubjectRepository;
+
+    @Mock
     private ClassRoomRepository classRoomRepository;
 
     @Mock
@@ -1006,10 +1009,11 @@ class CommunityPostServiceTest {
 
     @Test
     void createPost_StartsModerationAndPublishesImmutableRequest() {
-        CreatePostRequest request = new CreatePostRequest();
-        request.setPostType(PostType.STUDENT_FIND_TUTOR);
-        request.setTitle("Tìm gia sư Toán 11");
-        request.setContent("Cần ôn tập kiểm tra giữa kỳ");
+        CreatePostRequest request = modernStudentRequest(10L, 11L);
+        CatalogSubject catalogSubject = catalogSubject(10L, "Toán");
+        CatalogLevel catalogLevel = catalogLevel(11L, "Lớp 11", catalogSubject);
+        when(catalogSubjectRepository.findById(10L)).thenReturn(Optional.of(catalogSubject));
+        when(levelRepository.findById(11L)).thenReturn(Optional.of(catalogLevel));
         CommunityPost saved = new CommunityPost();
         saved.setId(501L);
         saved.setAuthorId(202L);
@@ -1032,6 +1036,117 @@ class CommunityPostServiceTest {
         assertThat(requested.postId()).isEqualTo(501L);
         assertThat(requested.pendingEdit()).isFalse();
         assertThat(requested.snapshot().title()).isEqualTo("Tìm gia sư Toán 11");
+    }
+
+    @Test
+    void createStudentPost_StoresModernCatalogAndReturnsCatalogNames() {
+        CatalogSubject subject = catalogSubject(10L, "Toán");
+        CatalogLevel level = catalogLevel(11L, "Lớp 11", subject);
+        when(catalogSubjectRepository.findById(10L)).thenReturn(Optional.of(subject));
+        when(levelRepository.findById(11L)).thenReturn(Optional.of(level));
+        when(postRepository.save(any(CommunityPost.class))).thenAnswer(invocation -> {
+            CommunityPost post = invocation.getArgument(0);
+            post.setId(801L);
+            return post;
+        });
+        when(pendingRevisionRepository.findById(801L)).thenReturn(Optional.empty());
+
+        PostSummaryDto response = postService.createPost(modernStudentRequest(10L, 11L), studentPrincipal, "Học viên", null);
+
+        assertThat(response.getCatalogSubjectId()).isEqualTo(10L);
+        assertThat(response.getCatalogLevelId()).isEqualTo(11L);
+        assertThat(response.getSubjectName()).isEqualTo("Toán");
+        assertThat(response.getLevelName()).isEqualTo("Lớp 11");
+        assertThat(response.getSubjectId()).isNull();
+    }
+
+    @Test
+    void createStudentPost_RequiresCatalogSubjectAndLevel() {
+        CreatePostRequest missingBoth = modernStudentRequest(null, null);
+        CreatePostRequest missingLevel = modernStudentRequest(10L, null);
+
+        assertThrows(BadRequestException.class, () -> postService.createPost(missingBoth, studentPrincipal, null, null));
+        assertThrows(BadRequestException.class, () -> postService.createPost(missingLevel, studentPrincipal, null, null));
+    }
+
+    @Test
+    void createStudentPost_RejectsMissingOrInactiveCatalogValues() {
+        CatalogSubject inactiveSubject = catalogSubject(10L, "Toán");
+        inactiveSubject.setActive(false);
+        when(catalogSubjectRepository.findById(10L)).thenReturn(Optional.empty(), Optional.of(inactiveSubject));
+
+        assertThrows(BadRequestException.class, () -> postService.createPost(modernStudentRequest(10L, 11L), studentPrincipal, null, null));
+        assertThrows(BadRequestException.class, () -> postService.createPost(modernStudentRequest(10L, 11L), studentPrincipal, null, null));
+
+        CatalogSubject activeSubject = catalogSubject(12L, "Vật lý");
+        CatalogLevel inactiveLevel = catalogLevel(13L, "Lớp 12", activeSubject);
+        inactiveLevel.setActive(false);
+        when(catalogSubjectRepository.findById(12L)).thenReturn(Optional.of(activeSubject));
+        when(levelRepository.findById(13L)).thenReturn(Optional.empty(), Optional.of(inactiveLevel));
+        assertThrows(BadRequestException.class, () -> postService.createPost(modernStudentRequest(12L, 13L), studentPrincipal, null, null));
+        assertThrows(BadRequestException.class, () -> postService.createPost(modernStudentRequest(12L, 13L), studentPrincipal, null, null));
+    }
+
+    @Test
+    void createStudentPost_RejectsLevelFromAnotherSubject() {
+        CatalogSubject selected = catalogSubject(10L, "Toán");
+        CatalogSubject owner = catalogSubject(20L, "Vật lý");
+        when(catalogSubjectRepository.findById(10L)).thenReturn(Optional.of(selected));
+        when(levelRepository.findById(21L)).thenReturn(Optional.of(catalogLevel(21L, "Lớp 11", owner)));
+
+        assertThrows(BadRequestException.class, () ->
+                postService.createPost(modernStudentRequest(10L, 21L), studentPrincipal, null, null));
+    }
+
+    @Test
+    void legacyPostResponseFallsBackToLegacyNames() {
+        CommunityPost post = moderatedStudentPost(802L, "Bài cũ");
+        Subject subject = new Subject();
+        subject.setId(5L);
+        subject.setName("Dai so");
+        post.setSubject(subject);
+        post.setEducationLevel("Lớp 11");
+        when(postRepository.findById(802L)).thenReturn(Optional.of(post));
+
+        PostSummaryDto response = postService.getPostDetail(802L, null);
+
+        assertThat(response.getCatalogSubjectId()).isNull();
+        assertThat(response.getSubjectName()).isEqualTo("Dai so");
+        assertThat(response.getLevelName()).isEqualTo("Lớp 11");
+    }
+
+    @Test
+    void updateModernPost_ValidatesPairBeforeCreatingPendingRevision() {
+        CommunityPost post = moderatedStudentPost(803L, "Bài hiện đại");
+        CatalogSubject oldSubject = catalogSubject(10L, "Toán");
+        post.setCatalogSubject(oldSubject);
+        post.setCatalogLevel(catalogLevel(11L, "Lớp 11", oldSubject));
+        CatalogSubject newSubject = catalogSubject(20L, "Vật lý");
+        CatalogLevel newLevel = catalogLevel(21L, "Lớp 12", newSubject);
+        when(postRepository.findByIdForUpdate(803L)).thenReturn(Optional.of(post));
+        when(catalogSubjectRepository.findById(20L)).thenReturn(Optional.of(newSubject));
+        when(levelRepository.findById(21L)).thenReturn(Optional.of(newLevel));
+        when(pendingRevisionRepository.findById(803L)).thenReturn(Optional.empty());
+
+        postService.updatePost(803L, modernStudentRequest(20L, 21L), studentPrincipal, 1L);
+
+        verify(pendingRevisionRepository).save(argThat(pending -> pending.getRequestJson().contains("\"catalogSubjectId\":20")));
+    }
+
+    @Test
+    void updateModernPost_RejectsStaleLevelAfterSubjectChange() {
+        CommunityPost post = moderatedStudentPost(804L, "Bài hiện đại");
+        CatalogSubject oldSubject = catalogSubject(10L, "Toán");
+        post.setCatalogSubject(oldSubject);
+        post.setCatalogLevel(catalogLevel(11L, "Lớp 11", oldSubject));
+        CatalogSubject newSubject = catalogSubject(20L, "Vật lý");
+        when(postRepository.findByIdForUpdate(804L)).thenReturn(Optional.of(post));
+        when(catalogSubjectRepository.findById(20L)).thenReturn(Optional.of(newSubject));
+        when(levelRepository.findById(11L)).thenReturn(Optional.of(post.getCatalogLevel()));
+
+        assertThrows(BadRequestException.class, () ->
+                postService.updatePost(804L, modernStudentRequest(20L, 11L), studentPrincipal, 1L));
+        verify(pendingRevisionRepository, never()).save(any());
     }
 
     @Test
@@ -1290,6 +1405,30 @@ class CommunityPostServiceTest {
         request.setContent(content);
         request.setLearningMode(LearningMode.ONLINE);
         return request;
+    }
+
+    private CreatePostRequest modernStudentRequest(Long subjectId, Long levelId) {
+        CreatePostRequest request = studentEdit("Tìm gia sư Toán 11", "Cần ôn tập kiểm tra giữa kỳ");
+        request.setCatalogSubjectId(subjectId);
+        request.setCatalogLevelId(levelId);
+        return request;
+    }
+
+    private CatalogSubject catalogSubject(Long id, String name) {
+        CatalogSubject subject = new CatalogSubject();
+        subject.setId(id);
+        subject.setName(name);
+        subject.setActive(true);
+        return subject;
+    }
+
+    private CatalogLevel catalogLevel(Long id, String name, CatalogSubject subject) {
+        CatalogLevel level = new CatalogLevel();
+        level.setId(id);
+        level.setName(name);
+        level.setSubject(subject);
+        level.setActive(true);
+        return level;
     }
 
     private CommunityModerationPolicy.Result moderationResult(CommunityModerationPolicy.Recommendation recommendation,

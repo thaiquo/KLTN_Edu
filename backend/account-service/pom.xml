@@ -133,6 +133,11 @@
 
     <!-- S3 storage -->
     <dependency>
+        <groupId>org.web3j</groupId>
+        <artifactId>crypto</artifactId>
+        <version>4.14.0</version>
+    </dependency>
+    <dependency>
         <groupId>software.amazon.awssdk</groupId>
         <artifactId>s3</artifactId>
         <version>2.25.70</version>

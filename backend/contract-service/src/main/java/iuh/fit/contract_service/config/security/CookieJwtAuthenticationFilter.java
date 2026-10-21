@@ -59,6 +59,14 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         String token = extractAccessToken(request);
+        boolean bearer = false;
+        if (token == null) {
+            String authorization = request.getHeader("Authorization");
+            if (authorization != null && authorization.startsWith("Bearer ")) {
+                token = authorization.substring(7).trim();
+                bearer = true;
+            }
+        }
         if (token != null && SecurityContextHolder.getContext().getAuthentication() == null) {
             try {
                 Claims claims = Jwts.parser()
@@ -82,7 +90,16 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
                 }
             } catch (Exception ignored) {
                 SecurityContextHolder.clearContext();
+                if (bearer) {
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                    return;
+                }
             }
+        }
+
+        if (bearer && SecurityContextHolder.getContext().getAuthentication() == null) {
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
         }
 
         filterChain.doFilter(request, response);

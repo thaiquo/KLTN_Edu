@@ -86,6 +86,14 @@ public class RefreshTokenService {
     }
 
     @Transactional
+    public void requireOwnedSession(String rawToken, String email) {
+        RefreshSession session = findUsableSession(rawToken);
+        if (!session.getUser().getEmail().equalsIgnoreCase(email)) {
+            throw new UnauthorizedException("Refresh token does not belong to the authenticated user");
+        }
+    }
+
+    @Transactional
     public void revokeIfPresent(String rawToken) {
         if (rawToken == null || rawToken.isBlank()) {
             return;

@@ -319,6 +319,12 @@ public class AuthService {
         return switchRole(authenticatedEmail, request, null);
     }
 
+    @Transactional
+    public LoginResult switchRoleMobile(String authenticatedEmail, SwitchRoleRequest request, String rawRefreshToken) {
+        refreshTokenService.requireOwnedSession(rawRefreshToken, authenticatedEmail);
+        return switchRole(authenticatedEmail, request, rawRefreshToken);
+    }
+
     public LoginResult switchRole(String authenticatedEmail, SwitchRoleRequest request, String rawRefreshToken) {
         String normalizedEmail = EmailNormalizer.normalize(authenticatedEmail);
         User user = userRepository.findByEmailIgnoreCase(normalizedEmail)

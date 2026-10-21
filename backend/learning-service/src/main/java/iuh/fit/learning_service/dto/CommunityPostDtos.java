@@ -67,6 +67,8 @@ public class CommunityPostDtos {
         private String content;
 
         private Long subjectId;
+        private Long catalogSubjectId;
+        private Long catalogLevelId;
         @Size(max = 50, message = "Education level must not exceed 50 characters")
         private String educationLevel;
         private LearningMode learningMode;
@@ -138,7 +140,10 @@ public class CommunityPostDtos {
         private String title;
         private String content;
         private Long subjectId;
+        private Long catalogSubjectId;
+        private Long catalogLevelId;
         private String subjectName;
+        private String levelName;
         private String educationLevel;
         private LearningMode learningMode;
         private BigDecimal targetPricePerSession;

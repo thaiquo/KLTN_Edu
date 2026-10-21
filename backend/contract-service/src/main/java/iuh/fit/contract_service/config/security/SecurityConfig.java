@@ -38,6 +38,10 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf
                         .ignoringRequestMatchers("/api/contracts/internal/**")
+                        .ignoringRequestMatchers(request -> request.getHeader("Authorization") != null
+                                && request.getHeader("Authorization").startsWith("Bearer ")
+                                && java.util.Arrays.stream(request.getCookies() == null ? new jakarta.servlet.http.Cookie[0] : request.getCookies())
+                                .noneMatch(cookie -> "access_token".equals(cookie.getName())))
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(csrfHandler))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

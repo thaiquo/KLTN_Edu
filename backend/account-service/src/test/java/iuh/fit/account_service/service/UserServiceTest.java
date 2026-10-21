@@ -25,6 +25,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+import iuh.fit.account_service.config.security.ActiveRoleAuthenticationDetails;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -97,6 +100,20 @@ class UserServiceTest {
         assertThat(response.isEmailVerified()).isTrue();
         assertThat(response.getAccountStatus()).isEqualTo(AccountStatus.ACTIVE);
         assertThat(response.getRoles()).containsExactly("STUDENT", "TUTOR");
+    }
+
+    @Test
+    void pendingTutorKeepsJwtActiveRoleWithoutTutorAuthority() {
+        when(userRepository.findByEmailIgnoreCase("test@example.com")).thenReturn(Optional.of(user));
+        when(userRoleRepository.findByUserId(7L)).thenReturn(List.of(role(user, Role.TUTOR)));
+        var authentication = new UsernamePasswordAuthenticationToken("test@example.com", null, List.of());
+        authentication.setDetails(new ActiveRoleAuthenticationDetails("TUTOR", null));
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        try {
+            assertThat(userService.getCurrentUserProfile("test@example.com").getActiveRole()).isEqualTo("TUTOR");
+        } finally {
+            SecurityContextHolder.clearContext();
+        }
     }
 
     @Test

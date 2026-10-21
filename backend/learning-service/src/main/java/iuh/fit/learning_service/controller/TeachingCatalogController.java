@@ -32,4 +32,7 @@ public class TeachingCatalogController {
 
     @GetMapping("/grounding-snapshot")
     public TeachingCatalogDtos.GroundingCatalogSnapshot groundingSnapshot() { return service.groundingSnapshot(); }
+
+    @GetMapping("/community-options")
+    public TeachingCatalogDtos.CommunityCatalogOptions communityOptions() { return service.communityOptions(); }
 }

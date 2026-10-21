@@ -42,8 +42,10 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
             try {
                 Claims claims = Jwts.parser().verifyWith(secretKey).build()
                         .parseSignedClaims(request.getHeader("X-Service-Token")).getPayload();
+                String expectedScope = request.getRequestURI().startsWith("/api/learning/internal/contracts/")
+                        ? "contract-snapshot" : "learning-enrollment";
                 if (!"contract-service".equals(claims.getSubject())
-                        || !"learning-enrollment".equals(claims.get("serviceScope", String.class))
+                        || !expectedScope.equals(claims.get("serviceScope", String.class))
                         || claims.getExpiration() == null
                         || claims.getExpiration().before(new Date())) {
                     throw new IllegalArgumentException("Invalid service identity");
@@ -60,6 +62,14 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         List<String> tokens = extractTokens(request);
+        boolean bearer = false;
+        if (tokens.isEmpty()) {
+            String authorization = request.getHeader("Authorization");
+            if (authorization != null && authorization.startsWith("Bearer ")) {
+                tokens = List.of(authorization.substring(7).trim());
+                bearer = true;
+            }
+        }
         if (tokens.isEmpty()) {
             filterChain.doFilter(request, response);
             return;
@@ -109,8 +119,17 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(authentication);
                 break;
             } catch (RuntimeException ignored) {
+                if (bearer) {
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                    return;
+                }
                 // Browsers can retain an older cookie with the same name on another path.
             }
+        }
+
+        if (bearer && SecurityContextHolder.getContext().getAuthentication() == null) {
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
         }
 
         filterChain.doFilter(request, response);

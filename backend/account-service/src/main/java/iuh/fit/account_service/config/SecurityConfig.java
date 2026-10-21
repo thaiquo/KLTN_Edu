@@ -51,6 +51,11 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
+                        .ignoringRequestMatchers(request -> request.getRequestURI().startsWith("/api/auth/mobile/")
+                                || (request.getHeader("Authorization") != null
+                                && request.getHeader("Authorization").startsWith("Bearer ")
+                                && java.util.Arrays.stream(request.getCookies() == null ? new jakarta.servlet.http.Cookie[0] : request.getCookies())
+                                .noneMatch(cookie -> "access_token".equals(cookie.getName()))))
                 )
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .formLogin(formLogin -> formLogin.disable())
@@ -67,6 +72,7 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/internal/notification-reviewers").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/internal/contract-snapshot/**").permitAll()
                         .requestMatchers(
                                 "/api/auth/register",
                                 "/api/auth/verify-email",
@@ -77,6 +83,14 @@ public class SecurityConfig {
                                 "/api/auth/refresh",
                                 "/api/auth/logout",
                                 "/api/auth/csrf",
+                                "/api/auth/mobile/login",
+                                "/api/auth/mobile/register",
+                                "/api/auth/mobile/verify-email",
+                                "/api/auth/mobile/resend-verification-otp",
+                                "/api/auth/mobile/forgot-password",
+                                "/api/auth/mobile/reset-password",
+                                "/api/auth/mobile/refresh",
+                                "/api/auth/mobile/logout",
                                 "/api/tutors/profile/registration",
                                 "/api/subjects/**",
                                 "/api/reference/**"

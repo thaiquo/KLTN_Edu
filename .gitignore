@@ -12,6 +12,7 @@ backend/.env
 /.local-backups/
 .runtime/
 **/target/
+mobile-app/.expo/
 **/*-runtime.out.log
 **/*-runtime.err.log
 *.log

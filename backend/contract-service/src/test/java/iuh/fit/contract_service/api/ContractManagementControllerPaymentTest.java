@@ -117,7 +117,8 @@ class ContractManagementControllerPaymentTest {
                 new iuh.fit.contract_service.service.OperationalFundingPolicy(
                         agreementRepository, escrowPaymentRepository, processedEventRepository,
                         new tools.jackson.databind.ObjectMapper()),
-                org.mockito.Mockito.mock(iuh.fit.contract_service.service.TerminationService.class));
+                org.mockito.Mockito.mock(iuh.fit.contract_service.service.TerminationService.class),
+                org.mockito.Mockito.mock(iuh.fit.contract_service.service.ContractSourceSnapshotClient.class));
     }
 
     @Test

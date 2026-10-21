@@ -19,5 +19,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(realtimeEventHub, "/ws/learning")
                 .setAllowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*");
+        registry.addHandler(realtimeEventHub, "/ws/learning/mobile")
+                .setAllowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*");
     }
 }

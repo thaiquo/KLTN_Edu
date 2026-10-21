@@ -56,6 +56,14 @@ public class CommunityPost {
     @Column(name = "education_level", length = 50)
     private String educationLevel;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "catalog_subject_id")
+    private CatalogSubject catalogSubject;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "catalog_level_id")
+    private CatalogLevel catalogLevel;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "learning_mode", nullable = false, length = 20)
     private LearningMode learningMode = LearningMode.ONLINE;

@@ -37,6 +37,10 @@ public class SecurityConfig {
                         .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
                         .ignoringRequestMatchers("/api/learning/internal/**")
+                        .ignoringRequestMatchers(request -> request.getHeader("Authorization") != null
+                                && request.getHeader("Authorization").startsWith("Bearer ")
+                                && java.util.Arrays.stream(request.getCookies() == null ? new jakarta.servlet.http.Cookie[0] : request.getCookies())
+                                .noneMatch(cookie -> "access_token".equals(cookie.getName())))
                 )
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .formLogin(formLogin -> formLogin.disable())
@@ -51,6 +55,7 @@ public class SecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/ws/learning").permitAll()
+                        .requestMatchers("/ws/learning/mobile").authenticated()
                         .requestMatchers("/api/learning/internal/**").hasRole("INTERNAL_CONTRACT")
                         .requestMatchers(HttpMethod.GET, "/api/subjects/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/tutor-subjects/**").permitAll()

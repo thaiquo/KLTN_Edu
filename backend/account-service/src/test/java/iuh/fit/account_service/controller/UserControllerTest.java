@@ -23,7 +23,8 @@ class UserControllerTest {
 
     private final UserService userService = mock(UserService.class);
     private final AuthCookieService authCookieService = mock(AuthCookieService.class);
-    private final UserController controller = new UserController(userService, authCookieService);
+    private final UserController controller = new UserController(userService, authCookieService,
+            mock(iuh.fit.account_service.service.WalletOwnershipService.class));
 
     @Test
     void getCurrentUserUsesAuthenticatedPrincipalEmail() {

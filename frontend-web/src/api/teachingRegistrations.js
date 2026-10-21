@@ -4,6 +4,7 @@ export const teachingCatalogApi = {
   programTypes: () => apiRequest('/api/learning/teaching-catalog/program-types'),
   educationLevels: () => apiRequest('/api/learning/teaching-catalog/education-levels'),
   groundingSnapshot: () => apiRequest('/api/learning/teaching-catalog/grounding-snapshot'),
+  communityOptions: () => apiRequest('/api/learning/teaching-catalog/community-options'),
   categories: (programTypeId, educationLevelId) => {
     const params = new URLSearchParams({ programTypeId: String(programTypeId) });
     if (educationLevelId) params.set('educationLevelId', String(educationLevelId));

@@ -20,6 +20,41 @@ import static org.mockito.Mockito.when;
 
 class JwtAuthenticationFilterTest {
 
+    @Test
+    void validBearerAuthenticatesWithoutCookie() throws Exception {
+        JwtService jwtService = mock(JwtService.class);
+        CustomUserDetailsService details = mock(CustomUserDetailsService.class);
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtService, details);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/users/me");
+        request.addHeader("Authorization", "Bearer mobile-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+        when(jwtService.isTokenValid("mobile-token")).thenReturn(true);
+        when(jwtService.extractEmail("mobile-token")).thenReturn("student@example.com");
+        when(jwtService.extractActiveRole("mobile-token")).thenReturn("STUDENT");
+        when(details.loadUserByUsernameAndActiveRole("student@example.com", "STUDENT"))
+                .thenReturn(new User("student@example.com", "password", List.of()));
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("student@example.com");
+        verify(chain).doFilter(request, response);
+    }
+
+    @Test
+    void expiredBearerIsRejected() throws Exception {
+        JwtService jwtService = mock(JwtService.class);
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtService, mock(CustomUserDetailsService.class));
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/users/me");
+        request.addHeader("Authorization", "Bearer expired");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        when(jwtService.isTokenValid("expired")).thenReturn(false);
+
+        filter.doFilter(request, response, mock(FilterChain.class));
+
+        assertThat(response.getStatus()).isEqualTo(401);
+    }
+
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();

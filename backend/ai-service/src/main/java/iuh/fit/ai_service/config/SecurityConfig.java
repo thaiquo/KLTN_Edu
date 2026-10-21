@@ -35,6 +35,10 @@ public class SecurityConfig {
                         .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())
                         .ignoringRequestMatchers("/api/ai/chat", "/api/ai/internal/community/moderate",
                                 "/api/ai/internal/community/rewrite")
+                        .ignoringRequestMatchers(request -> request.getHeader("Authorization") != null
+                                && request.getHeader("Authorization").startsWith("Bearer ")
+                                && java.util.Arrays.stream(request.getCookies() == null ? new jakarta.servlet.http.Cookie[0] : request.getCookies())
+                                .noneMatch(cookie -> "access_token".equals(cookie.getName())))
                 )
                 .httpBasic(httpBasic -> httpBasic.disable())
                 .formLogin(formLogin -> formLogin.disable())

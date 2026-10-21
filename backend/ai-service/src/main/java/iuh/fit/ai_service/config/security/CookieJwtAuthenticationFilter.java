@@ -30,6 +30,14 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         String token = extractTokenFromCookie(request);
+        boolean bearer = false;
+        if (token == null) {
+            String authorization = request.getHeader("Authorization");
+            if (authorization != null && authorization.startsWith("Bearer ")) {
+                token = authorization.substring(7).trim();
+                bearer = true;
+            }
+        }
         if (token == null) {
             filterChain.doFilter(request, response);
             return;
@@ -37,6 +45,10 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             if (!jwtService.isTokenValid(token)) {
+                if (bearer) {
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                    return;
+                }
                 continueAsGuest(request, response, filterChain);
                 return;
             }
@@ -54,6 +66,10 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         } catch (RuntimeException exception) {
+            if (bearer) {
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                return;
+            }
             continueAsGuest(request, response, filterChain);
             return;
         }

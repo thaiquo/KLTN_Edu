@@ -87,6 +87,31 @@ public class TeachingCatalogService {
                 .toList());
     }
 
+    @Transactional(readOnly = true)
+    public TeachingCatalogDtos.CommunityCatalogOptions communityOptions() {
+        List<CatalogSubject> activeSubjects = subjects.findActiveGroundingSubjects();
+        if (activeSubjects.isEmpty()) {
+            return new TeachingCatalogDtos.CommunityCatalogOptions(List.of());
+        }
+        Map<Long, List<TeachingCatalogDtos.CommunityLevelOption>> levelsBySubject = levels
+                .findBySubject_IdInAndActiveTrueOrderByOrderIndexAscNameAsc(
+                        activeSubjects.stream().map(CatalogSubject::getId).toList())
+                .stream()
+                .collect(Collectors.groupingBy(
+                        value -> value.getSubject().getId(),
+                        Collectors.mapping(
+                                value -> new TeachingCatalogDtos.CommunityLevelOption(value.getId(), value.getName()),
+                                Collectors.toList())
+                ));
+        return new TeachingCatalogDtos.CommunityCatalogOptions(activeSubjects.stream()
+                .map(subject -> new TeachingCatalogDtos.CommunitySubjectOption(
+                        subject.getId(),
+                        subject.getName(),
+                        subject.getCategory().getName(),
+                        levelsBySubject.getOrDefault(subject.getId(), List.of())))
+                .toList());
+    }
+
     TeachingCatalogDtos.Option option(ProgramType value) { return new TeachingCatalogDtos.Option(value.getId(), value.getCode(), value.getName(), value.getDescription()); }
     TeachingCatalogDtos.Option option(EducationLevel value) { return value == null ? null : new TeachingCatalogDtos.Option(value.getId(), value.getCode(), value.getName(), value.getDescription()); }
     TeachingCatalogDtos.CategoryOption category(CatalogCategory value) { return new TeachingCatalogDtos.CategoryOption(value.getId(), value.getCode(), value.getName(), option(value.getProgramType()), option(value.getEducationLevel())); }

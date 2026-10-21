@@ -174,13 +174,38 @@ class CookieJwtAuthenticationFilterTest {
     }
 
     @Test
-    void bearerOnlyRequestDoesNotAuthenticateRequest() throws ServletException, IOException {
+    void bearerOnlyRequestAuthenticatesRequest() throws ServletException, IOException {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer " + tutorToken(Date.from(Instant.now().plusSeconds(900))));
+        when(tutorAuthorizationStateRepository.findById(99L)).thenReturn(Optional.of(tutorState("APPROVED")));
 
         filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
 
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("tutor@example.com");
+    }
+
+    @Test
+    void expiredBearerRequestIsRejected() throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer " + tutorToken(Date.from(Instant.now().minusSeconds(60))));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(401);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void cookieTakesPrecedenceOverBearer() throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setCookies(new Cookie("access_token", tutorToken(Date.from(Instant.now().plusSeconds(900)))));
+        request.addHeader("Authorization", "Bearer invalid-token");
+        when(tutorAuthorizationStateRepository.findById(99L)).thenReturn(Optional.of(tutorState("APPROVED")));
+
+        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("tutor@example.com");
     }
 
     @Test

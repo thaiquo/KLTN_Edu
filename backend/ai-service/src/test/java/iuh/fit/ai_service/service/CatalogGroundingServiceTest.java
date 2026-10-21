@@ -44,6 +44,53 @@ class CatalogGroundingServiceTest {
     }
 
     @Test
+    void subjectFollowedByTopicUsesCatalogSubjectAndExplicitLevel() {
+        var response = service.ground(request(requirement("toan hinh hoc", "lop 12", null)));
+
+        assertThat(response.requirement().subject().id()).isEqualTo(5L);
+        assertThat(response.requirement().level().id()).isEqualTo(9L);
+        assertThat(response.clarifications()).extracting("field")
+                .containsExactly(ClarificationField.TEACHING_MODE);
+    }
+
+    @Test
+    void topicSuffixDoesNotHideAmbiguousCatalogSubject() {
+        LearningCategory category = category(6L, "ACADEMIC");
+        catalogClient.snapshot = new LearningCatalogSnapshot(List.of(
+                subject(21L, "MATH", "Toan", category, List.of(level(72L, "GRADE_6", "Lop 6"))),
+                subject(5L, "MATH", "Toan", category, List.of(level(9L, "GRADE_12", "Lop 12")))
+        ));
+
+        var response = service.ground(request(requirement("toan hinh hoc", "lop 12", TeachingMode.ONLINE)));
+
+        assertThat(response.requirement().subject().id()).isEqualTo(5L);
+        assertThat(response.requirement().level().id()).isEqualTo(9L);
+    }
+
+    @Test
+    void subjectWithTopicStillUsesNewlyAddedCatalogEntry() {
+        catalogClient.snapshot = new LearningCatalogSnapshot(List.of(
+                subject(99L, "ROBOTICS", "Robotics", category(20L, "STEM"),
+                        List.of(level(199L, "BEGINNER", "Co ban")))
+        ));
+
+        var response = service.ground(request(requirement("robotics dong hoc", "co ban", TeachingMode.ONLINE)));
+
+        assertThat(response.status()).isEqualTo(GroundingStatus.GROUNDED);
+        assertThat(response.requirement().subject().id()).isEqualTo(99L);
+        assertThat(response.requirement().level().id()).isEqualTo(199L);
+    }
+
+    @Test
+    void subjectPrefixDoesNotSilentlyChooseOneOfTwoSubjects() {
+        var response = service.ground(request(requirement("toan va tieng anh", "lop 12", TeachingMode.ONLINE)));
+
+        assertThat(response.requirement().subject()).isNull();
+        assertThat(response.clarifications()).anySatisfy(clarification ->
+                assertThat(clarification.field()).isEqualTo(ClarificationField.SUBJECT));
+    }
+
+    @Test
     void duplicateSubjectNamesUseLevelHintToSelectSubject() {
         LearningCategory category = category(6L, "ACADEMIC");
         catalogClient.snapshot = new LearningCatalogSnapshot(List.of(

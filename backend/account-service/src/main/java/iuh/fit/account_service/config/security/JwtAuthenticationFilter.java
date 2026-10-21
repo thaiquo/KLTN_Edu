@@ -37,6 +37,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             FilterChain filterChain
     ) throws ServletException, IOException {
         String token = extractTokenFromCookie(request);
+        boolean bearer = false;
+        if (token == null) {
+            String authorization = request.getHeader("Authorization");
+            if (authorization != null && authorization.startsWith("Bearer ")) {
+                token = authorization.substring(7).trim();
+                bearer = true;
+            }
+        }
 
         if (token == null) {
             filterChain.doFilter(request, response);
@@ -45,6 +53,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         try {
             if (!jwtService.isTokenValid(token)) {
+                if (bearer) {
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                    return;
+                }
                 continueAsGuest(request, response, filterChain);
                 return;
             }
@@ -56,6 +68,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 UserDetails userDetails = userDetailsService.loadUserByUsernameAndActiveRole(email, activeRole);
 
                 if (!isAccountAllowed(userDetails)) {
+                    if (bearer) {
+                        response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                        return;
+                    }
                     continueAsGuest(request, response, filterChain);
                     return;
                 }
@@ -67,13 +83,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                                 userDetails.getAuthorities()
                         );
 
-                authentication.setDetails(
-                        new WebAuthenticationDetailsSource().buildDetails(request)
-                );
+                authentication.setDetails(new ActiveRoleAuthenticationDetails(
+                        activeRole, new WebAuthenticationDetailsSource().buildDetails(request)));
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             }
         } catch (UsernameNotFoundException | JwtException | IllegalArgumentException exception) {
+            if (bearer) {
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                return;
+            }
             continueAsGuest(request, response, filterChain);
             return;
         }
