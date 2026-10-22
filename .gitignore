@@ -6,6 +6,12 @@ educonnect/node_modules/
 .env
 .env.*
 !.env.example
+
+# VPS runtime configuration and secret material must stay local.
+/deploy/*.env
+/deploy/*copy*.example
+/deploy/secrets/
+/secrets/
 backend/.env
 
 # Local database/Git recovery artifacts; may contain private data and secrets.
