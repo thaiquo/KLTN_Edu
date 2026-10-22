@@ -1,0 +1,38 @@
+.git
+.github
+.idea
+.vscode
+.kombai
+.local-backups
+.runtime
+
+# Secrets and local configuration must never enter an image build context.
+.env
+.env.*
+**/.env
+**/.env.*
+**/*keystore*
+**/*.pem
+**/*.key
+
+# Local build and dependency output.
+**/target
+**/node_modules
+**/dist
+**/.expo
+**/*.log
+**/*-runtime.out.log
+**/*-runtime.err.log
+hs_err_pid*.log
+
+# Modules that are not part of the VPS application image contexts.
+Plan
+mobile-app
+blockchain
+database
+
+# Large office artifacts are excluded except for the Contract runtime template.
+**/*.docx
+**/*.xlsx
+**/*.pdf
+!backend/contract-service/src/main/resources/contract-templates/*.docx

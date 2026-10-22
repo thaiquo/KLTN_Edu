@@ -100,6 +100,9 @@ Audit note (2026-10-14): current compact migration lineages are Account V1..V2, 
 - AI Matching đã có luồng Tutor/Class Analyze -> Ground -> Match, Qdrant semantic retrieval, Matching V3 explainability và chatbot RAG/tools; production evaluation vẫn còn là việc vận hành tiếp theo.
 - Đã hỗ trợ Student post tìm gia sư trên Community; violation/support ticket, báo cáo quản trị nâng cao và mobile feature parity chưa có.
 - Bốn agreement legacy nạp sai bằng raw ERC-20 transfer đã được `legacy_excluded`; không tham gia KPI hoặc tự quyết toán.
+- Bộ đóng gói deployment đã có Dockerfile cho sáu backend và Web, VPS Compose/Caddy,
+  cấu hình operator tách riêng và GitHub Actions CI/GHCR. Các image và cấu hình đã
+  qua kiểm tra local; chưa publish GHCR hoặc triển khai/cắt chuyển VPS thực tế.
 
 ## 9. Cách đọc tài liệu
 
@@ -112,5 +115,6 @@ Audit note (2026-10-14): current compact migration lineages are Account V1..V2, 
 - Session/attendance: [session/EDUCONNECT_SESSION_IMPLEMENTATION_STATUS.md](session/EDUCONNECT_SESSION_IMPLEMENTATION_STATUS.md)
 - AI: [AI_MATCHING.md](AI_MATCHING.md)
 - Notification/realtime: [FEEDBACK_NOTIFICATION_SPEC.md](FEEDBACK_NOTIFICATION_SPEC.md)
+- VPS deployment/CI/CD plan: [DEPLOYMENT_CICD_PLAN.md](DEPLOYMENT_CICD_PLAN.md)
 
 Các master plan/lịch sử triển khai dài trong thư mục con là tài liệu tham chiếu theo thời điểm. Khi khác với code hoặc tài liệu canonical ở trên, ưu tiên code hiện tại và `IMPLEMENTATION_STATUS.md`.

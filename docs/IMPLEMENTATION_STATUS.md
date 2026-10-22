@@ -145,6 +145,12 @@ These are merge validations, not a blanket full production end-to-end certificat
 4. Add full violation/support ticket and reporting suite if required.
 5. Continue production operations hardening for blockchain observability, backups,
    multi-RPC health metrics/alerting and signer HA.
+6. Deployment is PARTIAL: application Dockerfiles, bounded VPS Compose/Caddy
+   configuration, non-secret production environment template and GitHub Actions
+   CI/GHCR workflows are implemented and locally validated. GitHub-hosted workflow
+   execution, GHCR publication, VPS provisioning, DNS/HTTPS cutover, backup/restore
+   rehearsal and production smoke tests remain pending. See
+   [DEPLOYMENT_CICD_PLAN.md](DEPLOYMENT_CICD_PLAN.md).
 
 ## 12. Documentation Rule
 

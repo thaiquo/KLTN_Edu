@@ -1,0 +1,11 @@
+services:
+  contract-service:
+    environment:
+      BLOCKCHAIN_ENABLED: "true"
+      BLOCKCHAIN_OPERATOR_ENABLED: "true"
+      BLOCKCHAIN_OPERATOR_ADDRESS: ${BLOCKCHAIN_OPERATOR_ADDRESS:?BLOCKCHAIN_OPERATOR_ADDRESS is required}
+      BLOCKCHAIN_OPERATOR_KEYSTORE_PATH: /run/secrets/operator-keystore.json
+      BLOCKCHAIN_OPERATOR_KEYSTORE_PASSWORD_FILE: /run/secrets/operator-keystore-password
+    volumes:
+      - ${BLOCKCHAIN_OPERATOR_KEYSTORE_HOST_PATH:?BLOCKCHAIN_OPERATOR_KEYSTORE_HOST_PATH is required}:/run/secrets/operator-keystore.json:ro
+      - ${BLOCKCHAIN_OPERATOR_PASSWORD_FILE_HOST_PATH:?BLOCKCHAIN_OPERATOR_PASSWORD_FILE_HOST_PATH is required}:/run/secrets/operator-keystore-password:ro

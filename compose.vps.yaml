@@ -1,0 +1,353 @@
+name: educonnect
+
+x-java-runtime: &java-runtime
+  restart: unless-stopped
+  networks:
+    - educonnect
+  security_opt:
+    - no-new-privileges:true
+  environment: &java-environment
+    JAVA_TOOL_OPTIONS: >-
+      -XX:InitialRAMPercentage=20
+      -XX:MaxRAMPercentage=65
+      -XX:+ExitOnOutOfMemoryError
+    SPRING_PROFILES_ACTIVE: prod
+  logging: &bounded-logging
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    networks:
+      - educonnect
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kltn_db}
+      POSTGRES_USER: ${POSTGRES_USER:-educonnect}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: ${POSTGRES_MEMORY_LIMIT:-1g}
+    security_opt:
+      - no-new-privileges:true
+    logging: *bounded-logging
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    restart: unless-stopped
+    networks:
+      - educonnect
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-educonnect}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    mem_limit: ${RABBITMQ_MEMORY_LIMIT:-512m}
+    security_opt:
+      - no-new-privileges:true
+    logging: *bounded-logging
+
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    restart: unless-stopped
+    networks:
+      - educonnect
+    command: ["gotenberg", "--api-timeout=60s"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    mem_limit: ${GOTENBERG_MEMORY_LIMIT:-768m}
+    security_opt:
+      - no-new-privileges:true
+    logging: *bounded-logging
+
+  account-service:
+    <<: *java-runtime
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/${IMAGE_PREFIX:-educonnect}-account:${RELEASE_TAG:?RELEASE_TAG is required}
+    environment:
+      <<: *java-environment
+      ACCOUNT_SERVICE_PORT: 8081
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-kltn_db}
+      DB_USERNAME: ${POSTGRES_USER:-educonnect}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      JPA_DDL_AUTO: validate
+      SPRING_JPA_SHOW_SQL: "false"
+      APP_ENV: production
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-900000}
+      AUTH_COOKIE_SECURE: "true"
+      AUTH_COOKIE_SAME_SITE: ${AUTH_COOKIE_SAME_SITE:-Lax}
+      AUTH_ACCESS_COOKIE_PATH: /
+      AUTH_REFRESH_COOKIE_PATH: /api/auth
+      AUTH_REFRESH_TOKEN_MAX_AGE: ${AUTH_REFRESH_TOKEN_MAX_AGE:-7d}
+      FRONTEND_URL: https://${DOMAIN:?DOMAIN is required}
+      LEARNING_SERVICE_URL: http://learning-service:8082
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-educonnect}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      MAIL_USERNAME: ${MAIL_USERNAME:?MAIL_USERNAME is required}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:?MAIL_PASSWORD is required}
+      OTP_LOG_TO_CONSOLE: "false"
+      STORAGE_PROVIDER: s3
+      AWS_REGION: ${AWS_REGION:?AWS_REGION is required}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:?AWS_S3_BUCKET is required}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}
+      S3_KEY_PREFIX: ${S3_KEY_PREFIX:-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    mem_limit: ${ACCOUNT_MEMORY_LIMIT:-640m}
+
+  learning-service:
+    <<: *java-runtime
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/${IMAGE_PREFIX:-educonnect}-learning:${RELEASE_TAG:?RELEASE_TAG is required}
+    environment:
+      <<: *java-environment
+      LEARNING_SERVICE_PORT: 8082
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-kltn_db}
+      DB_USERNAME: ${POSTGRES_USER:-educonnect}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      JPA_DDL_AUTO: validate
+      SPRING_JPA_SHOW_SQL: "false"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-900000}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-educonnect}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      CONTRACT_SERVICE_URL: http://contract-service:8083
+      AI_SERVICE_URL: http://ai-service:8085
+      STORAGE_PROVIDER: s3
+      AWS_REGION: ${AWS_REGION:?AWS_REGION is required}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:?AWS_S3_BUCKET is required}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}
+      S3_KEY_PREFIX: ${S3_KEY_PREFIX:-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    mem_limit: ${LEARNING_MEMORY_LIMIT:-768m}
+
+  contract-service:
+    <<: *java-runtime
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/${IMAGE_PREFIX:-educonnect}-contract:${RELEASE_TAG:?RELEASE_TAG is required}
+    environment:
+      <<: *java-environment
+      CONTRACT_SERVICE_PORT: 8083
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-kltn_db}
+      DB_USERNAME: ${POSTGRES_USER:-educonnect}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      JPA_DDL_AUTO: validate
+      SPRING_JPA_SHOW_SQL: "false"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ACCOUNT_SERVICE_URL: http://account-service:8081
+      LEARNING_SERVICE_URL: http://learning-service:8082
+      NOTIFICATION_SERVICE_URL: http://notification-service:8084
+      CONTRACT_CONVERTER_URL: http://gotenberg:3000/forms/libreoffice/convert
+      CONTRACT_VERIFICATION_BASE_URL: https://${DOMAIN:?DOMAIN is required}/contracts/verify
+      CONTRACT_STORAGE_PROVIDER: s3
+      CONTRACT_STORAGE_BUCKET: ${AWS_S3_BUCKET:?AWS_S3_BUCKET is required}
+      CONTRACT_STORAGE_REGION: ${AWS_REGION:?AWS_REGION is required}
+      CONTRACT_STORAGE_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}
+      CONTRACT_STORAGE_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}
+      CONTRACT_STORAGE_KEY_PREFIX: ${S3_KEY_PREFIX:-production}
+      BLOCKCHAIN_ENABLED: ${BLOCKCHAIN_ENABLED:-false}
+      BLOCKCHAIN_CHAIN_ID: ${BLOCKCHAIN_CHAIN_ID:-11155111}
+      BLOCKCHAIN_RPC_URL_ALCHEMY: ${BLOCKCHAIN_RPC_URL_ALCHEMY:-}
+      BLOCKCHAIN_RPC_URL_PUBLICNODE: ${BLOCKCHAIN_RPC_URL_PUBLICNODE:-}
+      BLOCKCHAIN_ESCROW_ADDRESS: ${BLOCKCHAIN_ESCROW_ADDRESS:-}
+      BLOCKCHAIN_USDC_ADDRESS: ${BLOCKCHAIN_USDC_ADDRESS:-}
+      BLOCKCHAIN_START_BLOCK: ${BLOCKCHAIN_START_BLOCK:-0}
+      BLOCKCHAIN_CONFIRMATIONS: ${BLOCKCHAIN_CONFIRMATIONS:-1}
+      BLOCKCHAIN_OPERATOR_ENABLED: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gotenberg:
+        condition: service_healthy
+      account-service:
+        condition: service_started
+      learning-service:
+        condition: service_started
+    mem_limit: ${CONTRACT_MEMORY_LIMIT:-768m}
+
+  notification-service:
+    <<: *java-runtime
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/${IMAGE_PREFIX:-educonnect}-notification:${RELEASE_TAG:?RELEASE_TAG is required}
+    environment:
+      <<: *java-environment
+      NOTIFICATION_SERVICE_PORT: 8084
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-kltn_db}
+      DB_USERNAME: ${POSTGRES_USER:-educonnect}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      JPA_DDL_AUTO: validate
+      SPRING_JPA_SHOW_SQL: "false"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-900000}
+      LEARNING_SERVICE_URL: http://learning-service:8082
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-educonnect}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      CHAT_STORAGE_PROVIDER: s3
+      CHAT_STORAGE_BUCKET: ${AWS_S3_BUCKET:?AWS_S3_BUCKET is required}
+      CHAT_STORAGE_REGION: ${AWS_REGION:?AWS_REGION is required}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}
+      CHAT_STORAGE_KEY_PREFIX: ${CHAT_STORAGE_KEY_PREFIX:-production/chat}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      learning-service:
+        condition: service_started
+      contract-service:
+        condition: service_started
+    mem_limit: ${NOTIFICATION_MEMORY_LIMIT:-640m}
+
+  api-gateway:
+    <<: *java-runtime
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/${IMAGE_PREFIX:-educonnect}-gateway:${RELEASE_TAG:?RELEASE_TAG is required}
+    environment:
+      <<: *java-environment
+      API_GATEWAY_PORT: 8080
+      ACCOUNT_SERVICE_URL: http://account-service:8081
+      LEARNING_SERVICE_URL: http://learning-service:8082
+      CONTRACT_SERVICE_URL: http://contract-service:8083
+      NOTIFICATION_SERVICE_URL: http://notification-service:8084
+      AI_SERVICE_URL: http://ai-service:8085
+      ACCOUNT_SERVICE_WS_URL: ws://account-service:8081
+      LEARNING_SERVICE_WS_URL: ws://learning-service:8082
+      NOTIFICATION_SERVICE_WS_URL: ws://notification-service:8084
+      CORS_ALLOWED_ORIGIN_PATTERNS: https://${DOMAIN:?DOMAIN is required}
+    depends_on:
+      account-service:
+        condition: service_started
+      learning-service:
+        condition: service_started
+      contract-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    mem_limit: ${GATEWAY_MEMORY_LIMIT:-384m}
+
+  frontend-web:
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/${IMAGE_PREFIX:-educonnect}-web:${RELEASE_TAG:?RELEASE_TAG is required}
+    restart: unless-stopped
+    networks:
+      - educonnect
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    mem_limit: ${WEB_MEMORY_LIMIT:-128m}
+    security_opt:
+      - no-new-privileges:true
+    logging: *bounded-logging
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    networks:
+      - educonnect
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+      frontend-web:
+        condition: service_healthy
+    mem_limit: ${CADDY_MEMORY_LIMIT:-128m}
+    security_opt:
+      - no-new-privileges:true
+    logging: *bounded-logging
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.3
+    profiles: ["ai"]
+    restart: unless-stopped
+    networks:
+      - educonnect
+    volumes:
+      - qdrant_data:/qdrant/storage
+    mem_limit: ${QDRANT_MEMORY_LIMIT:-768m}
+    security_opt:
+      - no-new-privileges:true
+    logging: *bounded-logging
+
+  ai-service:
+    <<: *java-runtime
+    profiles: ["ai"]
+    image: ghcr.io/${GHCR_OWNER:?GHCR_OWNER is required}/${IMAGE_PREFIX:-educonnect}-ai:${RELEASE_TAG:?RELEASE_TAG is required}
+    environment:
+      <<: *java-environment
+      AI_SERVICE_PORT: 8085
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-kltn_db}
+      DB_USERNAME: ${POSTGRES_USER:-educonnect}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      ACCOUNT_SERVICE_URL: http://account-service:8081
+      LEARNING_SERVICE_URL: http://learning-service:8082
+      CONTRACT_SERVICE_URL: http://contract-service:8083
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+      QDRANT_URL: http://qdrant:6333
+      CHATBOT_KNOWLEDGE_DIRECTORY: /app/docs/chatbot-knowledge
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    mem_limit: ${AI_MEMORY_LIMIT:-768m}
+
+networks:
+  educonnect:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+  qdrant_data:
+  caddy_data:
+  caddy_config:

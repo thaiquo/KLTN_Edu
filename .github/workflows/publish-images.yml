@@ -1,0 +1,120 @@
+name: Publish images
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-images-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+
+jobs:
+  backend-images:
+    name: Publish ${{ matrix.image }}
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - image: gateway
+            dockerfile: backend/api-gateway/Dockerfile
+          - image: account
+            dockerfile: backend/account-service/Dockerfile
+          - image: learning
+            dockerfile: backend/learning-service/Dockerfile
+          - image: contract
+            dockerfile: backend/contract-service/Dockerfile
+          - image: notification
+            dockerfile: backend/notification-service/Dockerfile
+          - image: ai
+            dockerfile: backend/ai-service/Dockerfile
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish immutable image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/educonnect-${{ matrix.image }}:${{ env.RELEASE_SHA }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  web-image:
+    name: Publish Web
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Validate public production settings
+        env:
+          PRODUCTION_ORIGIN: ${{ vars.PRODUCTION_ORIGIN }}
+          VITE_ESCROW_CONTRACT_ADDRESS: ${{ vars.VITE_ESCROW_CONTRACT_ADDRESS }}
+          VITE_USDC_CONTRACT_ADDRESS: ${{ vars.VITE_USDC_CONTRACT_ADDRESS }}
+          VITE_SEPOLIA_RPC_URL: ${{ vars.VITE_SEPOLIA_RPC_URL }}
+        run: |
+          test -n "$PRODUCTION_ORIGIN"
+          test -n "$VITE_ESCROW_CONTRACT_ADDRESS"
+          test -n "$VITE_USDC_CONTRACT_ADDRESS"
+          test -n "$VITE_SEPOLIA_RPC_URL"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish immutable Web image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: frontend-web/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/educonnect-web:${{ env.RELEASE_SHA }}
+          build-args: |
+            VITE_API_URL=${{ vars.PRODUCTION_ORIGIN }}
+            VITE_API_GATEWAY_URL=${{ vars.PRODUCTION_ORIGIN }}
+            VITE_REALTIME_URL=${{ vars.PRODUCTION_REALTIME_ORIGIN }}
+            VITE_DEFAULT_CHAIN_ID=11155111
+            VITE_ESCROW_CONTRACT_ADDRESS=${{ vars.VITE_ESCROW_CONTRACT_ADDRESS }}
+            VITE_USDC_CONTRACT_ADDRESS=${{ vars.VITE_USDC_CONTRACT_ADDRESS }}
+            VITE_SEPOLIA_RPC_URL=${{ vars.VITE_SEPOLIA_RPC_URL }}
+            VITE_PROJECT_ID_WALLETCONNECT=${{ vars.VITE_PROJECT_ID_WALLETCONNECT }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
