@@ -99,6 +99,7 @@ services:
       AUTH_REFRESH_COOKIE_PATH: /api/auth
       AUTH_REFRESH_TOKEN_MAX_AGE: ${AUTH_REFRESH_TOKEN_MAX_AGE:-7d}
       FRONTEND_URL: https://${DOMAIN:?DOMAIN is required}
+      CORS_ALLOWED_ORIGIN_PATTERNS: https://${DOMAIN:?DOMAIN is required}
       LEARNING_SERVICE_URL: http://learning-service:8082
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
@@ -133,6 +134,7 @@ services:
       SPRING_JPA_SHOW_SQL: "false"
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-900000}
+      CORS_ALLOWED_ORIGIN_PATTERNS: https://${DOMAIN:?DOMAIN is required}
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-educonnect}
@@ -164,6 +166,7 @@ services:
       JPA_DDL_AUTO: validate
       SPRING_JPA_SHOW_SQL: "false"
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CORS_ALLOWED_ORIGIN_PATTERNS: https://${DOMAIN:?DOMAIN is required}
       ACCOUNT_SERVICE_URL: http://account-service:8081
       LEARNING_SERVICE_URL: http://learning-service:8082
       NOTIFICATION_SERVICE_URL: http://notification-service:8084
@@ -208,6 +211,7 @@ services:
       SPRING_JPA_SHOW_SQL: "false"
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-900000}
+      CORS_ALLOWED_ORIGIN_PATTERNS: https://${DOMAIN:?DOMAIN is required}
       LEARNING_SERVICE_URL: http://learning-service:8082
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PORT: 5672
@@ -327,6 +331,7 @@ services:
       DB_USERNAME: ${POSTGRES_USER:-educonnect}
       DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CORS_ALLOWED_ORIGIN_PATTERNS: https://${DOMAIN:?DOMAIN is required}
       ACCOUNT_SERVICE_URL: http://account-service:8081
       LEARNING_SERVICE_URL: http://learning-service:8082
       CONTRACT_SERVICE_URL: http://contract-service:8083

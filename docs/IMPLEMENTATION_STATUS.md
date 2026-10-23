@@ -145,11 +145,16 @@ These are merge validations, not a blanket full production end-to-end certificat
 4. Add full violation/support ticket and reporting suite if required.
 5. Continue production operations hardening for blockchain observability, backups,
    multi-RPC health metrics/alerting and signer HA.
-6. Deployment is PARTIAL: application Dockerfiles, bounded VPS Compose/Caddy
-   configuration, non-secret production environment template and GitHub Actions
-   CI/GHCR workflows are implemented and locally validated. GitHub-hosted workflow
-   execution, GHCR publication, VPS provisioning, DNS/HTTPS cutover, backup/restore
-   rehearsal and production smoke tests remain pending. See
+6. Deployment is PARTIAL: GitHub-hosted CI and GHCR publication passed, and immutable
+   release `3e8df29f9f473e71e3c7800ff62fe1b995a14136` is running on the Ubuntu VPS behind
+   Caddy at `https://educonnectiuh.duckdns.org`. Core containers, HTTPS, Web health,
+   PostgreSQL health and all four Flyway histories are verified. The downstream REST
+   and WebSocket CORS source fix is implemented and locally validated through the
+   shared `CORS_ALLOWED_ORIGIN_PATTERNS` setting, but the running VPS release still
+   needs to be replaced before authenticated cutover can be verified. The confirmed
+   one-time demo seed, backup/restore rehearsal, WalletConnect origin configuration
+   and representative authenticated smoke flows remain pending. AI/Qdrant and the
+   blockchain operator remain intentionally disabled. See
    [DEPLOYMENT_CICD_PLAN.md](DEPLOYMENT_CICD_PLAN.md).
 
 ## 12. Documentation Rule

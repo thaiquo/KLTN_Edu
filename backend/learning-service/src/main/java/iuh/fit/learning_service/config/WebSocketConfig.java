@@ -10,16 +10,21 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 @EnableWebSocket
 public class WebSocketConfig implements WebSocketConfigurer {
     private final RealtimeEventHub realtimeEventHub;
+    private final CorsOriginProperties corsOriginProperties;
 
-    public WebSocketConfig(RealtimeEventHub realtimeEventHub) {
+    public WebSocketConfig(
+            RealtimeEventHub realtimeEventHub,
+            CorsOriginProperties corsOriginProperties
+    ) {
         this.realtimeEventHub = realtimeEventHub;
+        this.corsOriginProperties = corsOriginProperties;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(realtimeEventHub, "/ws/learning")
-                .setAllowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*");
+                .setAllowedOriginPatterns(corsOriginProperties.allowedOriginPatternsArray());
         registry.addHandler(realtimeEventHub, "/ws/learning/mobile")
-                .setAllowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*");
+                .setAllowedOriginPatterns(corsOriginProperties.allowedOriginPatternsArray());
     }
 }

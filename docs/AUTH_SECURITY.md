@@ -51,7 +51,12 @@ Do not disable CSRF just to make a request pass. If an API call fails due to CSR
 
 ## 4. CORS
 
-Current gateway configuration allows credentialed local frontend origins and exposes `Set-Cookie`.
+Gateway and downstream services use the shared `CORS_ALLOWED_ORIGIN_PATTERNS`
+runtime setting. Local development defaults remain limited to `localhost` and
+`127.0.0.1`; the VPS Compose configuration supplies the exact production HTTPS
+origin. Account, Learning and Notification reuse the same setting for their
+WebSocket handshakes. Credentialed requests remain enabled and applicable REST
+responses expose `Set-Cookie`.
 
 When changing CORS:
 

@@ -13,19 +13,23 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     private final NotificationRealtimeHub notificationRealtimeHub;
     private final ChatWebSocketHandler chatWebSocketHandler;
+    private final CorsOriginProperties corsOriginProperties;
 
-    public WebSocketConfig(NotificationRealtimeHub notificationRealtimeHub, ChatWebSocketHandler chatWebSocketHandler) {
+    public WebSocketConfig(
+            NotificationRealtimeHub notificationRealtimeHub,
+            ChatWebSocketHandler chatWebSocketHandler,
+            CorsOriginProperties corsOriginProperties
+    ) {
         this.notificationRealtimeHub = notificationRealtimeHub;
         this.chatWebSocketHandler = chatWebSocketHandler;
+        this.corsOriginProperties = corsOriginProperties;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(chatWebSocketHandler, "/ws/chat")
-                .setAllowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*");
+                .setAllowedOriginPatterns(corsOriginProperties.allowedOriginPatternsArray());
         registry.addHandler(notificationRealtimeHub, "/ws/notifications")
-                .setAllowedOriginPatterns(
-                        "http://localhost:*",
-                        "http://127.0.0.1:*");
+                .setAllowedOriginPatterns(corsOriginProperties.allowedOriginPatternsArray());
     }
 }

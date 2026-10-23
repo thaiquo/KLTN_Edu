@@ -1,7 +1,10 @@
 # EduConnect Deployment and CI/CD Plan
 
-> Status: repository packaging and CI/GHCR workflows implemented and locally validated; GitHub-hosted execution and VPS deployment are not yet performed.
-> Audited against repository source and docs on 2026-10-22.
+> Status: core stack deployed to the shared VPS; DNS/HTTPS, CI, GHCR publication,
+> PostgreSQL migrations and container health are verified. Authenticated cutover is
+> not complete because the validated downstream CORS fix still needs a new immutable
+> release and VPS rollout, and the approved demo seed has not yet been loaded.
+> Audited against repository source, GitHub workflow results and VPS runtime evidence on 2026-10-23.
 > Target: one Ubuntu 22.04 VPS (2 vCPU, 8 GB RAM, 40 GB disk) for a low-traffic shared thesis/demo environment.
 
 ## 1. Decision
@@ -69,6 +72,39 @@ Audited facts:
 - V1 has recorded Sepolia evidence. V2 is documented as source/test ready but not deployed. V2 must not be selected until backend and frontend ABI/interface compatibility is verified.
 
 The current local Compose file must not be copied unchanged to the public VPS: it publishes infrastructure ports and injects the root `.env` into PostgreSQL. The VPS Compose design must keep database/broker/vector-store/document-converter ports private and pass each container only the configuration it needs.
+
+### 3.1 Operational checkpoint — 2026-10-23
+
+- GitHub CI and the GHCR publish workflow passed for immutable release
+  `3e8df29f9f473e71e3c7800ff62fe1b995a14136`.
+- Ubuntu 22.04 VPS provisioning is complete: non-root `deploy` SSH access, 4 GiB
+  swap, active UFW rules for SSH/HTTP/HTTPS, Docker Engine and Docker Compose.
+- Deployment files and the protected runtime environment are installed under
+  `/opt/educonnect`. The VPS pulls published images; it does not build source.
+- The base stack is running with ten containers: PostgreSQL, RabbitMQ, Gotenberg,
+  Account, Learning, Contract, Notification, Gateway, Web and Caddy. AI/Qdrant and
+  the blockchain operator overlay remain deliberately disabled.
+- `https://educonnectiuh.duckdns.org` and `/healthz` return HTTP 200. PostgreSQL,
+  RabbitMQ, Gotenberg, Gateway and Web report healthy; Flyway created 80 public
+  tables and all four service-specific history tables.
+- PostgreSQL persists in the named volume `educonnect_postgres_data`. No verified
+  off-VPS backup/restore rehearsal exists yet; never use `docker compose down -v`.
+- Reference/catalog migrations are present, including administrative locations,
+  teaching levels, subject catalogs and catalog levels.
+- The shared thesis environment is confirmed to require the repository's selected
+  demo accounts and learning dataset. The one-time load order is Account privileged
+  accounts, Account Student/Tutor profiles, then Learning demo data. Keep the
+  production profile; do not enable the automatic `dev` loaders on the VPS.
+- The running release still rejects authenticated browser traffic carrying Origin
+  `https://educonnectiuh.duckdns.org` with HTTP 403 `Invalid CORS request`. Source now
+  uses the shared `CORS_ALLOWED_ORIGIN_PATTERNS` setting for downstream REST and
+  WebSocket handshakes, and VPS Compose supplies the exact production HTTPS origin.
+  The fix passed Account 171, Learning 243, Contract 225 (7 skipped), Notification
+  75 and AI 266 (4 external-runtime skipped) tests plus Compose validation. Publish
+  and deploy the new immutable release before login smoke testing.
+- Reown/WalletConnect endpoints currently return HTTP 403 independently of the
+  EduConnect API. Verify the production domain allowlist/project configuration after
+  core cookie-auth smoke tests pass.
 
 ## 4. First deployment topology
 

@@ -23,9 +23,14 @@ import java.util.List;
 @EnableMethodSecurity
 public class SecurityConfig {
     private final CookieJwtAuthenticationFilter jwtAuthenticationFilter;
+    private final CorsOriginProperties corsOriginProperties;
 
-    public SecurityConfig(CookieJwtAuthenticationFilter jwtAuthenticationFilter) {
+    public SecurityConfig(
+            CookieJwtAuthenticationFilter jwtAuthenticationFilter,
+            CorsOriginProperties corsOriginProperties
+    ) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.corsOriginProperties = corsOriginProperties;
     }
 
     @Bean
@@ -63,7 +68,7 @@ public class SecurityConfig {
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(List.of("http://localhost:*", "http://127.0.0.1:*"));
+        configuration.setAllowedOriginPatterns(corsOriginProperties.getAllowedOriginPatterns());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
