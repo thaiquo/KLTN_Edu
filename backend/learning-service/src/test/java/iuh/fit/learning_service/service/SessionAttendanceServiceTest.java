@@ -28,6 +28,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 
@@ -268,6 +270,35 @@ class SessionAttendanceServiceTest {
         attendance.setStudentId(201L);
         attendance.setTutorChecked(false);
         attendance.setStudentChecked(true);
+        when(classSessionRepository.findAll()).thenReturn(List.of(session));
+        when(sessionAttendanceRepository.findBySessionId(1L)).thenReturn(List.of(attendance));
+        when(sessionAttendanceRepository.save(any(SessionAttendance.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(classSessionRepository.save(any(ClassSession.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        sessionAttendanceService.autoFinalizePastDueSessions();
+
+        assertThat(attendance.getFinalOutcome()).isEqualTo(AttendanceOutcome.TUTOR_ABSENT);
+        assertThat(session.getStatus()).isEqualTo(ClassSessionStatus.COMPLETED);
+    }
+
+    @Test
+    @DisplayName("auto finalization resolves TUTOR_ABSENT when today session is past endTime in Vietnam timezone")
+    void autoFinalizePastDueSessions_TodayPastEndTime_MarksTutorAbsent() {
+        java.time.ZoneId vnZone = java.time.ZoneId.of("Asia/Ho_Chi_Minh");
+        ZonedDateTime vnNow = ZonedDateTime.now(vnZone);
+        DateTimeFormatter hourMinute = DateTimeFormatter.ofPattern("HH:mm");
+        session.setSessionDate(vnNow.toLocalDate());
+        session.setStartTime(vnNow.minusMinutes(1).toLocalTime().format(hourMinute));
+        // The service finalizes at now >= endTime. Using the captured current
+        // minute keeps this test valid at midnight and independent of CI run time.
+        session.setEndTime(vnNow.toLocalTime().format(hourMinute));
+
+        SessionAttendance attendance = new SessionAttendance();
+        attendance.setSession(session);
+        attendance.setStudentId(201L);
+        attendance.setTutorChecked(false);
+        attendance.setStudentChecked(false);
+
         when(classSessionRepository.findAll()).thenReturn(List.of(session));
         when(sessionAttendanceRepository.findBySessionId(1L)).thenReturn(List.of(attendance));
         when(sessionAttendanceRepository.save(any(SessionAttendance.class))).thenAnswer(inv -> inv.getArgument(0));

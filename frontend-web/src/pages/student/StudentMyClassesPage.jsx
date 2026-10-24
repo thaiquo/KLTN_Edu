@@ -1270,6 +1270,7 @@ function StudentClassWorkspaceView({ classRoomId, request, agreement, refunds = 
         key={classRoomId}
         classRoomId={classRoomId}
         classRoomName={request?.className || classroomDetails?.name}
+        totalSessions={classroomDetails?.totalSessions || request?.totalSessions}
         meetingLink={meetingLink}
         learningMode={classroomDetails?.learningMode || request?.learningMode}
         address={classroomDetails?.address || request?.address}

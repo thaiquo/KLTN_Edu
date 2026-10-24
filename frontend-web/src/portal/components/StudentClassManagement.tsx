@@ -700,6 +700,7 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
               <div className="mt-6">
                 <ClassSessionsTimeline
                   classRoomId={selectedClass.id}
+                  totalSessions={selectedClass.totalSessions}
                   classRoomName={selectedClass.name}
                   meetingLink={selectedClass.meetingLink || ''}
                   learningMode={selectedClass.learningMode}

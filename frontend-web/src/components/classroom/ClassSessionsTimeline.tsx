@@ -144,6 +144,7 @@ interface LessonDraftResponse {
 interface Props {
   classRoomId: number;
   classRoomName?: string;
+  totalSessions?: number;
   meetingLink?: string;
   learningMode?: "ONLINE" | "OFFLINE" | string;
   address?: string;
@@ -154,6 +155,32 @@ interface Props {
   onUpdateMeetingLink?: (newLink: string) => Promise<void>;
   onDisputeClick?: (session: ClassSessionItem) => void;
 }
+
+const VIETNAM_TIME_ZONE = "Asia/Ho_Chi_Minh";
+const vietnamDateTimeFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: VIETNAM_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+const getVietnamDateTime = (value: Date): { date: string; minutes: number } => {
+  const parts = Object.fromEntries(
+    vietnamDateTimeFormatter
+      .formatToParts(value)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value])
+  );
+  const hour = Number(parts.hour);
+  const minute = Number(parts.minute);
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    minutes: hour * 60 + minute,
+  };
+};
 
 const getDayOfWeekName = (dateStr?: string): string => {
   if (!dateStr) return '';
@@ -170,6 +197,7 @@ const getDayOfWeekName = (dateStr?: string): string => {
 export const ClassSessionsTimeline: React.FC<Props> = ({
   classRoomId,
   classRoomName,
+  totalSessions: propsTotalSessions,
   meetingLink: configuredMeetingLink,
   learningMode,
   address,
@@ -189,6 +217,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
     learningMode?: string;
     meetingLink?: string;
     address?: string;
+    totalSessions?: number;
   } | null>(null);
 
   useEffect(() => {
@@ -204,6 +233,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
             learningMode: data.learningMode,
             meetingLink: data.meetingLink,
             address: data.address,
+            totalSessions: data.totalSessions,
           });
           if (data.meetingLink && !configuredMeetingLink) {
             setCurrentMeetingLink(data.meetingLink);
@@ -231,6 +261,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
     const timer = setInterval(() => setNow(new Date()), 15000);
     return () => clearInterval(timer);
   }, []);
+  const vietnamNow = useMemo(() => getVietnamDateTime(now), [now]);
   const [activeSession, setActiveSession] = useState<ClassSessionItem | null>(null);
 
   // Modal states
@@ -500,19 +531,24 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
   const isStrictSessionActive = (session: ClassSessionItem): boolean => {
     if (!isSessionAvailable(session)) return false;
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    if (session.sessionDate !== today) return false;
-
-    const currentH = now.getHours();
-    const currentM = now.getMinutes();
-    const currentMinutes = currentH * 60 + currentM;
+    if (session.sessionDate !== vietnamNow.date) return false;
 
     const [startH, startM] = session.startTime.split(":").map(Number);
     const [endH, endM] = session.endTime.split(":").map(Number);
     const startMinutes = startH * 60 + startM;
     const endMinutes = endH * 60 + endM;
 
-    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+    return vietnamNow.minutes >= startMinutes && vietnamNow.minutes < endMinutes;
+  };
+
+  const isSessionPastEndTime = (session?: ClassSessionItem | null): boolean => {
+    if (!session || !session.sessionDate || !session.endTime) return false;
+    if (session.sessionDate < vietnamNow.date) return true;
+    if (session.sessionDate > vietnamNow.date) return false;
+
+    const [endH, endM] = session.endTime.split(":").map(Number);
+    const endMinutes = (endH || 0) * 60 + (endM || 0);
+    return vietnamNow.minutes >= endMinutes;
   };
 
   const isStudentCheckedInForSession = useCallback((session?: ClassSessionItem | null): boolean => {
@@ -1121,7 +1157,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
       {/* Header with Classroom Meeting Link */}
       {(() => {
-        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const todayStr = vietnamNow.date;
         const activeSessionForStudent = sessions.find((s) => isStrictSessionActive(s));
         const todaySessionForStudent = sessions.find(
           (s) => s.sessionDate === todayStr && isSessionAvailable(s)
@@ -1265,7 +1301,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
       {/* 1. Hero Spotlight Card: Buổi Học Hôm Nay / Buổi Học Kế Tiếp */}
       {sessions.length > 0 && !historyMode && (() => {
-        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const todayStr = vietnamNow.date;
         const activeSession = sessions.find((s) => isStrictSessionActive(s));
         const todaySession = sessions.find(
           (s) => s.sessionDate === todayStr && isSessionAvailable(s)
@@ -1430,7 +1466,13 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                   ) : (
                     <div className="flex items-center gap-2 text-xs bg-white px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-bold shadow-2xs">
                       <Lock className="w-4 h-4 text-amber-500" />
-                      <span>{isToday ? `Mở điểm danh lúc ${spotlight.startTime}` : `Mở điểm danh lúc ${spotlight.startTime} ngày ${spotlight.sessionDate}`}</span>
+                      <span>
+                        {isToday
+                          ? isSessionPastEndTime(spotlight)
+                            ? "Khung giờ học đã kết thúc (Đang chờ chốt buổi)"
+                            : `Mở điểm danh lúc ${spotlight.startTime}`
+                          : `Mở điểm danh lúc ${spotlight.startTime} ngày ${spotlight.sessionDate}`}
+                      </span>
                     </div>
                   )
                 ) : (
@@ -1450,7 +1492,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                         }`}
                       >
                         <CheckCircle2 className="w-4 h-4" />
-                        <span>{isActiveNow ? "Điểm Danh Vào Dạy" : "Chưa Đến Giờ Dạy"}</span>
+                        <span>{isActiveNow ? "Điểm Danh Vào Dạy" : isSessionPastEndTime(spotlight) ? "Đã Hết Giờ Dạy" : "Chưa Đến Giờ Dạy"}</span>
                       </button>
                     )}
                     {!isOffline && meetingLink && isActiveNow && currentUserRole === 'TUTOR' && (
@@ -1475,7 +1517,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
       {/* 2. Lộ Trình Các Buổi Học & Lịch Trình Chi Tiết (Không dùng %, hiển thị ngày giờ cụ thể) */}
       {sessions.length > 0 && (() => {
-        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const todayStr = vietnamNow.date;
         const activeSession = sessions.find((s) => isStrictSessionActive(s));
         const todaySession = sessions.find(
           (s) => s.sessionDate === todayStr && isSessionAvailable(s)
@@ -1484,9 +1526,11 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
           .filter((s) => isSessionAvailable(s) && s.sessionDate >= todayStr)
           .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate) || a.sequenceNumber - b.sequenceNumber)[0]
          ;
+        const totalCourseSessions = propsTotalSessions || classDetail?.totalSessions || sessions.length;
+        const hasRollingSessions = totalCourseSessions > sessions.length;
         const currentStep = (activeSession || todaySession || nextSession)?.sequenceNumber || 0;
-        const remainingCount = upcomingSessions.length;
         const cancelledCount = sessions.filter((s) => s.status === 'CANCELLED').length;
+        const remainingCount = Math.max(0, totalCourseSessions - completedSessions.length - cancelledCount);
         const heldCount = sessions.filter((s) => s.status !== 'COMPLETED' && s.status !== 'CANCELLED' && s.attendanceStopped).length;
 
         return (
@@ -1502,7 +1546,13 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                     Lộ Trình Buổi Học Khóa Này
                   </h4>
                   <p className="text-xs text-slate-600 font-medium mt-0.5">
-                    Tổng số: <strong className="text-slate-900 font-black">{sessions.length} buổi</strong>
+                    Tổng khóa: <strong className="text-slate-900 font-black">{totalCourseSessions} buổi</strong>
+                    {hasRollingSessions && (
+                      <>
+                        <span className="mx-1.5 text-slate-300">•</span>
+                        Đã mở lịch: <strong className="text-indigo-700 font-black">{sessions.length}/{totalCourseSessions} buổi</strong>
+                      </>
+                    )}
                     <span className="mx-1.5 text-slate-300">•</span>
                     Đã hoàn thành: <strong className="text-emerald-700 font-black">{completedSessions.length} buổi</strong>
                     {cancelledCount > 0 && (
@@ -1533,7 +1583,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                     ? "bg-indigo-50 text-indigo-800 border-indigo-200"
                     : "bg-slate-100 text-slate-700 border-slate-200"
                 }`}>
-                  {historyMode ? "Lớp đã dừng (Chế độ xem lịch sử)" : currentStep > 0 ? `Buổi hiện tại: Buổi ${currentStep}/${sessions.length}` : "Lớp chưa có buổi kế tiếp"}
+                  {historyMode ? "Lớp đã dừng (Chế độ xem lịch sử)" : currentStep > 0 ? `Buổi hiện tại: Buổi ${currentStep}/${totalCourseSessions}` : "Lớp chưa có buổi kế tiếp"}
                 </span>
               </div>
             </div>
@@ -1594,6 +1644,17 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                   </button>
                 );
               })}
+              {hasRollingSessions && (
+                <div className="flex flex-col items-center justify-center min-w-[78px] text-center shrink-0 opacity-60">
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs bg-slate-100 text-slate-400 border border-dashed border-slate-300">
+                    +{totalCourseSessions - sessions.length}
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1 font-semibold">
+                    Buổi {sessions.length + 1}-{totalCourseSessions}
+                  </span>
+                  <span className="text-[9px] text-slate-400 font-medium">Cuốn chiếu</span>
+                </div>
+              )}
             </div>
 
             {/* Chi tiết lịch trình các buổi học tiếp theo với ngày giờ thời gian cụ thể */}
@@ -2455,11 +2516,13 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                 title={
                                   active
                                     ? "Bấm để điểm danh vào dạy"
+                                    : isSessionPastEndTime(session)
+                                    ? "Khung giờ dạy " + session.startTime + " - " + session.endTime + " đã kết thúc. Đang chờ hệ thống chốt buổi."
                                     : "Chỉ mở điểm danh trong khung giờ học " + session.startTime + " - " + session.endTime
                                 }
                               >
                                 <CheckCircle2 className="w-4 h-4" />
-                                <span>{active ? "Điểm Danh Vào Dạy" : "Chưa Đến Giờ Dạy"}</span>
+                                <span>{active ? "Điểm Danh Vào Dạy" : isSessionPastEndTime(session) ? "Đã Hết Giờ Dạy" : "Chưa Đến Giờ Dạy"}</span>
                               </button>
                             )
                           )}
@@ -2500,15 +2563,19 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                     title={
                                       active
                                         ? "Bấm để điểm danh vào học và nhận link phòng học"
+                                        : isSessionPastEndTime(session)
+                                        ? "Khung giờ điểm danh " + session.startTime + " - " + session.endTime + " đã kết thúc. Đang chờ hệ thống chốt buổi."
                                         : "Chỉ mở điểm danh trong khung giờ học " + session.startTime + " - " + session.endTime
                                     }
                                   >
                                     <CheckCircle2 className="w-4 h-4" />
-                                    <span>{active ? "Điểm Danh Vào Học" : "Chưa Đến Giờ Điểm Danh"}</span>
+                                    <span>{active ? "Điểm Danh Vào Học" : isSessionPastEndTime(session) ? "Đã Hết Giờ Điểm Danh" : "Chưa Đến Giờ Điểm Danh"}</span>
                                   </button>
                                   <span className="text-[11px] text-amber-600 font-semibold flex items-center gap-1">
                                     <Lock className="w-3 h-3" />
-                                    Điểm danh có mặt để lấy link vào phòng học
+                                    {isSessionPastEndTime(session)
+                                      ? "Đã qua giờ học • Chờ hệ thống tự động xử lý giải ngân/hoàn tiền"
+                                      : "Điểm danh có mặt để lấy link vào phòng học"}
                                   </span>
                                 </div>
                               )}
@@ -3222,6 +3289,10 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                     ) : isTutorCheckinOpen ? (
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 animate-pulse">
                         ĐANG ĐIỂM DANH
+                      </span>
+                    ) : isSessionPastEndTime(currentSession) ? (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-200 text-slate-800 border border-slate-300">
+                        ĐÃ HẾT GIỜ (CHỜ CHỐT)
                       </span>
                     ) : (
                       <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200">

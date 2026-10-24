@@ -34,6 +34,7 @@ import java.net.URISyntaxException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -41,6 +42,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class SessionAttendanceService {
+
+    private static final ZoneId VN_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     private final ClassSessionRepository classSessionRepository;
     private final SessionAttendanceRepository sessionAttendanceRepository;
@@ -319,8 +322,8 @@ public class SessionAttendanceService {
      */
     @Transactional
     public void autoFinalizePastDueSessions() {
-        LocalDate today = LocalDate.now();
-        LocalTime now = LocalTime.now();
+        LocalDate today = LocalDate.now(VN_ZONE);
+        LocalTime now = LocalTime.now(VN_ZONE);
 
         List<ClassSession> activeSessions = classSessionRepository.findAll().stream()
                 .filter(s -> s.getStatus() == ClassSessionStatus.SCHEDULED || s.getStatus() == ClassSessionStatus.IN_PROGRESS)
@@ -385,8 +388,8 @@ public class SessionAttendanceService {
             throw new BadRequestException("Session has already been finalized or cancelled");
         }
 
-        LocalDate today = LocalDate.now();
-        LocalTime now = LocalTime.now();
+        LocalDate today = LocalDate.now(VN_ZONE);
+        LocalTime now = LocalTime.now(VN_ZONE);
 
         if (!session.getSessionDate().isEqual(today)) {
             if (session.getSessionDate().isAfter(today)) {

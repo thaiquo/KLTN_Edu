@@ -14,12 +14,16 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class ClassroomLifecycleScheduler {
+
+    private static final String BUSINESS_TIME_ZONE = "Asia/Ho_Chi_Minh";
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of(BUSINESS_TIME_ZONE);
 
     private final ClassRoomRepository classRoomRepository;
     private final RollingSessionService rollingSessionService;
@@ -29,10 +33,10 @@ public class ClassroomLifecycleScheduler {
      * Quét định kỳ mỗi ngày lúc 00:01 sáng để tự động khóa tuyển sinh các lớp đến ngày khai giảng (startDate <= today)
      * và tự động mở các buổi học của tuần đầu tiên.
      */
-    @Scheduled(cron = "0 1 0 * * *")
+    @Scheduled(cron = "0 1 0 * * *", zone = BUSINESS_TIME_ZONE)
     @Transactional
     public void scanAndLockStartingClassrooms() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
         log.info("ClassroomLifecycleScheduler: Running daily scan for classrooms starting on or before {}", today);
 
         List<ClassRoom> startingClasses = classRoomRepository.findAll().stream()

@@ -586,6 +586,7 @@ export const TutorSessionManagement: React.FC = () => {
                 ) : null}
                 <ClassSessionsTimeline
                   classRoomId={selectedClass.id}
+                  totalSessions={selectedClass.totalSessions}
                   historyMode={["CANCELLED", "CLOSED"].includes(selectedClass.status)}
                   classRoomName={selectedClass.name}
                   meetingLink={selectedClass.meetingLink}
