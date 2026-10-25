@@ -6,6 +6,8 @@ educonnect/node_modules/
 .env
 .env.*
 !.env.example
+/release.env
+/.release-state/
 
 # VPS runtime configuration and secret material must stay local.
 /deploy/*.env

@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: publish-images-${{ github.event.workflow_run.head_sha }}
@@ -23,8 +22,15 @@ env:
 jobs:
   backend-images:
     name: Publish ${{ matrix.image }}
-    if: github.event.workflow_run.conclusion == 'success'
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.id == github.event.repository.id
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       max-parallel: 3
@@ -70,8 +76,15 @@ jobs:
 
   web-image:
     name: Publish Web
-    if: github.event.workflow_run.conclusion == 'success'
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.id == github.event.repository.id
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -118,3 +131,75 @@ jobs:
             VITE_PROJECT_ID_WALLETCONNECT=${{ vars.VITE_PROJECT_ID_WALLETCONNECT }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
+
+  deploy-production:
+    name: Deploy VPS
+    needs:
+      - backend-images
+      - web-image
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.id == github.event.repository.id
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: educonnect-production-vps
+      cancel-in-progress: false
+    steps:
+      - name: Check out published commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Skip superseded release
+        id: release-check
+        run: |
+          set -euo pipefail
+          current_main=$(git ls-remote origin refs/heads/main | cut -f1)
+          test -n "$current_main"
+          if [[ "$current_main" == "$RELEASE_SHA" ]]; then
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping $RELEASE_SHA because main is now $current_main"
+            echo 'deploy=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure dedicated SSH identity
+        if: steps.release-check.outputs.deploy == 'true'
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$VPS_HOST"
+          test -n "$VPS_SSH_KEY"
+          test -n "$VPS_KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$HOME/.ssh/educonnect_deploy"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/educonnect_deploy" "$HOME/.ssh/known_hosts"
+
+      - name: Stage non-secret deployment files
+        if: steps.release-check.outputs.deploy == 'true'
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST }}
+        run: |
+          set -euo pipefail
+          ssh_args=(-i "$HOME/.ssh/educonnect_deploy" -o StrictHostKeyChecking=yes -o BatchMode=yes)
+          stage="/home/deploy/educonnect-incoming/$RELEASE_SHA"
+          ssh "${ssh_args[@]}" "deploy@$VPS_HOST" "install -d -m 700 '$stage'"
+          tar -cf - compose.vps.yaml deploy/Caddyfile |
+            ssh "${ssh_args[@]}" "deploy@$VPS_HOST" "tar -xf - -C '$stage'"
+
+      - name: Deploy and verify release
+        if: steps.release-check.outputs.deploy == 'true'
+        env:
+          VPS_HOST: ${{ vars.VPS_HOST }}
+        run: |
+          set -euo pipefail
+          ssh -i "$HOME/.ssh/educonnect_deploy" -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            "deploy@$VPS_HOST" "sudo -n /usr/local/sbin/educonnect-release deploy '$RELEASE_SHA'"
