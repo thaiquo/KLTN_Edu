@@ -1,6 +1,6 @@
 # EduConnect — Tổng quan dự án
 
-> Cập nhật theo source và dữ liệu kiểm chứng ngày **2026-10-14**.
+> Cập nhật theo source và dữ liệu kiểm chứng ngày **2026-10-25**.
 > Đây là trang bắt đầu để đọc dự án. Trạng thái chi tiết nằm ở [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 ## 1. Mục tiêu
@@ -92,7 +92,7 @@ Tỷ lệ được tính theo base unit của USDC; Tutor và Platform được 
 
 ## 8. Trạng thái ngắn gọn
 
-Audit note (2026-10-14): current compact migration lineages are Account V1..V2, Learning V1..V11, Contract V1..V20 and Notification V1..V6. Contract V20 records completed receipt-event reconciliation without assuming that one processed log represents the whole transaction. Learning V8/V9 own Community and Tutor Follow, V10 normalizes Tutor profile references and V11 adds opaque public share UUIDs. Notification V6 adds validated structured Class/Community Post chat cards. Do not restore the retired high-numbered Learning migration history into this compact lineage. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and [the termination review](contract/TERMINATION_FINAL_REVIEW_2026_10_02.md).
+Audit note (2026-10-25): current compact migration lineages are Account V1..V3 (V3 adds wallet ownership challenges), Learning V1..V15 (V12..V14 add community moderation foundation, revisions and idempotency; V15 maps community posts to catalog subjects/levels), Contract V1..V20 and Notification V1..V6. Total 982 backend tests pass (0 failures, 11 skipped). Contract V20 records completed receipt-event reconciliation without assuming that one processed log represents the whole transaction. Learning V8/V9 own Community and Tutor Follow, V10 normalizes Tutor profile references, V11 adds opaque public share UUIDs, and V12..V15 cover community AI moderation and catalog linking. Notification V6 adds validated structured Class/Community Post chat cards. Do not restore the retired high-numbered Learning migration history into this compact lineage. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and [the termination review](contract/TERMINATION_FINAL_REVIEW_2026_10_02.md).
 
 - Đã có luồng chính Web cho Account, Tutor approval, catalog/class/enrollment, session/attendance/homework, contract/escrow/settlement/dispute và notification.
 - Sepolia đã có bằng chứng funding, payout 85/15, refund 100% và refund hoàn cọc thanh lý hợp đồng 4.80 USDC thực tế; chi tiết transaction nằm trong [BLOCKCHAIN.md](BLOCKCHAIN.md).
@@ -100,9 +100,8 @@ Audit note (2026-10-14): current compact migration lineages are Account V1..V2, 
 - AI Matching đã có luồng Tutor/Class Analyze -> Ground -> Match, Qdrant semantic retrieval, Matching V3 explainability và chatbot RAG/tools; production evaluation vẫn còn là việc vận hành tiếp theo.
 - Đã hỗ trợ Student post tìm gia sư trên Community; violation/support ticket, báo cáo quản trị nâng cao và mobile feature parity chưa có.
 - Bốn agreement legacy nạp sai bằng raw ERC-20 transfer đã được `legacy_excluded`; không tham gia KPI hoặc tự quyết toán.
-- Bộ đóng gói deployment đã có Dockerfile cho sáu backend và Web, VPS Compose/Caddy,
-  cấu hình operator tách riêng và GitHub Actions CI/GHCR. Các image và cấu hình đã
-  qua kiểm tra local; chưa publish GHCR hoặc triển khai/cắt chuyển VPS thực tế.
+- Đã hoàn thành Full Auto-CD qua GitHub Actions (2026-10-25): quy trình Pull Request -> CI kiểm tra (982 tests PASS) -> 1 approval -> merge main -> tự động build & publish 7 Docker images lên GHCR -> tự động SSH deploy lên VPS Ubuntu (chạy kịch bản /usr/local/sbin/educonnect-release với auto database backup & container healthcheck). Bản dựng b57a37c đang hoạt động trực tiếp trên VPS behind Caddy (https://educonnectiuh.duckdns.org), đủ 12/12 containers Up. Đã kích hoạt Classic Branch Protection trên nhánh main.
+- Phân định rõ ràng hai loại khóa bảo mật: (1) Khóa ví Web3 Sepolia Operator (cấu hình trong .env trên VPS qua BLOCKCHAIN_OPERATOR_PRIVATE_KEY để nạp/giải ngân Escrow) và (2) Khóa mạng SSH deploy (cặp khóa ed25519 educonnect-gh-actions lưu trong GitHub Secrets VPS_SSH_KEY để GitHub Actions tự động deploy). Hai loại khóa này hoàn toàn độc lập.
 
 ## 9. Cách đọc tài liệu
 

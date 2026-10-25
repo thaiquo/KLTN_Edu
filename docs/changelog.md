@@ -2,6 +2,73 @@
 
 ---
 
+## 25/10/2026 — Hoàn Thiện Tự Động Hóa CI/CD Toàn Trình (Full Auto-CD), Kích Hoạt Bảo Vệ Nhánh Main, Phân Định Rõ Ràng Khóa Bảo Mật
+
+- **Tự động hóa triển khai Production (Full Auto-CD via GitHub Actions)**:
+  - Thiết lập hoàn chỉnh job `deploy-production` trong workflow `.github/workflows/publish-images.yml`.
+  - Quy trình vận hành nhóm 2 người chuẩn mực: Đồng đội mở Pull Request (PR) $\rightarrow$ GitHub Actions chạy `ci.yml` (982 tests PASS) $\rightarrow$ Người còn lại duyệt (Approve) $\rightarrow$ Merge vào `main` $\rightarrow$ Tự động build và đẩy 7 Docker image lên GHCR $\rightarrow$ Tự động SSH vào VPS cập nhật ứng dụng.
+  - Cài đặt script điều phối an toàn trên VPS: `/usr/local/sbin/educonnect-release` (từ `deploy/vps-release.sh`) với cơ chế preflight kiểm tra 12 services, khóa chống xung đột (`flock`), tự động backup database vào `/var/backups/educonnect`, và lưu snapshot `baseline` phục vụ rollback tức thì.
+  - Xác nhận triển khai thành công live trên VPS Ubuntu: release `b57a37c` chạy trơn tru cả 12/12 container (`account-service`, `learning-service`, `contract-service`, `notification-service`, `ai-service`, `api-gateway`, `frontend-web`, `postgres`, `rabbitmq`, `gotenberg`, `caddy`, `qdrant`), endpoint `/healthz` và API lớp học công khai đều trả HTTP 200.
+- **Kích hoạt Chốt Bảo Vệ Nhánh Main (Classic Branch Protection)**:
+  - Thiết lập rule bảo vệ cho nhánh `main`: Bắt buộc mở PR, yêu cầu 1 lượt duyệt (`Require approvals: 1`), bắt buộc vượt qua bài test `CI gate`, bật `Require branches to be up to date`, bật `Do not allow bypassing the above settings`, tắt `Allow force pushes` và `Allow deletions`.
+- **Phân định rõ ràng hai loại Khóa bảo mật (Security Keys Clarification)**:
+  - **Khóa ví Blockchain Sepolia Operator (`BLOCKCHAIN_OPERATOR_PRIVATE_KEY`)**: Khóa bí mật ví Web3 Sepolia (`0x10dd719B6a13e9d275990d706C2640ab6F1CA28e`) dùng để trả gas và thực hiện các giao dịch Smart Contract (đăng ký hợp đồng, giải ngân payout 85/15, hoàn cọc thanh lý). Được lưu an toàn trực tiếp trong file `.env` trên VPS. Tuyệt đối không đưa lên GitHub hay chia sẻ ra ngoài.
+  - **Khóa mạng SSH Deploy (`VPS_SSH_KEY`)**: Cặp khóa SSH `ed25519` (`educonnect-gh-actions`) dùng để GitHub Actions kết nối vào tài khoản `deploy@103.74.100.232` khi merge code. Private key lưu trong GitHub Secrets `VPS_SSH_KEY`, Public key lưu trong `~/.ssh/authorized_keys` của VPS, Host fingerprint lưu trong `VPS_KNOWN_HOSTS`. Hai loại khóa này hoàn toàn độc lập về bản chất và mục đích.
+
+---
+
+## 24/10/2026 — Chuẩn Hóa Múi Giờ Kinh Doanh Việt Nam (Asia/Ho_Chi_Minh) & Khắc Phục Kết Nối RabbitMQ VPS
+
+- **Chuẩn hóa Múi Giờ Kinh Doanh Việt Nam (`Asia/Ho_Chi_Minh`) (Commit `06c67b9`)**:
+  - Khắc phục triệt để độ lệch múi giờ giữa UTC và GMT+7 trong `ClassroomLifecycleScheduler`, `SessionAttendanceService` và component frontend `ClassSessionsTimeline.tsx`.
+  - Đảm bảo các buổi học cuốn chiếu được sinh đúng lịch tuần thực tế và khung giờ điểm danh trùng khớp 100% với giờ học tại Việt Nam.
+  - Toàn bộ suite kiểm thử `SessionAttendanceServiceTest` pass 15/15.
+- **Vá cấu hình RabbitMQ Host cho Contract Service trên VPS (Commit `56745cb`)**:
+  - Bổ sung cấu hình `SPRING_RABBITMQ_HOST: rabbitmq` trong `compose.vps.yaml` cho `contract-service`, đảm bảo outbox events và các message giao dịch được gửi nhận thông suốt trong mạng container Docker nội bộ.
+
+---
+
+## 23/10/2026 — Triển Khai Kiểm Chứng Live Hệ Thống Trên VPS Production & Web3 Escrow Sepolia
+
+- **Kiểm chứng toàn diện 12/12 container trên VPS Ubuntu (`103.74.100.232` / `educonnectiuh.duckdns.org`)**:
+  - Nạp thành công bộ dữ liệu Demo gồm 49 tài khoản và 40 lớp học.
+  - Xác thực bảo mật: Cookie JWT HttpOnly, CSRF token, CORS production HTTPS được cấu hình đồng bộ qua `CORS_ALLOWED_ORIGIN_PATTERNS`.
+  - Kích hoạt Docker Profile `ai`: khởi chạy `qdrant` (port 6333) và `ai-service` (port 8085 kết nối Gemini).
+- **Kiểm chứng Giao dịch Ký quỹ Escrow Sepolia Thực tế (Lớp học Toán 10 #41)**:
+  - Ký số song phương EIP-712 off-chain qua MetaMask.
+  - Operator đăng ký agreement: Tx [`0xe7f05126...dcf684`](https://sepolia.etherscan.io/tx/0xe7f05126b92ff47aeee8466d7fead9852f753432684b4b512f07b1a3b0dcf684) tại block 11977533.
+  - Học viên nạp cọc 4.80 USDC: Tx [`0xcbac14e5...a37e4b`](https://sepolia.etherscan.io/tx/0xcbac14e5adf8ed03fa1e2162ea0182dbfb93ab19d3640d1d2e21aeaa21a37e4b) tại block 11977570.
+  - Hợp đồng chuyển `ACTIVE`, thanh toán `LOCKED`, học viên chuyển `ENROLLED`.
+  - Bằng chứng hoàn cọc hủy hợp đồng: Tx [`0x11c562e5...06d6b`](https://sepolia.etherscan.io/tx/0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b) hoàn trả an toàn 4.80 USDC.
+
+---
+
+## 21/10/2026 — Hoàn Thành Mobile Milestone M3 & Nâng Cấp Schema Flyway Account V3, Learning V15
+
+- **Phân hệ Ứng dụng Di động (`mobile-app` Expo 53)**:
+  - Hoàn thiện luồng xác thực (Đăng nhập, Đăng ký, OTP email, Quên/Đặt lại mật khẩu) lưu trữ an toàn bằng `Expo SecureStore`.
+  - Hỗ trợ chuyển đổi vai trò (Role Switcher), Tìm kiếm gia sư & bộ lọc chuyên môn, Chi tiết gia sư.
+  - Màn hình AI Tutor Matching trên mobile.
+  - Diễn đàn Cộng đồng (xem bài viết, tạo bài, bình chọn poll).
+  - Quy trình đăng ký dạy môn mới (Teaching Registration Flow) & Onboarding gia sư.
+- **Mở rộng Schema Cơ sở dữ liệu (Flyway)**:
+  - Account Service V3: `V3__wallet_ownership_challenges.sql` (bổ sung cơ chế thử thách ký số xác thực quyền sở hữu ví Web3).
+  - Learning Service V15: `V15__community_catalog_subject_level.sql` (liên kết bài viết cộng đồng với danh mục môn học và cấp độ giáo dục).
+
+---
+
+## 18/10/2026 — AI Copilot Hỗ Trợ Học Tập & Kiểm Duyệt Tự Động Diễn Đàn Cộng Đồng
+
+- **Kiểm duyệt & Trợ lý viết bài Cộng đồng (`ai-service` & `learning-service`)**:
+  - `CommunityModerationClassifier`: Tự động phân loại và gắn cờ nội dung bài viết vi phạm tiêu chuẩn cộng đồng.
+  - `CommunityRewriteAssistant`: Gợi ý viết lại nội dung bài đăng tìm gia sư rõ ràng, cuốn hút.
+  - Flyway Learning V12 (`V12__community_moderation_foundation.sql`), V13 (`V13__community_post_pending_revisions.sql`), V14 (`V14__community_post_create_idempotency.sql`).
+- **AI Copilot Soạn Giáo Án & Gợi Ý Chấm Bài Tập**:
+  - `HomeworkFeedbackDraftService`: AI hỗ trợ gia sư tạo mẫu câu nhận xét, đánh giá bài làm của học sinh.
+  - `LessonPlanDraftService`: AI hỗ trợ gia sư gợi ý mục tiêu, đề cương và giáo án chi tiết theo từng buổi học.
+
+---
+
 ## 29/09/2026 — Nâng Cấp Quản Lý & Chấm Bài Tập Gia Sư Toàn Diện, Tự Động Dọn Dẹp S3 Khi Gỡ Bài Nộp, Đồng Bộ Hiển Thị Lớp Học Thực Tế
 
 - **Chuẩn hóa Thống kê & Phân loại Bài tập Gia sư**:

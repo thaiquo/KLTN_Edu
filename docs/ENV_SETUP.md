@@ -21,8 +21,11 @@ with `VITE_`. A browser RPC URL is public and should use a browser-restricted ke
 
 Share `.env.example` with collaborators, who fill their own credentials. The
 working `.env` contains access to the operator wallet and other private services.
-The encrypted keystore is a separate local file and is not embedded in `.env`.
-Set `BLOCKCHAIN_OPERATOR_KEYSTORE_PATH` for the recipient's machine.
+For the operator wallet signing material:
+- In local development: can use either an encrypted keystore file (`BLOCKCHAIN_OPERATOR_KEYSTORE_PATH` + password) or a raw hex private key (`BLOCKCHAIN_OPERATOR_PRIVATE_KEY`).
+- In Production VPS (`103.74.100.232`): configured directly as `BLOCKCHAIN_OPERATOR_PRIVATE_KEY=0x...` in `/opt/educonnect/.env`. Keystore overlay is not used.
+- Security boundary: Neither the private key nor keystore password is EVER committed to Git or stored in GitHub Actions Secrets.
+- Separation of concerns: The deployment SSH key (`VPS_SSH_KEY` / `educonnect-gh-actions`) used by GitHub Actions is an OS-level Linux SSH key, completely separate and distinct from the Ethereum Web3 operator wallet key.
 
 `node scripts/check-operator.cjs` validates the password locally without signing
 or sending a transaction. `scripts/start-contract-operator.ps1` starts the
@@ -38,9 +41,9 @@ valid S3 configuration because `STORAGE_PROVIDER=s3` is inherited when
 `CONTRACT_STORAGE_PROVIDER` is not explicitly set.
 
 The blockchain operator additionally requires both blockchain flags enabled, the
-expected chain/deployment/operator address, a readable encrypted keystore, a
-password environment/file source, RPC access and nonzero Sepolia ETH for gas.
-Startup validates these prerequisites. Never commit the password file.
+expected chain/deployment/operator address, a readable encrypted keystore or raw private key,
+RPC access and nonzero Sepolia ETH for gas.
+Startup validates these prerequisites. Never commit the private key or password file.
 
 Stopping application processes does not delete database state. Learning and
 Contract catch up durable overdue work on the next start. Avoid

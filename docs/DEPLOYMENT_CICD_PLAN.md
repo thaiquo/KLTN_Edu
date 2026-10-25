@@ -1,11 +1,11 @@
 # EduConnect Deployment and CI/CD Plan
 
-> Status: core stack deployed to the shared VPS; DNS/HTTPS, CI, GHCR publication,
-> PostgreSQL migrations and container health are verified. Authenticated cutover is
-> not complete because the validated downstream CORS fix still needs a new immutable
-> release and VPS rollout, and the approved demo seed has not yet been loaded.
-> Audited against repository source, GitHub workflow results and VPS runtime evidence on 2026-10-23.
-> Target: one Ubuntu 22.04 VPS (2 vCPU, 8 GB RAM, 40 GB disk) for a low-traffic shared thesis/demo environment.
+> Status: Full Auto-CD via GitHub Actions operational (Release `b57a37c` verified live on VPS `103.74.100.232` / `educonnectiuh.duckdns.org`).
+> All 12 containers running (`--profile ai`), DNS/HTTPS via Caddy, CI gate (982 tests PASS), GHCR publication, PostgreSQL migrations,
+> shared demo dataset (49 accounts, 40 classes), and live Sepolia Escrow agreement for Class #41 (4.80 USDC locked) verified.
+> Classic Branch Protection on `main` active (PR required, 1 approval, `CI gate` required).
+> Audited against repository source, GitHub Actions live workflow runs, and VPS runtime evidence on 2026-10-25.
+> Target: Ubuntu 22.04 VPS (2 vCPU, 8 GB RAM, 40 GB disk) behind Caddy reverse proxy.
 
 ## 1. Decision
 
@@ -23,7 +23,10 @@ Build images on GitHub-hosted runners, not on this VPS. The VPS has limited CPU,
 
 Use Docker Compose on the single VPS. Do not add Kubernetes for this deployment. Keep the existing root `docker-compose.yml` for local infrastructure development and introduce a separate VPS deployment file, initially named `compose.vps.yaml`, so local workflows are not silently changed.
 
-Start with CI and controlled deployment. GitHub Actions should validate changes and publish tagged images. Initially, deploying a published version to the VPS should be a deliberate/manual action (or a protected GitHub Environment requiring approval). Automate deployment after the first releases have been rehearsed and rollback is understood.
+GitHub Actions validates changes, publishes SHA-tagged images, and deploys a
+successful `main` release to the VPS automatically. Review and merge provide
+the normal human gate. The one-time SSH, release-script and GitHub settings are
+documented in [the automatic CD setup](../deploy/AUTO_CD_SETUP.md).
 
 ## 2. What the terms mean
 
@@ -75,8 +78,9 @@ The current local Compose file must not be copied unchanged to the public VPS: i
 
 ### 3.1 Operational checkpoint — 2026-10-23
 
-- GitHub CI and the GHCR publish workflow passed for immutable release
-  `3e8df29f9f473e71e3c7800ff62fe1b995a14136`.
+- GitHub CI and the GHCR publish workflow passed for the initial immutable
+  release `3e8df29f9f473e71e3c7800ff62fe1b995a14136`; the newer
+  `21b2c2b8fbcc1134aafce1d97fe8c0b937963805` release is now on the VPS.
 - Ubuntu 22.04 VPS provisioning is complete: non-root `deploy` SSH access, 4 GiB
   swap, active UFW rules for SSH/HTTP/HTTPS, Docker Engine and Docker Compose.
 - Deployment files and the protected runtime environment are installed under
@@ -95,16 +99,73 @@ The current local Compose file must not be copied unchanged to the public VPS: i
   demo accounts and learning dataset. The one-time load order is Account privileged
   accounts, Account Student/Tutor profiles, then Learning demo data. Keep the
   production profile; do not enable the automatic `dev` loaders on the VPS.
-- The running release still rejects authenticated browser traffic carrying Origin
-  `https://educonnectiuh.duckdns.org` with HTTP 403 `Invalid CORS request`. Source now
-  uses the shared `CORS_ALLOWED_ORIGIN_PATTERNS` setting for downstream REST and
-  WebSocket handshakes, and VPS Compose supplies the exact production HTTPS origin.
-  The fix passed Account 171, Learning 243, Contract 225 (7 skipped), Notification
-  75 and AI 266 (4 external-runtime skipped) tests plus Compose validation. Publish
-  and deploy the new immutable release before login smoke testing.
+- The previous release rejected browser traffic carrying Origin
+  `https://educonnectiuh.duckdns.org` with HTTP 403 `Invalid CORS request`.
+  The newer release uses the shared `CORS_ALLOWED_ORIGIN_PATTERNS` setting for
+  downstream REST and WebSocket handshakes; the production HTTPS origin passed
+  an external CORS check. Authenticated login smoke testing is still pending.
 - Reown/WalletConnect endpoints currently return HTTP 403 independently of the
   EduConnect API. Verify the production domain allowlist/project configuration after
   core cookie-auth smoke tests pass.
+
+### 3.2 Shared V1 decision and next gate — 2026-10-23
+
+- Keep the deployed Sepolia V1 escrow contract for shared development. Do not
+  reset the VPS database or deploy V2 as part of this phase. Existing local
+  databases are not a source of truth for the VPS.
+- Release `21b2c2b8fbcc1134aafce1d97fe8c0b937963805` is now running on the
+  VPS. Its downstream CORS fix was checked against the public HTTPS origin.
+  CI builds and publishes images; VPS rollout is still a manual CD step.
+- Inventory on 2026-10-23 confirmed `kltn_db` is 12 MB: `users`, `students`,
+  `tutors`, `class_rooms`, `class_sessions`, `contract_agreement`,
+  `escrow_payment` and `blockchain_transaction` each have zero rows. Flyway
+  already loaded 34 provinces, 46 communes, 65 legacy subjects, 144 catalog
+  subjects and 667 catalog levels. All four service migration histories have
+  zero failed entries. Host had 5.5 GiB available RAM, 4 GiB unused swap and
+  23 GiB available disk at inspection time.
+- Create a PostgreSQL backup, copy it off-VPS and rehearse an isolated
+  restore. Only then load selected
+  demo accounts/catalog/learning data after reviewing credentials and side
+  effects. Do not run automatic dev-profile seed loaders or seed financial/
+  blockchain state.
+- The pre-seed backup `educonnect-20261023T062234Z.dump` was created under
+  `/home/deploy/educonnect-backups` (289,416 bytes, mode 600), and copied to
+  the workstation's Documents backup directory. Both SHA-256 checksums match:
+  `e4e3f300fb7ce1441182f2fb7e42a7887b32a3e4bc49cce579936e4d627bc1bb`.
+  `pg_restore -l` and a full isolated restore both passed; the temporary
+  database was removed after its row/Flyway counts matched the source snapshot.
+
+### 3.3 End-to-end verification and active cutover — 2026-10-23
+
+- Demo seed applied: 49 accounts and 40 classes loaded. Default non-admin passwords set for testing.
+- Blockchain operator enabled: `BLOCKCHAIN_ENABLED=true` and `BLOCKCHAIN_OPERATOR_ENABLED=true` configured in VPS `.env`.
+- Live Web3 Escrow verified: Tutor and Student signed EIP-712 off-chain via MetaMask; Operator registered agreement on Sepolia Escrow V1 (`0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3`); Student deposited USDC on Sepolia. Agreement `2aeca99d-...` transitioned to `ACTIVE` and enrollment to `ENROLLED` for Classroom #41 (`start_date: 2026-10-24`).
+- RabbitMQ connection fix: Added `SPRING_RABBITMQ_HOST: rabbitmq` to `contract-service` in `compose.vps.yaml` to ensure outbox events sync seamlessly to `learning-service`.
+- AI Profile activated: Executed `docker compose --profile ai up -d`; `qdrant` and `ai-service` are running. Total 12/12 containers are UP.
+
+### 3.4 Full Auto-CD Verification and Branch Protection — 2026-10-25
+
+- **Quy trình triển khai tự động (Full Auto-CD on Merge to `main`)**:
+  - Gộp PR vào `main` $\rightarrow$ `ci.yml` kiểm tra toàn bộ 982 tests backend + Web build $\rightarrow$ `publish-images.yml` đóng gói 7 images lên GHCR $\rightarrow$ job `deploy-production` kích hoạt kết nối SSH vào VPS qua khóa mạng `VPS_SSH_KEY`.
+  - Trên VPS: thực thi `/usr/local/sbin/educonnect-release deploy <FULL_GIT_SHA>`, tự động tạo bản sao lưu CSDL PostgreSQL vào `/var/backups/educonnect`, kiểm tra dung lượng ổ đĩa, kiểm tra điều kiện an toàn, pull 7 images ứng dụng và khởi động lại container bằng lệnh:
+    ```bash
+    docker compose --env-file .env --env-file release.env --profile ai -f compose.vps.yaml up -d --remove-orphans
+    ```
+  - Kiểm chứng live trên VPS: bản phát hành `b57a37c` đã triển khai thành công, cả 12/12 container hoạt động tốt (`Up`), các endpoint công khai `/healthz` và API lớp học đều trả mã HTTP 200.
+- **Bảo vệ nhánh `main` (Classic Branch Protection)**:
+  - Cấu hình bắt buộc Pull Request với 1 lượt duyệt (`Require approvals: 1`).
+  - Bắt buộc vượt qua kiểm thử `CI gate` trước khi cho phép merge.
+  - Bật `Require branches to be up to date before merging` và `Do not allow bypassing the above settings`.
+  - Tắt force push và xóa nhánh để bảo vệ lịch sử commit.
+- **LÀM RÕ CÁC LOẠI KHÓA BẢO MẬT (SECURITY KEYS & CREDENTIALS CLARIFICATION)**:
+  - **1. Khóa ví Blockchain Sepolia Operator (`BLOCKCHAIN_OPERATOR_PRIVATE_KEY` / Keystore)**:
+    - Mục đích: Dùng để ký các giao dịch Smart Contract on-chain (đăng ký hợp đồng, thanh toán payout 85/15, hoàn tiền cọc) trên mạng Ethereum Sepolia qua ví `0x10dd719B6a13e9d275990d706C2640ab6F1CA28e`.
+    - Vị trí: Lưu trữ duy nhất trong file `.env` trên VPS dưới biến `BLOCKCHAIN_OPERATOR_PRIVATE_KEY` (hoặc mount qua keystore file trong `compose.vps.operator.yaml`).
+    - Phân quyền: Tuyệt đối KHÔNG đưa vào GitHub Actions Secrets, KHÔNG chia sẻ cho đồng đội.
+  - **2. Khóa mạng SSH Deploy (`VPS_SSH_KEY`)**:
+    - Mục đích: Cặp khóa mạng SSH chuẩn `ed25519` (`educonnect-gh-actions`) cấp quyền cho robot GitHub Actions đăng nhập vào tài khoản `deploy@103.74.100.232` trên VPS để thực hiện deploy bản dựng mới.
+    - Vị trí: Private key lưu tại GitHub Secrets `VPS_SSH_KEY`, Public key lưu tại `~/.ssh/authorized_keys` của tài khoản `deploy` trên VPS, dấu vân tay host lưu tại GitHub Secrets `VPS_KNOWN_HOSTS`, IP VPS lưu tại GitHub Variables `VPS_HOST`.
+    - Phân quyền: Khóa này chỉ có quyền SSH chạy lệnh deploy trên hệ điều hành Linux, hoàn toàn độc lập và không có bất kỳ quyền hạn nào đối với ví tiền hay hợp đồng thông minh Web3.
 
 ## 4. First deployment topology
 
@@ -240,27 +301,36 @@ If GHCR packages are private, grant the VPS pull-only access. Store any needed t
 
 ## 9. CD workflow design
 
-For the first releases:
+For current releases:
 
-1. Publish images after CI succeeds.
-2. Select the exact commit/tag to release.
-3. Trigger a manual deploy job or approve a protected `production` GitHub Environment.
-4. The job connects using a dedicated SSH deploy key and non-root deployment account, updates the selected image tag, then runs Compose pull and up.
-5. Check container health, logs and smoke flows. Fail deployment if a required service is unhealthy.
-6. Keep the prior image tag and an operator-readable rollback procedure.
+1. Publish all seven application images only after the `main` CI run succeeds.
+2. The deployment job waits for both image publication jobs and verifies the
+   selected SHA is still the head of `main`.
+3. GitHub Actions uses a dedicated SSH key to stage only non-secret Compose and
+   Caddy files, then invokes a fixed root-owned release command on the VPS.
+4. The command keeps the raw operator key in the VPS-only `.env`, uses
+   `--profile ai` with the base Compose file, pulls only application images,
+   creates a checked PostgreSQL dump, starts containers and runs smoke checks.
+5. Preserve the exact current image set and configuration for the first
+   rollback, then keep the prior uniform SHA for later rollbacks. An image
+   rollback does not undo Flyway migrations.
 
-After multiple successful releases, automatic deploy on merge can be enabled if desired. Prevent overlapping deployments with a workflow concurrency group. Do not install a GitHub self-hosted runner on this 8 GB VPS; it consumes the same constrained machine and broadens its CI attack surface.
+Prevent overlapping deployments with a workflow concurrency group. Do not
+install a GitHub self-hosted runner on this 8 GB VPS; it consumes the same
+constrained machine and broadens its CI attack surface.
 
 The deployment command shape is:
 
 ```bash
-docker compose -f compose.vps.yaml pull
-docker compose -f compose.vps.yaml up -d --remove-orphans
-docker image prune -f
-docker compose -f compose.vps.yaml ps
+docker compose --env-file .env --env-file release.env --profile ai -f compose.vps.yaml pull account-service learning-service contract-service notification-service api-gateway frontend-web ai-service
+docker compose --env-file .env --env-file release.env --profile ai -f compose.vps.yaml up -d --wait --remove-orphans
+docker compose --env-file .env --env-file release.env --profile ai -f compose.vps.yaml ps
 ```
 
-This is a shape/example, not a ready-to-run script: file paths, environment names, image tags and package authentication must be implemented and validated first. Never append `down -v` to a deployment command. Running `docker image prune -f` after container recreation prevents dangling image layers from exhausting the 40 GB disk.
+This is a manual fallback shape after `release.env` has been created. The
+automatic release script handles validation, backup and checks. Never append
+`down -v` to a deployment command, and do not prune old images before the new
+release is healthy and the previous image is still available for rollback.
 
 ## 10. Database, migrations and recovery
 
@@ -280,7 +350,7 @@ Blockchain deployment is a separate, deliberate release operation, not part of e
 2. For the first app deploy, use the currently documented V1 deployment only for a smoke environment if its address and keys are confirmed. If the goal is a clean shared demo chain state, deploy one fresh compatible contract before the team begins creating official demo agreements.
 3. Do not deploy V2 by changing only the address: V2 is documented as not deployed and its application compatibility has not been established by this audit.
 4. Keep `BLOCKCHAIN_CHAIN_ID=11155111`, USDC address, contract address, operator role/address, RPC endpoints, start block and frontend public contract address consistent.
-5. Keep operator signing material only in Contract Service runtime configuration, mounted/readable by that container only. Sepolia ETH is gas; USDC/ERC-20 test token is the escrow asset.
+5. Keep operator signing material in the VPS-only Contract Service runtime configuration. The active VPS uses a raw key in its private `.env`; the keystore overlay remains an alternative. Never give the key to Web or unrelated services. Sepolia ETH is gas; USDC/ERC-20 test token is the escrow asset.
 6. Verify chain ID, deployed bytecode/ABI, roles, USDC, funding and confirmed event ingestion before opening the shared demo to the group.
 7. Do not deploy a replacement contract while demo agreements/funds are active without a migration/recovery decision. Existing agreements and funds do not move to a new contract automatically.
 
