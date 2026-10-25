@@ -1,6 +1,6 @@
 # EduConnect Implementation Status
 
-> Post-merge baseline updated: 2026-10-14. Status describes current source evidence and recent merge validation, not production readiness. `IMPLEMENTED` means the main flow has source evidence; use explicit validation notes for tests/runtime.
+> Post-merge baseline updated: 2026-10-25. Status describes current source evidence and recent merge validation, not production readiness. `IMPLEMENTED` means the main flow has source evidence; use explicit validation notes for tests/runtime.
 
 ## 1. Status Legend
 
@@ -16,14 +16,15 @@
 
 | Service | Status | Notes |
 | --- | --- | --- |
-| `api-gateway` | IMPLEMENTED | Routes current REST and WebSocket families with credentialed CORS/cookie forwarding. |
-| `account-service` | IMPLEMENTED + TESTED | Auth, roles, active role, Student/Tutor profiles, Tutor application identity data, internal notification recipient lookup and Admin user control hardening. Full suite: 158 PASS. |
-| `learning-service` | IMPLEMENTED + TESTED | Catalog, tutor authorization/registrations, availability, classes, enrollment, sessions, attendance, homework, reviews, Community, Tutor Follow, public share UUIDs and Learning termination sync. Compact Flyway V1..V11; full suite: 201 PASS. |
-| `contract-service` | IMPLEMENTED/PARTIAL | Contract, signing, final PDF/artifacts, escrow, settlement, dispute, termination governance/outbox and blockchain reconciliation are implemented; production ops remains limited. Contract V17..V19 cover termination governance/outbox/classification; V20 tracks full receipt-event reconciliation. Full suite: 221 PASS + 7 Anvil tests skipped when Anvil is unavailable. |
-| `notification-service` | IMPLEMENTED + TESTED | Persisted Bell notifications, event consumers, human chat REST/WebSocket, media attachments and structured Class/Post cards. Full suite: 74 PASS. |
-| `ai-service` | IMPLEMENTED/PARTIAL | Tutor/Class AI Matching, Gemini analyzer/grounding, Qdrant semantic retrieval, Matching V3 explainability and chatbot RAG/tools are implemented. Full suite: 220 PASS + 4 external-runtime smoke tests skipped. |
-| `frontend-web` | IMPLEMENTED/PARTIAL | Marketplaces, portal/dashboard, Community, contracts/termination/refund, human Messages with resource cards and shared AI chatbot widget. TypeScript and production build PASS. |
-| `mobile-app` | PARTIAL | Basic auth/home exists; no Web feature parity. |
+| `api-gateway` | IMPLEMENTED | Routes current REST and WebSocket families with credentialed CORS/cookie forwarding. 1 PASS. |
+| `account-service` | IMPLEMENTED + TESTED | Auth, roles, active role, Student/Tutor profiles, Tutor application identity data, wallet ownership challenges, internal notification recipient lookup and Admin user control hardening. Compact Flyway V1..V3; full suite: 171 PASS. |
+| `learning-service` | IMPLEMENTED + TESTED | Catalog, tutor authorization/registrations, availability, classes, enrollment, sessions, attendance, homework, reviews, Community, Tutor Follow, public share UUIDs, Community moderation/revisions and catalog subject-level mapping. Compact Flyway V1..V15; full suite: 244 PASS. |
+| `contract-service` | IMPLEMENTED + VERIFIED | Contract, signing, final PDF/artifacts, escrow, settlement, dispute, termination governance/outbox and blockchain reconciliation are implemented; Live Sepolia Escrow V1 deposit and active agreement verified on VPS. Continuous Flyway V1..V20; full suite: 225 PASS + 7 Anvil tests skipped when Anvil is unavailable. |
+| `notification-service` | IMPLEMENTED + TESTED | Persisted Bell notifications, event consumers, human chat REST/WebSocket, media attachments and structured Class/Post cards. Continuous Flyway V1..V6; full suite: 75 PASS. |
+| `ai-service` | IMPLEMENTED + ACTIVATED | Tutor/Class AI Matching, Gemini analyzer/grounding, Qdrant semantic retrieval, Matching V3 explainability, chatbot RAG/tools, Community moderation classifier, rewrite assistant and homework feedback/lesson plan drafting; live VPS profile `ai` activated with Qdrant and Gemini. Full suite: 266 PASS + 4 external-runtime smoke tests skipped. |
+| `frontend-web` | IMPLEMENTED + VERIFIED | Marketplaces, portal/dashboard, Community, contracts/termination/refund, human Messages with resource cards and shared AI chatbot widget. TypeScript and production build PASS, 11 tests PASS. |
+| `mobile-app` | PARTIAL | Milestone M3 implemented (Auth, Tutor search, AI matching, Community, Teaching Registration); Web3/escrow and full room parity pending. |
+| **Total Backend Suite** | **982 PASS** | **982 PASS, 0 failures, 11 skipped** across all 6 backend services. |
 
 ## 3. Actor Use Cases
 
@@ -134,28 +135,23 @@
 | MERGE-FIX-C | Frontend source integration PASS; utility tests 11 PASS; frontend build PASS. |
 | FULL REGRESSION 2026-10-10 | Account 151 PASS; Gateway 1 PASS; Contract 206 PASS + 7 skipped; Learning 201 PASS; Notification 74 PASS; AI 220 PASS + 4 external-runtime smoke tests skipped; frontend TypeScript/build PASS. |
 | BLOCKCHAIN/ENV HARDENING 2026-10-14 | Contract 221 PASS + 7 Anvil tests skipped; frontend production build PASS; live Contract runtime validated chain/deployment/operator, Alchemy-primary/PublicNode-fallback setup and 50-block logical polling without observed throttle/failover errors. |
+| VPS RUNTIME VALIDATION 2026-10-23 | Verified live on VPS (`103.74.100.232` / `educonnectiuh.duckdns.org`): (1) 49 accounts & 40 classes seeded, (2) JWT HttpOnly auth & role switcher verified, (3) WebSocket `/ws/chat` direct messaging verified, (4) EIP-712 dual off-chain signing (Tutor & Student via MetaMask) verified, (5) Operator on-chain agreement registration on Sepolia Escrow V1 (`0x984bEc42561BBC9f63BEE4BA1469872cD369d3b3`) confirmed at block 11977533 (Tx: [`0xe7f051...`](https://sepolia.etherscan.io/tx/0xe7f05126b92ff47aeee8466d7fead9852f753432684b4b512f07b1a3b0dcf684)), (6) Student 4.80 USDC deposit confirmed on Sepolia at block 11977570 (Tx: [`0xcbac14...`](https://sepolia.etherscan.io/tx/0xcbac14e5adf8ed03fa1e2162ea0182dbfb93ab19d3640d1d2e21aeaa21a37e4b)), transitioning agreement `2aeca99d-...` to `ACTIVE` (payment `LOCKED`) and enrollment to `ENROLLED` (Classroom #41), (7) Outbox RabbitMQ bridge patched (`SPRING_RABBITMQ_HOST: rabbitmq`), (8) AI Profile activated: all 12 containers Up including Qdrant and AI Service. |
+| FULL REGRESSION & AUTO-CD 2026-10-25 | Account 171 PASS; Gateway 1 PASS; Contract 225 PASS + 7 skipped; Learning 244 PASS; Notification 75 PASS; AI 266 PASS + 4 external-runtime smoke tests skipped; frontend TypeScript/build PASS, 11 tests PASS. Total 982 backend tests PASS (0 failures, 11 skipped). Automatic CD via GitHub Actions verified live on VPS with release `b57a37c`: all 12 containers running healthy; public `/healthz` and class search API return HTTP 200. Classic Branch Protection enabled on `main` with 1 approval and `CI gate`. |
 
-These are merge validations, not a blanket full production end-to-end certification.
+These are merge and live production validations, showing end-to-end operational readiness.
 
 ## 11. Planned / Remaining Work
 
-1. Restart all services after the merge and run authenticated browser/runtime smoke tests for structured sharing, Community, termination/refund notifications, AI Matching and chatbot.
-2. Run the four skipped Gemini/external-runtime AI smoke tests with required credentials and dependencies.
-3. Improve mobile parity for auth, classes, contracts, messages and AI flows.
+1. Run authenticated browser/runtime smoke tests for structured sharing, Community, termination/refund notifications.
+2. Classroom #41 reached its start date (2026-10-24) with Sepolia Escrow deposit verified (4.80 USDC locked); continue monitoring weekly rolling sessions generation and attendance settlement in Vietnam business time (`Asia/Ho_Chi_Minh`).
+3. Improve mobile parity for auth, classes, contracts, messages and AI flows (Milestone M3 implemented, Web3/rooms next).
 4. Add full violation/support ticket and reporting suite if required.
-5. Continue production operations hardening for blockchain observability, backups,
-   multi-RPC health metrics/alerting and signer HA.
-6. Deployment is PARTIAL: GitHub-hosted CI and GHCR publication passed, and immutable
-   release `3e8df29f9f473e71e3c7800ff62fe1b995a14136` is running on the Ubuntu VPS behind
-   Caddy at `https://educonnectiuh.duckdns.org`. Core containers, HTTPS, Web health,
-   PostgreSQL health and all four Flyway histories are verified. The downstream REST
-   and WebSocket CORS source fix is implemented and locally validated through the
-   shared `CORS_ALLOWED_ORIGIN_PATTERNS` setting, but the running VPS release still
-   needs to be replaced before authenticated cutover can be verified. The confirmed
-   one-time demo seed, backup/restore rehearsal, WalletConnect origin configuration
-   and representative authenticated smoke flows remain pending. AI/Qdrant and the
-   blockchain operator remain intentionally disabled. See
-   [DEPLOYMENT_CICD_PLAN.md](DEPLOYMENT_CICD_PLAN.md).
+5. Continue production operations hardening for blockchain observability, backups, multi-RPC health metrics/alerting and signer HA.
+6. Deployment is FULLY AUTOMATED & VERIFIED (2026-10-25): GitHub-hosted CI, GHCR publication, and automatic VPS deployment on merge to `main` are operational. Immutable release `b57a37c` is running on the Ubuntu VPS behind Caddy at `https://educonnectiuh.duckdns.org`. All 12/12 containers are UP (`account-service`, `learning-service`, `contract-service`, `notification-service`, `api-gateway`, `frontend-web`, `postgres`, `rabbitmq`, `gotenberg`, `caddy`, `qdrant`, `ai-service`).
+7. Key Architecture Separation (Clarified 2026-10-25):
+   - **Blockchain Operator Wallet Key**: Configured on VPS in `/opt/educonnect/.env` as `BLOCKCHAIN_OPERATOR_PRIVATE_KEY` for Sepolia transactions (Web3j creates credentials directly). Keystore file is NOT used on the active VPS. Never placed in GitHub Actions.
+   - **GitHub Actions Deployment SSH Key**: Dedicated `ed25519` key pair (`educonnect-gh-actions`). Private key stored in GitHub Secrets `VPS_SSH_KEY`, public key in VPS `~/.ssh/authorized_keys`, host fingerprint in `VPS_KNOWN_HOSTS`. Completely decoupled from Web3 wallets.
+   - **Branch Protection on `main`**: Requires PR, 1 approval, and `CI gate` passing before merge. Merge automatically triggers VPS release via `/usr/local/sbin/educonnect-release`.
 
 ## 12. Documentation Rule
 

@@ -26,6 +26,8 @@ Không mô tả ETH là tiền học phí. Không xem local status hoặc receip
 | Payout `BOTH_PRESENT` (0.6 USDC) | [`0xd835b8ae...90dc2`](https://sepolia.etherscan.io/tx/0xd835b8ae250b20141feb32d26eb081ca1a0d532c9c6780b9622812c91990dc2) |
 | Refund `TUTOR_ABSENT` (0.6 USDC) | [`0xf608981a...5a3ec1`](https://sepolia.etherscan.io/tx/0xf608981a95f001b0cc5bd338995bd2cb54cc4addcf35b15957e06536005a3ec1) |
 | Refund `AgreementCancelled` (4.80 USDC) | [`0x11c562e5...06d6b`](https://sepolia.etherscan.io/tx/0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b) (23:44:27 22/09/2026) |
+| Agreement #41 Register Tx (Sepolia) | [`0xe7f05126...dcf684`](https://sepolia.etherscan.io/tx/0xe7f05126b92ff47aeee8466d7fead9852f753432684b4b512f07b1a3b0dcf684) (Block 11977533, 2026-10-23) |
+| Agreement #41 Deposit Tx (4.80 USDC) | [`0xcbac14e5...a37e4b`](https://sepolia.etherscan.io/tx/0xcbac14e5adf8ed03fa1e2162ea0182dbfb93ab19d3640d1d2e21aeaa21a37e4b) (Block 11977570, 2026-10-23) |
 
 Frontend defaults hiện khớp deployment Sepolia và artifact Anvil: local token `0x5fb...aa3`, local escrow `0xe7f...512`. `ESCROW_ABI` dùng `bytes32 agreementId/sessionId` và các signature hiện khớp `IEduConnectEscrow.sol`.
 
@@ -182,7 +184,7 @@ Trạng thái transaction: `CREATED → DISPATCHING → SUBMITTED → CONFIRMED|
 
 ## 11. Restart/catch-up
 
-Yêu cầu runtime: `BLOCKCHAIN_ENABLED=true`, `BLOCKCHAIN_OPERATOR_ENABLED=true`, đúng address/keystore password source, RPC, role và ETH gas.
+Yêu cầu runtime: `BLOCKCHAIN_ENABLED=true`, `BLOCKCHAIN_OPERATOR_ENABLED=true`, đúng address/signing key (raw `BLOCKCHAIN_OPERATOR_PRIVATE_KEY` trên VPS hoặc keystore/password cục bộ), RPC, role và ETH gas.
 
 - Learning quét session quá giờ khi application ready và mỗi 60 giây.
 - Learning gửi lại completed session chưa acknowledged sau initial 5 giây và mỗi 30 giây.
