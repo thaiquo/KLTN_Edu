@@ -67,6 +67,17 @@ jobs:
         working-directory: frontend-web
         run: npm ci
 
+      - name: Check TypeScript
+        working-directory: frontend-web
+        run: npx tsc --noEmit
+
+      - name: Run Web unit tests
+        working-directory: frontend-web
+        run: |
+          node src/utils/scheduleUtils.test.js
+          node src/utils/terminationState.test.js
+          node src/components/ai-chat/aiChatHistoryStore.test.js
+
       - name: Build production assets
         working-directory: frontend-web
         env:
@@ -83,7 +94,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Validate base and operator overlays
+      - name: Validate active VPS profile and optional keystore overlay
         env:
           DOMAIN: educonnect.example.com
           GHCR_OWNER: example
@@ -97,11 +108,14 @@ jobs:
           AWS_S3_BUCKET: validation-only
           AWS_ACCESS_KEY_ID: validation-only
           AWS_SECRET_ACCESS_KEY: validation-only
+          BLOCKCHAIN_ENABLED: "true"
+          BLOCKCHAIN_OPERATOR_ENABLED: "true"
+          BLOCKCHAIN_OPERATOR_PRIVATE_KEY: validation-only-not-a-real-key
           BLOCKCHAIN_OPERATOR_ADDRESS: "0x0000000000000000000000000000000000000001"
           BLOCKCHAIN_OPERATOR_KEYSTORE_HOST_PATH: ./secrets/operator-keystore.json
           BLOCKCHAIN_OPERATOR_PASSWORD_FILE_HOST_PATH: ./secrets/operator-keystore-password
         run: |
-          docker compose --env-file deploy/production.env.example -f compose.vps.yaml config --quiet
+          docker compose --env-file deploy/production.env.example --profile ai -f compose.vps.yaml config --quiet
           docker compose --env-file deploy/production.env.example -f compose.vps.yaml -f compose.vps.operator.yaml config --quiet
 
   image-builds:
@@ -145,3 +159,25 @@ jobs:
           push: false
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  ci-gate:
+    name: CI gate
+    if: always()
+    needs:
+      - backend-tests
+      - frontend-build
+      - compose-validation
+      - image-builds
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every validation job to pass
+        env:
+          BACKEND_RESULT: ${{ needs.backend-tests.result }}
+          WEB_RESULT: ${{ needs.frontend-build.result }}
+          COMPOSE_RESULT: ${{ needs.compose-validation.result }}
+          IMAGES_RESULT: ${{ needs.image-builds.result }}
+        run: |
+          test "$BACKEND_RESULT" = success
+          test "$WEB_RESULT" = success
+          test "$COMPOSE_RESULT" = success
+          test "$IMAGES_RESULT" = success
