@@ -238,7 +238,7 @@ class AnvilTrialCoolingOffIntegrationTest {
             trial.setStatus(TrialStatus.DECISION_OPEN);
             agreementTrialRepository.saveAndFlush(trial);
 
-            // 5. Student opts out within 24h cooling-off window with EIP-712 signature!
+            // 5. Student opts out before session 2 starts, using an EIP-712 signature.
             long requestedAt = System.currentTimeMillis() / 1000L;
             String reason = "Dừng trong giai đoạn trải nghiệm (Trial opt-out)";
             byte[] reasonHashBytes = Hash.sha3(reason.getBytes(StandardCharsets.UTF_8));
@@ -279,7 +279,7 @@ class AnvilTrialCoolingOffIntegrationTest {
             TerminationCase approvedCase = terminationCaseRepository.findById(caseId).orElseThrow();
             assertEquals("APPROVED", approvedCase.getStatus());
 
-            // 6. Finalize Session 1 settlement for Tutor on Anvil (bypassing 24h dispute window)
+            // 6. Warp through the independent 24h settlement-dispute window and finalize session 1.
             new Request<>("evm_increaseTime", List.of(86401), new HttpService(rpcUrl), org.web3j.protocol.core.methods.response.NetVersion.class).send();
             new Request<>("evm_mine", Collections.emptyList(), new HttpService(rpcUrl), org.web3j.protocol.core.methods.response.NetVersion.class).send();
 

@@ -26,13 +26,13 @@
 | `CONTRACT-03` | `IMPLEMENTED + TESTED` | Terms schema v4 có `TrialPolicyTerms`, snapshot trial policy trước hash, tương thích ngược parser v2/v3, Jackson deterministic ordering. |
 | `CONTRACT-04` | `IMPLEMENTED + TARGETED TESTED` | `ContractDocumentViewDto`/query đã có trial policy; renderer thật sự chèn phụ lục trial vào DOCX khi áp dụng, không chỉ đưa field vào model. Renderer test đã đọc lại nội dung DOCX và pass. |
 | `CONTRACT-05` | `IMPLEMENTED + TESTED` | Agreement cũ không có row `agreement_trial`; không thay đổi `contractVersion`. |
-| `CONTRACT-06` | `IMPLEMENTED + TARGETED TESTED / E2E PENDING` | Registration dùng điều kiện nghiêm ngặt `now + 24h + safetyMargin < trialSessionStartAt`. Funding event trễ không activate enrollment; tạo duy nhất system termination case theo detection key, đồng bộ cutoff 0 idempotent sang Learning, rồi tái sử dụng worker cancel/refund/event hiện có. Runbook ở Mục 13.7; on-chain E2E còn pending. |
+| `CONTRACT-06` | `IMPLEMENTED + TARGETED TESTED / LATE-FUNDING E2E PENDING` | Registration dùng điều kiện nghiêm ngặt `now + 24h + safetyMargin < trialSessionStartAt`. Funding event trễ không activate enrollment; tạo duy nhất system termination case theo detection key, đồng bộ cutoff 0 idempotent sang Learning, rồi tái sử dụng worker cancel/refund/event hiện có. Trial opt-out/refund đã có Anvil E2E; nhánh late-funding on-chain vẫn pending. Runbook ở Mục 13.7. |
 | `FLOW-01` | `IMPLEMENTED + TESTED` | Tự động chuyển trial sang `DECISION_OPEN` idempotent khi buổi học hoàn thành đúng `trialSessionSequence` trong `internalAutoProposeSettlement`. |
 | `FLOW-02` | `IMPLEMENTED + TESTED` | Loại bỏ API continue có nguy cơ làm mất quyền; nút tiếp tục ở UI chỉ là acknowledgement đóng banner. |
 | `FLOW-03` | `IMPLEMENTED + TESTED` | Endpoint `POST /api/contracts/agreements/{agreementId}/trial/opt-out`, verify chữ ký EIP-712, kiểm tra `serverReceivedAt < trialDeadline`, lock agreement và set cutoff fence. |
 | `FLOW-04` | `IMPLEMENTED + TESTED` | Đồng bộ Learning với stable commandId sau khi commit fence; retry không đổi effectiveRequestedAt/cutoff. |
 | `FLOW-05` | `IMPLEMENTED + TESTED` | Tự động phê duyệt theo chính sách (`c.setStatus("APPROVED")`) ngay khi Learning xác nhận đúng cutoff của trial sequence. |
-| `FLOW-06` | `IMPLEMENTED + TARGETED TESTED` | `TerminationProcessor` dùng cutoff/sessions đã persist cho `TRIAL_OPT_OUT`, không tính lại `FREEZE`; chỉ chuyển đúng trial/case liên kết sang `TERMINATED` sau khi nhánh đóng hợp đồng hoàn tất. E2E on-chain còn chờ Phase 5. |
+| `FLOW-06` | `IMPLEMENTED + ANVIL TESTED` | `TerminationProcessor` dùng cutoff/sessions đã persist cho `TRIAL_OPT_OUT`, không tính lại `FREEZE`; chỉ chuyển đúng trial/case liên kết sang `TERMINATED` sau khi nhánh đóng hợp đồng hoàn tất. Anvil đã xác minh chữ ký EIP-712, settlement buổi 1, cancel và hoàn 30 USDC; Learning client vẫn được mock trong test này. |
 | `FLOW-07` | `IMPLEMENTED + TESTED` | `TrialDeadlineScheduler` quét định kỳ trial `DECISION_OPEN` quá hạn tự động chuyển sang `CONTINUED / AUTO_DEADLINE`. 3/3 tests pass. |
 | `WEB-01` | `IMPLEMENTED + TYPECHECKED` | Badge “Có 1 buổi trải nghiệm bảo chứng Escrow” và banner chính sách tại `PublicClassDetailModal.jsx`. |
 | `WEB-02` | `IMPLEMENTED + TYPECHECKED` | Điều khoản trial hiển thị trong `ContractDocumentModal.tsx`; DOCX backend có phụ lục tương ứng. |
@@ -40,7 +40,7 @@
 | `WEB-04` | `IMPLEMENTED + TYPECHECKED` | `TrialOptOutModal` ký EIP-712 đúng domain/type backend, chuẩn hóa reason trước khi ký để tránh hash mismatch và hiển thị USDC theo 6 decimals. |
 | `WEB-05` | `PARTIAL + TYPECHECKED` | `TrialCoolingOffBanner` kết nối với `activeTermination` (status, itemStatus, txHash), nhưng API hiện chưa cung cấp đủ trạng thái authoritative cho từng bước settlement -> cancel tx -> refund event; UI chỉ được mô tả là tiến trình ước lượng cho đến khi bổ sung stage detail. |
 | `TEST-MIGRATION-PG` | `RE-RUN REQUIRED / PRODUCTION PENDING` | Rehearsal PostgreSQL 16 ngày 2026-10-26 đã pass bản V21 trước hardening. V21 hiện có thêm constraints/state late-funding nên kết quả cũ chỉ là lịch sử, không chứng minh current checksum; phải chạy lại fresh + upgrade trước release. |
-| `TEST-REGRESSION` | `ALL PASSED (LOCAL + GENERIC ANVIL)` | Learning full 258/258 pass; Account full 171/171 pass; AI full 266/266 pass; Foundry smart contract 44/44 pass; Contract full 243/243 pass (bao gồm 7/7 Anvil integration tests hiện hữu trên RPC 31337); Frontend `tsc --noEmit` 0 error và production build pass. Anvil node đã shutdown sạch. Bộ Anvil hiện hữu chưa phải trial opt-out/late-funding time-warp E2E. |
+| `TEST-REGRESSION` | `ALL PASSED (LOCAL + ANVIL)` | Learning full 258/258 pass; Contract default suite 244 tests pass với 8 Anvil tests skipped; Foundry 44/44 pass; toàn bộ 8/8 Anvil integration tests pass trên RPC 31337, gồm trial opt-out/refund; Account 171/171 và AI 266/266 (4 external skipped) không có source thay đổi; Frontend `tsc --noEmit` và production build pass. Anvil node đã shutdown sạch. Trial E2E hiện mock Learning/Notification và tự mở `DECISION_OPEN`, nên chưa phải cross-service E2E; late-funding on-chain E2E vẫn pending. |
 | Migration tooling | `HARDENED` | `scripts/rehearse-migrations.cjs` đã strip UTF-8 BOM giống Flyway để fresh rehearsal không lỗi giả. |
 
 Hậu điều kiện upgrade rehearsal đã xác nhận:
@@ -68,7 +68,7 @@ Artifact cục bộ, đã được `.gitignore`:
 
 1. Tiếp tục giữ `ESCROW_TRIAL_ENABLED=false` (mặc định OFF); hiện chưa có cohort/canary selector, bật flag sẽ áp dụng policy cho mọi lớp mới đủ điều kiện.
 2. Chạy lại PostgreSQL 16 fresh + upgrade rehearsal vì checksum/nội dung V21 đã thay đổi khi harden late-funding state.
-3. Chạy Anvil time-warp E2E cho trial opt-out và late-funding recovery; unit/integration local không thay thế blockchain E2E.
+3. Mở rộng Anvil E2E hiện có thành cross-service E2E (không tự set `DECISION_OPEN`, không mock Learning) và bổ sung nhánh late-funding recovery on-chain.
 4. Bổ sung/kiểm chứng trạng thái chi tiết cho tracker settlement → cancel tx → refund event nếu muốn UI 4 bước chính xác.
 5. Không chạy `scripts/apply-migration-live.cjs`; VPS phải đi qua preflight, backup off-VPS và restore rehearsal ở Mục 13 khi deploy.
 6. Khi chuẩn bị release, thực hiện Phase 5 (Anvil E2E warp time và Sepolia staging).
@@ -78,7 +78,8 @@ Artifact cục bộ, đã được `.gitignore`:
 - **Có thể tạo feature branch/PR để CI kiểm tra:** chỉ sau khi loại khỏi commit các artifact kế hoạch tạm (`extracted_plan.txt`, `planKhoaLuan.docx`, `read_plan.ps1`) nếu chúng không chủ đích thuộc release và rà lại toàn bộ diff.
 - **Không push trực tiếp vào `main`:** workflow hiện tại tự publish image và deploy VPS sau khi CI của push `main` thành công.
 - **R1/R2 feature OFF:** chỉ GO sau PostgreSQL 16 fresh + upgrade rehearsal trên current V16/V21, đối chiếu Flyway history/checksum/row count, backup off-VPS và restore rehearsal.
-- **R3 bật `ESCROW_TRIAL_ENABLED=true`:** NO-GO cho đến khi có trial-specific Anvil time-warp E2E, Sepolia staging evidence, metrics/alerting và cơ chế canary/cohort; hiện bật flag sẽ áp dụng cho mọi lớp mới đủ điều kiện.
+- **R1/R2 còn một kiểm tra tương thích Learning bắt buộc:** đối chiếu toàn bộ `class_sessions` hiện hữu với `CanonicalSessionPlanner`. `RollingSessionService` mới dùng planner cho cả lớp legacy; nếu persisted prefix lệch lịch canonical, batch tiếp theo sẽ bị từ chối thay vì âm thầm sinh sai.
+- **R3 bật `ESCROW_TRIAL_ENABLED=true`:** NO-GO cho đến khi hoàn thiện cross-service/late-funding E2E, Sepolia staging evidence, metrics/alerting và cơ chế canary/cohort; hiện bật flag sẽ áp dụng cho mọi lớp mới đủ điều kiện.
 - Mọi lần deploy trước R3 phải xác nhận production giữ `ESCROW_TRIAL_ENABLED=false` ở cả Learning và Contract.
 
 ## 1. Quyết định nghiệp vụ đã chốt
