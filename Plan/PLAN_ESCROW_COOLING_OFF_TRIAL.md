@@ -1,7 +1,7 @@
 # KẾ HOẠCH TRIỂN KHAI GIAI ĐOẠN TRẢI NGHIỆM CÓ BẢO CHỨNG ESCROW
 
-> Trạng thái: **SOURCE IMPLEMENTED — RELEASE NO-GO, feature vẫn OFF**  
-> Phạm vi: Learning Service, Contract Service, Notification Service, Frontend Web và tài liệu hợp đồng.  
+> Trạng thái: **SOURCE IMPLEMENTED — RELEASE NO-GO, feature vẫn OFF**
+> Phạm vi: Learning Service, Contract Service, Notification Service, Frontend Web và tài liệu hợp đồng.
 > Smart Contract Escrow V1 hiện tại được tái sử dụng; không thay đổi Solidity nếu audit triển khai không phát hiện yêu cầu mới.
 > Rollout: mặc định `ESCROW_TRIAL_ENABLED=false`; tuyệt đối không tự bật tính năng chỉ vì migration đã chạy.
 
@@ -843,4 +843,3 @@ Chỉ đánh dấu tính năng `IMPLEMENTED` khi đủ tất cả:
 - Full backend/frontend/Solidity regression pass.
 - Có E2E Anvil và bằng chứng Sepolia phù hợp.
 - `PROJECT.md`, `IMPLEMENTATION_STATUS.md`, `BUSINESS_RULES.md`, `BLOCKCHAIN.md`, `API.md` và `FEEDBACK_NOTIFICATION_SPEC.md` được cập nhật nhất quán theo bằng chứng source/test/runtime.
-
