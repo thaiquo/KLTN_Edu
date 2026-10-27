@@ -143,4 +143,126 @@ class LearningTerminationServiceTest {
         assertThatThrownBy(() -> service.requireCanAttend(future, 2L)).hasMessageContaining("409");
         assertThatCode(() -> service.requireCanAttend(future, 3L)).doesNotThrowAnyException();
     }
+
+    @Test void trialHoldUsesPersistedRequestedCutoffEvenAfterSecondSessionStarted() {
+        room.setTrialPolicyVersion((short) 1);
+        room.setTotalSessions(3);
+        var first = session(1, LocalDateTime.now().minusDays(2));
+        var second = session(2, LocalDateTime.now().minusHours(1));
+        prepare(List.of(first, second));
+        UUID commandId = UUID.randomUUID();
+        OffsetDateTime effectiveAt = OffsetDateTime.parse("2026-10-26T17:59:59+07:00");
+
+        var snapshot = service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "HOLD", "TRIAL_OPT_OUT",
+                1, effectiveAt, commandId));
+
+        assertThat(snapshot.cutoffSession()).isEqualTo(1);
+        ArgumentCaptor<LearningTerminationStop> persisted = ArgumentCaptor.forClass(LearningTerminationStop.class);
+        verify(stops).saveAndFlush(persisted.capture());
+        assertThat(persisted.getValue().getOrigin()).isEqualTo("TRIAL_OPT_OUT");
+        assertThat(persisted.getValue().getCommandId()).isEqualTo(commandId);
+        assertThat(persisted.getValue().getEffectiveRequestedAt()).isEqualTo(effectiveAt);
+        assertThat(persisted.getValue().getCutoffSession()).isEqualTo(1);
+        assertThat(persisted.getValue().getCreatedAt()).isNotNull();
+        verify(attendances).deleteBySession_IdAndStudentId(second.getId(), 2L);
+    }
+
+    @Test void exactTrialCommandReplayIsIdempotentAcrossEquivalentOffsets() {
+        room.setTrialPolicyVersion((short) 1);
+        room.setTotalSessions(2);
+        var first = session(1, LocalDateTime.now().minusDays(1));
+        prepare(List.of(first));
+        UUID commandId = UUID.randomUUID();
+        var stop = new LearningTerminationStop();
+        stop.setAgreementId(agreement);
+        stop.setOrigin("TRIAL_OPT_OUT");
+        stop.setCommandId(commandId);
+        stop.setCutoffSession(1);
+        stop.setEffectiveRequestedAt(OffsetDateTime.parse("2026-10-26T10:59:59Z"));
+        when(stops.findById(agreement)).thenReturn(Optional.of(stop));
+
+        var snapshot = service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "HOLD", "TRIAL_OPT_OUT",
+                1, OffsetDateTime.parse("2026-10-26T17:59:59+07:00"), commandId));
+
+        assertThat(snapshot.cutoffSession()).isEqualTo(1);
+        verify(stops, never()).saveAndFlush(any());
+        verify(stops, never()).findByCommandId(any());
+    }
+
+    @Test void trialReplayCannotChangeCutoffOrCommandIdentity() {
+        room.setTrialPolicyVersion((short) 1);
+        room.setTotalSessions(3);
+        prepare(List.of(session(1, LocalDateTime.now().minusDays(2)),
+                session(2, LocalDateTime.now().minusDays(1))));
+        var stop = new LearningTerminationStop();
+        stop.setAgreementId(agreement);
+        stop.setOrigin("TRIAL_OPT_OUT");
+        stop.setCommandId(UUID.randomUUID());
+        stop.setCutoffSession(1);
+        stop.setEffectiveRequestedAt(OffsetDateTime.parse("2026-10-26T10:59:59Z"));
+        when(stops.findById(agreement)).thenReturn(Optional.of(stop));
+
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "HOLD", "TRIAL_OPT_OUT",
+                2, OffsetDateTime.parse("2026-10-26T17:59:59+07:00"), UUID.randomUUID())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("does not match");
+        verify(stops, never()).saveAndFlush(any());
+    }
+
+    @Test void trialCommandRequiresCompleteAuditFieldsAndPolicyEnrollment() {
+        room.setTotalSessions(2);
+        prepare(List.of(session(1, LocalDateTime.now().minusDays(1))));
+
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "HOLD", "TRIAL_OPT_OUT",
+                1, null, UUID.randomUUID())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("requires cutoff");
+
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "HOLD", "TRIAL_OPT_OUT",
+                1, OffsetDateTime.now(), UUID.randomUUID())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("policy v1");
+    }
+
+    @Test void lateFundingRecoveryPersistsStableZeroCutoffBeforeAnyEnrollmentClosure() {
+        room.setTrialPolicyVersion((short) 1);
+        room.setTotalSessions(2);
+        var first = session(1, LocalDateTime.now().minusMinutes(1));
+        var second = session(2, LocalDateTime.now().plusDays(2));
+        first.setId(101L);
+        second.setId(102L);
+        prepare(List.of(first, second));
+        UUID commandId = UUID.randomUUID();
+        OffsetDateTime detectedAt = OffsetDateTime.now(ZoneOffset.UTC);
+
+        var snapshot = service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "HOLD", "SYSTEM_LATE_FUNDING",
+                0, detectedAt, commandId));
+
+        assertThat(snapshot.cutoffSession()).isZero();
+        assertThat(snapshot.requiredSessions()).isEmpty();
+        ArgumentCaptor<LearningTerminationStop> persisted = ArgumentCaptor.forClass(LearningTerminationStop.class);
+        verify(stops).saveAndFlush(persisted.capture());
+        assertThat(persisted.getValue().getOrigin()).isEqualTo("SYSTEM_LATE_FUNDING");
+        assertThat(persisted.getValue().getCutoffSession()).isZero();
+        verify(attendances).deleteBySession_IdAndStudentId(first.getId(), 2L);
+        verify(attendances).deleteBySession_IdAndStudentId(second.getId(), 2L);
+    }
+
+    @Test void lateFundingRecoveryRejectsAnyNonZeroCutoff() {
+        room.setTrialPolicyVersion((short) 1);
+        room.setTotalSessions(2);
+        prepare(List.of(session(1, LocalDateTime.now().minusMinutes(1))));
+
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "HOLD", "SYSTEM_LATE_FUNDING",
+                1, OffsetDateTime.now(ZoneOffset.UTC), UUID.randomUUID())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cutoff session 0");
+    }
 }

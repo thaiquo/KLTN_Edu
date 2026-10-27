@@ -34,16 +34,31 @@ public class AgreementRegistrationWorkflowService {
     private final BlockchainTransactionCommandService commandService;
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
+    private final iuh.fit.contract_service.repository.AgreementTrialRepository agreementTrialRepository;
+    private final iuh.fit.contract_service.config.EscrowTrialProperties escrowTrialProperties;
 
     public AgreementRegistrationWorkflowService(
             ContractAgreementRepository agreementRepository,
             BlockchainTransactionCommandService commandService,
             OutboxEventRepository outboxEventRepository,
             ObjectMapper objectMapper) {
+        this(agreementRepository, commandService, outboxEventRepository, objectMapper, null, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgreementRegistrationWorkflowService(
+            ContractAgreementRepository agreementRepository,
+            BlockchainTransactionCommandService commandService,
+            OutboxEventRepository outboxEventRepository,
+            ObjectMapper objectMapper,
+            iuh.fit.contract_service.repository.AgreementTrialRepository agreementTrialRepository,
+            iuh.fit.contract_service.config.EscrowTrialProperties escrowTrialProperties) {
         this.agreementRepository = agreementRepository;
         this.commandService = commandService;
         this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
+        this.agreementTrialRepository = agreementTrialRepository;
+        this.escrowTrialProperties = escrowTrialProperties;
     }
 
     @Transactional
@@ -56,6 +71,16 @@ public class AgreementRegistrationWorkflowService {
         }
 
         validateRegistrationCommandSource(agreement);
+
+        if (agreementTrialRepository != null) {
+            agreementTrialRepository.findByAgreementId(agreement.getId()).ifPresent(trial -> {
+                OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+                java.time.Duration margin = (escrowTrialProperties != null && escrowTrialProperties.fundingConfirmationSafetyMargin() != null)
+                        ? escrowTrialProperties.fundingConfirmationSafetyMargin()
+                        : java.time.Duration.ofMinutes(30);
+                requireFundingWindow(now, margin, trial.getTrialSessionStartAt());
+            });
+        }
 
         String calldata = EduConnectEscrowCalldataEncoder.encodeRegisterAgreement(
                 agreement.getOnchainAgreementId(),
@@ -152,6 +177,18 @@ public class AgreementRegistrationWorkflowService {
         requireAttributeMatch("totalAmount", agreement.getTotalAmountUsdcUnits().toString(), attrs.get("totalAmount"));
         requireAttributeMatch("pricePerSession", agreement.getPricePerSessionUsdcUnits().toString(), attrs.get("pricePerSession"));
         requireAttributeMatch("totalSessions", String.valueOf(agreement.getTotalSessions()), attrs.get("totalSessions"));
+    }
+
+    static void requireFundingWindow(
+            OffsetDateTime registrationRequestedAt,
+            java.time.Duration safetyMargin,
+            OffsetDateTime trialSessionStartAt) {
+        OffsetDateTime safeFundingBoundary = registrationRequestedAt.plusHours(24).plus(safetyMargin);
+        if (!safeFundingBoundary.isBefore(trialSessionStartAt)) {
+            throw new IllegalStateException(
+                    "Cannot initiate on-chain registration: insufficient funding window before trial session starts at "
+                            + trialSessionStartAt);
+        }
     }
 
     private void requireAttributeMatch(String fieldName, String expected, String actual) {

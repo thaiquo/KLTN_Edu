@@ -130,6 +130,10 @@ class PoiTlContractDocxRendererTest {
         model.put("eip712DomainName", "EduConnectEscrow");
         model.put("eip712DomainVersion", "1");
         model.put("verificationUrl", "http://localhost:5173/contracts/verify/test-uuid-1234");
+        model.put("hasTrialPolicy", true);
+        model.put("trialPolicyVersion", "1");
+        model.put("trialSessionSequence", "1");
+        model.put("trialDeadline", "03/10/2026 18:00:00");
 
         byte[] result = renderer.render(model);
         assertNotNull(result);
@@ -148,6 +152,8 @@ class PoiTlContractDocxRendererTest {
             assertTrue(text.contains("agreement đã hoàn tất, hết hạn hoặc chấm dứt trước đó không bị xử lý hay hoàn tiền lần hai"));
             assertTrue(text.contains("Tệp DOCX/PDF chính thức được phát hành từ snapshot đã ký"));
             assertTrue(text.contains("Trạng thái tại thời điểm phát hành"));
+            assertTrue(text.contains("PHỤ LỤC ĐIỀU KHOẢN GIAI ĐOẠN TRẢI NGHIỆM CÓ BẢO CHỨNG ESCROW"));
+            assertTrue(text.contains("03/10/2026 18:00:00"));
             assertFalse(text.contains("{{"));
         } catch (java.io.IOException ex) {
             throw new AssertionError("Không thể kiểm tra nội dung DOCX đã render", ex);

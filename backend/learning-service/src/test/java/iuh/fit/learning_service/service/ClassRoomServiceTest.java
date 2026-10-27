@@ -89,6 +89,9 @@ class ClassRoomServiceTest {
     @Mock
     private LearningStorageCleanupService learningStorageCleanupService;
 
+    @Mock
+    private iuh.fit.learning_service.config.EscrowTrialProperties trialProperties;
+
     @InjectMocks
     private ClassRoomService service;
 
@@ -718,5 +721,35 @@ class ClassRoomServiceTest {
         schedule.setEndTime(endTime);
         classRoom.setSchedules(List.of(schedule));
         return classRoom;
+    }
+
+    @Test
+    void createClassSetsTrialPolicyVersionWhenEnabledAndTotalSessionsAtLeastTwo() {
+        arrangeCreateClass(List.of(TeachingMode.ONLINE), List.of());
+        when(trialProperties.isEnabled()).thenReturn(true);
+
+        ClassRoomDtos.CreateClassRoomRequest req = createRequest(
+                LearningMode.ONLINE, "18:00", "19:30", LocalDate.now().plusDays(1));
+        var response = service.createClass("tutor@example.com", req);
+        assertThat(response).isNotNull();
+
+        org.mockito.ArgumentCaptor<ClassRoom> captor = org.mockito.ArgumentCaptor.forClass(ClassRoom.class);
+        verify(classRoomRepository).save(captor.capture());
+        assertThat(captor.getValue().getTrialPolicyVersion()).isEqualTo((short) 1);
+    }
+
+    @Test
+    void createClassDoesNotSetTrialPolicyWhenFlagIsDisabled() {
+        arrangeCreateClass(List.of(TeachingMode.ONLINE), List.of());
+        when(trialProperties.isEnabled()).thenReturn(false);
+
+        ClassRoomDtos.CreateClassRoomRequest req = createRequest(
+                LearningMode.ONLINE, "18:00", "19:30", LocalDate.now().plusDays(1));
+        var response = service.createClass("tutor@example.com", req);
+        assertThat(response).isNotNull();
+
+        org.mockito.ArgumentCaptor<ClassRoom> captor = org.mockito.ArgumentCaptor.forClass(ClassRoom.class);
+        verify(classRoomRepository).save(captor.capture());
+        assertThat(captor.getValue().getTrialPolicyVersion()).isNull();
     }
 }

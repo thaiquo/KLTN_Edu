@@ -38,8 +38,10 @@ import { TerminationRequestModal } from './TerminationRequestModal';
 import { terminationsApi, TerminationView } from '../../api/terminationsApi';
 import { useWeb3Wallet } from '../../web3/useWeb3Wallet';
 import { DEFAULT_CHAIN_ID } from '../../web3/web3Config';
-import { contractsApi, AgreementSummary, SettlementDto } from '../../api/contractsApi';
+import { contractsApi, AgreementSummary, SettlementDto, TrialDetail } from '../../api/contractsApi';
 import { classApi } from '../../api/classes';
+import { TrialCoolingOffBanner } from './TrialCoolingOffBanner';
+import { TrialOptOutModal } from './TrialOptOutModal';
 import { signContractAgreementEip712 } from '../../web3/eip712Signer';
 import { useAuth } from '../../hooks/useAuth';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
@@ -138,6 +140,8 @@ export function EscrowContractsView({
   const [selectedAgreementForDocument, setSelectedAgreementForDocument] = useState<string | null>(null);
   const [terminationTargetAgreement, setTerminationTargetAgreement] = useState<AgreementSummary | null>(null);
   const [isTerminationModalOpen, setIsTerminationModalOpen] = useState(false);
+  const [agreementTrialMap, setAgreementTrialMap] = useState<Record<string, TrialDetail | null>>({});
+  const [trialOptOutTarget, setTrialOptOutTarget] = useState<{ agreement: AgreementSummary; trial: TrialDetail } | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [operationalFilter, setOperationalFilter] = useState<'ALL' | 'OPERATIONAL' | 'LEGACY'>('OPERATIONAL');
   const [selectedClassId, setSelectedClassId] = useState<string>('ALL');
@@ -247,6 +251,24 @@ export function EscrowContractsView({
         // ignore
       }
       setRequestsCache(reqMap);
+
+      // Fetch trial details for ACTIVE agreements
+      const activeAgreements = content.filter((a) => a.status === 'ACTIVE');
+      if (activeAgreements.length > 0) {
+        const trialEntries = await Promise.all(
+          activeAgreements.map(async (ag) => {
+            try {
+              const detail = await contractsApi.getAgreement(ag.id);
+              return [ag.id, detail.trial || null] as const;
+            } catch {
+              return [ag.id, null] as const;
+            }
+          })
+        );
+        setAgreementTrialMap(Object.fromEntries(trialEntries));
+      } else {
+        setAgreementTrialMap({});
+      }
     } catch (err: any) {
       setError(err?.message || 'Không thể tải danh sách hợp đồng.');
     } finally {
@@ -1364,18 +1386,36 @@ export function EscrowContractsView({
                                         )}
 
                                         {!activeTermination && activeRole === 'student' && item.status === 'ACTIVE' && (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setTerminationTargetAgreement(item);
-                                              setIsTerminationModalOpen(true);
-                                            }}
-                                            className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold border border-rose-200 transition-colors inline-flex items-center gap-1 cursor-pointer"
-                                            title="Học viên gửi yêu cầu dừng hợp đồng đơn phương với chữ ký MetaMask"
-                                          >
-                                            <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                                            <span>Dừng học</span>
-                                          </button>
+                                          (() => {
+                                            const trial = agreementTrialMap[item.id];
+                                            if (trial && trial.trialStatus === 'DECISION_OPEN' && trial.canOptOut) {
+                                              return (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setTrialOptOutTarget({ agreement: item, trial })}
+                                                  className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold transition-colors inline-flex items-center gap-1 cursor-pointer shadow-xs"
+                                                  title="Dừng học trong giai đoạn trải nghiệm (Hoàn cọc các buổi chưa học)"
+                                                >
+                                                  <ShieldCheck className="w-3.5 h-3.5 text-purple-200" />
+                                                  <span>Dừng học thử</span>
+                                                </button>
+                                              );
+                                            }
+                                            return (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setTerminationTargetAgreement(item);
+                                                  setIsTerminationModalOpen(true);
+                                                }}
+                                                className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold border border-rose-200 transition-colors inline-flex items-center gap-1 cursor-pointer"
+                                                title="Học viên gửi yêu cầu dừng hợp đồng đơn phương với chữ ký MetaMask"
+                                              >
+                                                <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                                                <span>Dừng học</span>
+                                              </button>
+                                            );
+                                          })()
                                         )}
                                       </div>
                                     </td>
@@ -1458,6 +1498,24 @@ export function EscrowContractsView({
                           </span>
                         </div>
                       </div>
+
+                      {/* Trial Cooling-Off Banner */}
+                      {(() => {
+                        const trial = agreementTrialMap[item.id];
+                        if (trial && (trial.trialStatus === 'DECISION_OPEN' || trial.trialStatus === 'OPT_OUT_PENDING' || trial.trialStatus === 'LATE_FUNDING_RECOVERY' || trial.trialStatus === 'TERMINATED')) {
+                          return (
+                            <TrialCoolingOffBanner
+                              agreement={item}
+                              trial={trial}
+                              isStudent={activeRole === 'student'}
+                              activeTermination={activeTermination}
+                              onOpenOptOut={() => setTrialOptOutTarget({ agreement: item, trial })}
+                              onRefresh={() => void fetchAgreements()}
+                            />
+                          );
+                        }
+                        return null;
+                      })()}
 
                       {/* Prominent Termination Notice Banner */}
                       {activeTermination && (
@@ -1740,18 +1798,36 @@ export function EscrowContractsView({
                         )}
 
                         {isActive && !activeTermination && activeRole === 'student' && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setTerminationTargetAgreement(item);
-                              setIsTerminationModalOpen(true);
-                            }}
-                            className="flex items-center gap-1.5 px-3 py-2 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer shadow-2xs"
-                            title="Học viên gửi yêu cầu dừng hợp đồng đơn phương với chữ ký MetaMask"
-                          >
-                            <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-                            <span>Dừng học</span>
-                          </button>
+                          (() => {
+                            const trial = agreementTrialMap[item.id];
+                            if (trial && trial.trialStatus === 'DECISION_OPEN' && trial.canOptOut) {
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => setTrialOptOutTarget({ agreement: item, trial })}
+                                  className="flex items-center gap-1.5 px-3 py-2 text-white bg-purple-600 hover:bg-purple-700 text-xs font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer shadow-xs"
+                                  title="Dừng học trong giai đoạn trải nghiệm (Hoàn cọc các buổi chưa học)"
+                                >
+                                  <ShieldCheck className="w-3.5 h-3.5 text-purple-200" />
+                                  <span>Dừng trong giai đoạn trải nghiệm</span>
+                                </button>
+                              );
+                            }
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTerminationTargetAgreement(item);
+                                  setIsTerminationModalOpen(true);
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-2 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer shadow-2xs"
+                                title="Học viên gửi yêu cầu dừng hợp đồng đơn phương với chữ ký MetaMask"
+                              >
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                                <span>Dừng học</span>
+                              </button>
+                            );
+                          })()
                         )}
 
                         {isActive && !activeTermination && activeRole === 'tutor' && (
@@ -1906,6 +1982,20 @@ export function EscrowContractsView({
             setSelectedTerminationClassroomId(classroomId);
             setSelectedTerminationAgreementId(null);
             setActiveTab('TERMINATIONS');
+            void fetchAgreements();
+          }}
+        />
+      )}
+
+      {/* Trial Opt-Out Modal */}
+      {trialOptOutTarget && (
+        <TrialOptOutModal
+          isOpen={true}
+          onClose={() => setTrialOptOutTarget(null)}
+          agreement={trialOptOutTarget.agreement}
+          trial={trialOptOutTarget.trial}
+          onSuccess={() => {
+            setTrialOptOutTarget(null);
             void fetchAgreements();
           }}
         />

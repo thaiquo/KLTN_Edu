@@ -40,8 +40,11 @@ public class NotificationDispatcher {
     }
 
     public void sendAsync(String recipientEmail, Long recipientId, String title, String content, String type, String referenceType, String referenceId) {
-        if (type != null && type.startsWith("TERMINATION_")) {
-            terminationOutbox.enqueue("termination:" + java.util.UUID.randomUUID(),
+        if ((recipientEmail == null || recipientEmail.isBlank()) && recipientId == null) {
+            return;
+        }
+        if (type != null && (type.startsWith("TERMINATION_") || type.startsWith("TRIAL_"))) {
+            terminationOutbox.enqueue(type.toLowerCase(java.util.Locale.ROOT) + ":" + java.util.UUID.randomUUID(),
                     new TerminationNotificationOutbox.Intent(recipientId, recipientEmail, title, content, type, referenceType, referenceId));
             return;
         }

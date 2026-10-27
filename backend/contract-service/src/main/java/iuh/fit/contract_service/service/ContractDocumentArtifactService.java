@@ -284,6 +284,14 @@ public class ContractDocumentArtifactService {
         m.put("eip712DomainName", "EduConnectEscrow");
         m.put("eip712DomainVersion", String.valueOf(view.contractVersion()));
         m.put("verificationUrl", properties.verificationBaseUrl() + "/" + view.agreementId());
+
+        var trial = view.trialPolicy();
+        boolean hasTrial = trial != null && Boolean.TRUE.equals(trial.enabled());
+        m.put("hasTrialPolicy", hasTrial);
+        m.put("trialPolicyVersion", hasTrial && trial.version() != null ? String.valueOf(trial.version()) : "Không áp dụng");
+        m.put("trialSessionSequence", hasTrial && trial.trialSessionSequence() != null ? String.valueOf(trial.trialSessionSequence()) : "Không áp dụng");
+        m.put("trialDeadline", hasTrial ? value(trial.initialTrialDeadline(), missing) : "Không áp dụng");
+
         return m;
     }
 

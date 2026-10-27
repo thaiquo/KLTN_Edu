@@ -34,6 +34,8 @@ public class AgreementFundingWorkflowService {
     private final ObjectMapper objectMapper;
     private final LearningServiceDispatcher learningServiceDispatcher;
     private final NotificationDispatcher notificationDispatcher;
+    private final iuh.fit.contract_service.repository.AgreementTrialRepository agreementTrialRepository;
+    private final TerminationService terminationService;
 
     public AgreementFundingWorkflowService(
             ContractAgreementRepository agreementRepository,
@@ -43,6 +45,21 @@ public class AgreementFundingWorkflowService {
             ObjectMapper objectMapper,
             LearningServiceDispatcher learningServiceDispatcher,
             NotificationDispatcher notificationDispatcher) {
+        this(agreementRepository, escrowPaymentRepository, outboxEventRepository, artifactService, objectMapper,
+                learningServiceDispatcher, notificationDispatcher, null, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AgreementFundingWorkflowService(
+            ContractAgreementRepository agreementRepository,
+            EscrowPaymentRepository escrowPaymentRepository,
+            OutboxEventRepository outboxEventRepository,
+            ContractDocumentArtifactService artifactService,
+            ObjectMapper objectMapper,
+            LearningServiceDispatcher learningServiceDispatcher,
+            NotificationDispatcher notificationDispatcher,
+            iuh.fit.contract_service.repository.AgreementTrialRepository agreementTrialRepository,
+            TerminationService terminationService) {
         this.agreementRepository = agreementRepository;
         this.escrowPaymentRepository = escrowPaymentRepository;
         this.outboxEventRepository = outboxEventRepository;
@@ -50,6 +67,8 @@ public class AgreementFundingWorkflowService {
         this.objectMapper = objectMapper;
         this.learningServiceDispatcher = learningServiceDispatcher;
         this.notificationDispatcher = notificationDispatcher;
+        this.agreementTrialRepository = agreementTrialRepository;
+        this.terminationService = terminationService;
     }
 
     @Transactional
@@ -145,6 +164,12 @@ public class AgreementFundingWorkflowService {
         Map<String, String> attrs = decodedEvent.attributes();
         validateEventAttributesMatchAgreement(agreement, attrs);
 
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        boolean lateFundingForTrial = agreementTrialRepository != null
+                && agreementTrialRepository.findByAgreementId(agreement.getId())
+                .map(trial -> !now.isBefore(trial.getTrialSessionStartAt()))
+                .orElse(false);
+
         agreement.markActive();
         agreementRepository.saveAndFlush(agreement);
 
@@ -154,9 +179,8 @@ public class AgreementFundingWorkflowService {
         payment.markLocked(event.getTransactionHash(), event.getBlockNumber(), event.getBlockHash());
         escrowPaymentRepository.saveAndFlush(payment);
 
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         String payloadJson = String.format(
-                "{\"agreementId\":\"%s\",\"classroomId\":%d,\"studentId\":%d,\"tutorId\":%d,\"onchainAgreementId\":\"%s\",\"totalAmountUsdcUnits\":\"%s\",\"fundTxHash\":\"%s\",\"blockNumber\":%d,\"activatedAt\":\"%s\"}",
+                "{\"agreementId\":\"%s\",\"classroomId\":%d,\"studentId\":%d,\"tutorId\":%d,\"onchainAgreementId\":\"%s\",\"totalAmountUsdcUnits\":\"%s\",\"fundTxHash\":\"%s\",\"blockNumber\":%d,\"activatedAt\":\"%s\",\"lateTrialFunding\":%s}",
                 agreement.getId(),
                 agreement.getClassroomId(),
                 agreement.getStudentId(),
@@ -165,10 +189,11 @@ public class AgreementFundingWorkflowService {
                 agreement.getTotalAmountUsdcUnits(),
                 event.getTransactionHash(),
                 event.getBlockNumber(),
-                now);
+                now,
+                lateFundingForTrial);
 
         OutboxEvent outboxEvent = OutboxEvent.create(
-                "contract.activated.v1",
+                lateFundingForTrial ? "contract.trial_late_funding.v1" : "contract.activated.v1",
                 "ContractAgreement",
                 agreement.getId().toString(),
                 null,
@@ -178,12 +203,38 @@ public class AgreementFundingWorkflowService {
 
         scheduleOfficialDocumentFinalization(agreement.getId());
 
-        scheduleLearningEnrollmentActivation(agreement);
-        sendActivationNotifications(agreement);
+        if (!lateFundingForTrial) {
+            scheduleLearningEnrollmentActivation(agreement);
+            sendActivationNotifications(agreement);
+        } else {
+            if (terminationService == null) {
+                throw new IllegalStateException("Late trial funding recovery service is unavailable");
+            }
+            UUID recoveryCaseId = terminationService.queueLateTrialFundingRecovery(agreement.getId(), now);
+            log.error("Late trial funding incident for agreement {}: funds are locked but normal enrollment activation is blocked",
+                    agreement.getId());
+            sendLateFundingIncidentNotifications(agreement);
+            log.warn("Queued idempotent late funding termination case {} for agreement {}",
+                    recoveryCaseId, agreement.getId());
+        }
 
-        log.info("Successfully transitioned agreement {} to ACTIVE and payment to LOCKED from event tx {}",
-                agreement.getId(), event.getTransactionHash());
+        log.info("Transitioned agreement {} to ACTIVE and payment to LOCKED from event tx {} (lateTrialFunding={})",
+                agreement.getId(), event.getTransactionHash(), lateFundingForTrial);
         return true;
+    }
+
+    private void sendLateFundingIncidentNotifications(ContractAgreement agreement) {
+        String message = "Giao dịch ký quỹ được xác nhận sau thời điểm bắt đầu buổi trải nghiệm. "
+                + "Hệ thống đã chặn kích hoạt lớp và đang giữ hồ sơ để đối soát, hủy và hoàn tiền an toàn; "
+                + "không có buổi học nào được tạo ngược thời gian.";
+        notificationDispatcher.sendAsync(
+                agreement.getStudentEmail(), agreement.getStudentId(),
+                "Ký quỹ cần được đối soát", message,
+                "TRIAL_LATE_FUNDING_INCIDENT", "AGREEMENT", agreement.getId().toString());
+        notificationDispatcher.sendAsync(
+                agreement.getClassroomReviewerEmail(), null,
+                "Cảnh báo ký quỹ trial xác nhận trễ", message,
+                "TRIAL_LATE_FUNDING_INCIDENT", "AGREEMENT", agreement.getId().toString());
     }
 
     private void scheduleOfficialDocumentFinalization(UUID agreementId) {

@@ -46,11 +46,25 @@ export interface AgreementSummary {
   affectedAgreements?: number;
 }
 
+export interface TrialDetail {
+  trialStatus: string;
+  trialDeadline: string;
+  serverNow: string;
+  canOptOut: boolean;
+  estimatedUnusedRefundUnits: string;
+  estimatedTrialSessionRefundUnits: string;
+  estimatedTotalStudentReceiptUnits: string;
+  refundEstimateOnly: boolean;
+  trialSessionSequence: number | null;
+  nextSessionSequence: number | null;
+}
+
 export interface AgreementDetail {
   summary: AgreementSummary;
   termsHash: string;
   contractVersion: number;
   totalPriceVnd: number;
+  trial?: TrialDetail | null;
 }
 
 export interface ContractDocumentParty {
@@ -119,6 +133,24 @@ export interface ContractDocumentView {
   paymentDeadline: string | null;
   tutorSignature: ContractSignatureProof;
   studentSignature: ContractSignatureProof;
+  trialPolicy?: TrialPolicyView | null;
+}
+
+export interface TrialPolicyView {
+  enabled: boolean;
+  version: number;
+  trialSessionSequence: number;
+  nextSessionSequence: number;
+  trialSessionStartAt: string;
+  nextSessionStartAt: string;
+  initialTrialDeadline: string;
+  scheduleFingerprint: string;
+  eligibilityRule: string;
+  scheduleChangeRule: string;
+  fundingRule: string;
+  automaticContinuation: boolean;
+  autoApprovedOptOut: boolean;
+  refundRule: string;
 }
 
 export interface ContractDocumentArtifact {
@@ -477,6 +509,17 @@ export const contractsApi = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ txHash }),
+    });
+  },
+
+  trialOptOut(
+    agreementId: string,
+    payload: { reason?: string; signature: string; signerWallet: string; requestedAtTimestamp: number }
+  ): Promise<any> {
+    return apiRequest(`/api/contracts/agreements/${agreementId}/trial/opt-out`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
   },
 

@@ -16,13 +16,15 @@ class RollingSessionServiceTest {
     private final ClassSessionRepository sessions = mock(ClassSessionRepository.class);
     private final EnrollmentRequestRepository enrollments = mock(EnrollmentRequestRepository.class);
     private final SessionAttendanceRepository attendances = mock(SessionAttendanceRepository.class);
-    private final RollingSessionService service = new RollingSessionService(rooms, sessions, enrollments, attendances);
+    private final RollingSessionService service = new RollingSessionService(
+            rooms, sessions, enrollments, attendances, new CanonicalSessionPlanner());
 
     private ClassRoom room() {
         ClassRoom room = new ClassRoom();
         room.setId(1L);
         room.setTotalSessions(6);
         room.setSessionsPerWeek(3);
+        room.setStartDate(LocalDate.of(2026, 9, 7));
         when(rooms.findByIdForUpdate(1L)).thenReturn(Optional.of(room));
         return room;
     }
@@ -115,5 +117,82 @@ class RollingSessionServiceTest {
         assertThat(service.generateNextBatchIfNeeded(1L)).isEmpty();
 
         verify(sessions, never()).save(any());
+    }
+
+    @Test
+    void initialBatchKeepsMultipleNonOverlappingSlotsOnSameDay() {
+        ClassRoom room = room();
+        room.setTotalSessions(4);
+        room.setSessionsPerWeek(2);
+        room.setSchedules(List.of(
+                schedule(room, 2, "18:00", "19:00"),
+                schedule(room, 2, "08:00", "09:00")));
+        when(sessions.countByClassRoomId(1L)).thenReturn(0L);
+        when(sessions.save(any(ClassSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(enrollments.findByClassRoomIdAndStatus(anyLong(), any())).thenReturn(List.of());
+
+        List<ClassSession> generated = service.generateInitialWeekSessions(1L);
+
+        assertThat(generated).extracting(
+                        ClassSession::getSequenceNumber,
+                        ClassSession::getSessionDate,
+                        ClassSession::getStartTime)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(1, LocalDate.of(2026, 9, 7), "08:00"),
+                        org.assertj.core.groups.Tuple.tuple(2, LocalDate.of(2026, 9, 7), "18:00"));
+    }
+
+    @Test
+    void legacyClassRoomWithDivergentPrefixFallsBackGracefully() {
+        ClassRoom room = room();
+        room.setTrialPolicyVersion(null); // legacy non-trial
+        room.setTotalSessions(4);
+        room.setSessionsPerWeek(2);
+        room.setSchedules(List.of(schedule(room, 2, "08:00", "09:00")));
+
+        // Persisted session has date that differs from canonical schedule (e.g. rescheduled)
+        ClassSession legacySession = session(1, ClassSessionStatus.COMPLETED);
+        legacySession.setSessionDate(LocalDate.of(2026, 9, 8)); // Tue instead of Mon
+        legacySession.setStartTime("10:00");
+        legacySession.setEndTime("11:00");
+
+        when(sessions.findByClassRoomIdOrderBySequenceNumberAsc(1L)).thenReturn(List.of(legacySession));
+        when(sessions.save(any(ClassSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(enrollments.findByClassRoomIdAndStatus(anyLong(), any())).thenReturn(List.of());
+
+        List<ClassSession> nextBatch = service.generateNextBatchIfNeeded(1L);
+
+        // Does NOT throw; falls back to legacy generation from last session date!
+        assertThat(nextBatch).isNotEmpty();
+        assertThat(nextBatch.get(0).getSequenceNumber()).isEqualTo(2);
+    }
+
+    @Test
+    void trialClassRoomWithDivergentPrefixThrowsException() {
+        ClassRoom room = room();
+        room.setTrialPolicyVersion((short) 1); // trial-enabled
+        room.setTotalSessions(4);
+        room.setSessionsPerWeek(2);
+        room.setSchedules(List.of(schedule(room, 2, "08:00", "09:00")));
+
+        ClassSession divergentSession = session(1, ClassSessionStatus.COMPLETED);
+        divergentSession.setSessionDate(LocalDate.of(2026, 9, 8)); // Diverges from canonical Monday
+        divergentSession.setStartTime("10:00");
+        divergentSession.setEndTime("11:00");
+
+        when(sessions.findByClassRoomIdOrderBySequenceNumberAsc(1L)).thenReturn(List.of(divergentSession));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.generateNextBatchIfNeeded(1L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("diverges from the canonical classroom schedule");
+    }
+
+    private ClassSchedule schedule(ClassRoom room, int dayOfWeek, String startTime, String endTime) {
+        ClassSchedule schedule = new ClassSchedule();
+        schedule.setClassRoom(room);
+        schedule.setDayOfWeek(dayOfWeek);
+        schedule.setStartTime(startTime);
+        schedule.setEndTime(endTime);
+        return schedule;
     }
 }

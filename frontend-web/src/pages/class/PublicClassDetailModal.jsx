@@ -294,6 +294,11 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
                   <Key className="w-3.5 h-3.5 text-sky-600" /> Yêu cầu Mã mời
                 </span>
               )}
+              {Boolean(classRoom.trialPolicyVersion && classRoom.trialPolicyVersion > 0) && (
+                <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-purple-50 text-purple-700 border border-purple-200 flex items-center gap-1 shadow-2xs" title="Lớp học áp dụng 1 buổi trải nghiệm có bảo chứng Escrow">
+                  <ShieldCheck className="w-3.5 h-3.5 text-purple-600" /> Có 1 buổi trải nghiệm bảo chứng Escrow
+                </span>
+              )}
             </div>
             <h2 className="font-display font-black text-2xl text-slate-900 pt-1">
               {classRoom.name}
@@ -515,6 +520,24 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Trial Policy Banner */}
+        {Boolean(classRoom.trialPolicyVersion && classRoom.trialPolicyVersion > 0) && (
+          <div className="p-4 bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 border-2 border-purple-200/80 rounded-2xl flex items-start gap-3.5 shadow-2xs">
+            <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div className="space-y-1">
+              <h4 className="font-extrabold text-purple-950 text-xs uppercase tracking-wide flex items-center gap-2">
+                <span>Chính sách Trải nghiệm có bảo chứng Escrow</span>
+                <span className="text-[10px] bg-purple-200/70 text-purple-900 font-bold px-2 py-0.5 rounded-full">An tâm học thử</span>
+              </h4>
+              <p className="text-xs text-purple-900 leading-relaxed font-medium">
+                Lớp học áp dụng cơ chế trải nghiệm: Buổi học đầu tiên là buổi trải nghiệm có bảo chứng. Nếu cảm thấy không phù hợp sau buổi đầu, bạn có quyền dừng khóa học trước khi buổi học tiếp theo diễn ra. Hệ thống sẽ quyết toán đúng buổi 1 theo điểm danh và tự động hoàn trả 100% học phí các buổi chưa học còn lại từ Smart Contract Escrow.
+              </p>
+            </div>
           </div>
         )}
 

@@ -25,7 +25,7 @@ class AnvilEscrowEventIngestionIntegrationTest {
     @Test
     void readsAndDecodesAgreementRegisteredFromRealAnvilContract() throws Exception {
         String rpcUrl = System.getenv().getOrDefault("ANVIL_RPC_URL", "http://127.0.0.1:8545");
-        String escrow = requiredEnv("ANVIL_ESCROW_ADDRESS");
+        String escrow = System.getenv().getOrDefault("ANVIL_ESCROW_ADDRESS", "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512");
         Web3j web3j = Web3j.build(new HttpService(rpcUrl));
         try {
             List<String> accounts = web3j.ethAccounts().send().getAccounts();
@@ -57,8 +57,16 @@ class AnvilEscrowEventIngestionIntegrationTest {
             if (send.hasError()) {
                 throw new IllegalStateException("Cannot register Anvil agreement: " + send.getError().getMessage());
             }
-            var receipt = web3j.ethGetTransactionReceipt(send.getTransactionHash()).send()
-                    .getTransactionReceipt().orElseThrow();
+            org.web3j.protocol.core.methods.response.TransactionReceipt receipt = null;
+            for (int i = 0; i < 30; i++) {
+                var opt = web3j.ethGetTransactionReceipt(send.getTransactionHash()).send().getTransactionReceipt();
+                if (opt.isPresent()) {
+                    receipt = opt.get();
+                    break;
+                }
+                Thread.sleep(100);
+            }
+            org.junit.jupiter.api.Assertions.assertNotNull(receipt, "Transaction receipt should be mined on Anvil");
 
             Web3jBlockchainRpcClient rpcClient = new Web3jBlockchainRpcClient(web3j);
             EduConnectEscrowEventDecoder decoder = new EduConnectEscrowEventDecoder();

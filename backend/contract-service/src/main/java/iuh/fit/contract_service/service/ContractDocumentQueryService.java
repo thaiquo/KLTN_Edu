@@ -106,7 +106,31 @@ public class ContractDocumentQueryService {
                 agreement.getCreatedAt(),
                 agreement.getPaymentDeadline(),
                 toSignatureProof(tutorAcceptance, "TUTOR"),
-                toSignatureProof(studentAcceptance, "STUDENT"));
+                toSignatureProof(studentAcceptance, "STUDENT"),
+                toTrialPolicy(snapshot));
+    }
+
+    private ContractDocumentViewDto.TrialPolicyDto toTrialPolicy(ContractTermsSnapshot snapshot) {
+        if (snapshot == null || snapshot.trialPolicy() == null) {
+            return null;
+        }
+        var tp = snapshot.trialPolicy();
+        return new ContractDocumentViewDto.TrialPolicyDto(
+                tp.enabled(),
+                tp.version(),
+                tp.trialSessionSequence(),
+                tp.nextSessionSequence(),
+                tp.trialSessionStartAt(),
+                tp.nextSessionStartAt(),
+                tp.initialTrialDeadline(),
+                tp.scheduleFingerprint(),
+                tp.eligibilityRule(),
+                tp.scheduleChangeRule(),
+                tp.fundingRule(),
+                tp.automaticContinuation(),
+                tp.autoApprovedOptOut(),
+                tp.refundRule()
+        );
     }
 
     private ContractDocumentViewDto.LearningTermsDto toLearningTerms(ContractTermsSnapshot snapshot) {

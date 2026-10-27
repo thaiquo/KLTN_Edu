@@ -26,9 +26,23 @@ public class TerminationLearningClient {
         this.mapper = mapper;
     }
     public Snapshot send(Long classroomId, Long studentId, UUID agreementId, boolean wholeClass, String action) {
+        return send(classroomId, studentId, agreementId, wholeClass, action, null, null, null, null);
+    }
+    public Snapshot send(Long classroomId, Long studentId, UUID agreementId, boolean wholeClass, String action,
+                         String origin, Integer requestedCutoffSession, OffsetDateTime effectiveRequestedAt,
+                         UUID commandId) {
         try {
-            String body = mapper.writeValueAsString(Map.of("classroomId", classroomId, "studentId", studentId,
-                    "agreementId", agreementId.toString(), "wholeClass", wholeClass, "action", action));
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("classroomId", classroomId);
+            payload.put("studentId", studentId);
+            payload.put("agreementId", agreementId.toString());
+            payload.put("wholeClass", wholeClass);
+            payload.put("action", action);
+            if (origin != null) payload.put("origin", origin);
+            if (requestedCutoffSession != null) payload.put("requestedCutoffSession", requestedCutoffSession);
+            if (effectiveRequestedAt != null) payload.put("effectiveRequestedAt", effectiveRequestedAt);
+            if (commandId != null) payload.put("commandId", commandId);
+            String body = mapper.writeValueAsString(payload);
             String token = Jwts.builder().subject("contract-service").claim("serviceScope", "learning-termination")
                     .expiration(Date.from(Instant.now().plusSeconds(60))).signWith(key).compact();
             var request = HttpRequest.newBuilder(URI.create(url + "/api/learning/internal/termination"))

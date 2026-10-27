@@ -23,8 +23,48 @@ public record ContractDocumentViewDto(
         OffsetDateTime createdAt,
         OffsetDateTime paymentDeadline,
         SignatureProofDto tutorSignature,
-        SignatureProofDto studentSignature
+        SignatureProofDto studentSignature,
+        TrialPolicyDto trialPolicy
 ) {
+    public ContractDocumentViewDto(
+            String agreementId,
+            String onchainAgreementId,
+            String className,
+            PartyDto tutor,
+            PartyDto student,
+            PlatformDto platform,
+            FinancialTermsDto financialTerms,
+            LearningTermsDto learningTerms,
+            EscrowPolicyDto escrowPolicy,
+            String termsHash,
+            String termsJson,
+            Integer contractVersion,
+            String status,
+            OffsetDateTime createdAt,
+            OffsetDateTime paymentDeadline,
+            SignatureProofDto tutorSignature,
+            SignatureProofDto studentSignature) {
+        this(agreementId, onchainAgreementId, className, tutor, student, platform, financialTerms,
+                learningTerms, escrowPolicy, termsHash, termsJson, contractVersion, status, createdAt,
+                paymentDeadline, tutorSignature, studentSignature, null);
+    }
+
+    public record TrialPolicyDto(
+            Boolean enabled,
+            Integer version,
+            Integer trialSessionSequence,
+            Integer nextSessionSequence,
+            String trialSessionStartAt,
+            String nextSessionStartAt,
+            String initialTrialDeadline,
+            String scheduleFingerprint,
+            String eligibilityRule,
+            String scheduleChangeRule,
+            String fundingRule,
+            Boolean automaticContinuation,
+            Boolean autoApprovedOptOut,
+            String refundRule
+    ) {}
     public record PartyDto(
             String fullName,
             String email,

@@ -21,6 +21,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -98,6 +99,23 @@ class ContractSignatureServiceTest {
         ArgumentCaptor<ContractAcceptance> acceptanceCaptor = ArgumentCaptor.forClass(ContractAcceptance.class);
         verify(acceptanceRepository).save(acceptanceCaptor.capture());
         assertEquals("STUDENT", acceptanceCaptor.getValue().getRole());
+    }
+
+    @Test
+    void versionFourSnapshotMustMatchItsImmutableHashBeforeSigning() {
+        UUID agreementId = UUID.randomUUID();
+        ContractAgreement agreement = agreement(agreementId);
+        agreement.setTermsJson("{\"schemaVersion\":\"contract-terms-v4\"}");
+        agreement.setTermsHash(Hash.sha3String("different-terms"));
+        when(agreementRepository.findById(agreementId)).thenReturn(Optional.of(agreement));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service().signAgreement(
+                agreementId, 1L, "student@example.com", "STUDENT", agreement.getStudentWallet(),
+                "0x" + "a".repeat(130), null, "127.0.0.1", "JUnit"));
+
+        assertEquals("Agreement terms hash does not match its immutable snapshot", error.getMessage());
+        verify(verificationService, never()).verifySignature(any(), any(), any(), any(), any(), any(),
+                any(), anyLong(), anyLong(), any());
     }
 
     private ContractSignatureService service() {

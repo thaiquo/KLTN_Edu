@@ -3,7 +3,9 @@ package iuh.fit.contract_service.service;
 import iuh.fit.contract_service.entity.*;
 import iuh.fit.contract_service.enums.*;
 import iuh.fit.contract_service.repository.*;
-import lombok.RequiredArgsConstructor;
+import iuh.fit.contract_service.enums.TrialStatus;
+import iuh.fit.contract_service.repository.AgreementTrialRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -11,7 +13,7 @@ import java.math.BigInteger;
 import java.time.OffsetDateTime;
 import java.util.*;
 
-@Service @RequiredArgsConstructor
+@Service
 public class TerminationProcessor {
     private final TerminationCaseRepository cases;
     private final TerminationItemRepository items;
@@ -23,6 +25,47 @@ public class TerminationProcessor {
     private final TerminationLearningClient learning;
     private final NotificationDispatcher notifications;
     private final ObjectMapper mapper;
+    private final AgreementTrialRepository agreementTrialRepository;
+
+    public TerminationProcessor(
+            TerminationCaseRepository cases,
+            TerminationItemRepository items,
+            ContractAgreementRepository agreements,
+            SessionSettlementRepository settlements,
+            BlockchainTransactionRepository transactions,
+            ProcessedEventRepository events,
+            AgreementLifecycleWorkflowService lifecycle,
+            TerminationLearningClient learning,
+            NotificationDispatcher notifications,
+            ObjectMapper mapper) {
+        this(cases, items, agreements, settlements, transactions, events, lifecycle, learning, notifications, mapper, null);
+    }
+
+    @Autowired
+    public TerminationProcessor(
+            TerminationCaseRepository cases,
+            TerminationItemRepository items,
+            ContractAgreementRepository agreements,
+            SessionSettlementRepository settlements,
+            BlockchainTransactionRepository transactions,
+            ProcessedEventRepository events,
+            AgreementLifecycleWorkflowService lifecycle,
+            TerminationLearningClient learning,
+            NotificationDispatcher notifications,
+            ObjectMapper mapper,
+            AgreementTrialRepository agreementTrialRepository) {
+        this.cases = cases;
+        this.items = items;
+        this.agreements = agreements;
+        this.settlements = settlements;
+        this.transactions = transactions;
+        this.events = events;
+        this.lifecycle = lifecycle;
+        this.learning = learning;
+        this.notifications = notifications;
+        this.mapper = mapper;
+        this.agreementTrialRepository = agreementTrialRepository;
+    }
 
     @Transactional
     public void process(UUID agreementId) {
@@ -31,7 +74,9 @@ public class TerminationProcessor {
         if ("COMPLETED".equals(item.getStatus())) return;
         var c = cases.findById(item.getCaseId()).orElseThrow();
         if (!"APPROVED".equals(c.getStatus())) return;
-        var snapshot = learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), c.isWholeClass(), "FREEZE");
+        var snapshot = Set.of("TRIAL_OPT_OUT", TerminationService.ORIGIN_SYSTEM_LATE_FUNDING).contains(c.getOrigin())
+                ? persistedTrialSnapshot(a, c)
+                : learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), c.isWholeClass(), "FREEZE");
         if (snapshot.cutoffSession() < 0 || snapshot.requiredSessions() == null) {
             throw new IllegalStateException("Invalid Learning cutoff");
         }
@@ -134,6 +179,59 @@ public class TerminationProcessor {
         notifications.sendAsync(a.getTutorEmail(), a.getTutorId(), "Cap nhat cham dut hop dong",
                 "Hop dong cua hoc vien da hoan tat thanh ly. Danh sach lop va tien do xu ly da duoc cap nhat.",
                 "TERMINATION_COMPLETED", "AGREEMENT", a.getId().toString());
+        if (agreementTrialRepository != null
+                && Set.of("TRIAL_OPT_OUT", TerminationService.ORIGIN_SYSTEM_LATE_FUNDING).contains(c.getOrigin())) {
+            agreementTrialRepository.findByAgreementId(a.getId()).ifPresent(trial -> {
+                boolean matchingState = ("TRIAL_OPT_OUT".equals(c.getOrigin())
+                        && trial.getStatus() == TrialStatus.OPT_OUT_PENDING)
+                        || (TerminationService.ORIGIN_SYSTEM_LATE_FUNDING.equals(c.getOrigin())
+                        && trial.getStatus() == TrialStatus.LATE_FUNDING_RECOVERY);
+                if (matchingState
+                        && Objects.equals(trial.getTerminationCaseId(), c.getId())) {
+                    trial.setStatus(TrialStatus.TERMINATED);
+                    trial.setUpdatedAt(OffsetDateTime.now());
+                    agreementTrialRepository.save(trial);
+                }
+            });
+        }
+    }
+
+    private TerminationLearningClient.Snapshot persistedTrialSnapshot(
+            ContractAgreement agreement,
+            TerminationCase termination) {
+        if (agreementTrialRepository == null) {
+            throw new IllegalStateException("Trial repository is unavailable");
+        }
+        var trial = agreementTrialRepository.findByAgreementId(agreement.getId())
+                .orElseThrow(() -> new IllegalStateException("Trial state is missing"));
+        int expectedCutoff;
+        boolean matchingState;
+        if ("TRIAL_OPT_OUT".equals(termination.getOrigin())) {
+            expectedCutoff = trial.getTrialSessionSequence();
+            matchingState = trial.getStatus() == TrialStatus.OPT_OUT_PENDING;
+        } else if (TerminationService.ORIGIN_SYSTEM_LATE_FUNDING.equals(termination.getOrigin())) {
+            expectedCutoff = 0;
+            matchingState = trial.getStatus() == TrialStatus.LATE_FUNDING_RECOVERY;
+        } else {
+            throw new IllegalStateException("Unsupported persisted trial termination origin");
+        }
+        if (!matchingState
+                || !Objects.equals(trial.getTerminationCaseId(), termination.getId())
+                || agreement.getTerminationCutoffSession() == null
+                || !Objects.equals(agreement.getTerminationCutoffSession(), expectedCutoff)) {
+            throw new IllegalStateException("Persisted trial cutoff fence is inconsistent");
+        }
+        if (agreement.getTerminationSessionsJson() == null) {
+            throw new IllegalStateException("Persisted trial settlement sessions are missing");
+        }
+        var node = mapper.readTree(agreement.getTerminationSessionsJson());
+        if (!node.isArray()) {
+            throw new IllegalStateException("Persisted trial settlement sessions are invalid");
+        }
+        List<Long> requiredSessions = new ArrayList<>();
+        node.forEach(value -> requiredSessions.add(value.asLong()));
+        return new TerminationLearningClient.Snapshot(
+                agreement.getTerminationCutoffSession(), List.copyOf(requiredSessions), null);
     }
     @Transactional
     public void failure(UUID id, String error) {

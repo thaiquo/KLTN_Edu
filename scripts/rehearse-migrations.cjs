@@ -34,7 +34,9 @@ function checksum(content) {
 function migrations(service) {
   const folder = path.join(root, 'backend', service + '-service', 'src/main/resources/db/migration');
   return fs.readdirSync(folder).filter(name => /^V\d+__.*\.sql$/.test(name)).map(name => {
-    const content = fs.readFileSync(path.join(folder, name), 'utf8');
+    // Flyway ignores an optional UTF-8 BOM. Strip it before sending the SQL
+    // directly to psql while preserving Flyway-compatible checksum behavior.
+    const content = fs.readFileSync(path.join(folder, name), 'utf8').replace(/^\uFEFF/, '');
     return { name, version: Number(name.match(/^V(\d+)/)[1]), content, checksum: checksum(content) };
   }).sort((a, b) => a.version - b.version);
 }

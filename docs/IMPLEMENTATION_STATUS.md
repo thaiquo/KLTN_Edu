@@ -2,6 +2,8 @@
 
 > Post-merge baseline updated: 2026-10-25. Status describes current source evidence and recent merge validation, not production readiness. `IMPLEMENTED` means the main flow has source evidence; use explicit validation notes for tests/runtime.
 
+> In-progress workspace note (2026-10-27): Luồng chính của Giai đoạn trải nghiệm có bảo chứng Escrow đã được triển khai phía sau cờ an toàn `ESCROW_TRIAL_ENABLED=false`; **chưa deploy migration V16/V21 lên VPS/production và chưa bật flag**. Source hiện có canonical schedule, immutable terms schema v4, trial persistence, strict funding gate, decision window, EIP-712 opt-out/cutoff fence, retry worker, deadline transition, late-funding recovery, DOCX appendix và Web UI. `RollingSessionService` giữ fail-fast cho lớp trial nhưng tự fallback sang progression cũ khi lớp legacy có persisted prefix lệch canonical. Kiểm thử hiện tại: Learning 260/260; Contract default suite 244 tests pass với 8 Anvil tests skipped, và 8/8 Anvil tests pass khi bật local node; Foundry 44/44; Account 171/171; AI 266/266 (4 external skipped); Frontend TypeScript và production build PASS. Current V16/V21 đã pass PostgreSQL 16.15 fresh + upgrade rehearsal trên dump local/integration, với Flyway checksum, constraints, indexes và row counts hợp lệ. Anvil trial test đã xác minh chữ ký, settlement, cancel và refund on-chain nhưng còn mock Learning/Notification, tự mở `DECISION_OPEN`, và chưa bao phủ late-funding on-chain. Tracker hoàn tiền trên UI vẫn chỉ ước lượng một số stage do API chưa cung cấp trạng thái authoritative theo từng bước. Release production hiện vẫn là NO-GO: chưa có backup mới + isolated restore rehearsal/preflight từ chính production, Sepolia evidence và cohort selector. Push `main` sẽ kích hoạt auto-deploy VPS, vì vậy chỉ được merge sau khi vượt release gate trong `Plan/PLAN_ESCROW_COOLING_OFF_TRIAL.md`.
+
 ## 1. Status Legend
 
 | Status | Meaning |
@@ -76,6 +78,7 @@
 - IMPLEMENTED: tutor/class reviews and public rating summaries.
 - IMPLEMENTED: Community posts, polls, interactions, bookmarks, comments/replies, class suggestions and post-to-class conversion.
 - IMPLEMENTED: Learning-side termination hold/cutoff sync. Contract remains the decision owner.
+- IN PROGRESS (feature OFF): V16 trial metadata, canonical session 1/2 planning, schedule fingerprint and stable trial cutoff command are implemented. Cross-service schedule-mutation lock after agreement signing remains a guardrail to add if schedule editing is introduced.
 
 ## 6. Contract, Blockchain and Documents
 
@@ -83,6 +86,7 @@
 - IMPLEMENTED: payment submission records funding transaction and waits for confirmed blockchain event before activation.
 - IMPLEMENTED: settlement, payout/refund, dispute/evidence and transaction recovery pipeline.
 - IMPLEMENTED: termination governance, role-scoped cases/refunds, evidence, response/action handling, Contract -> Learning synchronization and termination notification outbox.
+- IN PROGRESS (feature OFF): V21 `agreement_trial`, signed terms v4, trial deadline worker and opt-out termination reuse exist. Late funding is quarantined from Learning activation, emits a durable incident, synchronizes cutoff 0 and enters the existing cancel/refund pipeline. Current V21 passed local PostgreSQL 16.15 fresh/upgrade rehearsal; production backup/restore rehearsal and late-funding on-chain E2E are still required before rollout.
 - IMPLEMENTED: current blockchain/escrow reconciliation patterns; successful Sepolia evidence exists in project history, but post-merge runtime replay is not implied by this status file.
 - IMPLEMENTED: Contract Service multi-RPC HTTP failover ưu tiên Alchemy, chuyển sang
   endpoint dự phòng khi lỗi transport/throttle, kiểm tra chain ID và tự probe lại

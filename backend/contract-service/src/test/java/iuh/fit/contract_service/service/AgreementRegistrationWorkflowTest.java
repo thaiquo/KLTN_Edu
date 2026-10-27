@@ -39,6 +39,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest
 class AgreementRegistrationWorkflowTest {
 
+    @Test
+    void fundingWindowRequiresStrictlyBeforeTrialStart() {
+        OffsetDateTime now = OffsetDateTime.parse("2026-10-27T00:00:00Z");
+        var margin = java.time.Duration.ofMinutes(30);
+
+        assertThrows(IllegalStateException.class, () -> AgreementRegistrationWorkflowService
+                .requireFundingWindow(now, margin, now.plusHours(24).plus(margin)));
+        AgreementRegistrationWorkflowService.requireFundingWindow(
+                now, margin, now.plusHours(24).plus(margin).plusNanos(1));
+    }
+
     @Autowired
     private AgreementRegistrationWorkflowService workflowService;
 
