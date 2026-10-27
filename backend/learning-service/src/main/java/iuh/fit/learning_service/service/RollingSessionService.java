@@ -16,6 +16,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import iuh.fit.learning_service.entity.ClassSchedule;
+import java.time.LocalDate;
 import java.util.*;
 
 @Slf4j
@@ -100,17 +102,71 @@ public class RollingSessionService {
         }
         int nextBatchSize = Math.min(classRoom.getSessionsPerWeek(), classRoom.getTotalSessions() - currentCount);
         if (classRoom.getSchedules() == null || classRoom.getSchedules().isEmpty()) return Collections.emptyList();
-        List<CanonicalSessionPlanner.PlannedSession> plannedSessions = sessionPlanner.plan(classRoom);
-        sessionPlanner.requirePersistedPrefix(classRoom, existingSessions);
+
         List<ClassSession> nextBatch = new ArrayList<>();
-        for (CanonicalSessionPlanner.PlannedSession planned : plannedSessions.stream()
-                .skip(currentCount).limit(nextBatchSize).toList()) {
-            ClassSession savedSession = persist(planned, classRoom);
-            createAttendancesForEnrolledStudents(savedSession, classRoom);
-            nextBatch.add(savedSession);
+        boolean prefixMatches = true;
+        List<CanonicalSessionPlanner.PlannedSession> plannedSessions = null;
+        try {
+            plannedSessions = sessionPlanner.plan(classRoom);
+            sessionPlanner.requirePersistedPrefix(classRoom, existingSessions);
+        } catch (Exception ex) {
+            if (classRoom.getTrialPolicyVersion() != null) {
+                throw ex;
+            }
+            prefixMatches = false;
+            log.warn("Legacy non-trial ClassRoom {} sessions diverge from canonical plan: {}. Using legacy progression fallback.",
+                    classroomId, ex.getMessage());
+        }
+
+        if (prefixMatches && plannedSessions != null) {
+            for (CanonicalSessionPlanner.PlannedSession planned : plannedSessions.stream()
+                    .skip(currentCount).limit(nextBatchSize).toList()) {
+                ClassSession savedSession = persist(planned, classRoom);
+                createAttendancesForEnrolledStudents(savedSession, classRoom);
+                nextBatch.add(savedSession);
+            }
+        } else {
+            nextBatch.addAll(generateLegacyNextBatch(classRoom, existingSessions, nextBatchSize, currentCount));
         }
 
         log.info("Generated {} next batch sessions for ClassRoom {}", nextBatch.size(), classroomId);
+        return nextBatch;
+    }
+
+    private List<ClassSession> generateLegacyNextBatch(ClassRoom classRoom, List<ClassSession> existingSessions, int nextBatchSize, int currentCount) {
+        ClassSession lastSession = existingSessions.get(existingSessions.size() - 1);
+        Map<Integer, ClassSchedule> scheduleMap = new HashMap<>();
+        for (ClassSchedule cs : classRoom.getSchedules()) {
+            if (cs.getDayOfWeek() != null && cs.getDayOfWeek() >= 2 && cs.getDayOfWeek() <= 8) {
+                scheduleMap.put(cs.getDayOfWeek(), cs);
+            }
+        }
+        if (scheduleMap.isEmpty()) return Collections.emptyList();
+
+        LocalDate currentDate = lastSession.getSessionDate() != null ? lastSession.getSessionDate().plusDays(1) : LocalDate.now();
+        List<ClassSession> nextBatch = new ArrayList<>();
+        int seq = currentCount + 1;
+        int daysChecked = 0;
+        while (nextBatch.size() < nextBatchSize && seq <= classRoom.getTotalSessions() && daysChecked++ < 365) {
+            int dayOfWeekConvention = currentDate.getDayOfWeek().getValue() + 1;
+            if (scheduleMap.containsKey(dayOfWeekConvention)) {
+                ClassSchedule matchedSchedule = scheduleMap.get(dayOfWeekConvention);
+                ClassSession session = new ClassSession();
+                session.setClassRoom(classRoom);
+                session.setSequenceNumber(seq);
+                session.setTopic("Buổi " + seq);
+                session.setSessionDate(currentDate);
+                session.setStartTime(matchedSchedule.getStartTime());
+                session.setEndTime(matchedSchedule.getEndTime());
+                session.setStatus(ClassSessionStatus.SCHEDULED);
+
+                ClassSession savedSession = classSessionRepository.save(session);
+                createAttendancesForEnrolledStudents(savedSession, classRoom);
+                nextBatch.add(savedSession);
+                seq++;
+            }
+            currentDate = currentDate.plusDays(1);
+        }
         return nextBatch;
     }
 

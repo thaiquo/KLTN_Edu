@@ -142,6 +142,51 @@ class RollingSessionServiceTest {
                         org.assertj.core.groups.Tuple.tuple(2, LocalDate.of(2026, 9, 7), "18:00"));
     }
 
+    @Test
+    void legacyClassRoomWithDivergentPrefixFallsBackGracefully() {
+        ClassRoom room = room();
+        room.setTrialPolicyVersion(null); // legacy non-trial
+        room.setTotalSessions(4);
+        room.setSessionsPerWeek(2);
+        room.setSchedules(List.of(schedule(room, 2, "08:00", "09:00")));
+
+        // Persisted session has date that differs from canonical schedule (e.g. rescheduled)
+        ClassSession legacySession = session(1, ClassSessionStatus.COMPLETED);
+        legacySession.setSessionDate(LocalDate.of(2026, 9, 8)); // Tue instead of Mon
+        legacySession.setStartTime("10:00");
+        legacySession.setEndTime("11:00");
+
+        when(sessions.findByClassRoomIdOrderBySequenceNumberAsc(1L)).thenReturn(List.of(legacySession));
+        when(sessions.save(any(ClassSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(enrollments.findByClassRoomIdAndStatus(anyLong(), any())).thenReturn(List.of());
+
+        List<ClassSession> nextBatch = service.generateNextBatchIfNeeded(1L);
+
+        // Does NOT throw; falls back to legacy generation from last session date!
+        assertThat(nextBatch).isNotEmpty();
+        assertThat(nextBatch.get(0).getSequenceNumber()).isEqualTo(2);
+    }
+
+    @Test
+    void trialClassRoomWithDivergentPrefixThrowsException() {
+        ClassRoom room = room();
+        room.setTrialPolicyVersion((short) 1); // trial-enabled
+        room.setTotalSessions(4);
+        room.setSessionsPerWeek(2);
+        room.setSchedules(List.of(schedule(room, 2, "08:00", "09:00")));
+
+        ClassSession divergentSession = session(1, ClassSessionStatus.COMPLETED);
+        divergentSession.setSessionDate(LocalDate.of(2026, 9, 8)); // Diverges from canonical Monday
+        divergentSession.setStartTime("10:00");
+        divergentSession.setEndTime("11:00");
+
+        when(sessions.findByClassRoomIdOrderBySequenceNumberAsc(1L)).thenReturn(List.of(divergentSession));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.generateNextBatchIfNeeded(1L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("diverges from the canonical classroom schedule");
+    }
+
     private ClassSchedule schedule(ClassRoom room, int dayOfWeek, String startTime, String endTime) {
         ClassSchedule schedule = new ClassSchedule();
         schedule.setClassRoom(room);
