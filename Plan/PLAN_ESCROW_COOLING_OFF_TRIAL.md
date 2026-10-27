@@ -20,7 +20,7 @@
 | `LEARN-05` | `IMPLEMENTED + TESTED` | Mở rộng internal termination command với `requestedCutoffSession`, `origin`, `effectiveRequestedAt`, `commandId`. |
 | `LEARN-06` | `IMPLEMENTED + TESTED` | `LearningTerminationService` persist stop idempotent theo agreement/command; không tính lại cutoff theo thời gian retry. |
 | `LEARN-07` | `PARTIAL / GUARDRAIL PENDING` | Snapshot/fingerprint và `termsHash` đã bất biến trong Contract, nhưng chưa có cơ chế liên service đánh dấu lớp “đã bắt đầu ký” để chặn mọi API sửa lịch trong tương lai. Hiện chưa thấy API sửa schedule trực tiếp; vẫn phải bổ sung guard nếu chức năng dời lịch được mở. |
-| `LEARN-08` | `IMPLEMENTED + TESTED` | Nhóm planner/classroom/termination/rolling pass 57/57; full `learning-service` pass 258/258 sau audit ngày 2026-10-27. |
+| `LEARN-08` | `IMPLEMENTED + TESTED` | Nhóm planner/classroom/termination/rolling pass 59/59; full `learning-service` pass 260/260 sau khi bổ sung legacy progression fallback ngày 2026-10-27. |
 | `CONTRACT-01` | `IMPLEMENTED + TESTED` | Đã có V21, `AgreementTrial`, enum, repository/row lock và DB constraints; `ContractSchemaMigrationTest` đã có 7 test cases độc lập kiểm chứng toàn bộ CHECK constraints cho cả `OPT_OUT_PENDING` và `LATE_FUNDING_RECOVERY`. Không backfill agreement cũ. |
 | `CONTRACT-02` | `IMPLEMENTED + TESTED` | Mở rộng `ContractSourceSnapshotClient` và canonical terms builder. Controller mở rộng `AgreementDetailDto` kèm `TrialDetailDto`. |
 | `CONTRACT-03` | `IMPLEMENTED + TESTED` | Terms schema v4 có `TrialPolicyTerms`, snapshot trial policy trước hash, tương thích ngược parser v2/v3, Jackson deterministic ordering. |
@@ -40,7 +40,7 @@
 | `WEB-04` | `IMPLEMENTED + TYPECHECKED` | `TrialOptOutModal` ký EIP-712 đúng domain/type backend, chuẩn hóa reason trước khi ký để tránh hash mismatch và hiển thị USDC theo 6 decimals. |
 | `WEB-05` | `PARTIAL + TYPECHECKED` | `TrialCoolingOffBanner` kết nối với `activeTermination` (status, itemStatus, txHash), nhưng API hiện chưa cung cấp đủ trạng thái authoritative cho từng bước settlement -> cancel tx -> refund event; UI chỉ được mô tả là tiến trình ước lượng cho đến khi bổ sung stage detail. |
 | `TEST-MIGRATION-PG` | `RE-RUN REQUIRED / PRODUCTION PENDING` | Rehearsal PostgreSQL 16 ngày 2026-10-26 đã pass bản V21 trước hardening. V21 hiện có thêm constraints/state late-funding nên kết quả cũ chỉ là lịch sử, không chứng minh current checksum; phải chạy lại fresh + upgrade trước release. |
-| `TEST-REGRESSION` | `ALL PASSED (LOCAL + ANVIL)` | Learning full 258/258 pass; Contract default suite 244 tests pass với 8 Anvil tests skipped; Foundry 44/44 pass; toàn bộ 8/8 Anvil integration tests pass trên RPC 31337, gồm trial opt-out/refund; Account 171/171 và AI 266/266 (4 external skipped) không có source thay đổi; Frontend `tsc --noEmit` và production build pass. Anvil node đã shutdown sạch. Trial E2E hiện mock Learning/Notification và tự mở `DECISION_OPEN`, nên chưa phải cross-service E2E; late-funding on-chain E2E vẫn pending. |
+| `TEST-REGRESSION` | `ALL PASSED (LOCAL + ANVIL)` | Learning full 260/260 pass; Contract default suite 244 tests pass với 8 Anvil tests skipped; Foundry 44/44 pass; toàn bộ 8/8 Anvil integration tests pass trên RPC 31337, gồm trial opt-out/refund; Account 171/171 và AI 266/266 (4 external skipped) không có source thay đổi; Frontend `tsc --noEmit` và production build pass. Anvil node đã shutdown sạch. Trial E2E hiện mock Learning/Notification và tự mở `DECISION_OPEN`, nên chưa phải cross-service E2E; late-funding on-chain E2E vẫn pending. |
 | Migration tooling | `HARDENED` | `scripts/rehearse-migrations.cjs` đã strip UTF-8 BOM giống Flyway để fresh rehearsal không lỗi giả. |
 
 Hậu điều kiện upgrade rehearsal đã xác nhận:
@@ -78,7 +78,7 @@ Artifact cục bộ, đã được `.gitignore`:
 - **Có thể tạo feature branch/PR để CI kiểm tra:** chỉ sau khi loại khỏi commit các artifact kế hoạch tạm (`extracted_plan.txt`, `planKhoaLuan.docx`, `read_plan.ps1`) nếu chúng không chủ đích thuộc release và rà lại toàn bộ diff.
 - **Không push trực tiếp vào `main`:** workflow hiện tại tự publish image và deploy VPS sau khi CI của push `main` thành công.
 - **R1/R2 feature OFF:** chỉ GO sau PostgreSQL 16 fresh + upgrade rehearsal trên current V16/V21, đối chiếu Flyway history/checksum/row count, backup off-VPS và restore rehearsal.
-- **R1/R2 còn một kiểm tra tương thích Learning bắt buộc:** đối chiếu toàn bộ `class_sessions` hiện hữu với `CanonicalSessionPlanner`. `RollingSessionService` mới dùng planner cho cả lớp legacy; nếu persisted prefix lệch lịch canonical, batch tiếp theo sẽ bị từ chối thay vì âm thầm sinh sai.
+- **Tương thích Learning legacy đã được harden:** lớp không có `trialPolicyVersion` tự fallback sang cách sinh lịch cũ khi persisted prefix lệch canonical; lớp trial vẫn fail-fast để bảo vệ lịch đã ký. Vẫn nên đối chiếu `class_sessions` trong rehearsal để phát hiện dữ liệu lệch và theo dõi cảnh báo vận hành, nhưng không còn là lỗi làm dừng batch của lớp legacy.
 - **R3 bật `ESCROW_TRIAL_ENABLED=true`:** NO-GO cho đến khi hoàn thiện cross-service/late-funding E2E, Sepolia staging evidence, metrics/alerting và cơ chế canary/cohort; hiện bật flag sẽ áp dụng cho mọi lớp mới đủ điều kiện.
 - Mọi lần deploy trước R3 phải xác nhận production giữ `ESCROW_TRIAL_ENABLED=false` ở cả Learning và Contract.
 
