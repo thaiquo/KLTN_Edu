@@ -39,21 +39,23 @@
 | `WEB-03` | `IMPLEMENTED + TYPECHECKED` | `TrialCoolingOffBanner` đếm ngược bằng `serverNow`/`trialDeadline`, reset đúng khi đổi agreement và refresh khi hết hạn. |
 | `WEB-04` | `IMPLEMENTED + TYPECHECKED` | `TrialOptOutModal` ký EIP-712 đúng domain/type backend, chuẩn hóa reason trước khi ký để tránh hash mismatch và hiển thị USDC theo 6 decimals. |
 | `WEB-05` | `PARTIAL + TYPECHECKED` | `TrialCoolingOffBanner` kết nối với `activeTermination` (status, itemStatus, txHash), nhưng API hiện chưa cung cấp đủ trạng thái authoritative cho từng bước settlement -> cancel tx -> refund event; UI chỉ được mô tả là tiến trình ước lượng cho đến khi bổ sung stage detail. |
-| `TEST-MIGRATION-PG` | `RE-RUN REQUIRED / PRODUCTION PENDING` | Rehearsal PostgreSQL 16 ngày 2026-10-26 đã pass bản V21 trước hardening. V21 hiện có thêm constraints/state late-funding nên kết quả cũ chỉ là lịch sử, không chứng minh current checksum; phải chạy lại fresh + upgrade trước release. |
+| `TEST-MIGRATION-PG` | `LOCAL PASS / PRODUCTION PENDING` | Ngày 2026-10-27, current V16/V21 đã pass cả fresh và upgrade rehearsal trên PostgreSQL 16.15 cô lập. Flyway history/checksum, 10 CHECK constraints, 2 indexes và row counts đều được đối soát; legacy data không bị backfill trial. Đây là dump local/integration, chưa thay thế backup + restore rehearsal từ production ngay trước release. |
 | `TEST-REGRESSION` | `ALL PASSED (LOCAL + ANVIL)` | Learning full 260/260 pass; Contract default suite 244 tests pass với 8 Anvil tests skipped; Foundry 44/44 pass; toàn bộ 8/8 Anvil integration tests pass trên RPC 31337, gồm trial opt-out/refund; Account 171/171 và AI 266/266 (4 external skipped) không có source thay đổi; Frontend `tsc --noEmit` và production build pass. Anvil node đã shutdown sạch. Trial E2E hiện mock Learning/Notification và tự mở `DECISION_OPEN`, nên chưa phải cross-service E2E; late-funding on-chain E2E vẫn pending. |
 | Migration tooling | `HARDENED` | `scripts/rehearse-migrations.cjs` đã strip UTF-8 BOM giống Flyway để fresh rehearsal không lỗi giả. |
 
-Hậu điều kiện upgrade rehearsal đã xác nhận:
+Hậu điều kiện current migration rehearsal đã xác nhận:
 
 ```text
-Kết quả lịch sử 2026-10-26 (stale sau thay đổi V21 ngày 2026-10-27):
+Kết quả PostgreSQL 16.15 cô lập ngày 2026-10-27:
 class_rooms: 42 -> 42; trial_policy_version non-null: 0
 contract_agreement: 2 -> 2; agreement_trial: 0
 legacy agreements without trial row: 2/2
 termination_case: 2 -> 2
-Flyway Learning V16 / Contract V21: success
-7 agreement_trial CHECK constraints validated; deadline/command indexes tồn tại
-Current V21 có thêm late-funding constraints: bắt buộc chạy lại PostgreSQL rehearsal.
+Flyway Learning V16: checksum -1203505143, success=true
+Flyway Contract V21: checksum -421953750, success=true
+9 agreement_trial CHECK + 1 class_rooms CHECK đều validated
+agreement_trial_deadline_idx và uq_learning_termination_stop_command tồn tại
+Fresh database: toàn bộ Account V1-V3, Learning V1-V16, Contract V1-V21 và Notification V1-V6 pass
 ```
 
 Artifact cục bộ, đã được `.gitignore`:
@@ -67,7 +69,7 @@ Artifact cục bộ, đã được `.gitignore`:
 Điểm tiếp tục an toàn cho AI tiếp theo:
 
 1. Tiếp tục giữ `ESCROW_TRIAL_ENABLED=false` (mặc định OFF); hiện chưa có cohort/canary selector, bật flag sẽ áp dụng policy cho mọi lớp mới đủ điều kiện.
-2. Chạy lại PostgreSQL 16 fresh + upgrade rehearsal vì checksum/nội dung V21 đã thay đổi khi harden late-funding state.
+2. Local PostgreSQL 16 fresh + upgrade rehearsal đã pass; trước merge `main` vẫn phải lấy backup production mới, kiểm SHA-256, restore cô lập và chạy lại rehearsal/preflight theo Mục 13.
 3. Mở rộng Anvil E2E hiện có thành cross-service E2E (không tự set `DECISION_OPEN`, không mock Learning) và bổ sung nhánh late-funding recovery on-chain.
 4. Bổ sung/kiểm chứng trạng thái chi tiết cho tracker settlement → cancel tx → refund event nếu muốn UI 4 bước chính xác.
 5. Không chạy `scripts/apply-migration-live.cjs`; VPS phải đi qua preflight, backup off-VPS và restore rehearsal ở Mục 13 khi deploy.
