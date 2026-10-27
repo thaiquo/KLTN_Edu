@@ -25,6 +25,7 @@ class TerminationProcessorTest {
     @Mock AgreementLifecycleWorkflowService lifecycle;
     @Mock TerminationLearningClient learning;
     @Mock NotificationDispatcher notifications;
+    @Mock AgreementTrialRepository trialRepository;
     TerminationProcessor processor;
     ContractAgreement a;
     TerminationCase c;
@@ -32,7 +33,7 @@ class TerminationProcessorTest {
 
     @BeforeEach void setup() {
         processor = new TerminationProcessor(cases, items, agreements, settlements, transactions, events,
-                lifecycle, learning, notifications, new ObjectMapper());
+                lifecycle, learning, notifications, new ObjectMapper(), trialRepository);
         a = ContractAgreement.builder().id(UUID.randomUUID()).classroomId(1L).studentId(2L)
                 .chainId(11155111L).status(ContractAgreementStatus.ACTIVE).terminationCutoffSession(-1)
                 .onchainAgreementId("0xagreement").escrowContractAddress("0xescrow").studentWallet("0xstudent").build();
@@ -100,6 +101,53 @@ class TerminationProcessorTest {
         assertThat(item.getRefundedUnits()).isEqualTo(new BigInteger("12345678"));
         verify(learning).send(1L, 2L, a.getId(), false, "CLOSE");
         verify(notifications, times(3)).sendAsync(any(), any(), any(), any(), eq("TERMINATION_COMPLETED"), eq("AGREEMENT"), eq(a.getId().toString()));
+        verifyNoInteractions(trialRepository);
+    }
+    @Test void trialOptOutUsesPersistedCutoffAndTerminatesOnlyItsLinkedTrial() {
+        a.setStatus(ContractAgreementStatus.CANCELLED);
+        a.setOnchainAgreementId(null);
+        a.setTerminationCutoffSession(1);
+        a.setTerminationSessionsJson("[101]");
+        c.setOrigin("TRIAL_OPT_OUT");
+        when(cases.findById(c.getId())).thenReturn(Optional.of(c));
+
+        var trial = new AgreementTrial();
+        trial.setAgreementId(a.getId());
+        trial.setTrialSessionSequence(1);
+        trial.setTerminationCaseId(c.getId());
+        trial.setStatus(TrialStatus.OPT_OUT_PENDING);
+        when(trialRepository.findByAgreementId(a.getId())).thenReturn(Optional.of(trial));
+
+        processor.process(a.getId());
+
+        assertThat(item.getStatus()).isEqualTo("COMPLETED");
+        assertThat(trial.getStatus()).isEqualTo(TrialStatus.TERMINATED);
+        verify(learning, never()).send(any(), any(), any(), anyBoolean(), eq("FREEZE"));
+        verify(learning).send(1L, 2L, a.getId(), false, "CLOSE");
+        verify(trialRepository).save(trial);
+    }
+    @Test void lateFundingRecoveryUsesPersistedZeroCutoffAndClosesLinkedTrial() {
+        a.setStatus(ContractAgreementStatus.CANCELLED);
+        a.setOnchainAgreementId(null);
+        a.setTerminationCutoffSession(0);
+        a.setTerminationSessionsJson("[]");
+        c.setOrigin("SYSTEM_LATE_FUNDING");
+        when(cases.findById(c.getId())).thenReturn(Optional.of(c));
+
+        var trial = new AgreementTrial();
+        trial.setAgreementId(a.getId());
+        trial.setTrialSessionSequence(1);
+        trial.setTerminationCaseId(c.getId());
+        trial.setStatus(TrialStatus.LATE_FUNDING_RECOVERY);
+        when(trialRepository.findByAgreementId(a.getId())).thenReturn(Optional.of(trial));
+
+        processor.process(a.getId());
+
+        assertThat(item.getStatus()).isEqualTo("COMPLETED");
+        assertThat(trial.getStatus()).isEqualTo(TrialStatus.TERMINATED);
+        verify(learning, never()).send(any(), any(), any(), anyBoolean(), eq("FREEZE"));
+        verify(learning).send(1L, 2L, a.getId(), false, "CLOSE");
+        verify(trialRepository).save(trial);
     }
     @Test void completedItemIsIdempotent() {
         item.setStatus("COMPLETED");

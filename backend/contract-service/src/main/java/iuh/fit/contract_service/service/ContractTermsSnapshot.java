@@ -1,23 +1,42 @@
 package iuh.fit.contract_service.service;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 
 import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * Immutable legal terms for a v2 agreement. This object is serialized once,
+ * Immutable legal terms for an agreement snapshot. This object is serialized once,
  * hashed, signed and subsequently used to render the official document.
  */
-@JsonPropertyOrder({"schemaVersion", "classroom", "parties", "financial", "platform", "escrowPolicy"})
+@JsonPropertyOrder({"schemaVersion", "classroom", "parties", "financial", "platform", "escrowPolicy", "trialPolicy"})
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record ContractTermsSnapshot(
         String schemaVersion,
         ClassroomTerms classroom,
         PartiesTerms parties,
         FinancialTerms financial,
         PlatformTerms platform,
-        EscrowPolicyTerms escrowPolicy
+        EscrowPolicyTerms escrowPolicy,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        TrialPolicyTerms trialPolicy
 ) {
+    public static final String SCHEMA_VERSION_V2 = "contract-terms-v2";
+    public static final String SCHEMA_VERSION_V3 = "contract-terms-v3";
+    public static final String SCHEMA_VERSION_V4 = "contract-terms-v4";
+
+    public ContractTermsSnapshot(
+            String schemaVersion,
+            ClassroomTerms classroom,
+            PartiesTerms parties,
+            FinancialTerms financial,
+            PlatformTerms platform,
+            EscrowPolicyTerms escrowPolicy) {
+        this(schemaVersion, classroom, parties, financial, platform, escrowPolicy, null);
+    }
     @JsonPropertyOrder({"name", "description", "learningMode", "meetingPlatform", "meetingLink", "learningAddress", "startDate", "endDate", "durationPerSessionMinutes", "schedules", "syllabus"})
     public record ClassroomTerms(
             String name,
@@ -73,5 +92,29 @@ public record ContractTermsSnapshot(
             Integer tutorPayoutBps,
             Integer platformFeeBps,
             String settlementRule
+    ) {}
+
+    @JsonPropertyOrder({
+            "enabled", "version", "trialSessionSequence", "nextSessionSequence",
+            "trialSessionStartAt", "nextSessionStartAt", "initialTrialDeadline",
+            "scheduleFingerprint", "eligibilityRule", "scheduleChangeRule",
+            "fundingRule", "automaticContinuation", "autoApprovedOptOut", "refundRule"
+    })
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record TrialPolicyTerms(
+            Boolean enabled,
+            Integer version,
+            Integer trialSessionSequence,
+            Integer nextSessionSequence,
+            String trialSessionStartAt,
+            String nextSessionStartAt,
+            String initialTrialDeadline,
+            String scheduleFingerprint,
+            String eligibilityRule,
+            String scheduleChangeRule,
+            String fundingRule,
+            Boolean automaticContinuation,
+            Boolean autoApprovedOptOut,
+            String refundRule
     ) {}
 }

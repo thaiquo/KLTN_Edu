@@ -17,9 +17,14 @@ import tools.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.math.BigInteger;
 import java.time.OffsetDateTime;
+import iuh.fit.contract_service.enums.TrialDecisionSource;
+import iuh.fit.contract_service.enums.TrialStatus;
+import iuh.fit.contract_service.repository.AgreementTrialRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import java.time.ZoneOffset;
 import java.util.*;
 
-@Service @RequiredArgsConstructor
+@Service
 public class TerminationService {
     private final TerminationCaseRepository cases;
     private final TerminationItemRepository items;
@@ -32,6 +37,50 @@ public class TerminationService {
     private final NotificationDispatcher notifications;
     private final Eip712VerificationService verificationService;
     private final TerminationLearningClient learning;
+    private final AgreementTrialRepository agreementTrialRepository;
+
+    public TerminationService(
+            TerminationCaseRepository cases,
+            TerminationItemRepository items,
+            TerminationEvidenceRepository evidence,
+            ContractAgreementRepository agreements,
+            SessionSettlementRepository settlements,
+            DisputeRepository disputes,
+            ContractAccessControl access,
+            ObjectMapper mapper,
+            NotificationDispatcher notifications,
+            Eip712VerificationService verificationService,
+            TerminationLearningClient learning) {
+        this(cases, items, evidence, agreements, settlements, disputes, access, mapper, notifications, verificationService, learning, null);
+    }
+
+    @Autowired
+    public TerminationService(
+            TerminationCaseRepository cases,
+            TerminationItemRepository items,
+            TerminationEvidenceRepository evidence,
+            ContractAgreementRepository agreements,
+            SessionSettlementRepository settlements,
+            DisputeRepository disputes,
+            ContractAccessControl access,
+            ObjectMapper mapper,
+            NotificationDispatcher notifications,
+            Eip712VerificationService verificationService,
+            TerminationLearningClient learning,
+            AgreementTrialRepository agreementTrialRepository) {
+        this.cases = cases;
+        this.items = items;
+        this.evidence = evidence;
+        this.agreements = agreements;
+        this.settlements = settlements;
+        this.disputes = disputes;
+        this.access = access;
+        this.mapper = mapper;
+        this.notifications = notifications;
+        this.verificationService = verificationService;
+        this.learning = learning;
+        this.agreementTrialRepository = agreementTrialRepository;
+    }
 
     private static final long SIGNATURE_CLOCK_SKEW_SECONDS = 300;
     private static final long RESPONSE_WINDOW_HOURS = 24;
@@ -41,6 +90,7 @@ public class TerminationService {
     private static final String ORIGIN_AUTO_ABSENCE = "AUTO_TUTOR_ABSENCE";
     private static final String ORIGIN_SYSTEM_REVIEW = "SYSTEM_REVIEW";
     private static final String ORIGIN_ADMIN = "ADMIN_DIRECT";
+    static final String ORIGIN_SYSTEM_LATE_FUNDING = "SYSTEM_LATE_FUNDING";
 
     public record ItemView(UUID agreementId, String status, String lastError, String transactionHash,
                            String refundedUnits, String studentName, int tokenDecimals, Long chainId,
@@ -248,6 +298,132 @@ public class TerminationService {
                 ? "Hệ thống ghi nhận Gia sư vắng 3 buổi liên tiếp. Lịch tương lai đã được tạm giữ; Gia sư cần gửi giải trình và minh chứng trước hạn hiển thị trong hồ sơ."
                 : "Yêu cầu dừng lớp học đã được gửi và đang chờ thẩm định.";
         notifyParties(anchor, c, receivedMessage);
+        return view(c);
+    }
+
+    @Transactional
+    public View trialOptOut(UUID agreementId, String reason, String signature, String signerWallet,
+                            Long requestedAtTimestamp, ContractUserPrincipal user) {
+        OffsetDateTime serverReceivedAt = OffsetDateTime.now(ZoneOffset.UTC);
+        if (!user.hasActiveAuthority("STUDENT")) {
+            fail(HttpStatus.FORBIDDEN, "Only the student can opt-out during trial cooling-off period");
+        }
+        var source = agreements.findById(agreementId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agreement not found"));
+        lockClass(source.getClassroomId());
+        var agreement = agreements.lockById(agreementId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Agreement not found"));
+        access.requireCanViewAgreement(agreement, user);
+        if (!agreement.getStudentId().equals(user.userId())) {
+            fail(HttpStatus.FORBIDDEN, "Student does not own this agreement");
+        }
+        if (agreement.getStatus() != ContractAgreementStatus.ACTIVE) {
+            fail(HttpStatus.CONFLICT, "Chỉ có thể dừng trong giai đoạn trải nghiệm đối với hợp đồng ACTIVE.");
+        }
+
+        if (agreementTrialRepository == null) {
+            fail(HttpStatus.BAD_REQUEST, "Trial feature is not enabled");
+        }
+        var trial = agreementTrialRepository.lockByAgreementId(agreementId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chính sách học trải nghiệm không áp dụng cho hợp đồng này"));
+
+        if (!serverReceivedAt.isBefore(trial.getTrialDeadline())) {
+            fail(HttpStatus.BAD_REQUEST, "TRIAL_WINDOW_CLOSED: Thời hạn dừng trong giai đoạn trải nghiệm đã kết thúc lúc " + trial.getTrialDeadline() + ". Vui lòng sử dụng luồng chấm dứt hợp đồng thông thường.");
+        }
+
+        if (trial.getStatus() != TrialStatus.DECISION_OPEN) {
+            fail(HttpStatus.CONFLICT, "Hợp đồng không ở trạng thái mở quyền dừng học thử, hiện tại: " + trial.getStatus());
+        }
+
+        ensureNoOverlappingRequest(agreement, agreementId, false);
+
+        String expectedWallet = agreement.getStudentWallet();
+        if (expectedWallet == null || expectedWallet.isBlank() || expectedWallet.equalsIgnoreCase("0x" + "0".repeat(40))) {
+            fail(HttpStatus.BAD_REQUEST, "Hợp đồng chưa liên kết địa chỉ ví hợp lệ.");
+        }
+        String normalizedSignerWallet = signerWallet != null ? signerWallet.trim().toLowerCase(Locale.ROOT) : "";
+        if (!normalizedSignerWallet.equalsIgnoreCase(expectedWallet.trim().toLowerCase(Locale.ROOT))) {
+            fail(HttpStatus.FORBIDDEN, "Ví MetaMask dùng để ký kết thúc (" + signerWallet + ") không khớp với ví đã ký hợp đồng (" + expectedWallet + ").");
+        }
+        if (signature == null || signature.isBlank()) {
+            fail(HttpStatus.BAD_REQUEST, "Yêu cầu kết thúc hợp đồng bắt buộc phải có chữ ký số xác nhận từ ví MetaMask.");
+        }
+        if (requestedAtTimestamp == null) {
+            fail(HttpStatus.BAD_REQUEST, "Chữ ký kết thúc hợp đồng thiếu thời điểm ký.");
+        }
+        long nowSeconds = System.currentTimeMillis() / 1000L;
+        if (Math.abs(nowSeconds - requestedAtTimestamp) > SIGNATURE_CLOCK_SKEW_SECONDS) {
+            fail(HttpStatus.BAD_REQUEST, "Chữ ký kết thúc hợp đồng đã hết hạn hoặc có thời điểm không hợp lệ.");
+        }
+        if (cases.existsBySignature(signature)) {
+            fail(HttpStatus.CONFLICT, "Chữ ký kết thúc hợp đồng đã được sử dụng.");
+        }
+
+        String finalReason = (reason != null && !reason.isBlank()) ? reason.trim() : "Dừng trong giai đoạn trải nghiệm (Trial opt-out)";
+        byte[] reasonHashBytes = Hash.sha3(finalReason.getBytes(StandardCharsets.UTF_8));
+        String reasonHashHex = Numeric.toHexString(reasonHashBytes);
+        if (agreement.getChainId() == null
+                || agreement.getEscrowContractAddress() == null
+                || !agreement.getEscrowContractAddress().matches("^0x[0-9a-fA-F]{40}$")) {
+            fail(HttpStatus.CONFLICT, "Agreement blockchain domain is incomplete; trial opt-out was not accepted");
+        }
+        long chainId = agreement.getChainId();
+        String escrowContract = agreement.getEscrowContractAddress();
+
+        boolean validSig = verificationService.verifyTerminationSignature(
+                expectedWallet,
+                signature,
+                agreement.getId().toString(),
+                reasonHashHex,
+                false,
+                requestedAtTimestamp,
+                chainId,
+                escrowContract
+        );
+        if (!validSig) {
+            fail(HttpStatus.FORBIDDEN, "Chữ ký số xác nhận từ ví MetaMask không hợp lệ hoặc nội dung yêu cầu đã bị sửa đổi.");
+        }
+
+        agreement.setTerminationCutoffSession(trial.getTrialSessionSequence());
+        agreements.saveAndFlush(agreement);
+
+        var c = new TerminationCase();
+        c.setId(UUID.randomUUID());
+        c.setAnchorAgreementId(agreementId);
+        c.setClassroomId(agreement.getClassroomId());
+        c.setWholeClass(false);
+        c.setReason(finalReason);
+        c.setRequestedBy(user.email());
+        c.setSignerWallet(signerWallet);
+        c.setSignature(signature);
+        c.setRequestedAtTimestamp(requestedAtTimestamp);
+        c.setOrigin("TRIAL_OPT_OUT");
+        c.setStatus("HOLD_PENDING");
+        c.setCreatedAt(serverReceivedAt);
+        c.setAuditJson("[]");
+        audit(c, user, "TRIAL_OPT_OUT", finalReason);
+        cases.saveAndFlush(c);
+
+        trial.setStatus(TrialStatus.OPT_OUT_PENDING);
+        trial.setDecisionSource(TrialDecisionSource.STUDENT_OPT_OUT);
+        trial.setOptOutReceivedAt(serverReceivedAt);
+        trial.setDecisionAt(serverReceivedAt);
+        trial.setUpdatedAt(serverReceivedAt);
+        trial.setTerminationCaseId(c.getId());
+        agreementTrialRepository.saveAndFlush(trial);
+
+        // Persist the legal decision and cutoff fence before any cross-service call.
+        // TerminationScheduler retries HOLD_PENDING only after this transaction commits.
+        c.setLastError("Learning hold pending after committed trial opt-out fence");
+        cases.saveAndFlush(c);
+
+        notifications.sendAsync(
+                agreement.getStudentEmail(), agreement.getStudentId(),
+                "Đã tiếp nhận yêu cầu dừng giai đoạn trải nghiệm",
+                "Quyền dừng đúng hạn và cutoff Buổi #" + trial.getTrialSessionSequence()
+                        + " đã được ghi nhận. Hệ thống đang đồng bộ lịch và chưa xác nhận hoàn tiền.",
+                "TRIAL_OPT_OUT_ACCEPTED", "AGREEMENT", agreement.getId().toString());
+        notifyParties(agreement, c, "Yêu cầu dừng học trong giai đoạn trải nghiệm đã được tiếp nhận.");
         return view(c);
     }
 
@@ -472,6 +648,85 @@ public class TerminationService {
     }
 
     @Transactional
+    public UUID queueLateTrialFundingRecovery(UUID agreementId, OffsetDateTime detectedAt) {
+        if (agreementTrialRepository == null) {
+            throw new IllegalStateException("Trial repository is unavailable");
+        }
+        OffsetDateTime effectiveAt = detectedAt == null ? OffsetDateTime.now(ZoneOffset.UTC) : detectedAt;
+        String detectionKey = "LATE_TRIAL_FUNDING:" + agreementId;
+        var agreement = agreements.lockById(agreementId)
+                .orElseThrow(() -> new IllegalArgumentException("Contract agreement not found: " + agreementId));
+        var existing = cases.findByDetectionKey(detectionKey);
+        if (existing.isPresent()) {
+            return existing.get().getId();
+        }
+        var trial = agreementTrialRepository.lockByAgreementId(agreementId)
+                .orElseThrow(() -> new IllegalStateException("Late funding agreement has no trial state"));
+        if (agreement.getStatus() != ContractAgreementStatus.ACTIVE) {
+            throw new IllegalStateException("Late funding recovery requires an ACTIVE funded agreement");
+        }
+        if (trial.getStatus() != TrialStatus.NOT_STARTED) {
+            throw new IllegalStateException("Late funding recovery cannot start from trial status " + trial.getStatus());
+        }
+
+        agreement.setTerminationCutoffSession(0);
+        agreement.setTerminationSessionsJson("[]");
+        agreements.saveAndFlush(agreement);
+
+        var termination = new TerminationCase();
+        termination.setId(UUID.randomUUID());
+        termination.setAnchorAgreementId(agreementId);
+        termination.setClassroomId(agreement.getClassroomId());
+        termination.setWholeClass(false);
+        termination.setReason("Funding was confirmed after the trial session start; cancel and refund all unused escrow");
+        termination.setRequestedBy("contract-service");
+        termination.setOrigin(ORIGIN_SYSTEM_LATE_FUNDING);
+        termination.setDetectionKey(detectionKey);
+        termination.setStatus("HOLD_PENDING");
+        termination.setCreatedAt(effectiveAt);
+        termination.setUpdatedAt(effectiveAt);
+        termination.setAuditJson("[]");
+        termination.setLastError("Learning cutoff 0 synchronization pending");
+        cases.saveAndFlush(termination);
+
+        trial.setStatus(TrialStatus.LATE_FUNDING_RECOVERY);
+        trial.setDecisionSource(TrialDecisionSource.SYSTEM_LATE_FUNDING);
+        trial.setDecisionAt(effectiveAt);
+        trial.setTerminationCaseId(termination.getId());
+        trial.setUpdatedAt(effectiveAt);
+        agreementTrialRepository.saveAndFlush(trial);
+        return termination.getId();
+    }
+
+    @Transactional
+    public boolean openTrialDecisionWindow(UUID agreementId, int completedSessionSequence) {
+        var agreement = agreements.lockById(agreementId).orElseThrow();
+        if (agreementTrialRepository == null) return false;
+        var trialOpt = agreementTrialRepository.lockByAgreementId(agreementId);
+        if (trialOpt.isEmpty()) return false;
+        var trial = trialOpt.get();
+        if (!Objects.equals(trial.getTrialSessionSequence(), completedSessionSequence)
+                || trial.getStatus() != TrialStatus.NOT_STARTED) {
+            return false;
+        }
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        trial.setStatus(TrialStatus.DECISION_OPEN);
+        trial.setUpdatedAt(now);
+        agreementTrialRepository.save(trial);
+        try {
+            notifications.sendAsync(
+                    agreement.getStudentEmail(), agreement.getStudentId(),
+                    "Giai đoạn trải nghiệm: Mở thời hạn dừng học",
+                    "Buổi học trải nghiệm đã hoàn thành. Bạn có quyền dừng khóa học trước hạn "
+                            + trial.getTrialDeadline() + "; quyết toán và hoàn tiền vẫn được đối soát riêng.",
+                    "TRIAL_DECISION_OPENED", "CONTRACT_AGREEMENT", agreement.getId().toString());
+        } catch (RuntimeException notificationError) {
+            // The durable state transition must not be lost because notification delivery failed.
+        }
+        return true;
+    }
+
+    @Transactional
     public void retryLearningSynchronization(UUID id) {
         var c = cases.lockById(id).orElseThrow();
         var anchor = agreements.lockById(c.getAnchorAgreementId()).orElseThrow();
@@ -486,7 +741,44 @@ public class TerminationService {
 
     private void synchronizeHold(TerminationCase c, ContractAgreement anchor) {
         try {
-            var snapshot = learning.send(anchor.getClassroomId(), anchor.getStudentId(), anchor.getId(), c.isWholeClass(), "HOLD");
+            boolean trialOptOut = "TRIAL_OPT_OUT".equals(c.getOrigin());
+            boolean lateFundingRecovery = ORIGIN_SYSTEM_LATE_FUNDING.equals(c.getOrigin());
+            boolean stableTrialCutoff = trialOptOut || lateFundingRecovery;
+            TerminationLearningClient.Snapshot snapshot;
+            if (stableTrialCutoff) {
+                if (agreementTrialRepository == null) {
+                    throw new IllegalStateException("Trial repository is unavailable");
+                }
+                var trial = agreementTrialRepository.lockByAgreementId(anchor.getId())
+                        .orElseThrow(() -> new IllegalStateException("Trial state is missing"));
+                OffsetDateTime effectiveAt;
+                int requestedCutoff;
+                if (trialOptOut) {
+                    if (trial.getStatus() != TrialStatus.OPT_OUT_PENDING || trial.getOptOutReceivedAt() == null) {
+                        throw new IllegalStateException("Trial opt-out state does not match termination case");
+                    }
+                    effectiveAt = trial.getOptOutReceivedAt();
+                    requestedCutoff = trial.getTrialSessionSequence();
+                } else {
+                    if (trial.getStatus() != TrialStatus.LATE_FUNDING_RECOVERY || trial.getDecisionAt() == null) {
+                        throw new IllegalStateException("Late funding recovery state does not match termination case");
+                    }
+                    effectiveAt = trial.getDecisionAt();
+                    requestedCutoff = 0;
+                }
+                if (!Objects.equals(trial.getTerminationCaseId(), c.getId())) {
+                    throw new IllegalStateException("Trial state is linked to a different termination case");
+                }
+                snapshot = learning.send(
+                        anchor.getClassroomId(), anchor.getStudentId(), anchor.getId(), false, "HOLD",
+                        c.getOrigin(), requestedCutoff, effectiveAt, c.getId());
+                if (snapshot.cutoffSession() != requestedCutoff) {
+                    throw new IllegalStateException("Learning cutoff mismatch: expected "
+                            + requestedCutoff + " got " + snapshot.cutoffSession());
+                }
+            } else {
+                snapshot = learning.send(anchor.getClassroomId(), anchor.getStudentId(), anchor.getId(), c.isWholeClass(), "HOLD");
+            }
             if (snapshot.cutoffSession() < 0) throw new IllegalStateException("Invalid Learning hold cutoff");
             var targets = c.isWholeClass()
                     ? agreements.findByClassroomIdOrderByCreatedAtAsc(c.getClassroomId())
@@ -494,7 +786,20 @@ public class TerminationService {
             for (var target : targets) {
                 if (activeTerminationAgreement(target)) target.setTerminationCutoffSession(snapshot.cutoffSession());
             }
-            if ("HOLD_PENDING".equals(c.getStatus())) c.setStatus("REQUESTED");
+            if (stableTrialCutoff) {
+                anchor.setTerminationSessionsJson(mapper.writeValueAsString(snapshot.requiredSessions()));
+                if (!items.existsById(anchor.getId())) {
+                    var item = new TerminationItem();
+                    item.setAgreementId(anchor.getId());
+                    item.setCaseId(c.getId());
+                    item.setStatus("WAITING_SETTLEMENT");
+                    item.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                    items.save(item);
+                }
+                c.setStatus("APPROVED");
+            } else if ("HOLD_PENDING".equals(c.getStatus())) {
+                c.setStatus("REQUESTED");
+            }
             if (ORIGIN_AUTO_ABSENCE.equals(c.getOrigin()) && c.getResponseDeadline() == null) {
                 c.setResponseDeadline(calculateResponseDeadline(OffsetDateTime.now(), snapshot.nextSessionStart()));
             }

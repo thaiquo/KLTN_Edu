@@ -25,3 +25,9 @@ mobile-app/.expo/
 **/*-runtime.err.log
 *.log
 hs_err_pid*.log
+
+# Temporary plan extraction and scratch artifacts
+Plan/*.docx
+Plan/*.ps1
+Plan/extracted_plan.txt
+frontend-web/dist/

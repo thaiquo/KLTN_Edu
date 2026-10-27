@@ -22,6 +22,10 @@ import java.util.UUID;
 @Table(name = "class_rooms")
 public class ClassRoom {
     private Integer terminationCutoffSession;
+
+    @Column(name = "trial_policy_version")
+    private Short trialPolicyVersion;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

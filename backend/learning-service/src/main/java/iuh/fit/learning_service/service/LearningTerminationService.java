@@ -20,9 +20,24 @@ public class LearningTerminationService {
     private final SessionAttendanceRepository attendances;
     private final RollingSessionService rollingSessions;
 
-    public record Command(Long classroomId, Long studentId, String agreementId, boolean wholeClass, String action) {}
+    public record Command(
+            Long classroomId,
+            Long studentId,
+            String agreementId,
+            boolean wholeClass,
+            String action,
+            String origin,
+            Integer requestedCutoffSession,
+            OffsetDateTime effectiveRequestedAt,
+            UUID commandId) {
+        public Command(Long classroomId, Long studentId, String agreementId, boolean wholeClass, String action) {
+            this(classroomId, studentId, agreementId, wholeClass, action, null, null, null, null);
+        }
+    }
     public record Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart) {}
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Bangkok");
+    private static final ZoneId BUSINESS_ZONE = CanonicalSessionPlanner.BUSINESS_ZONE;
+    private static final String TRIAL_OPT_OUT = "TRIAL_OPT_OUT";
+    private static final String SYSTEM_LATE_FUNDING = "SYSTEM_LATE_FUNDING";
 
     @Transactional
     public Snapshot apply(Command command) {
@@ -45,6 +60,10 @@ public class LearningTerminationService {
             throw new IllegalStateException("Agreement/enrollment identity mismatch");
         }
         if (!Set.of("HOLD", "RELEASE", "FREEZE", "CLOSE").contains(command.action())) throw new IllegalArgumentException("Unknown action");
+        boolean trialOptOut = TRIAL_OPT_OUT.equals(command.origin());
+        boolean lateFundingRecovery = SYSTEM_LATE_FUNDING.equals(command.origin());
+        boolean stableCutoffCommand = trialOptOut || lateFundingRecovery;
+        validateExtendedCommand(command, room, rows, trialOptOut, lateFundingRecovery);
         var stop = stops.findById(command.agreementId()).orElse(null);
         if ("RELEASE".equals(command.action())) {
             if (stop != null && !stop.isClosed()) stops.delete(stop);
@@ -59,15 +78,27 @@ public class LearningTerminationService {
             }
             return new Snapshot(0, List.of(), null);
         }
+        if (stableCutoffCommand && stop != null) {
+            requireSameStableCutoffCommand(stop, command);
+        }
         if (stop == null) {
             if ("CLOSE".equals(command.action())) throw new IllegalStateException("Freeze must complete first");
-            int cutoff = room.getTerminationCutoffSession() != null ? room.getTerminationCutoffSession()
+            if (command.commandId() != null && stops.findByCommandId(command.commandId()).isPresent()) {
+                throw new IllegalStateException("Termination commandId is already used by another agreement");
+            }
+            int cutoff = command.requestedCutoffSession() != null
+                    ? command.requestedCutoffSession()
+                    : room.getTerminationCutoffSession() != null ? room.getTerminationCutoffSession()
                     : cutoff(rows, LocalDateTime.now(BUSINESS_ZONE));
             stop = new LearningTerminationStop();
             stop.setAgreementId(command.agreementId());
             stop.setClassroomId(room.getId());
             stop.setStudentId(command.studentId());
             stop.setCutoffSession(cutoff);
+            stop.setOrigin(command.origin());
+            stop.setEffectiveRequestedAt(command.effectiveRequestedAt());
+            stop.setCommandId(command.commandId());
+            stop.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
             stops.saveAndFlush(stop);
         }
         if (command.wholeClass() && room.getTerminationCutoffSession() == null) {
@@ -119,6 +150,62 @@ public class LearningTerminationService {
         return new Snapshot(cutoff, rows.stream()
                 .filter(s -> s.getSequenceNumber() <= cutoff && s.getStatus() != ClassSessionStatus.CANCELLED)
                 .map(s -> s.getSequenceNumber().longValue()).toList(), nextSessionStart);
+    }
+
+    private void validateExtendedCommand(
+            Command command,
+            ClassRoom room,
+            List<ClassSession> rows,
+            boolean trialOptOut,
+            boolean lateFundingRecovery) {
+        boolean hasTrialFields = command.requestedCutoffSession() != null
+                || command.effectiveRequestedAt() != null
+                || command.commandId() != null;
+        if (!trialOptOut && !lateFundingRecovery && hasTrialFields) {
+            throw new IllegalArgumentException("Explicit cutoff/audit fields require a supported system origin");
+        }
+        if (!trialOptOut && !lateFundingRecovery) {
+            return;
+        }
+        if (command.wholeClass() || !"HOLD".equals(command.action())) {
+            throw new IllegalArgumentException(command.origin() + " must be an individual HOLD command");
+        }
+        if (command.requestedCutoffSession() == null
+                || command.effectiveRequestedAt() == null
+                || command.commandId() == null) {
+            throw new IllegalArgumentException(command.origin() + " requires cutoff, effective time and commandId");
+        }
+        if (!Short.valueOf((short) 1).equals(room.getTrialPolicyVersion())) {
+            throw new IllegalStateException("Classroom is not enrolled in trial policy v1");
+        }
+        int requestedCutoff = command.requestedCutoffSession();
+        if (lateFundingRecovery) {
+            if (requestedCutoff != 0) {
+                throw new IllegalArgumentException("SYSTEM_LATE_FUNDING requires cutoff session 0");
+            }
+            return;
+        }
+        if (requestedCutoff <= 0
+                || room.getTotalSessions() == null
+                || requestedCutoff > room.getTotalSessions()) {
+            throw new IllegalArgumentException("Requested trial cutoff is outside the classroom session range");
+        }
+        boolean cutoffSessionExists = rows.stream()
+                .anyMatch(session -> session.getSequenceNumber() == requestedCutoff
+                        && session.getStatus() != ClassSessionStatus.CANCELLED);
+        if (!cutoffSessionExists) {
+            throw new IllegalStateException("Requested trial cutoff session is not available");
+        }
+    }
+
+    private void requireSameStableCutoffCommand(LearningTerminationStop stop, Command command) {
+        if (!Objects.equals(command.origin(), stop.getOrigin())
+                || !Objects.equals(stop.getCommandId(), command.commandId())
+                || !Objects.equals(stop.getCutoffSession(), command.requestedCutoffSession())
+                || stop.getEffectiveRequestedAt() == null
+                || !stop.getEffectiveRequestedAt().toInstant().equals(command.effectiveRequestedAt().toInstant())) {
+            throw new IllegalStateException("Trial opt-out replay does not match the persisted command");
+        }
     }
 
     static int cutoff(List<ClassSession> rows, LocalDateTime now) {

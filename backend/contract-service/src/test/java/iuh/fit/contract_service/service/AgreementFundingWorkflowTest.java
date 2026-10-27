@@ -93,7 +93,46 @@ class AgreementFundingWorkflowTest {
         jdbcTemplate.execute("DELETE FROM session_settlement");
         jdbcTemplate.execute("DELETE FROM contract_acceptance");
         jdbcTemplate.execute("DELETE FROM escrow_payment");
+        jdbcTemplate.execute("DELETE FROM agreement_trial");
+        jdbcTemplate.execute("DELETE FROM termination_item");
+        jdbcTemplate.execute("DELETE FROM termination_case");
         jdbcTemplate.execute("DELETE FROM contract_agreement");
+    }
+
+    @Test
+    void lateTrialFundingCreatesIncidentAndDoesNotPublishNormalActivation() throws Exception {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        insertAgreement(agreementId, onchainAgreementId, Hash.sha3String("terms-v4"), "WAITING_PAYMENT");
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        jdbcTemplate.update("""
+                INSERT INTO agreement_trial (
+                    agreement_id, policy_version, trial_session_sequence, next_session_sequence,
+                    trial_session_start_at, trial_deadline, schedule_fingerprint, status,
+                    version, created_at, updated_at
+                ) VALUES (?, 1, 1, 2, ?, ?, ?, 'NOT_STARTED', 0, ?, ?)
+                """, agreementId, now.minusMinutes(1), now.plusDays(2), "a".repeat(64), now, now);
+
+        fundingWorkflowService.processConfirmedFundingEvent(
+                fundedEvent(onchainAgreementId, STUDENT, "40000000"));
+
+        assertEquals(ContractAgreementStatus.ACTIVE,
+                agreementRepository.findById(agreementId).orElseThrow().getStatus());
+        assertEquals(1L, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM outbox_event WHERE event_type = 'contract.trial_late_funding.v1'",
+                Long.class));
+        assertEquals(0L, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM outbox_event WHERE event_type = 'contract.activated.v1'",
+                Long.class));
+        assertEquals(1L, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM termination_case WHERE origin = 'SYSTEM_LATE_FUNDING' AND status = 'HOLD_PENDING'",
+                Long.class));
+        assertEquals("LATE_FUNDING_RECOVERY", jdbcTemplate.queryForObject(
+                "SELECT status FROM agreement_trial WHERE agreement_id = ?", String.class, agreementId));
+        assertEquals(0, jdbcTemplate.queryForObject(
+                "SELECT termination_cutoff_session FROM contract_agreement WHERE id = ?", Integer.class, agreementId));
+        assertEquals("[]", jdbcTemplate.queryForObject(
+                "SELECT termination_sessions_json FROM contract_agreement WHERE id = ?", String.class, agreementId));
     }
 
     @Test

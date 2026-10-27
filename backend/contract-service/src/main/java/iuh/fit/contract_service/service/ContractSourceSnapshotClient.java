@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.Date;
 import java.util.List;
 
@@ -40,7 +41,23 @@ public class ContractSourceSnapshotClient {
                             BigDecimal pricePerSessionVnd, int totalSessions, String classroomReviewerEmail,
                             String learningMode, String meetingLink, String learningAddress,
                             LocalDate courseStartDate, LocalDate courseEndDate, int durationPerSessionMinutes,
-                            List<Schedule> schedules, List<Chapter> syllabus) {}
+                            List<Schedule> schedules, List<Chapter> syllabus,
+                            Boolean trialPolicyEnabled, Short trialPolicyVersion,
+                            Integer trialSessionSequence, Integer nextSessionSequence,
+                            OffsetDateTime trialSessionStartAt, OffsetDateTime nextSessionStartAt,
+                            OffsetDateTime initialTrialDeadline, String scheduleFingerprint) {
+        public Classroom(Long classroomId, String className, String classDescription, Long tutorId,
+                         String tutorEmail, Long studentId, String studentEmail,
+                         BigDecimal pricePerSessionVnd, int totalSessions, String classroomReviewerEmail,
+                         String learningMode, String meetingLink, String learningAddress,
+                         LocalDate courseStartDate, LocalDate courseEndDate, int durationPerSessionMinutes,
+                         List<Schedule> schedules, List<Chapter> syllabus) {
+            this(classroomId, className, classDescription, tutorId, tutorEmail, studentId, studentEmail,
+                    pricePerSessionVnd, totalSessions, classroomReviewerEmail, learningMode, meetingLink,
+                    learningAddress, courseStartDate, courseEndDate, durationPerSessionMinutes, schedules, syllabus,
+                    null, null, null, null, null, null, null, null);
+        }
+    }
     public record Schedule(int dayOfWeek, String startTime, String endTime) {}
     public record Chapter(int order, String title, String description, int expectedSessions) {}
 
@@ -106,7 +123,11 @@ public class ContractSourceSnapshotClient {
                 room.schedules().stream().map(s -> new ContractTermsSnapshot.ScheduleTerms(
                         s.dayOfWeek(), s.startTime(), s.endTime())).toList(),
                 room.syllabus().stream().map(c -> new ContractTermsSnapshot.SyllabusTerms(
-                        c.order(), c.title(), c.description(), c.expectedSessions())).toList());
+                        c.order(), c.title(), c.description(), c.expectedSessions())).toList(),
+                room.trialPolicyEnabled(), room.trialPolicyVersion(),
+                room.trialSessionSequence(), room.nextSessionSequence(),
+                room.trialSessionStartAt(), room.nextSessionStartAt(),
+                room.initialTrialDeadline(), room.scheduleFingerprint());
     }
 
     private String serviceToken() {

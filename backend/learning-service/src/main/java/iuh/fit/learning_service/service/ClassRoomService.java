@@ -59,6 +59,7 @@ public class ClassRoomService {
     private final LearningEventPublisher eventPublisher;
     private final RealtimeEventHub realtimeEventHub;
     private final LearningStorageCleanupService learningStorageCleanupService;
+    private final iuh.fit.learning_service.config.EscrowTrialProperties trialProperties;
 
     public ClassRoomService(
             ClassRoomRepository classRoomRepository,
@@ -73,6 +74,26 @@ public class ClassRoomService {
             RealtimeEventHub realtimeEventHub,
             LearningStorageCleanupService learningStorageCleanupService
     ) {
+        this(classRoomRepository, registrationRepository, levelRepository, availabilityRepository,
+                enrollmentRequestRepository, tutorAuthorizationStateRepository, tutorReviewRepository,
+                tutorIdentityLookup, eventPublisher, realtimeEventHub, learningStorageCleanupService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ClassRoomService(
+            ClassRoomRepository classRoomRepository,
+            TutorSubjectRegistrationRepository registrationRepository,
+            CatalogLevelRepository levelRepository,
+            TutorAvailabilityRepository availabilityRepository,
+            EnrollmentRequestRepository enrollmentRequestRepository,
+            TutorAuthorizationStateRepository tutorAuthorizationStateRepository,
+            TutorReviewRepository tutorReviewRepository,
+            TutorIdentityLookup tutorIdentityLookup,
+            LearningEventPublisher eventPublisher,
+            RealtimeEventHub realtimeEventHub,
+            LearningStorageCleanupService learningStorageCleanupService,
+            iuh.fit.learning_service.config.EscrowTrialProperties trialProperties
+    ) {
         this.classRoomRepository = classRoomRepository;
         this.registrationRepository = registrationRepository;
         this.levelRepository = levelRepository;
@@ -84,6 +105,7 @@ public class ClassRoomService {
         this.eventPublisher = eventPublisher;
         this.realtimeEventHub = realtimeEventHub;
         this.learningStorageCleanupService = learningStorageCleanupService;
+        this.trialProperties = trialProperties;
     }
 
     @Transactional(readOnly = true)
@@ -395,6 +417,11 @@ public class ClassRoomService {
             }
         }
         classRoom.setChapters(chapters);
+
+        if (trialProperties != null && trialProperties.isEnabled()
+                && classRoom.getTotalSessions() != null && classRoom.getTotalSessions() >= 2) {
+            classRoom.setTrialPolicyVersion((short) 1);
+        }
 
         ClassRoom saved = classRoomRepository.save(classRoom);
         realtimeEventHub.publishToReviewers("CLASS_SUBMITTED", saved.getId(), Map.of(

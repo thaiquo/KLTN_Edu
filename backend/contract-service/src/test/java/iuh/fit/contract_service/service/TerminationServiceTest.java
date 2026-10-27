@@ -28,13 +28,15 @@ class TerminationServiceTest {
     @Mock NotificationDispatcher notifications;
     @Mock Eip712VerificationService verificationService;
     @Mock TerminationLearningClient learning;
+    @Mock AgreementTrialRepository trialRepository;
     TerminationService service;
     ContractAgreement a;
     @BeforeEach void setup() {
-        service = new TerminationService(cases, items, evidence, agreements, settlements, disputes, new ContractAccessControl(), new ObjectMapper(), notifications, verificationService, learning);
+        service = new TerminationService(cases, items, evidence, agreements, settlements, disputes, new ContractAccessControl(), new ObjectMapper(), notifications, verificationService, learning, trialRepository);
         a = ContractAgreement.builder().id(UUID.randomUUID()).classroomId(1L).studentId(2L).studentEmail("s@test.vn")
                 .studentWallet("0x1111111111111111111111111111111111111111")
                 .tutorId(3L).tutorEmail("t@test.vn").tutorWallet("0x2222222222222222222222222222222222222222")
+                .chainId(11155111L).escrowContractAddress("0x3333333333333333333333333333333333333333")
                 .classroomReviewerEmail("staff@test.vn")
                 .status(ContractAgreementStatus.ACTIVE).tokenDecimals((short)6).build();
         lenient().when(agreements.findById(a.getId())).thenReturn(Optional.of(a));
@@ -469,6 +471,127 @@ class TerminationServiceTest {
                 .hasMessageContaining("409");
         verify(evidence, never()).save(any());
     }
+    @Test void trialOptOutRejectsNonStudentCaller() {
+        assertThatThrownBy(() -> service.trialOptOut(a.getId(), "Trial opt out", "0xsig", "0x2222222222222222222222222222222222222222", now(), user(3, "t@test.vn", "TUTOR")))
+                .hasMessageContaining("403");
+    }
+
+    @Test void trialOptOutRejectsWhenAfterDeadline() {
+        var trial = new AgreementTrial();
+        trial.setAgreementId(a.getId());
+        trial.setTrialSessionSequence(1);
+        trial.setNextSessionSequence(2);
+        trial.setStatus(iuh.fit.contract_service.enums.TrialStatus.DECISION_OPEN);
+        trial.setTrialDeadline(OffsetDateTime.now().minusMinutes(5));
+        when(trialRepository.lockByAgreementId(a.getId())).thenReturn(Optional.of(trial));
+
+        assertThatThrownBy(() -> service.trialOptOut(a.getId(), "Trial opt out", "0xsig", "0x1111111111111111111111111111111111111111", now(), user(2, "s@test.vn", "STUDENT")))
+                .hasMessageContaining("TRIAL_WINDOW_CLOSED");
+    }
+
+    @Test void trialOptOutCommitsFenceBeforeLearningAndRetryUsesStableCommand() {
+        var trial = new AgreementTrial();
+        trial.setAgreementId(a.getId());
+        trial.setTrialSessionSequence(1);
+        trial.setNextSessionSequence(2);
+        trial.setStatus(iuh.fit.contract_service.enums.TrialStatus.DECISION_OPEN);
+        trial.setTrialDeadline(OffsetDateTime.now().plusDays(2));
+        when(trialRepository.lockByAgreementId(a.getId())).thenReturn(Optional.of(trial));
+        var view = service.trialOptOut(a.getId(), "Trial opt out", "0xsig", "0x1111111111111111111111111111111111111111", now(), user(2, "s@test.vn", "STUDENT"));
+
+        assertThat(view).isNotNull();
+        assertThat(a.getTerminationCutoffSession()).isEqualTo(1);
+        assertThat(trial.getStatus()).isEqualTo(iuh.fit.contract_service.enums.TrialStatus.OPT_OUT_PENDING);
+        assertThat(trial.getDecisionSource()).isEqualTo(iuh.fit.contract_service.enums.TrialDecisionSource.STUDENT_OPT_OUT);
+        assertThat(view.request().getStatus()).isEqualTo("HOLD_PENDING");
+        verify(learning, never()).send(anyLong(), anyLong(), any(), anyBoolean(), eq("HOLD"),
+                any(), any(), any(), any());
+        verify(trialRepository).saveAndFlush(trial);
+
+        TerminationCase termination = view.request();
+        when(cases.lockById(termination.getId())).thenReturn(Optional.of(termination));
+        when(trialRepository.lockByAgreementId(a.getId())).thenReturn(Optional.of(trial));
+        when(learning.send(1L, 2L, a.getId(), false, "HOLD", "TRIAL_OPT_OUT", 1,
+                trial.getOptOutReceivedAt(), termination.getId()))
+                .thenReturn(new TerminationLearningClient.Snapshot(1, List.of(1L), OffsetDateTime.now().plusDays(2)));
+
+        service.retryLearningSynchronization(termination.getId());
+
+        assertThat(termination.getStatus()).isEqualTo("APPROVED");
+        assertThat(a.getTerminationSessionsJson()).isEqualTo("[1]");
+        verify(items).save(argThat(item -> item.getAgreementId().equals(a.getId())
+                && item.getCaseId().equals(termination.getId())));
+    }
+
+    @Test void trialOptOutRejectsBeforeDecisionWindowOpens() {
+        var trial = new AgreementTrial();
+        trial.setAgreementId(a.getId());
+        trial.setTrialSessionSequence(1);
+        trial.setNextSessionSequence(2);
+        trial.setStatus(iuh.fit.contract_service.enums.TrialStatus.NOT_STARTED);
+        trial.setTrialDeadline(OffsetDateTime.now().plusDays(2));
+        when(trialRepository.lockByAgreementId(a.getId())).thenReturn(Optional.of(trial));
+
+        assertThatThrownBy(() -> service.trialOptOut(a.getId(), "Trial opt out", "0xsig",
+                "0x1111111111111111111111111111111111111111", now(),
+                user(2, "s@test.vn", "STUDENT")))
+                .hasMessageContaining("409");
+        verify(cases, never()).saveAndFlush(any());
+    }
+
+    @Test void completedTrialSessionOpensDecisionWindowIndependentlyOfSettlement() {
+        var trial = new AgreementTrial();
+        trial.setAgreementId(a.getId());
+        trial.setTrialSessionSequence(1);
+        trial.setStatus(iuh.fit.contract_service.enums.TrialStatus.NOT_STARTED);
+        trial.setTrialDeadline(OffsetDateTime.now().plusDays(2));
+        when(trialRepository.lockByAgreementId(a.getId())).thenReturn(Optional.of(trial));
+
+        boolean opened = service.openTrialDecisionWindow(a.getId(), 1);
+
+        assertThat(opened).isTrue();
+        assertThat(trial.getStatus()).isEqualTo(iuh.fit.contract_service.enums.TrialStatus.DECISION_OPEN);
+        verify(trialRepository).save(trial);
+        verify(notifications).sendAsync(eq(a.getStudentEmail()), eq(a.getStudentId()), any(), any(),
+                eq("TRIAL_DECISION_OPENED"), eq("CONTRACT_AGREEMENT"), eq(a.getId().toString()));
+    }
+
+    @Test void lateFundingRecoveryCreatesIdempotentSystemCaseAndSynchronizesZeroCutoff() {
+        var trial = new AgreementTrial();
+        trial.setAgreementId(a.getId());
+        trial.setTrialSessionSequence(1);
+        trial.setStatus(iuh.fit.contract_service.enums.TrialStatus.NOT_STARTED);
+        when(trialRepository.lockByAgreementId(a.getId())).thenReturn(Optional.of(trial));
+        OffsetDateTime detectedAt = OffsetDateTime.now();
+
+        UUID caseId = service.queueLateTrialFundingRecovery(a.getId(), detectedAt);
+
+        assertThat(a.getTerminationCutoffSession()).isZero();
+        assertThat(a.getTerminationSessionsJson()).isEqualTo("[]");
+        assertThat(trial.getStatus()).isEqualTo(iuh.fit.contract_service.enums.TrialStatus.LATE_FUNDING_RECOVERY);
+        assertThat(trial.getDecisionSource()).isEqualTo(iuh.fit.contract_service.enums.TrialDecisionSource.SYSTEM_LATE_FUNDING);
+        assertThat(trial.getTerminationCaseId()).isEqualTo(caseId);
+        ArgumentCaptor<TerminationCase> caseCaptor = ArgumentCaptor.forClass(TerminationCase.class);
+        verify(cases).saveAndFlush(caseCaptor.capture());
+        TerminationCase recovery = caseCaptor.getValue();
+        assertThat(recovery.getOrigin()).isEqualTo("SYSTEM_LATE_FUNDING");
+        assertThat(recovery.getStatus()).isEqualTo("HOLD_PENDING");
+        when(cases.findByDetectionKey("LATE_TRIAL_FUNDING:" + a.getId())).thenReturn(Optional.of(recovery));
+        assertThat(service.queueLateTrialFundingRecovery(a.getId(), detectedAt.plusMinutes(1))).isEqualTo(caseId);
+        verify(cases, times(1)).saveAndFlush(any(TerminationCase.class));
+
+        when(cases.lockById(caseId)).thenReturn(Optional.of(recovery));
+        when(learning.send(1L, 2L, a.getId(), false, "HOLD", "SYSTEM_LATE_FUNDING", 0,
+                detectedAt, caseId))
+                .thenReturn(new TerminationLearningClient.Snapshot(0, List.of(), null));
+
+        service.retryLearningSynchronization(caseId);
+
+        assertThat(recovery.getStatus()).isEqualTo("APPROVED");
+        verify(items).save(argThat(item -> item.getAgreementId().equals(a.getId())
+                && item.getCaseId().equals(caseId)));
+    }
+
     private ContractAgreement agreement(long studentId, String studentEmail, ContractAgreementStatus status) {
         return ContractAgreement.builder()
                 .id(UUID.randomUUID()).classroomId(1L).studentId(studentId).studentEmail(studentEmail)

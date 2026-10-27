@@ -11,6 +11,8 @@ import iuh.fit.contract_service.repository.ProcessedEventRepository;
 import iuh.fit.contract_service.service.AgreementRegistrationWorkflowService;
 import iuh.fit.contract_service.service.BlockchainEventIngestionService;
 import iuh.fit.contract_service.service.OperatorTransactionDispatcher;
+import iuh.fit.contract_service.service.BlockchainReceiptWatcher;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,7 +30,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+        "blockchain.enabled=true",
+        "blockchain.operator.enabled=true",
+        "blockchain.operator.address=0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+        "blockchain.operator.private-key=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+        "blockchain.rpc-url=http://127.0.0.1:8545",
+        "blockchain.chain-id=31337",
+        "blockchain.escrow-address=0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+        "blockchain.usdc-address=0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "blockchain.event-block-batch-size=1000"
+})
 @EnabledIfEnvironmentVariable(named = "RUN_ANVIL_REGISTRATION_IT", matches = "true")
 class AnvilAgreementRegistrationIntegrationTest {
 
@@ -37,6 +49,9 @@ class AnvilAgreementRegistrationIntegrationTest {
 
     @Autowired
     private OperatorTransactionDispatcher dispatcher;
+
+    @Autowired
+    private BlockchainReceiptWatcher receiptWatcher;
 
     @Autowired
     private BlockchainEventIngestionService ingestionService;
@@ -53,10 +68,18 @@ class AnvilAgreementRegistrationIntegrationTest {
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @BeforeEach
+    void clearBusinessFixtures() {
+        for (String table : List.of("outbox_event", "blockchain_transaction", "processed_event", "blockchain_event_cursor",
+                "dispute_evidence", "dispute", "session_settlement", "escrow_payment", "contract_agreement")) {
+            jdbcTemplate.execute("DELETE FROM " + table);
+        }
+    }
+
     @Test
     void executesEndToEndAgreementRegistrationOnAnvil() throws Exception {
-        String rpcUrl = System.getenv().getOrDefault("ANVIL_RPC_URL", "http://127.0.0.1:8545");
-        String escrow = requiredEnv("ANVIL_ESCROW_ADDRESS");
+        String rpcUrl = System.getenv().getOrDefault("ANVIL_RPC_URL", properties.getRpcUrl().toString());
+        String escrow = System.getenv().getOrDefault("ANVIL_ESCROW_ADDRESS", properties.getEscrowAddress());
         Web3j web3j = Web3j.build(new HttpService(rpcUrl));
 
         try {
@@ -78,14 +101,28 @@ class AnvilAgreementRegistrationIntegrationTest {
             // 2. Dispatch operator transaction
             var dispatched = dispatcher.dispatchNext();
             assertTrue(dispatched.isPresent());
+            for (int i = 0; i < 20; i++) {
+                int reconciled = receiptWatcher.reconcilePendingReceipts();
+                if (reconciled > 0) break;
+                Thread.sleep(50);
+            }
 
             // 3. Scan event logs via ingestion service
-            int scannedEvents = ingestionService.scanNextConfirmedRange();
-            assertTrue(scannedEvents >= 1);
+            for (int i = 0; i < 10; i++) {
+                ingestionService.scanNextConfirmedRange();
+                boolean found = processedEventRepository.findAll().stream()
+                        .anyMatch(e -> "AGREEMENT_REGISTERED".equalsIgnoreCase(e.getEventType())
+                                && e.getDecodedPayload() != null
+                                && e.getDecodedPayload().toLowerCase().contains(onchainAgreementId.toLowerCase()));
+                if (found) break;
+                Thread.sleep(50);
+            }
 
             // 4. Find decoded ProcessedEvent
             ProcessedEvent processedEvent = processedEventRepository.findAll().stream()
-                    .filter(e -> "AGREEMENT_REGISTERED".equalsIgnoreCase(e.getEventType()))
+                    .filter(e -> "AGREEMENT_REGISTERED".equalsIgnoreCase(e.getEventType())
+                            && e.getDecodedPayload() != null
+                            && e.getDecodedPayload().toLowerCase().contains(onchainAgreementId.toLowerCase()))
                     .findFirst()
                     .orElseThrow();
 
@@ -105,6 +142,8 @@ class AnvilAgreementRegistrationIntegrationTest {
     private void insertAgreement(
             UUID id, String onchainAgreementId, String termsHash,
             String student, String tutor, String platform, String escrow, long chainId) {
+        long classroomId = Math.abs(id.getMostSignificantBits());
+        long studentId = Math.abs(id.getLeastSignificantBits());
         jdbcTemplate.update("""
                 INSERT INTO contract_agreement (
                     id, onchain_agreement_id, classroom_id, student_id, tutor_id,
@@ -114,7 +153,7 @@ class AnvilAgreementRegistrationIntegrationTest {
                     vnd_per_usdc, total_amount_usdc_units, price_per_session_usdc_units,
                     total_sessions, status, version, created_at, updated_at
                 ) VALUES (
-                    ?, ?, 1, 1, 2,
+                    ?, ?, ?, ?, 2,
                     ?, ?, ?, ?,
                     ?, 'USDC', 6,
                     '{}', ?, 1, 1000000.00,
@@ -122,7 +161,7 @@ class AnvilAgreementRegistrationIntegrationTest {
                     10, 'PREPARING_BLOCKCHAIN', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 )
                 """,
-                id, onchainAgreementId, student, tutor, platform, chainId,
+                id, onchainAgreementId, classroomId, studentId, student, tutor, platform, chainId,
                 escrow, termsHash);
     }
 

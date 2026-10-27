@@ -83,6 +83,8 @@ public class ContractManagementController {
     private final org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway;
     private final ObjectProvider<BlockchainEventIngestionService> blockchainEventIngestionService;
     private final iuh.fit.contract_service.service.ContractSourceSnapshotClient sourceSnapshotClient;
+    private final iuh.fit.contract_service.repository.AgreementTrialRepository agreementTrialRepository;
+    private final iuh.fit.contract_service.config.EscrowTrialProperties escrowTrialProperties;
 
     public ContractManagementController(
             ContractAgreementRepository agreementRepository,
@@ -109,6 +111,43 @@ public class ContractManagementController {
             OperationalFundingPolicy operationalFundingPolicy,
             iuh.fit.contract_service.service.TerminationService terminationService,
             iuh.fit.contract_service.service.ContractSourceSnapshotClient sourceSnapshotClient) {
+        this(agreementRepository, settlementRepository, transactionRepository, disputeRepository,
+                disputeEvidenceRepository, disputeWorkflowService, settlementWorkflowService, lifecycleWorkflowService,
+                notificationDispatcher, signatureService, fundingWorkflowService, registrationWorkflowService,
+                escrowPaymentRepository, processedEventRepository, terminationItemRepository, acceptanceRepository,
+                learningServiceDispatcher, currentUserContext, accessControl, blockchainGateway,
+                blockchainEventIngestionService, operationalFundingPolicy, terminationService, sourceSnapshotClient,
+                null, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ContractManagementController(
+            ContractAgreementRepository agreementRepository,
+            SessionSettlementRepository settlementRepository,
+            BlockchainTransactionRepository transactionRepository,
+            DisputeRepository disputeRepository,
+            DisputeEvidenceRepository disputeEvidenceRepository,
+            DisputeWorkflowService disputeWorkflowService,
+            SessionSettlementWorkflowService settlementWorkflowService,
+            AgreementLifecycleWorkflowService lifecycleWorkflowService,
+            iuh.fit.contract_service.service.NotificationDispatcher notificationDispatcher,
+            iuh.fit.contract_service.service.ContractSignatureService signatureService,
+            iuh.fit.contract_service.service.AgreementFundingWorkflowService fundingWorkflowService,
+            iuh.fit.contract_service.service.AgreementRegistrationWorkflowService registrationWorkflowService,
+            iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository,
+            ProcessedEventRepository processedEventRepository,
+            TerminationItemRepository terminationItemRepository,
+            ContractAcceptanceRepository acceptanceRepository,
+            iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher,
+            CurrentUserContext currentUserContext,
+            ContractAccessControl accessControl,
+            org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway,
+            ObjectProvider<BlockchainEventIngestionService> blockchainEventIngestionService,
+            OperationalFundingPolicy operationalFundingPolicy,
+            iuh.fit.contract_service.service.TerminationService terminationService,
+            iuh.fit.contract_service.service.ContractSourceSnapshotClient sourceSnapshotClient,
+            iuh.fit.contract_service.repository.AgreementTrialRepository agreementTrialRepository,
+            iuh.fit.contract_service.config.EscrowTrialProperties escrowTrialProperties) {
         this.agreementRepository = agreementRepository;
         this.settlementRepository = settlementRepository;
         this.transactionRepository = transactionRepository;
@@ -133,6 +172,8 @@ public class ContractManagementController {
         this.operationalFundingPolicy = operationalFundingPolicy;
         this.terminationService = terminationService;
         this.sourceSnapshotClient = sourceSnapshotClient;
+        this.agreementTrialRepository = agreementTrialRepository;
+        this.escrowTrialProperties = escrowTrialProperties;
     }
 
     public record InitiateAgreementRequest(
@@ -163,8 +204,35 @@ public class ContractManagementController {
             String courseEndDate,
             Integer durationPerSessionMinutes,
             List<ContractTermsSnapshot.ScheduleTerms> schedules,
-            List<ContractTermsSnapshot.SyllabusTerms> syllabus
-    ) {}
+            List<ContractTermsSnapshot.SyllabusTerms> syllabus,
+            Boolean trialPolicyEnabled,
+            Short trialPolicyVersion,
+            Integer trialSessionSequence,
+            Integer nextSessionSequence,
+            OffsetDateTime trialSessionStartAt,
+            OffsetDateTime nextSessionStartAt,
+            OffsetDateTime initialTrialDeadline,
+            String scheduleFingerprint
+    ) {
+        public InitiateAgreementRequest(
+                Long classroomId, String className, Long studentId, String studentName,
+                String studentEmail, String studentPhone, String studentDateOfBirth,
+                String studentAddress, Long tutorId, String tutorName, String tutorEmail,
+                String tutorPhone, String tutorAddress, String studentWallet, String tutorWallet,
+                BigDecimal pricePerSessionVnd, Integer totalSessions, String classroomReviewerEmail,
+                String classDescription, String learningMode, String meetingPlatform,
+                String meetingLink, String learningAddress, String courseStartDate,
+                String courseEndDate, Integer durationPerSessionMinutes,
+                List<ContractTermsSnapshot.ScheduleTerms> schedules,
+                List<ContractTermsSnapshot.SyllabusTerms> syllabus) {
+            this(classroomId, className, studentId, studentName, studentEmail, studentPhone,
+                    studentDateOfBirth, studentAddress, tutorId, tutorName, tutorEmail, tutorPhone,
+                    tutorAddress, studentWallet, tutorWallet, pricePerSessionVnd, totalSessions,
+                    classroomReviewerEmail, classDescription, learningMode, meetingPlatform,
+                    meetingLink, learningAddress, courseStartDate, courseEndDate,
+                    durationPerSessionMinutes, schedules, syllabus, null, null, null, null, null, null, null, null);
+        }
+    }
 
     public record SignAgreementRequest(
             String walletAddress,
@@ -294,8 +362,37 @@ public class ContractManagementController {
         String contractMeetingLink = "ONLINE".equalsIgnoreCase(request.learningMode())
                 ? ContractTermsSnapshotService.PROTECTED_MEETING_LINK
                 : request.meetingLink();
+
+        boolean trialPolicyEnabled = escrowTrialProperties != null && escrowTrialProperties.enabled()
+                && Boolean.TRUE.equals(request.trialPolicyEnabled());
+        if (trialPolicyEnabled) {
+            validateTrialPolicySnapshot(request);
+        }
+
+        ContractTermsSnapshot.TrialPolicyTerms trialTerms = null;
+        String schemaVersion = ContractTermsSnapshotService.SCHEMA_VERSION_V3;
+        if (trialPolicyEnabled) {
+            schemaVersion = ContractTermsSnapshotService.SCHEMA_VERSION_V4;
+            trialTerms = new ContractTermsSnapshot.TrialPolicyTerms(
+                    true,
+                    request.trialPolicyVersion().intValue(),
+                    request.trialSessionSequence(),
+                    request.nextSessionSequence(),
+                    request.trialSessionStartAt().toString(),
+                    request.nextSessionStartAt() != null ? request.nextSessionStartAt().toString() : null,
+                    request.initialTrialDeadline().toString(),
+                    request.scheduleFingerprint(),
+                    "serverReceivedAt < initialTrialDeadline",
+                    "immutable after agreement signing starts in policy v1",
+                    "confirmed before trialSessionStartAt",
+                    true,
+                    true,
+                    "unused escrow after required settlements are final"
+            );
+        }
+
         String termsJson = snapshotService.serialize(new ContractTermsSnapshot(
-                ContractTermsSnapshotService.SCHEMA_VERSION,
+                schemaVersion,
                 new ContractTermsSnapshot.ClassroomTerms(request.className(), request.classDescription(),
                         request.learningMode(), request.meetingPlatform(), contractMeetingLink, request.learningAddress(),
                         request.courseStartDate(), request.courseEndDate(), request.durationPerSessionMinutes(),
@@ -311,7 +408,8 @@ public class ContractManagementController {
                         pricePerSessionUnits.toString(), totalAmountUnits.toString(), totalSessions),
                 new ContractTermsSnapshot.PlatformTerms(chainId, platformWallet, escrowAddress, tokenAddress),
                 new ContractTermsSnapshot.EscrowPolicyTerms(24, 8500, 1500,
-                        "24h dispute after proposal; BOTH_PRESENT=85/15/0; STUDENT_ABSENT_TUTOR_PRESENT=45/10/45; TUTOR_ABSENT=0/0/100; tutor-fraud dispute only for BOTH_PRESENT")));
+                        "24h dispute after proposal; BOTH_PRESENT=85/15/0; STUDENT_ABSENT_TUTOR_PRESENT=45/10/45; TUTOR_ABSENT=0/0/100; tutor-fraud dispute only for BOTH_PRESENT"),
+                trialTerms));
         String termsHash = snapshotService.hash(termsJson);
 
         ContractAgreement agreement = ContractAgreement.builder()
@@ -353,6 +451,21 @@ public class ContractManagementController {
                 .build();
 
         ContractAgreement saved = agreementRepository.save(agreement);
+
+        if (trialPolicyEnabled && agreementTrialRepository != null) {
+            var trial = new iuh.fit.contract_service.entity.AgreementTrial();
+            trial.setAgreementId(saved.getId());
+            trial.setPolicyVersion(request.trialPolicyVersion());
+            trial.setTrialSessionSequence(request.trialSessionSequence());
+            trial.setNextSessionSequence(request.nextSessionSequence());
+            trial.setTrialSessionStartAt(request.trialSessionStartAt());
+            trial.setTrialDeadline(request.initialTrialDeadline());
+            trial.setScheduleFingerprint(request.scheduleFingerprint());
+            trial.setStatus(iuh.fit.contract_service.enums.TrialStatus.NOT_STARTED);
+            trial.setCreatedAt(now);
+            trial.setUpdatedAt(now);
+            agreementTrialRepository.save(trial);
+        }
 
         // Dispatch async notification to tutor to sign
         if (request.tutorEmail() != null && !request.tutorEmail().isBlank()) {
@@ -487,6 +600,26 @@ public class ContractManagementController {
 
     private boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private void validateTrialPolicySnapshot(InitiateAgreementRequest request) {
+        boolean valid = Short.valueOf((short) 1).equals(request.trialPolicyVersion())
+                && Integer.valueOf(1).equals(request.trialSessionSequence())
+                && Integer.valueOf(2).equals(request.nextSessionSequence())
+                && request.totalSessions() != null
+                && request.totalSessions() >= 2
+                && request.trialSessionStartAt() != null
+                && request.nextSessionStartAt() != null
+                && request.initialTrialDeadline() != null
+                && request.trialSessionStartAt().isBefore(request.initialTrialDeadline())
+                && request.nextSessionStartAt().toInstant().equals(request.initialTrialDeadline().toInstant())
+                && request.scheduleFingerprint() != null
+                && request.scheduleFingerprint().matches("^[0-9a-f]{64}$");
+        if (!valid) {
+            throw new ResponseStatusException(
+                    org.springframework.http.HttpStatus.CONFLICT,
+                    "Learning returned an invalid trial policy snapshot; agreement creation was stopped before signing");
+        }
     }
 
     private boolean isIsoDate(String value) {
@@ -1235,6 +1368,9 @@ public class ContractManagementController {
         List<Map<String, Object>> results = new ArrayList<>();
         for (ContractAgreement agreement : agreements) {
             try {
+                // Open the contractual decision window from the completed Learning session first.
+                // Settlement proposal failures must not remove or delay this student right.
+                terminationService.openTrialDecisionWindow(agreement.getId(), sessionId.intValue());
                 var existingOpt = settlementRepository.findByAgreementIdAndSessionId(agreement.getId(), sessionId);
                 if (existingOpt.isPresent() && existingOpt.get().getStatus() != SettlementStatus.PREPARING && existingOpt.get().getStatus() != SettlementStatus.PROPOSE_PENDING) {
                     results.add(Map.of(
@@ -1276,6 +1412,31 @@ public class ContractManagementController {
                     // ignore notification failure
                 }
 
+                if (agreementTrialRepository != null) {
+                    agreementTrialRepository.findByAgreementId(agreement.getId()).ifPresent(trial -> {
+                        if (trial.getTrialSessionSequence() != null
+                                && trial.getTrialSessionSequence().equals(sessionId.intValue())
+                                && trial.getStatus() == iuh.fit.contract_service.enums.TrialStatus.NOT_STARTED) {
+                            trial.setStatus(iuh.fit.contract_service.enums.TrialStatus.DECISION_OPEN);
+                            trial.setUpdatedAt(OffsetDateTime.now(java.time.ZoneOffset.UTC));
+                            agreementTrialRepository.save(trial);
+                            try {
+                                notificationDispatcher.sendAsync(
+                                        agreement.getStudentEmail(),
+                                        agreement.getStudentId(),
+                                        "Giai đoạn trải nghiệm: Mở thời hạn dừng học",
+                                        "Buổi học trải nghiệm đã hoàn thành (" + outcome.name() + "). Bạn có quyền dừng khóa học và nhận hoàn lại học phí các buổi chưa học trước hạn " + trial.getTrialDeadline() + ".",
+                                        "TRIAL_DECISION_OPENED",
+                                        "CONTRACT_AGREEMENT",
+                                        agreement.getId().toString()
+                                );
+                            } catch (Exception ex) {
+                                // ignore notification error
+                            }
+                        }
+                    });
+                }
+
                 results.add(Map.of(
                         "agreementId", agreement.getId().toString(),
                         "studentId", agreement.getStudentId(),
@@ -1292,6 +1453,24 @@ public class ContractManagementController {
         }
 
         return ResponseEntity.ok(Map.of("classroomId", classroomId, "sessionId", sessionId, "proposals", results));
+    }
+
+    public record TrialOptOutRequest(String reason, String signature, String signerWallet, Long requestedAtTimestamp) {}
+
+    @PostMapping("/agreements/{agreementId}/trial/opt-out")
+    public ResponseEntity<?> trialOptOut(
+            @PathVariable UUID agreementId,
+            @RequestBody TrialOptOutRequest request) {
+        ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
+        var view = terminationService.trialOptOut(
+                agreementId,
+                request.reason(),
+                request.signature(),
+                request.signerWallet(),
+                request.requestedAtTimestamp(),
+                currentUser
+        );
+        return ResponseEntity.ok(view);
     }
 
 
@@ -1460,7 +1639,35 @@ public class ContractManagementController {
 
     private AgreementDetailDto toAgreementDetail(ContractAgreement a) {
         AgreementSummaryDto summary = toAgreementSummary(a);
-        return new AgreementDetailDto(summary, a.getTermsHash(), a.getContractVersion(), a.getTotalPriceVnd());
+        TrialDetailDto trialDto = null;
+        if (agreementTrialRepository != null) {
+            var trialOpt = agreementTrialRepository.findByAgreementId(a.getId());
+            if (trialOpt.isPresent()) {
+                var trial = trialOpt.get();
+                OffsetDateTime serverNow = OffsetDateTime.now(java.time.ZoneOffset.UTC);
+                boolean canOptOut = serverNow.isBefore(trial.getTrialDeadline())
+                        && trial.getStatus() == iuh.fit.contract_service.enums.TrialStatus.DECISION_OPEN
+                        && a.getStatus() == ContractAgreementStatus.ACTIVE;
+
+                BigInteger pricePerSession = a.getPricePerSessionUsdcUnits() != null ? a.getPricePerSessionUsdcUnits() : BigInteger.ZERO;
+                int remainingSessions = Math.max(0, a.getTotalSessions() - trial.getTrialSessionSequence());
+                BigInteger estimatedUnusedRefund = pricePerSession.multiply(BigInteger.valueOf(remainingSessions));
+
+                trialDto = new TrialDetailDto(
+                        trial.getStatus().name(),
+                        trial.getTrialDeadline() != null ? trial.getTrialDeadline().toString() : null,
+                        serverNow.toString(),
+                        canOptOut,
+                        estimatedUnusedRefund.toString(),
+                        "0",
+                        estimatedUnusedRefund.toString(),
+                        true,
+                        trial.getTrialSessionSequence(),
+                        trial.getNextSessionSequence()
+                );
+            }
+        }
+        return new AgreementDetailDto(summary, a.getTermsHash(), a.getContractVersion(), a.getTotalPriceVnd(), trialDto);
     }
 
     private SettlementDto toSettlementDto(SessionSettlement s, short decimals) {
@@ -1665,9 +1872,27 @@ public class ContractManagementController {
             boolean onchainFunded, boolean legacyUnreconciled, boolean settlementEligible, double remainingDeposit,
             double releasedAmountUsdc, double refundedAmountUsdc, String fundedTxHash) {}
 
+    public record TrialDetailDto(
+            String trialStatus,
+            String trialDeadline,
+            String serverNow,
+            boolean canOptOut,
+            String estimatedUnusedRefundUnits,
+            String estimatedTrialSessionRefundUnits,
+            String estimatedTotalStudentReceiptUnits,
+            boolean refundEstimateOnly,
+            Integer trialSessionSequence,
+            Integer nextSessionSequence
+    ) {}
+
     public record AgreementDetailDto(
             AgreementSummaryDto summary,
-            String termsHash, Integer contractVersion, BigDecimal totalPriceVnd) {}
+            String termsHash, Integer contractVersion, BigDecimal totalPriceVnd,
+            TrialDetailDto trial) {
+        public AgreementDetailDto(AgreementSummaryDto summary, String termsHash, Integer contractVersion, BigDecimal totalPriceVnd) {
+            this(summary, termsHash, contractVersion, totalPriceVnd, null);
+        }
+    }
 
     public record SettlementDto(
             String id, Long sessionId, String onchainSessionId,

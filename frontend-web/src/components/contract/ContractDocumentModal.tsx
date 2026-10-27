@@ -757,6 +757,16 @@ export function ContractDocumentModal({
                 <p>9.2. Yêu cầu chấm dứt bắt buộc phải được xác thực bằng chữ ký số EIP-712 phát hành từ đúng địa chỉ ví Web3 đã ký hợp đồng này. Mọi thay đổi ví hoặc sai lệch chữ ký đều bị từ chối bảo vệ an toàn tài sản.</p>
                 <p>9.3. Khi yêu cầu chấm dứt được phê duyệt hợp lệ, Smart Contract Escrow sẽ thực hiện hủy hợp đồng on-chain và hoàn trả toàn bộ số tiền học phí của các buổi học chưa diễn ra trực tiếp về ví của Học viên.</p>
               </Clause>
+
+              {document.trialPolicy?.enabled && (
+                <Clause title="ĐIỀU 10: GIAI ĐOẠN TRẢI NGHIỆM CÓ BẢO CHỨNG ESCROW">
+                  <p>10.1. Hợp đồng áp dụng chính sách Giai đoạn trải nghiệm có bảo chứng Escrow (Phiên bản {document.trialPolicy.version}). Buổi học số {document.trialPolicy.trialSessionSequence || 1} là buổi trải nghiệm có tính phí theo kết quả điểm danh thực tế.</p>
+                  <p>10.2. Quyền dừng học thử: Sau khi buổi trải nghiệm hoàn thành, Học viên (Bên B) có quyền dừng hợp đồng trước thời điểm buổi học kế tiếp (Buổi {document.trialPolicy.nextSessionSequence || 2}) bắt đầu{document.trialPolicy.initialTrialDeadline ? ` (Hạn chót dự kiến: ${formatDate(document.trialPolicy.initialTrialDeadline, true)})` : ""}.</p>
+                  <p>10.3. Yêu cầu dừng trong giai đoạn trải nghiệm được gửi qua hệ thống kèm chữ ký số EIP-712 từ đúng ví của Học viên trước deadline và được tự động chấp thuận theo chính sách mà không cần xét duyệt đơn phương.</p>
+                  <p>10.4. Quyết toán và hoàn cọc: Buổi trải nghiệm được quyết toán theo kết quả điểm danh (85% Gia sư nếu đủ mặt, hoàn trả nếu Gia sư vắng mặt); toàn bộ học phí ký quỹ của các buổi học chưa học sẽ được Smart Contract Escrow hoàn trả về ví Học viên sau khi các buổi trước cutoff hoàn tất đối soát.</p>
+                  <p>10.5. Tự động tiếp tục: Nếu Học viên không gửi yêu cầu dừng trước hạn chót (serverReceivedAt &lt; trialDeadline), hợp đồng sẽ tự động tiếp tục cho toàn bộ khóa học mà không cần ký lại hay nạp quỹ bổ sung.</p>
+                </Clause>
+              )}
             </div>
 
             {/* KHỐI KÝ TÊN VÀ CON DẤU ĐIỆN TỬ (LEGAL SIGNATURES & EIP-712 SEALS) */}

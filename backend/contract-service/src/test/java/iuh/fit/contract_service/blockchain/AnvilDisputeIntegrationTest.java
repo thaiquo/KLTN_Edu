@@ -17,6 +17,7 @@ import iuh.fit.contract_service.repository.SessionSettlementRepository;
 import iuh.fit.contract_service.service.AgreementFundingWorkflowService;
 import iuh.fit.contract_service.service.AgreementRegistrationWorkflowService;
 import iuh.fit.contract_service.service.BlockchainEventIngestionService;
+import iuh.fit.contract_service.service.BlockchainReceiptWatcher;
 import iuh.fit.contract_service.service.DisputeWorkflowService;
 import iuh.fit.contract_service.service.OperatorTransactionDispatcher;
 import iuh.fit.contract_service.service.SessionSettlementWorkflowService;
@@ -41,7 +42,17 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+        "blockchain.enabled=true",
+        "blockchain.operator.enabled=true",
+        "blockchain.operator.address=0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+        "blockchain.operator.private-key=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+        "blockchain.rpc-url=http://127.0.0.1:8545",
+        "blockchain.chain-id=31337",
+        "blockchain.escrow-address=0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+        "blockchain.usdc-address=0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "blockchain.event-block-batch-size=1000"
+})
 @EnabledIfEnvironmentVariable(named = "RUN_ANVIL_DISPUTE_IT", matches = "true")
 class AnvilDisputeIntegrationTest {
     @org.springframework.test.context.bean.override.mockito.MockitoBean
@@ -63,6 +74,9 @@ class AnvilDisputeIntegrationTest {
 
     @Autowired
     private OperatorTransactionDispatcher dispatcher;
+
+    @Autowired
+    private BlockchainReceiptWatcher receiptWatcher;
 
     @Autowired
     private BlockchainEventIngestionService ingestionService;
@@ -93,6 +107,7 @@ class AnvilDisputeIntegrationTest {
         jdbcTemplate.execute("DELETE FROM outbox_event");
         jdbcTemplate.execute("DELETE FROM blockchain_transaction");
         jdbcTemplate.execute("DELETE FROM processed_event");
+        jdbcTemplate.execute("DELETE FROM blockchain_event_cursor");
         jdbcTemplate.execute("DELETE FROM dispute_evidence");
         jdbcTemplate.execute("DELETE FROM dispute");
         jdbcTemplate.execute("DELETE FROM session_settlement");
@@ -141,17 +156,28 @@ class AnvilDisputeIntegrationTest {
         // 1. Register on-chain
         registrationWorkflowService.initiateRegistration(agreementId);
         dispatcher.dispatchNext();
+        receiptWatcher.reconcilePendingReceipts();
 
         String rpcUrl = blockchainProperties.getRpcUrl() != null ? blockchainProperties.getRpcUrl().toString() : "http://127.0.0.1:8545";
         Web3j web3j = Web3j.build(new HttpService(rpcUrl));
         ingestionService.scanNextConfirmedRange();
 
         List<ProcessedEvent> registerEvents = processedEventRepository.findAll().stream()
-                .filter(e -> "AGREEMENT_REGISTERED".equals(e.getEventType()))
+                .filter(e -> "AGREEMENT_REGISTERED".equals(e.getEventType())
+                        && e.getDecodedPayload() != null
+                        && e.getDecodedPayload().toLowerCase().contains(agreement.getOnchainAgreementId().toLowerCase()))
                 .toList();
         if (!registerEvents.isEmpty()) {
             registrationWorkflowService.processConfirmedRegistrationEvent(registerEvents.get(registerEvents.size() - 1));
         }
+
+        // Mint test USDC to student
+        String mintData = FunctionEncoder.encode(new Function(
+                "mint",
+                List.of(new Address(studentWallet), new Uint256(BigInteger.valueOf(40000000L))),
+                List.of()));
+        web3j.ethSendTransaction(Transaction.createFunctionCallTransaction(
+                platformWallet, null, null, null, tokenAddress, mintData)).send();
 
         // 2. Fund agreement
         String approveData = FunctionEncoder.encode(new Function(
@@ -169,7 +195,9 @@ class AnvilDisputeIntegrationTest {
         ingestionService.scanNextConfirmedRange();
 
         List<ProcessedEvent> fundEvents = processedEventRepository.findAll().stream()
-                .filter(e -> "AGREEMENT_FUNDED".equals(e.getEventType()))
+                .filter(e -> "AGREEMENT_FUNDED".equals(e.getEventType())
+                        && e.getDecodedPayload() != null
+                        && e.getDecodedPayload().toLowerCase().contains(agreement.getOnchainAgreementId().toLowerCase()))
                 .toList();
         if (!fundEvents.isEmpty()) {
             fundingWorkflowService.processConfirmedFundingEvent(fundEvents.get(fundEvents.size() - 1));
@@ -180,11 +208,14 @@ class AnvilDisputeIntegrationTest {
         settlementWorkflowService.initiateSessionProposal(
                 agreementId, 1L, SettlementOutcome.BOTH_PRESENT, proposalEvidenceHash);
         dispatcher.dispatchNext();
+        receiptWatcher.reconcilePendingReceipts();
 
         ingestionService.scanNextConfirmedRange();
 
         List<ProcessedEvent> proposeEvents = processedEventRepository.findAll().stream()
-                .filter(e -> "SESSION_SETTLEMENT_PROPOSED".equals(e.getEventType()))
+                .filter(e -> "SESSION_SETTLEMENT_PROPOSED".equals(e.getEventType())
+                        && e.getDecodedPayload() != null
+                        && e.getDecodedPayload().toLowerCase().contains(agreement.getOnchainAgreementId().toLowerCase()))
                 .toList();
         if (!proposeEvents.isEmpty()) {
             settlementWorkflowService.processConfirmedSessionProposalEvent(proposeEvents.get(proposeEvents.size() - 1));
@@ -205,11 +236,14 @@ class AnvilDisputeIntegrationTest {
                     "application/pdf",
                     "sha256_hash");
             dispatcher.dispatchNext();
+            receiptWatcher.reconcilePendingReceipts();
 
             ingestionService.scanNextConfirmedRange();
 
             List<ProcessedEvent> disputeOpenedEvents = processedEventRepository.findAll().stream()
-                    .filter(e -> "TUTOR_FRAUD_DISPUTE_OPENED".equals(e.getEventType()))
+                    .filter(e -> "TUTOR_FRAUD_DISPUTE_OPENED".equals(e.getEventType())
+                            && e.getDecodedPayload() != null
+                            && e.getDecodedPayload().toLowerCase().contains(agreement.getOnchainAgreementId().toLowerCase()))
                     .toList();
             if (!disputeOpenedEvents.isEmpty()) {
                 disputeWorkflowService.processConfirmedDisputeOpenedEvent(disputeOpenedEvents.get(disputeOpenedEvents.size() - 1));
@@ -217,6 +251,13 @@ class AnvilDisputeIntegrationTest {
 
             Dispute dispute = disputeRepository.findBySettlementId(settlement.getId()).orElseThrow();
             if (dispute != null) {
+                // Tutor submits counter-response to dispute
+                disputeWorkflowService.submitTutorResponse(
+                        dispute.getId(),
+                        102L,
+                        "I was present and waited 15 minutes",
+                        "disputes/tutor_proof.png");
+
                 // 5. Resolve dispute by assigned staff (approved -> student refunded 100%)
                 String resolutionHash = Hash.sha3String("Tutor did not show up in video recording");
                 disputeWorkflowService.initiateDisputeResolution(
@@ -228,11 +269,14 @@ class AnvilDisputeIntegrationTest {
                         "Tutor did not show up in video recording",
                         resolutionHash);
                 dispatcher.dispatchNext();
+                receiptWatcher.reconcilePendingReceipts();
 
                 ingestionService.scanNextConfirmedRange();
 
                 List<ProcessedEvent> disputeResolvedEvents = processedEventRepository.findAll().stream()
-                        .filter(e -> "TUTOR_FRAUD_DISPUTE_RESOLVED".equals(e.getEventType()))
+                        .filter(e -> "TUTOR_FRAUD_DISPUTE_RESOLVED".equals(e.getEventType())
+                                && e.getDecodedPayload() != null
+                                && e.getDecodedPayload().toLowerCase().contains(agreement.getOnchainAgreementId().toLowerCase()))
                         .toList();
                 if (!disputeResolvedEvents.isEmpty()) {
                     disputeWorkflowService.processConfirmedDisputeResolvedEvent(disputeResolvedEvents.get(disputeResolvedEvents.size() - 1));

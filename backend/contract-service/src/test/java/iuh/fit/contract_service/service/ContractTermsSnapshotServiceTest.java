@@ -35,4 +35,49 @@ class ContractTermsSnapshotServiceTest {
                         "0x0000000000000000000000000000000000000004", "0x0000000000000000000000000000000000000005"),
                 new ContractTermsSnapshot.EscrowPolicyTerms(24, 8500, 1500, "SETTLE_PER_CONFIRMED_SESSION"));
     }
+
+    @Test
+    void supportsV4TermsWithTrialPolicyAndPreservesBackwardCompatibility() {
+        var base = snapshot("https://meet.google.com/test");
+        var trial = new ContractTermsSnapshot.TrialPolicyTerms(
+                true, 1, 1, 2,
+                "2026-09-10T18:00:00+07:00",
+                "2026-09-13T18:00:00+07:00",
+                "2026-09-13T18:00:00+07:00",
+                "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+                "serverReceivedAt < initialTrialDeadline",
+                "immutable after agreement signing starts in policy v1",
+                "confirmed before trialSessionStartAt",
+                true, true,
+                "unused escrow after required settlements are final"
+        );
+        var v4Snapshot = new ContractTermsSnapshot(
+                ContractTermsSnapshotService.SCHEMA_VERSION_V4,
+                base.classroom(), base.parties(), base.financial(), base.platform(), base.escrowPolicy(),
+                trial
+        );
+
+        String v4Json = service.serialize(v4Snapshot);
+        assertThat(v4Json).contains("contract-terms-v4");
+        assertThat(v4Json).contains("trialPolicy");
+        assertThat(v4Json).contains("initialTrialDeadline");
+
+        var parsed = service.parse(v4Json);
+        assertThat(parsed).isPresent();
+        assertThat(parsed.get().schemaVersion()).isEqualTo("contract-terms-v4");
+        assertThat(parsed.get().trialPolicy()).isNotNull();
+        assertThat(parsed.get().trialPolicy().trialSessionSequence()).isEqualTo(1);
+        assertThat(parsed.get().trialPolicy().nextSessionSequence()).isEqualTo(2);
+
+        // Backward compatibility: parsing legacy v3 json without trialPolicy
+        String v3Json = service.serialize(base);
+        assertThat(v3Json).doesNotContain("trialPolicy");
+        var parsedV3 = service.parse(v3Json);
+        assertThat(parsedV3).isPresent();
+        assertThat(parsedV3.get().schemaVersion()).isEqualTo("contract-terms-v3");
+        assertThat(parsedV3.get().trialPolicy()).isNull();
+
+        // Hash changes when trial policy changes
+        assertThat(service.hash(v4Json)).isNotEqualTo(service.hash(v3Json));
+    }
 }

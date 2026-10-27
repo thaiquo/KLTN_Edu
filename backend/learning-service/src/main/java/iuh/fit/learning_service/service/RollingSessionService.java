@@ -1,7 +1,6 @@
 package iuh.fit.learning_service.service;
 
 import iuh.fit.learning_service.entity.ClassRoom;
-import iuh.fit.learning_service.entity.ClassSchedule;
 import iuh.fit.learning_service.entity.ClassSession;
 import iuh.fit.learning_service.entity.EnrollmentRequest;
 import iuh.fit.learning_service.entity.SessionAttendance;
@@ -17,8 +16,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.DayOfWeek;
-import java.time.LocalDate;
 import java.util.*;
 
 @Slf4j
@@ -30,6 +27,7 @@ public class RollingSessionService {
     private final ClassSessionRepository classSessionRepository;
     private final EnrollmentRequestRepository enrollmentRequestRepository;
     private final SessionAttendanceRepository sessionAttendanceRepository;
+    private final CanonicalSessionPlanner sessionPlanner;
 
     /**
      * Tự động sinh danh sách các buổi học của tuần đầu tiên khi lớp bắt đầu mở dạy hoặc khi hợp đồng được kích hoạt.
@@ -51,56 +49,21 @@ public class RollingSessionService {
             return classSessionRepository.findByClassRoomIdOrderBySequenceNumberAsc(classroomId);
         }
 
-        List<ClassSchedule> schedules = classRoom.getSchedules();
-        if (schedules == null || schedules.isEmpty()) {
+        if (classRoom.getSchedules() == null || classRoom.getSchedules().isEmpty()) {
             log.warn("ClassRoom {} has no schedules configured.", classroomId);
             return Collections.emptyList();
-        }
-
-        // Map schedules by dayOfWeek (Java DayOfWeek: MONDAY(1) ... SUNDAY(7))
-        // Note: Project convention day_of_week: 2 = Mon, 3 = Tue, ..., 8 = Sun
-        if (schedules == null || schedules.isEmpty()) return Collections.emptyList();
-        if (schedules.stream().anyMatch(schedule -> schedule.getDayOfWeek() == null
-                || schedule.getDayOfWeek() < 2 || schedule.getDayOfWeek() > 8)) {
-            throw new IllegalArgumentException("Invalid schedule day of week");
-        }
-        Map<Integer, ClassSchedule> scheduleMap = new HashMap<>();
-        for (ClassSchedule cs : schedules) {
-            scheduleMap.put(cs.getDayOfWeek(), cs);
         }
 
         int targetBatchSize = Math.min(
                 classRoom.getSessionsPerWeek() != null && classRoom.getSessionsPerWeek() > 0 ? classRoom.getSessionsPerWeek() : 3,
                 classRoom.getTotalSessions() != null && classRoom.getTotalSessions() > 0 ? classRoom.getTotalSessions() : 12
         );
-        LocalDate currentDate = classRoom.getStartDate() != null ? classRoom.getStartDate() : LocalDate.now();
         List<ClassSession> createdSessions = new ArrayList<>();
-        int seq = 1;
-        int maxDays = 365;
-        int daysChecked = 0;
-
-        // Find matching dates starting from startDate
-        while (createdSessions.size() < targetBatchSize && seq <= (classRoom.getTotalSessions() != null ? classRoom.getTotalSessions() : 12) && daysChecked < maxDays) {
-            daysChecked++;
-            int dayOfWeekConvention = toProjectDayOfWeek(currentDate.getDayOfWeek());
-            if (scheduleMap.containsKey(dayOfWeekConvention)) {
-                ClassSchedule matchedSchedule = scheduleMap.get(dayOfWeekConvention);
-
-                ClassSession session = new ClassSession();
-                session.setClassRoom(classRoom);
-                session.setSequenceNumber(seq);
-                session.setTopic("Buổi " + seq);
-                session.setSessionDate(currentDate);
-                session.setStartTime(matchedSchedule.getStartTime());
-                session.setEndTime(matchedSchedule.getEndTime());
-                session.setStatus(ClassSessionStatus.SCHEDULED);
-
-                ClassSession savedSession = classSessionRepository.save(session);
-                createAttendancesForEnrolledStudents(savedSession, classRoom);
-                createdSessions.add(savedSession);
-                seq++;
-            }
-            currentDate = currentDate.plusDays(1);
+        for (CanonicalSessionPlanner.PlannedSession planned : sessionPlanner.plan(classRoom).stream()
+                .limit(targetBatchSize).toList()) {
+            ClassSession savedSession = persist(planned, classRoom);
+            createAttendancesForEnrolledStudents(savedSession, classRoom);
+            createdSessions.add(savedSession);
         }
 
         log.info("Generated {} initial sessions for ClassRoom {}", createdSessions.size(), classroomId);
@@ -132,48 +95,19 @@ public class RollingSessionService {
             return Collections.emptyList();
         }
 
-        ClassSession lastSession = existingSessions.get(existingSessions.size() - 1);
         if (existingSessions.stream().anyMatch(session -> session.getStatus() != ClassSessionStatus.COMPLETED)) {
             return Collections.emptyList();
         }
         int nextBatchSize = Math.min(classRoom.getSessionsPerWeek(), classRoom.getTotalSessions() - currentCount);
-
-        List<ClassSchedule> schedules = classRoom.getSchedules();
-        if (schedules == null || schedules.isEmpty()) return Collections.emptyList();
-        if (schedules.stream().anyMatch(schedule -> schedule.getDayOfWeek() == null
-                || schedule.getDayOfWeek() < 2 || schedule.getDayOfWeek() > 8)) {
-            throw new IllegalArgumentException("Invalid schedule day of week");
-        }
-        Map<Integer, ClassSchedule> scheduleMap = new HashMap<>();
-        for (ClassSchedule cs : schedules) {
-            scheduleMap.put(cs.getDayOfWeek(), cs);
-        }
-
-        LocalDate currentDate = lastSession.getSessionDate().plusDays(1);
+        if (classRoom.getSchedules() == null || classRoom.getSchedules().isEmpty()) return Collections.emptyList();
+        List<CanonicalSessionPlanner.PlannedSession> plannedSessions = sessionPlanner.plan(classRoom);
+        sessionPlanner.requirePersistedPrefix(classRoom, existingSessions);
         List<ClassSession> nextBatch = new ArrayList<>();
-        int seq = currentCount + 1;
-
-        int daysChecked = 0;
-        while (nextBatch.size() < nextBatchSize && seq <= classRoom.getTotalSessions() && daysChecked++ < 365) {
-            int dayOfWeekConvention = toProjectDayOfWeek(currentDate.getDayOfWeek());
-            if (scheduleMap.containsKey(dayOfWeekConvention)) {
-                ClassSchedule matchedSchedule = scheduleMap.get(dayOfWeekConvention);
-
-                ClassSession session = new ClassSession();
-                session.setClassRoom(classRoom);
-                session.setSequenceNumber(seq);
-                session.setTopic("Buổi " + seq);
-                session.setSessionDate(currentDate);
-                session.setStartTime(matchedSchedule.getStartTime());
-                session.setEndTime(matchedSchedule.getEndTime());
-                session.setStatus(ClassSessionStatus.SCHEDULED);
-
-                ClassSession savedSession = classSessionRepository.save(session);
-                createAttendancesForEnrolledStudents(savedSession, classRoom);
-                nextBatch.add(savedSession);
-                seq++;
-            }
-            currentDate = currentDate.plusDays(1);
+        for (CanonicalSessionPlanner.PlannedSession planned : plannedSessions.stream()
+                .skip(currentCount).limit(nextBatchSize).toList()) {
+            ClassSession savedSession = persist(planned, classRoom);
+            createAttendancesForEnrolledStudents(savedSession, classRoom);
+            nextBatch.add(savedSession);
         }
 
         log.info("Generated {} next batch sessions for ClassRoom {}", nextBatch.size(), classroomId);
@@ -240,10 +174,15 @@ public class RollingSessionService {
         return created;
     }
 
-    /**
-     * Map Java standard DayOfWeek (MONDAY=1 ... SUNDAY=7) to EduConnect convention (2=Mon ... 8=Sun)
-     */
-    private int toProjectDayOfWeek(DayOfWeek dayOfWeek) {
-        return dayOfWeek.getValue() + 1;
+    private ClassSession persist(CanonicalSessionPlanner.PlannedSession planned, ClassRoom classRoom) {
+        ClassSession session = new ClassSession();
+        session.setClassRoom(classRoom);
+        session.setSequenceNumber(planned.sequenceNumber());
+        session.setTopic("Buổi " + planned.sequenceNumber());
+        session.setSessionDate(planned.sessionDate());
+        session.setStartTime(planned.startTime());
+        session.setEndTime(planned.endTime());
+        session.setStatus(ClassSessionStatus.SCHEDULED);
+        return classSessionRepository.save(session);
     }
 }
