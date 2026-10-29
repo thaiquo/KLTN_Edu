@@ -23,6 +23,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigInteger;
+import java.time.OffsetDateTime;
 import java.util.*;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,6 +57,8 @@ class AdminFinancialMonitoringControllerTest {
     @Mock private org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway;
     @Mock private org.springframework.beans.factory.ObjectProvider<BlockchainEventIngestionService> blockchainEventIngestionService;
     @Mock private OperationalFundingPolicy operationalFundingPolicy;
+    @Mock private TutorAttendanceSignalService tutorAttendanceSignalService;
+    @Mock private TerminationSignals terminationSignals;
 
     private ContractManagementController controller;
 
@@ -84,7 +87,8 @@ class AdminFinancialMonitoringControllerTest {
                 blockchainGateway,
                 blockchainEventIngestionService,
                 operationalFundingPolicy, org.mockito.Mockito.mock(iuh.fit.contract_service.service.TerminationService.class),
-                org.mockito.Mockito.mock(iuh.fit.contract_service.service.ContractSourceSnapshotClient.class)
+                org.mockito.Mockito.mock(iuh.fit.contract_service.service.ContractSourceSnapshotClient.class),
+                null, null, tutorAttendanceSignalService, terminationSignals
         );
         org.mockito.Mockito.lenient().when(terminationItemRepository.findAll()).thenReturn(List.of());
     }
@@ -236,6 +240,24 @@ class AdminFinancialMonitoringControllerTest {
                 eq(first.getId()), eq(27L), eq(SettlementOutcome.BOTH_PRESENT), org.mockito.ArgumentMatchers.anyString());
         verify(settlementWorkflowService).initiateSessionProposal(
                 eq(second.getId()), eq(27L), eq(SettlementOutcome.STUDENT_ABSENT_TUTOR_PRESENT), org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void internalAutoProposeForwardsImmutableTutorAttendanceSnapshotWithoutInferringSequenceFromSessionId() {
+        when(agreementRepository.findAll()).thenReturn(List.of());
+        OffsetDateTime finalizedAt = OffsetDateTime.parse("2026-10-28T08:00:00Z");
+        OffsetDateTime nextStart = OffsetDateTime.parse("2026-10-29T08:00:00Z");
+        var body = new ContractManagementController.InternalAutoProposeRequest(
+                List.of(), 501L, 7, "TUTOR_ABSENT", finalizedAt,
+                "ATTENDANCE:4:7:v1", 8, nextStart);
+
+        ResponseEntity<?> response = controller.internalAutoProposeSettlement(4L, 501L, body);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        verify(tutorAttendanceSignalService).ingest(
+                4L, 501L, 7, "TUTOR_ABSENT", finalizedAt,
+                "ATTENDANCE:4:7:v1", 8, nextStart);
+        verify(terminationSignals).detectForClassroom(4L, 8, nextStart);
     }
 
     private ContractAgreement activeAgreement(Long classroomId, Long studentId) {

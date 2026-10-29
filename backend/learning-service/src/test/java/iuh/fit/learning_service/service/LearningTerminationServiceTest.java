@@ -20,6 +20,7 @@ class LearningTerminationServiceTest {
     @Mock LearningTerminationStopRepository stops;
     @Mock SessionAttendanceRepository attendances;
     @Mock RollingSessionService rollingSessions;
+    @Mock LearningTerminationCommandInboxRepository inboxRepository;
     @InjectMocks LearningTerminationService service;
     ClassRoom room;
     EnrollmentRequest enrollment;
@@ -264,5 +265,137 @@ class LearningTerminationServiceTest {
                 1, OffsetDateTime.now(ZoneOffset.UTC), UUID.randomUUID())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("cutoff session 0");
+    }
+
+    @Test
+    void autoTutorAbsenceWholeClassHoldSetsCutoffAndDeletesFutureAttendanceForAllStudents() {
+        room.setTotalSessions(10);
+        var s1 = session(1, LocalDateTime.now().minusDays(2));
+        var s2 = session(2, LocalDateTime.now().minusDays(1));
+        var s3 = session(3, LocalDateTime.now().minusHours(1));
+        var s4 = session(4, LocalDateTime.now().plusDays(1));
+        prepare(List.of(s1, s2, s3, s4));
+
+        UUID cmdId = UUID.randomUUID();
+        OffsetDateTime effectiveAt = OffsetDateTime.now(ZoneOffset.UTC);
+
+        var snapshot = service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, true, "HOLD", "AUTO_TUTOR_ABSENCE",
+                3, effectiveAt, cmdId));
+
+        assertThat(snapshot.cutoffSession()).isEqualTo(3);
+        assertThat(snapshot.requiredSessions()).containsExactly(1L, 2L, 3L);
+        assertThat(room.getTerminationCutoffSession()).isEqualTo(3);
+
+        verify(attendances).deleteBySession_Id(s4.getId());
+        verify(inboxRepository).saveAndFlush(any());
+    }
+
+    @Test
+    void autoTutorAbsenceReplayReturnsInboxSnapshotWithoutReExecuting() {
+        room.setTotalSessions(10);
+        var s1 = session(1, LocalDateTime.now().minusDays(2));
+        var s2 = session(2, LocalDateTime.now().minusDays(1));
+        prepare(List.of(s1, s2));
+
+        UUID cmdId = UUID.randomUUID();
+        OffsetDateTime effectiveAt = OffsetDateTime.now(ZoneOffset.UTC);
+
+        // Pre-populate inbox with matching hash
+        var cmd = new LearningTerminationService.Command(
+                1L, 2L, agreement, true, "HOLD", "AUTO_TUTOR_ABSENCE",
+                1, effectiveAt, cmdId);
+
+        // Compute expected hash by calling once or stubbing inbox
+        var existingInbox = new LearningTerminationCommandInbox();
+        existingInbox.setCommandId(cmdId);
+        existingInbox.setAction("HOLD");
+        existingInbox.setCutoffSession(1);
+        // Let's compute actual hash
+        String raw = String.format("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s",
+                cmdId, "HOLD", 1L, agreement, true, "AUTO_TUTOR_ABSENCE",
+                1, effectiveAt.toInstant().toEpochMilli(), null, "");
+        try {
+            var md = java.security.MessageDigest.getInstance("SHA-256");
+            existingInbox.setPayloadHash(java.util.HexFormat.of().formatHex(md.digest(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        when(inboxRepository.findByCommandIdAndAction(cmdId, "HOLD")).thenReturn(Optional.of(existingInbox));
+
+        var snapshot = service.apply(cmd);
+        assertThat(snapshot.cutoffSession()).isEqualTo(1);
+        verify(stops, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void commandInboxReplayRejectsPayloadMismatch() {
+        room.setTotalSessions(10);
+        prepare(List.of(session(1, LocalDateTime.now())));
+
+        UUID cmdId = UUID.randomUUID();
+        var existingInbox = new LearningTerminationCommandInbox();
+        existingInbox.setCommandId(cmdId);
+        existingInbox.setAction("HOLD");
+        existingInbox.setPayloadHash("different-hash");
+
+        when(inboxRepository.findByCommandIdAndAction(cmdId, "HOLD")).thenReturn(Optional.of(existingInbox));
+
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, true, "HOLD", "AUTO_TUTOR_ABSENCE",
+                1, OffsetDateTime.now(ZoneOffset.UTC), cmdId)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("payload mismatch");
+    }
+
+    @Test
+    void releaseExpiredAfterReleaseNotAfterThrowsException() {
+        room.setTotalSessions(10);
+        prepare(List.of(session(1, LocalDateTime.now())));
+
+        OffsetDateTime expiredDeadline = OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(5);
+
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, true, "RELEASE", "AUTO_TUTOR_ABSENCE", 1,
+                OffsetDateTime.now(ZoneOffset.UTC), UUID.randomUUID(), UUID.randomUUID(), expiredDeadline)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("RELEASE command received after releaseNotAfter deadline");
+    }
+
+    @Test
+    void tutorAbsenceReleaseRequiresCompleteReleaseFence() {
+        room.setTotalSessions(10);
+        prepare(List.of(session(1, LocalDateTime.now())));
+
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, true, "RELEASE", "AUTO_TUTOR_ABSENCE", 1,
+                OffsetDateTime.now(ZoneOffset.UTC), UUID.randomUUID(), UUID.randomUUID(), null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("RELEASE requires cutoff, effective time, expected hold command and release deadline");
+
+        verify(stops, never()).delete(any());
+        verify(inboxRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void releaseMismatchingExpectedHoldCommandIdThrowsException() {
+        room.setTotalSessions(10);
+        prepare(List.of(session(1, LocalDateTime.now())));
+
+        var stop = new LearningTerminationStop();
+        stop.setAgreementId(agreement);
+        stop.setCommandId(UUID.randomUUID());
+        when(stops.findById(agreement)).thenReturn(Optional.of(stop));
+
+        UUID differentExpectedCmd = UUID.randomUUID();
+        OffsetDateTime futureDeadline = OffsetDateTime.now(ZoneOffset.UTC).plusHours(2);
+
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, true, "RELEASE", "AUTO_TUTOR_ABSENCE", 1,
+                OffsetDateTime.now(ZoneOffset.UTC),
+                UUID.randomUUID(), differentExpectedCmd, futureDeadline)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("expectedHoldCommandId mismatch");
     }
 }

@@ -24,6 +24,8 @@ class ContractSchemaMigrationTest {
 
     @AfterEach
     void removeTrialRowsCreatedByMigrationTests() {
+        jdbcTemplate.update("DELETE FROM tutor_absence_probation");
+        jdbcTemplate.update("DELETE FROM class_tutor_attendance_signal");
         jdbcTemplate.update("DELETE FROM agreement_trial");
         jdbcTemplate.update("DELETE FROM termination_item");
         jdbcTemplate.update("DELETE FROM termination_case");
@@ -237,5 +239,179 @@ class ContractSchemaMigrationTest {
                 trialSessionStart, trialDeadline,
                 "8f762c047d43e36feae680100789e39d9dc3512deaa6bb884d755e57e790628d",
                 status, decisionSource, decisionAt);
+    }
+
+    @Test
+    void storesAndEnforcesAbsenceGovernanceCaseConstraints() {
+        UUID agreementId = UUID.randomUUID();
+        insertAgreement(agreementId, 1009, 2009, 1, BigDecimal.valueOf(10_000_000));
+
+        UUID caseId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime nextStart = now.plusHours(48);
+        OffsetDateTime responseDeadline = now.plusHours(24);
+        OffsetDateTime decisionDeadline = nextStart;
+
+        jdbcTemplate.update("""
+                INSERT INTO termination_case (
+                    id, anchor_agreement_id, classroom_id, whole_class, reason, requested_by,
+                    status, origin, created_at, updated_at, audit_json, version,
+                    absence_governance_version, trigger_session_sequence, next_session_sequence,
+                    next_session_start_at, response_deadline, decision_deadline, hold_command_id
+                ) VALUES (?, ?, 1009, true, 'Absence test', 'system', 'HOLD_PENDING', 'AUTO_TUTOR_ABSENCE',
+                          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '[]', 0,
+                          1, 3, 4, ?, ?, ?, ?)
+                """, caseId, agreementId, nextStart, responseDeadline, decisionDeadline, UUID.randomUUID());
+
+        Integer triggerSeq = jdbcTemplate.queryForObject(
+                "SELECT trigger_session_sequence FROM termination_case WHERE id = ?",
+                Integer.class, caseId);
+        assertEquals(3, triggerSeq);
+
+        // Reject invalid next sequence <= trigger sequence
+        UUID invalidSeqCaseId = UUID.randomUUID();
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update("""
+                INSERT INTO termination_case (
+                    id, anchor_agreement_id, classroom_id, whole_class, reason, requested_by,
+                    status, origin, created_at, updated_at, audit_json, version,
+                    absence_governance_version, trigger_session_sequence, next_session_sequence,
+                    next_session_start_at, response_deadline, decision_deadline, hold_command_id
+                ) VALUES (?, ?, 1009, true, 'Invalid seq', 'system', 'HOLD_PENDING', 'AUTO_TUTOR_ABSENCE',
+                          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '[]', 0,
+                          1, 3, 3, ?, ?, ?, ?)
+                """, invalidSeqCaseId, agreementId, nextStart, responseDeadline, decisionDeadline, UUID.randomUUID()));
+
+        // Reject response deadline > decision deadline
+        UUID invalidDeadlineCaseId = UUID.randomUUID();
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update("""
+                INSERT INTO termination_case (
+                    id, anchor_agreement_id, classroom_id, whole_class, reason, requested_by,
+                    status, origin, created_at, updated_at, audit_json, version,
+                    absence_governance_version, trigger_session_sequence, next_session_sequence,
+                    next_session_start_at, response_deadline, decision_deadline, hold_command_id
+                ) VALUES (?, ?, 1009, true, 'Invalid deadline', 'system', 'HOLD_PENDING', 'AUTO_TUTOR_ABSENCE',
+                          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '[]', 0,
+                          1, 3, 4, ?, ?, ?, ?)
+                """, invalidDeadlineCaseId, agreementId, nextStart, nextStart.plusHours(1), decisionDeadline, UUID.randomUUID()));
+
+        // Reject invalid auto decision reason
+        UUID invalidReasonCaseId = UUID.randomUUID();
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update("""
+                INSERT INTO termination_case (
+                    id, anchor_agreement_id, classroom_id, whole_class, reason, requested_by,
+                    status, origin, created_at, updated_at, audit_json, version,
+                    absence_governance_version, trigger_session_sequence, next_session_sequence,
+                    next_session_start_at, response_deadline, decision_deadline,
+                    auto_decision_at, auto_decision_reason, hold_command_id
+                ) VALUES (?, ?, 1009, true, 'Invalid reason', 'system', 'APPROVED', 'AUTO_TUTOR_ABSENCE',
+                          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '[]', 0,
+                          1, 3, 4, ?, ?, ?, CURRENT_TIMESTAMP, 'INVALID_REASON', ?)
+                """, invalidReasonCaseId, agreementId, nextStart, responseDeadline, decisionDeadline, UUID.randomUUID()));
+    }
+
+    @Test
+    void storesAndEnforcesProbationAndAttendanceSignalConstraints() {
+        UUID agreementId = UUID.randomUUID();
+        insertAgreement(agreementId, 1010, 2010, 1, BigDecimal.valueOf(10_000_000));
+
+        UUID caseId = UUID.randomUUID();
+        OffsetDateTime now = OffsetDateTime.now();
+        jdbcTemplate.update("""
+                INSERT INTO termination_case (
+                    id, anchor_agreement_id, classroom_id, whole_class, reason, requested_by,
+                    status, origin, created_at, updated_at, audit_json, version
+                ) VALUES (?, ?, 1010, true, 'Probation test', 'system', 'REJECTED', 'AUTO_TUTOR_ABSENCE',
+                          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '[]', 0)
+                """, caseId, agreementId);
+
+        // Probation insert
+        UUID probationId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO tutor_absence_probation (
+                    id, classroom_id, source_case_id, session_sequence, session_start_at, status,
+                    active_classroom_guard
+                ) VALUES (?, 1010, ?, 4, ?, 'ACTIVE', 1010)
+                """, probationId, caseId, now.plusHours(48));
+
+        String probationStatus = jdbcTemplate.queryForObject(
+                "SELECT status FROM tutor_absence_probation WHERE id = ?",
+                String.class, probationId);
+        assertEquals("ACTIVE", probationStatus);
+
+        UUID secondCaseId = UUID.randomUUID();
+        jdbcTemplate.update("""
+                INSERT INTO termination_case (
+                    id, anchor_agreement_id, classroom_id, whole_class, reason, requested_by,
+                    status, origin, created_at, updated_at, audit_json, version
+                ) VALUES (?, ?, 1010, true, 'Second probation test', 'system', 'REJECTED',
+                          'AUTO_TUTOR_ABSENCE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '[]', 0)
+                """, secondCaseId, agreementId);
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update("""
+                INSERT INTO tutor_absence_probation (
+                    id, classroom_id, source_case_id, session_sequence, session_start_at, status,
+                    active_classroom_guard
+                ) VALUES (?, 1010, ?, 5, ?, 'ACTIVE', 1010)
+                """, UUID.randomUUID(), secondCaseId, now.plusHours(72)));
+
+        jdbcTemplate.update("""
+                UPDATE tutor_absence_probation
+                   SET status = 'PASSED', active_classroom_guard = NULL,
+                       resolved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = ?
+                """, probationId);
+
+        // Attendance signal insert
+        UUID signalId = UUID.randomUUID();
+        String sourceEventId = "att-sig-1010-1";
+        jdbcTemplate.update("""
+                INSERT INTO class_tutor_attendance_signal (
+                    id, classroom_id, learning_session_id, session_sequence,
+                    tutor_attendance_outcome, finalized_at, source_event_id
+                ) VALUES (?, 1010, 5001, 1, 'TUTOR_ABSENT', CURRENT_TIMESTAMP, ?)
+                """, signalId, sourceEventId);
+
+        // Duplicate source_event_id must be rejected
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update("""
+                INSERT INTO class_tutor_attendance_signal (
+                    id, classroom_id, learning_session_id, session_sequence,
+                    tutor_attendance_outcome, finalized_at, source_event_id
+                ) VALUES (?, 1010, 5002, 2, 'TUTOR_ABSENT', CURRENT_TIMESTAMP, ?)
+                """, UUID.randomUUID(), sourceEventId));
+
+        // Duplicate (classroom_id, session_sequence) must be rejected
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update("""
+                INSERT INTO class_tutor_attendance_signal (
+                    id, classroom_id, learning_session_id, session_sequence,
+                    tutor_attendance_outcome, finalized_at, source_event_id
+                ) VALUES (?, 1010, 5003, 1, 'TUTOR_PRESENT', CURRENT_TIMESTAMP, 'att-sig-1010-distinct')
+                """, UUID.randomUUID()));
+    }
+
+    @Test
+    void relapseGovernanceCaseDoesNotInventNextSessionSnapshot() {
+        UUID agreementId = UUID.randomUUID();
+        insertAgreement(agreementId, 1011, 2011, 1, BigDecimal.valueOf(10_000_000));
+
+        jdbcTemplate.update("""
+                INSERT INTO termination_case (
+                    id, anchor_agreement_id, classroom_id, whole_class, reason, requested_by,
+                    status, origin, created_at, updated_at, audit_json, version,
+                    absence_governance_version, trigger_session_sequence, hold_command_id,
+                    auto_decision_at, auto_decision_reason
+                ) VALUES (?, ?, 1011, true, 'Relapse test', 'system', 'APPROVED',
+                          'AUTO_TUTOR_ABSENCE_RELAPSE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '[]', 0,
+                          1, 4, ?, CURRENT_TIMESTAMP, 'PROBATION_RELAPSE')
+                """, UUID.randomUUID(), agreementId, UUID.randomUUID());
+
+        assertThrows(DataIntegrityViolationException.class, () -> jdbcTemplate.update("""
+                INSERT INTO termination_case (
+                    id, anchor_agreement_id, classroom_id, whole_class, reason, requested_by,
+                    status, origin, created_at, updated_at, audit_json, version,
+                    absence_governance_version, trigger_session_sequence, next_session_sequence,
+                    next_session_start_at, response_deadline, decision_deadline, hold_command_id
+                ) VALUES (?, ?, 1011, true, 'Fake relapse snapshot', 'system', 'APPROVED',
+                          'AUTO_TUTOR_ABSENCE_RELAPSE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '[]', 0,
+                          1, 4, 5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
+                """, UUID.randomUUID(), agreementId, UUID.randomUUID()));
     }
 }

@@ -36,16 +36,41 @@ public class ContractServiceDispatcher {
 
     public record StudentAttendanceOutcomeItem(Long studentId, String outcome) {}
 
+    public record AutoProposePayload(
+            List<StudentAttendanceOutcomeItem> attendances,
+            Long learningSessionId,
+            Integer sessionSequence,
+            String tutorAttendanceOutcome,
+            java.time.OffsetDateTime finalizedAt,
+            String sourceEventId,
+            Integer nextSessionSequence,
+            java.time.OffsetDateTime nextSessionStartAt
+    ) {}
+
     public boolean dispatchAutoPropose(Long classroomId, Long sessionId, List<StudentAttendanceOutcomeItem> outcomes) {
+        return dispatchAutoPropose(classroomId, sessionId, new AutoProposePayload(
+                outcomes, null, sessionId != null ? sessionId.intValue() : null, null, null, null, null, null
+        ));
+    }
+
+    public boolean dispatchAutoPropose(Long classroomId, Long sessionId, AutoProposePayload payload) {
         if (classroomId == null || sessionId == null) {
             return false;
         }
 
         try {
             String url = contractServiceUrl + "/api/contracts/internal/classrooms/" + classroomId + "/sessions/" + sessionId + "/auto-propose";
-            Map<String, Object> bodyMap = Map.of(
-                    "attendances", outcomes != null ? outcomes : List.of()
-            );
+            Map<String, Object> bodyMap = new java.util.LinkedHashMap<>();
+            bodyMap.put("attendances", payload != null && payload.attendances() != null ? payload.attendances() : List.of());
+            if (payload != null) {
+                if (payload.learningSessionId() != null) bodyMap.put("learningSessionId", payload.learningSessionId());
+                if (payload.sessionSequence() != null) bodyMap.put("sessionSequence", payload.sessionSequence());
+                if (payload.tutorAttendanceOutcome() != null) bodyMap.put("tutorAttendanceOutcome", payload.tutorAttendanceOutcome());
+                if (payload.finalizedAt() != null) bodyMap.put("finalizedAt", payload.finalizedAt().toString());
+                if (payload.sourceEventId() != null) bodyMap.put("sourceEventId", payload.sourceEventId());
+                if (payload.nextSessionSequence() != null) bodyMap.put("nextSessionSequence", payload.nextSessionSequence());
+                if (payload.nextSessionStartAt() != null) bodyMap.put("nextSessionStartAt", payload.nextSessionStartAt().toString());
+            }
             String bodyJson = objectMapper.writeValueAsString(bodyMap);
 
             HttpRequest request = HttpRequest.newBuilder()

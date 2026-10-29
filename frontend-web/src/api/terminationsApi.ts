@@ -27,6 +27,19 @@ export interface TerminationEvidenceView {
   createdAt: string;
 }
 
+export interface TutorAbsenceProbation {
+  id: string;
+  classroomId: number;
+  sourceCaseId: string;
+  sessionSequence: number;
+  sessionStartAt: string;
+  status: 'ACTIVE' | 'PASSED' | 'FAILED' | 'CANCELLED';
+  failureCaseId?: string | null;
+  resolvedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface TerminationView {
   request: {
     id: string;
@@ -36,7 +49,7 @@ export interface TerminationView {
     reason: string;
     requestedBy: string;
     status: string;
-    origin?: 'PARTY_REQUEST' | 'AUTO_TUTOR_ABSENCE' | 'SYSTEM_REVIEW' | 'ADMIN_DIRECT' | string;
+    origin?: 'PARTY_REQUEST' | 'AUTO_TUTOR_ABSENCE' | 'AUTO_TUTOR_ABSENCE_RELAPSE' | 'SYSTEM_REVIEW' | 'ADMIN_DIRECT' | string;
     responseDeadline?: string | null;
     tutorRespondedAt?: string | null;
     createdAt: string;
@@ -45,9 +58,18 @@ export interface TerminationView {
     signerWallet?: string | null;
     signature?: string | null;
     requestedAtTimestamp?: number | null;
+    absenceGovernanceVersion?: number | null;
+    triggerSessionSequence?: number | null;
+    nextSessionSequence?: number | null;
+    nextSessionStartAt?: string | null;
+    decisionDeadline?: string | null;
+    autoDecisionAt?: string | null;
+    autoDecisionReason?: string | null;
   };
   items: TerminationItem[];
   evidence?: TerminationEvidenceView[];
+  probation?: TutorAbsenceProbation | null;
+  serverNow?: string;
 }
 
 export const terminationsApi = {

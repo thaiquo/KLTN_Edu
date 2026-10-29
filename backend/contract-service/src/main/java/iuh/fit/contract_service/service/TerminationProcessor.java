@@ -76,6 +76,9 @@ public class TerminationProcessor {
         if (!"APPROVED".equals(c.getStatus())) return;
         var snapshot = Set.of("TRIAL_OPT_OUT", TerminationService.ORIGIN_SYSTEM_LATE_FUNDING).contains(c.getOrigin())
                 ? persistedTrialSnapshot(a, c)
+                : isAbsenceGovernance(c)
+                ? learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), c.isWholeClass(), "FREEZE",
+                        c.getOrigin(), c.getTriggerSessionSequence(), c.getCreatedAt(), governanceCommandId(c, a), null, null)
                 : learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), c.isWholeClass(), "FREEZE");
         if (snapshot.cutoffSession() < 0 || snapshot.requiredSessions() == null) {
             throw new IllegalStateException("Invalid Learning cutoff");
@@ -167,7 +170,12 @@ public class TerminationProcessor {
         if (tx.getStatus() == BlockchainTransactionStatus.FAILED) item.setLastError("Transaction requires recovery; see transaction audit");
     }
     private void close(ContractAgreement a, TerminationCase c, TerminationItem item) {
-        learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), c.isWholeClass(), "CLOSE");
+        if (isAbsenceGovernance(c)) {
+            learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), c.isWholeClass(), "CLOSE",
+                    c.getOrigin(), c.getTriggerSessionSequence(), c.getCreatedAt(), governanceCommandId(c, a), null, null);
+        } else {
+            learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), c.isWholeClass(), "CLOSE");
+        }
         item.setStatus("COMPLETED");
         notifications.sendAsync(a.getClassroomReviewerEmail(), null, "Đã hoàn tất thanh lý hợp đồng",
                 "Hợp đồng đã hoàn tất quyết toán và cập nhật quyền tham gia lớp. Mở hồ sơ để xem kết quả và giao dịch xác nhận.",
@@ -194,6 +202,16 @@ public class TerminationProcessor {
                 }
             });
         }
+    }
+
+    private boolean isAbsenceGovernance(TerminationCase c) {
+        return c.getAbsenceGovernanceVersion() != null && c.getAbsenceGovernanceVersion() == 1;
+    }
+
+    private UUID governanceCommandId(TerminationCase c, ContractAgreement agreement) {
+        if (agreement.getId().equals(c.getAnchorAgreementId())) return c.getHoldCommandId();
+        return UUID.nameUUIDFromBytes((c.getHoldCommandId() + ":" + agreement.getId())
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     private TerminationLearningClient.Snapshot persistedTrialSnapshot(

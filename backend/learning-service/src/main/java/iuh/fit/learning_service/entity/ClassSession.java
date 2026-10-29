@@ -82,6 +82,14 @@ public class ClassSession {
 
     private LocalDateTime updatedAt;
 
+    private java.time.OffsetDateTime attendanceFinalizedAt;
+
+    private Integer governanceNextSessionSequence;
+
+    private java.time.OffsetDateTime governanceNextSessionStartAt;
+
+    private java.time.OffsetDateTime governanceSnapshotCapturedAt;
+
     @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<SessionFile> sessionFiles = new ArrayList<>();
 

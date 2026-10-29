@@ -74,6 +74,16 @@ const statusTone = (status: string) => {
 
 const message = (error: unknown) => (error instanceof Error ? error.message : 'Không thể xử lý yêu cầu.');
 
+const remainingLabel = (deadline?: string | null, serverNow?: string | null) => {
+  if (!deadline || !serverNow) return null;
+  const remainingMs = new Date(deadline).getTime() - new Date(serverNow).getTime();
+  if (remainingMs <= 0) return 'đã hết hạn';
+  const totalMinutes = Math.ceil(remainingMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `còn ${hours} giờ ${minutes} phút` : `còn ${minutes} phút`;
+};
+
 const units = (value?: string | null, decimals: number = 6) => {
   if (!value) return '0';
   const digits = String(value).padStart(decimals + 1, '0');
@@ -1125,7 +1135,7 @@ export function TerminationPanel({
       {/* 3. LIST OF TERMINATION CASES */}
       {!loading && filteredRequests.length > 0 && (
         <div className="space-y-6">
-          {filteredRequests.map(({ request: c, items, evidence = [] }) => {
+          {filteredRequests.map(({ request: c, items, evidence = [], probation, serverNow }) => {
             const anchorAgreement = agreementMap.get(c.anchorAgreementId);
             const className = anchorAgreement?.className || `Lớp #${c.classroomId}`;
             const tutorName = anchorAgreement?.tutorName || 'Chưa cập nhật gia sư';
@@ -1178,8 +1188,10 @@ export function TerminationPanel({
             const studentSettledUsdc = Math.max(0, studentEscrowPool - studentRefundUsdc);
             const auditEntries = parseAudit(c.auditJson);
             const ownEvidenceCount = evidence.filter((ev) => ev.submittedByRole.toLowerCase() === normalizedRole).length;
-            const automaticAbsenceWarning = c.origin === 'AUTO_TUTOR_ABSENCE';
-            const responseDeadlinePassed = !!c.responseDeadline && new Date(c.responseDeadline).getTime() <= Date.now();
+            const automaticAbsenceWarning = c.origin === 'AUTO_TUTOR_ABSENCE' || c.origin === 'AUTO_TUTOR_ABSENCE_RELAPSE';
+            const authoritativeNow = serverNow ? new Date(serverNow).getTime() : Number.NEGATIVE_INFINITY;
+            const responseDeadlinePassed = !!c.responseDeadline && new Date(c.responseDeadline).getTime() <= authoritativeNow;
+            const decisionDeadlinePassed = !!c.decisionDeadline && new Date(c.decisionDeadline).getTime() <= authoritativeNow;
             const warningReadyForNormalReview = !automaticAbsenceWarning || !!c.tutorRespondedAt || responseDeadlinePassed;
             const isExpanded = expandedCaseIds.has(c.id);
 
@@ -1303,19 +1315,52 @@ export function TerminationPanel({
                   <div className="rounded-2xl border-2 border-orange-300 bg-orange-50 p-4 text-xs text-orange-950 space-y-2">
                     <div className="flex items-center gap-2 font-black text-sm">
                       <AlertTriangle className="w-4 h-4 text-orange-600" />
-                      Cảnh cáo tự động: Gia sư vắng 3 buổi liên tiếp
+                      {c.origin === 'AUTO_TUTOR_ABSENCE_RELAPSE'
+                        ? `Tự động hủy: Gia sư tiếp tục vắng tại buổi thử thách #${c.triggerSessionSequence || ''}`
+                        : `Cảnh cáo tự động: Gia sư vắng 3 buổi liên tiếp (Buổi #${c.triggerSessionSequence || 3})`}
                     </div>
-                    <p>Lịch tương lai của lớp đã được giữ trong lúc gia sư giải trình và Ban quản trị xem xét.</p>
+                    <p>Lịch tương lai của lớp đã được tạm giữ. Gia sư cần gửi giải trình/minh chứng trước hạn. Ban quản trị xem xét cho phép dạy tiếp có điều kiện trước giờ bắt đầu buổi tiếp theo.</p>
                     <div className="flex flex-wrap gap-2 font-bold">
                       <span className="rounded-lg border border-orange-200 bg-white px-2.5 py-1">
-                        Hạn giải trình: {c.responseDeadline ? new Date(c.responseDeadline).toLocaleString('vi-VN') : 'Đang xác định theo lịch lớp'}
+                        Hạn Tutor gửi giải trình: {c.responseDeadline ? `${new Date(c.responseDeadline).toLocaleString('vi-VN')} (${remainingLabel(c.responseDeadline, serverNow)})` : 'Đang xác định theo lịch lớp'}
                       </span>
-                      <span className={`rounded-lg border px-2.5 py-1 ${c.tutorRespondedAt ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-orange-200 bg-white'}`}>
+                      {c.decisionDeadline && (
+                        <span className="rounded-lg border border-amber-300 bg-amber-100/70 text-amber-950 px-2.5 py-1">
+                          Hạn Admin quyết định: {new Date(c.decisionDeadline).toLocaleString('vi-VN')} ({remainingLabel(c.decisionDeadline, serverNow)}) · Bắt đầu buổi #{c.nextSessionSequence}
+                        </span>
+                      )}
+                      <span className={`rounded-lg border px-2.5 py-1 ${c.tutorRespondedAt ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : responseDeadlinePassed ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-orange-200 bg-white'}`}>
                         {c.tutorRespondedAt
                           ? `Đã giải trình: ${new Date(c.tutorRespondedAt).toLocaleString('vi-VN')}`
-                          : responseDeadlinePassed ? 'Đã hết hạn, Admin được quyền quyết định' : 'Chưa có giải trình của gia sư'}
+                          : responseDeadlinePassed ? 'Hết hạn giải trình - Chờ Admin hoặc hệ thống hủy' : 'Chưa có giải trình của gia sư'}
+                      </span>
+                      {c.autoDecisionReason && (
+                        <span className="rounded-lg border border-rose-300 bg-rose-100 text-rose-900 px-2.5 py-1">
+                          Lý do hủy tự động: {c.autoDecisionReason}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {probation && (
+                  <div className={`rounded-2xl border-2 p-4 text-xs space-y-1.5 ${
+                    probation.status === 'ACTIVE'
+                      ? 'border-amber-400 bg-amber-50 text-amber-950'
+                      : probation.status === 'PASSED'
+                      ? 'border-emerald-400 bg-emerald-50 text-emerald-950'
+                      : 'border-rose-400 bg-rose-50 text-rose-950'
+                  }`}>
+                    <div className="flex items-center gap-2 font-black text-sm">
+                      <ShieldCheck className="w-4 h-4 text-amber-700" />
+                      <span>Theo dõi thử thách (Probation) — Buổi #{probation.sessionSequence}</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border bg-white">
+                        {probation.status === 'ACTIVE' ? 'ĐANG THEO DÕI' : probation.status === 'PASSED' ? 'ĐẠT (HOÀN TẤT)' : 'VI PHẠM (ĐÃ HỦY)'}
                       </span>
                     </div>
+                    <p className="text-slate-600">
+                      Lớp học được Admin cho phép tiếp tục trên cơ sở thử thách tại buổi #{probation.sessionSequence}. Nếu gia sư tiếp tục vắng mặt, lớp học sẽ lập tức bị hủy tự động và hoàn tiền cọc học viên.
+                    </p>
                   </div>
                 )}
 
@@ -1569,10 +1614,10 @@ export function TerminationPanel({
                       <div className="space-y-1.5">
                         {automaticAbsenceWarning && isTutor && (
                           <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 space-y-2">
-                            <p>Nêu lý do vắng, các buổi bị ảnh hưởng, ngày có thể dạy lại và lịch bù cụ thể. Đính kèm minh chứng nếu có. Admin sẽ xem xét cho tiếp tục hoặc chấm dứt; gửi giải trình không tự mở lại lớp.</p>
-                            <button type="button" disabled={submittingCaseId === c.id || !!(stagedNotesMap[c.id] || '').trim()}
-                              onClick={() => setStagedNotesMap((prev) => ({ ...prev, [c.id]: 'Lý do vắng và các buổi bị ảnh hưởng:\n\nMinh chứng kèm theo (nếu có):\n\nNgày có thể tiếp tục dạy:\n\nLịch bù đề xuất (ngày, giờ, nội dung):\n\nCam kết và đề nghị Admin xem xét:' }))}
-                              className="font-bold underline disabled:opacity-50">Dùng mẫu giải trình và lịch bù</button>
+                            <p>Nêu lý do bất khả kháng, đính kèm giấy tờ/minh chứng xác thực, thời điểm sẵn sàng tiếp tục và cam kết đảm bảo tiến độ. Lưu ý: Mọi thỏa thuận kèm bù kiến thức là thỏa thuận riêng của gia sư ngoài hợp đồng, hệ thống không tạo buổi hay can thiệp Smart Contract. Gửi giải trình không tự mở lại lớp mà cần Admin phê duyệt.</p>
+                            <button type="button" disabled={submittingCaseId === c.id || !!(stagedNotesMap[c.id] || '').trim() || responseDeadlinePassed}
+                              onClick={() => setStagedNotesMap((prev) => ({ ...prev, [c.id]: 'Lý do vắng bất khả kháng và các buổi bị ảnh hưởng:\n\nMinh chứng đính kèm (giấy viện/sự cố/công tác):\n\nThời điểm có thể tiếp tục giảng dạy bình thường:\n\nKế hoạch đảm bảo tiến độ kiến thức cho học viên (thỏa thuận riêng ngoài hợp đồng):\n\nCam kết không tái diễn và đề nghị Ban quản trị xem xét cho tiếp tục:' }))}
+                              className="font-bold underline disabled:opacity-50">Dùng mẫu giải trình và cam kết tiếp tục dạy</button>
                           </div>
                         )}
                         <label className="text-xs font-bold text-slate-700 block">
@@ -1607,6 +1652,7 @@ export function TerminationPanel({
                           onClick={() => void handleSubmitSupplement(c.id)}
                           disabled={
                             submittingCaseId === c.id ||
+                            (automaticAbsenceWarning && isTutor && responseDeadlinePassed) ||
                             ((stagedFilesMap[c.id]?.length || 0) === 0 && !(stagedNotesMap[c.id] || '').trim())
                           }
                         >
@@ -2093,17 +2139,17 @@ export function TerminationPanel({
                                   onClick={() => beginManagerAction({ request: c, items, evidence }, 'FORCE_APPROVE')}
                                   disabled={busy}
                                 >
-                                  <AlertTriangle size={16} /> Hủy khẩn cấp theo quyền Admin
+                                  <AlertTriangle size={16} /> {automaticAbsenceWarning ? 'Hủy lớp ngay (Không chờ giải trình)' : 'Hủy khẩn cấp theo quyền Admin'}
                                 </button>
                               )}
                               <button
-                                className="px-4 py-2.5 rounded-xl bg-white hover:bg-red-50 text-red-700 border border-red-200 text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                                className="px-4 py-2.5 rounded-xl bg-white hover:bg-red-50 text-red-700 border border-red-200 text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
                                 onClick={() => {
                                   beginManagerAction({ request: c, items, evidence }, 'REJECT');
                                 }}
-                                disabled={busy}
+                                disabled={busy || (automaticAbsenceWarning && decisionDeadlinePassed)}
                               >
-                                <X size={15} /> {c.wholeClass ? 'Cho lớp tiếp tục (Từ chối hủy)' : 'Từ chối chấm dứt · Khôi phục phần học'}
+                                <X size={15} /> {c.wholeClass ? (automaticAbsenceWarning ? 'Cho phép dạy tiếp (Kèm thử thách)' : 'Cho lớp tiếp tục (Từ chối hủy)') : 'Từ chối chấm dứt · Khôi phục phần học'}
                               </button>
                             </>
                           )}
