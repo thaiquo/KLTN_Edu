@@ -41,6 +41,9 @@ public class LearningTerminationCommandInbox {
 
     private OffsetDateTime nextSessionStartAt;
 
+    @Column(name = "class_cancelled", nullable = false)
+    private boolean classCancelled = false;
+
     @Column(nullable = false, updatable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now();
 

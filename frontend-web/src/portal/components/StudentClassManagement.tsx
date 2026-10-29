@@ -621,7 +621,7 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
                   <History className="mt-0.5 h-4 w-4 shrink-0 text-slate-600" />
                   <div>
                     <strong className="block text-slate-900 font-bold">
-                      {selectedClass.status === "CANCELLED" ? "Lớp học đã bị hủy theo quyết định Admin (Thanh lý xong)" : "Lớp học đã kết thúc hoặc hợp đồng đã chấm dứt"}
+                      {selectedClass.status === "CANCELLED" ? "Lớp học đã hủy và hoàn tất thanh lý" : "Lớp học đã kết thúc hoặc hợp đồng đã chấm dứt"}
                     </strong>
                     <span className="text-xs">Bạn vẫn xem được các buổi đã tham gia, điểm danh, kết quả và bài tập đã nộp. Lịch tương lai và thao tác học mới đã được khóa.</span>
                   </div>

@@ -494,7 +494,7 @@ export const TutorSessionManagement: React.FC = () => {
                       if (selectedClass.status === "CANCELLED") {
                         return (
                           <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-100 text-rose-800 border border-rose-300">
-                            LỚP ĐÃ HỦY THEO QUYẾT ĐỊNH ADMIN
+                            LỚP ĐÃ HỦY VÀ HOÀN TẤT THANH LÝ
                           </span>
                         );
                       }
@@ -566,7 +566,7 @@ export const TutorSessionManagement: React.FC = () => {
                     <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                     <div>
                       <div className="font-bold">
-                        {selectedClass.status === "CANCELLED" ? "Lớp học đã bị hủy theo quyết định của Admin" : "Lớp học đã hoàn tất và đóng"}
+                        {selectedClass.status === "CANCELLED" ? "Lớp học đã hủy và hoàn tất thanh lý" : "Lớp học đã hoàn tất và đóng"}
                       </div>
                       <div className="text-xs text-rose-700 mt-0.5">
                         Toàn bộ phòng học trực tuyến và thao tác điểm danh mới đã khóa. Hệ thống chỉ cho phép tra cứu lịch sử các buổi học và kết quả quyết toán đã hoàn thành.
