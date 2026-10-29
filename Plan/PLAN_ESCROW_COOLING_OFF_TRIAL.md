@@ -803,6 +803,7 @@ Quy trình Staff/Admin khi cảnh báo `TRIAL_LATE_FUNDING_INCIDENT` xuất hi�
 | Isolation | Một Student opt-out trong lớp nhiều Student | Chỉ Student đó bị hủy; lớp và các Student khác tiếp tục nguyên vẹn |
 | Last Student | Student cuối cùng opt-out (`activeRemaining == 0`) | Agreement/enrollment hủy; lớp chuyển `CANCELLED`, future sessions `CANCELLED`, pending requests `CANCELLED` |
 | Concurrency | Student opt-out đồng thời với `activateEnrollment` | Khóa bi quan `class_rooms` serialize; nếu lớp đã hủy thì từ chối kích hoạt, không có lớp CANCELLED chứa học viên ENROLLED |
+| Replay Idempotency | Retry command sau khi lớp đã hủy bởi học viên khác | `learning_termination_command_inbox` (Flyway V18) lưu `class_cancelled` của từng lệnh, bảo đảm replay trả đúng kết quả gốc của command đó |
 | Settlement | Buổi trial đang PROPOSED/DISPUTED | Hold ngay, refund chờ final |
 | Safety | Có proposal session sau cutoff | Không cancel tự động; đưa vào recovery/audit |
 | Blockchain | Transaction failed/retry | Không duplicate; tracker hiển thị lỗi phục hồi |

@@ -107,7 +107,12 @@ Contract Service owns termination governance.
 - Student agreement termination and Tutor whole-class cancellation are submitted through Contract APIs.
 - Response deadlines and automatic absence handling are represented in Contract state where implemented.
 - Termination notification delivery uses Contract V18 transactional outbox plus internal Notification send.
-- Contract synchronizes lifecycle/cutoff effects to Learning; Learning stores the resulting hold/cutoff state but does not own termination decisions.
+- Contract synchronizes lifecycle/cutoff effects to Learning via internal command calls (`HOLD`, `CLOSE`, `RELEASE`, `FREEZE`):
+  - **Cutoff Fence**: Cutoff and effective time are calculated and locked in Contract before notifying Learning.
+  - **Trial Opt-Out Auto-Cancellation**: For individual trial opt-out (`TRIAL_OPT_OUT`), Contract calculates `cancelClassIfEmpty` when no active/pending agreements remain for the classroom and sends it with `CLOSE`.
+  - **Learning Authoritative Execution**: Learning acquires a pessimistic write lock (`SELECT ... FOR UPDATE`) on `class_rooms`. It cancels the student's enrollment and, if `cancelClassIfEmpty = true` and remaining valid students (`ENROLLED` or `ACCEPTED`) count drops to 0, automatically cancels the classroom, future sessions, and pending requests.
+  - **Replay Idempotency (Flyway V18)**: Learning persists `class_cancelled` along with the snapshot in `learning_termination_command_inbox`. On retry or replay of the same command ID, the inbox snapshot is returned directly, ensuring immutable replay outcomes.
+  - **Concurrency Serialization**: Late student activation (`activateEnrollment()`) locks `class_rooms` `FOR UPDATE` and rejects cancelled/closed/terminating rooms, guaranteeing strict serializability against empty-class auto-cancellation.
 - Frontend displays termination/refund progress for Student, Tutor, Staff and Admin according to role scope.
 
 ## 8. Event Architecture
@@ -135,12 +140,12 @@ Each service owns its data model even when local development uses the same Postg
 
 | Service | Current migration baseline | Representative data |
 | --- | --- | --- |
-| Account | Compact V1..V2 | users, roles, refresh sessions, OTP, students, tutors, tutor profiles and tutor applications/documents. |
-| Learning | Compact V1..V11 | legacy compatibility, normalized catalog, tutor registrations, classrooms, sessions/homework/materials, reviews, Community/Tutor Follow, Tutor profile reference normalization and public share UUIDs. |
-| Contract | Continuous V1..V20 | agreements, acceptances, artifacts, escrow payments, settlements, disputes/evidence, blockchain transactions/events, termination governance/outbox. |
+| Account | Compact V1..V3 | users, roles, refresh sessions, OTP, students, tutors, tutor profiles, tutor applications/documents, wallet challenges. |
+| Learning | Compact V1..V18 | legacy compatibility, normalized catalog, tutor registrations, classrooms, sessions/homework/materials, reviews, Community/Tutor Follow, Tutor profile reference normalization, public share UUIDs, AI community moderation, catalog subject mapping, trial policy metadata, absence governance safety, and command inbox class cancelled (V18). |
+| Contract | Continuous V1..V22 | agreements, acceptances, artifacts, escrow payments, settlements, disputes/evidence, blockchain transactions/events, termination governance/outbox, escrow trial policy, and tutor absence governance (V22). |
 | Notification | V1..V6 | notifications, direct conversations, text/media messages, child attachments and structured Class/Post share references. |
 
-Older high-numbered Learning migrations are not active post-merge migrations. Community is represented by compact Learning V8 and new changes must continue from V11 without rewriting applied files.
+Older high-numbered Learning migrations are not active post-merge migrations. Community is represented by compact Learning V8 and new changes must continue additive lineage from V18 without rewriting applied files.
 
 ## 10. Storage and Documents
 
