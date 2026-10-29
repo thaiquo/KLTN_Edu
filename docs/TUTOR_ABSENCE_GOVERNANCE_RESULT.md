@@ -7,6 +7,8 @@
 
 > **Pre-merge hardening bổ sung:** DB hiện tự bảo đảm mỗi lớp chỉ có một probation `ACTIVE`, kiểm tra lifecycle/resolution của probation, phạm vi whole-class/origin/command của governance case, deadline gắn đúng snapshot `N+1`, và cấu trúc command inbox Learning. Case relapse không còn ghi một “buổi kế tiếp” giả. `SHADOW` không thay đổi probation, Admin không thể cho lớp tiếp tục trước khi Tutor đã giải trình, và hệ thống không gửi thông báo “đã HOLD” khi lệnh HOLD còn lỗi. Contract không còn suy diễn `sessionSequence` từ `sessionId`; Learning từ chối RELEASE thiếu cutoff/effective time/expected HOLD/deadline. Payload Learning→Contract và scoped service JWT đã có contract test ở cả đầu gửi/nhận. Learning V17 có migration test riêng trên schema tiền đề tương thích H2. PostgreSQL 16 fresh và upgrade trên bản restore production `986bc3c` đã pass trong container cô lập.
 
+> **Post-deploy rollout audit 2026-10-29:** PR #6 đã merge tại `ed6f2ce`; CI, publish 7 images và Deploy VPS đều success; production health/class-search smoke test trả HTTP 200. Audit sau deploy phát hiện Compose chưa truyền hai biến tutor-absence vào Contract container và allowlist chỉ chứa token sai có thể bị hiểu thành global ENFORCE. Nhánh hardening bổ sung wiring Compose/production example, CI assertion, fail-closed sang SHADOW và runbook canary. Feature vẫn phải giữ `OFF` cho đến khi nhánh hardening được merge/deploy và các E2E còn thiếu hoàn tất.
+
 ### Release verdict hiện tại
 
 - Được phép tiếp tục phát triển/test với `TUTOR_ABSENCE_GOVERNANCE_MODE=OFF` hoặc local canary.
@@ -20,7 +22,7 @@
 ### 1.1. Cam kết an toàn & tính toàn vẹn (Code Integrity)
 - **Regression suite đã chạy lại thành công (không đồng nghĩa production-ready)**:
   - `learning-service`: **273/273 test PASS** (0 failures, 0 errors).
-  - `contract-service`: **282 test run, 0 failures, 0 errors, 8 Anvil tests skipped**.
+  - `contract-service`: **283 test run, 0 failures, 0 errors, 8 Anvil tests skipped**.
   - `frontend-web`: `tsc --noEmit` PASS; `npm run build` thành công trong **2.60s, exit code 0**; còn các cảnh báo dependency/chunk-size hiện hữu.
 - **Kill-Switch an toàn**: Mặc định cấu hình `tutor-absence.governance-mode=OFF`.
 - **Dữ liệu cũ (Backward Compatibility)**: Toàn bộ case cũ có `absence_governance_version = null` vẫn vận hành theo luồng cũ, không bị ảnh hưởng logic mới.
@@ -83,9 +85,9 @@
 - `TutorAbsenceDeadlinePolicyTest`: 7/7 PASS
 - `TutorAbsenceGovernanceFlowTest`: 9/9 PASS
 - `TutorAttendanceSignalServiceTest`: 5/5 PASS
-- `TutorAbsenceGovernancePropertiesTest`: 5/5 PASS
+- `TutorAbsenceGovernancePropertiesTest`: 6/6 PASS
 - `AdminFinancialMonitoringControllerTest`: 1 governance payload-forwarding test PASS (5/5 toàn class).
-- **Tổng cộng**: 47 test mục tiêu PASS. Toàn bộ test suite chạy 282 test, 0 failures, 0 errors (8 Anvil tests được skip theo cấu hình môi trường).
+- **Tổng cộng**: 48 test mục tiêu PASS. Toàn bộ test suite chạy 283 test, 0 failures, 0 errors (8 Anvil tests được skip theo cấu hình môi trường).
 
 ### Test Suites trên `learning-service` (đã chạy thành công):
 - `LearningTerminationServiceTest`: 22/22 PASS

@@ -51,4 +51,12 @@ class TutorAbsenceGovernancePropertiesTest {
         assertFalse(enforce.isEnabledFor(102L));
         assertTrue(enforce.isShadowFor(102L));
     }
+
+    @Test
+    void invalidNonEmptyCanaryAllowlistFailsClosedToShadow() {
+        var props = new TutorAbsenceGovernanceProperties("ENFORCE", "not-a-classroom, 42x");
+
+        assertFalse(props.isEnabledFor(42L));
+        assertTrue(props.isShadowFor(42L));
+    }
 }

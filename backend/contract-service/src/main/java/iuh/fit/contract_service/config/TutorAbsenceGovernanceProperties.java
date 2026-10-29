@@ -39,7 +39,7 @@ public record TutorAbsenceGovernanceProperties(String mode, String classroomIds)
         Mode m = resolvedMode();
         if (m != Mode.ENFORCE || classroomId == null) return false;
         Set<Long> allowlist = parseAllowlist();
-        if (allowlist.isEmpty()) {
+        if (!hasConfiguredAllowlist()) {
             return m == Mode.ENFORCE;
         }
         return allowlist.contains(classroomId);
@@ -50,7 +50,11 @@ public record TutorAbsenceGovernanceProperties(String mode, String classroomIds)
         if (m == Mode.OFF || classroomId == null) return false;
         Set<Long> allowlist = parseAllowlist();
         if (m == Mode.SHADOW) return true;
-        return !allowlist.isEmpty() && !allowlist.contains(classroomId);
+        return hasConfiguredAllowlist() && !allowlist.contains(classroomId);
+    }
+
+    private boolean hasConfiguredAllowlist() {
+        return classroomIds != null && !classroomIds.isBlank();
     }
 
     private Set<Long> parseAllowlist() {

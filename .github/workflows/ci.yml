@@ -114,9 +114,14 @@ jobs:
           BLOCKCHAIN_OPERATOR_ADDRESS: "0x0000000000000000000000000000000000000001"
           BLOCKCHAIN_OPERATOR_KEYSTORE_HOST_PATH: ./secrets/operator-keystore.json
           BLOCKCHAIN_OPERATOR_PASSWORD_FILE_HOST_PATH: ./secrets/operator-keystore-password
+          TUTOR_ABSENCE_GOVERNANCE_MODE: ENFORCE
+          TUTOR_ABSENCE_GOVERNANCE_CLASSROOM_IDS: "42"
         run: |
           docker compose --env-file deploy/production.env.example --profile ai -f compose.vps.yaml config --quiet
           docker compose --env-file deploy/production.env.example -f compose.vps.yaml -f compose.vps.operator.yaml config --quiet
+          resolved="$(docker compose --env-file deploy/production.env.example --profile ai -f compose.vps.yaml config)"
+          grep -q 'TUTOR_ABSENCE_GOVERNANCE_MODE: ENFORCE' <<< "$resolved"
+          grep -q 'TUTOR_ABSENCE_GOVERNANCE_CLASSROOM_IDS: "42"' <<< "$resolved"
 
   image-builds:
     name: Build image ${{ matrix.image }}
