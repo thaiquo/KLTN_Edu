@@ -294,7 +294,7 @@ Quy tắc thanh lý và đồng bộ trạng thái lớp học khi Học viên d
        - Chuyển toàn bộ yêu cầu đăng ký đang `PENDING` sang `CANCELLED`.
        - Gia sư không thể mở lại lớp học đã hủy.
 - **Bảo vệ chống tương tranh (Concurrency Guardrail)**:
-  - Thao tác kích hoạt học viên `activateEnrollment()` thực hiện khóa bi quan trên `class_rooms` và kiểm tra trạng thái lớp: từ chối kích hoạt nếu lớp đã `CANCELLED`, `CLOSED`, hoặc có `terminationCutoffSession != null`. Điều này loại bỏ hoàn toàn race condition giữa việc đóng lớp rỗng và sự kiện nạp tiền kích hoạt học viên mới.
+  - Thao tác kích hoạt học viên `activateEnrollment()` thực hiện khóa bi quan (`PESSIMISTIC_WRITE`) trên bản ghi `class_rooms` nhằm tuần tự hóa các giao dịch giữa việc đóng lớp rỗng và sự kiện kích hoạt học viên mới, ngăn chặn việc kích hoạt học viên vào lớp đã hủy, đóng hoặc đang trong quá trình chấm dứt.
 - **Thông báo & Hiển thị**:
   - Thông báo tới Học viên opt-out: "Yêu cầu dừng sau buổi trải nghiệm đã hoàn tất; khoản hoàn tiền đã được xác nhận."
   - Thông báo tới Gia sư khi lớp tự hủy: "Lớp đã tự động hủy vì không còn học viên hiệu lực."

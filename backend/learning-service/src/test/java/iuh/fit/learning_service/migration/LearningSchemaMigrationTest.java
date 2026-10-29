@@ -35,7 +35,8 @@ class LearningSchemaMigrationTest {
                 )
                 """);
         new ResourceDatabasePopulator(
-                new ClassPathResource("db/migration/V17__absence_governance_safety.sql"))
+                new ClassPathResource("db/migration/V17__absence_governance_safety.sql"),
+                new ClassPathResource("db/migration/V18__command_inbox_class_cancelled.sql"))
                 .populate(keepAlive);
     }
 
@@ -45,7 +46,7 @@ class LearningSchemaMigrationTest {
     }
 
     @Test
-    void v17CreatesGovernanceColumnsAndCommandInbox() {
+    void v17AndV18CreatesGovernanceColumnsAndCommandInboxWithClassCancelled() {
         Integer columns = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM information_schema.columns
                  WHERE table_name = 'class_sessions'
@@ -63,6 +64,13 @@ class LearningSchemaMigrationTest {
                  WHERE table_name = 'learning_termination_command_inbox'
                 """, Integer.class);
         assertEquals(1, inbox);
+
+        Integer classCancelledCol = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.columns
+                 WHERE table_name = 'learning_termination_command_inbox'
+                   AND column_name = 'class_cancelled'
+                """, Integer.class);
+        assertEquals(1, classCancelledCol);
     }
 
     @Test

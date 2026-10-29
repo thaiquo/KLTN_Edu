@@ -111,8 +111,7 @@ public class LearningTerminationService {
                     throw new IllegalStateException("Learning termination command payload mismatch for commandId=" + command.commandId());
                 }
                 int cutoff = inbox.getCutoffSession();
-                boolean classCancelled = room.getStatus() == ClassRoomStatus.CANCELLED;
-                return new Snapshot(cutoff, parseRequiredSessions(inbox.getRequiredSessionSequencesCsv()), inbox.getNextSessionStartAt(), classCancelled);
+                return new Snapshot(cutoff, parseRequiredSessions(inbox.getRequiredSessionSequencesCsv()), inbox.getNextSessionStartAt(), inbox.isClassCancelled());
             }
         }
 
@@ -233,7 +232,9 @@ public class LearningTerminationService {
                 }
             }
         }
-        final int cutoff = room.getTerminationCutoffSession() != null ? room.getTerminationCutoffSession() : stop.getCutoffSession();
+        final int cutoff = (command.wholeClass() && room.getTerminationCutoffSession() != null)
+                ? room.getTerminationCutoffSession()
+                : stop.getCutoffSession();
         OffsetDateTime nextSessionStart = rows.stream()
                 .filter(s -> s.getStatus() != ClassSessionStatus.CANCELLED)
                 .filter(s -> s.getSequenceNumber() > cutoff)
@@ -261,9 +262,15 @@ public class LearningTerminationService {
                 || command.effectiveRequestedAt() != null
                 || command.commandId() != null
                 || command.expectedHoldCommandId() != null
-                || command.releaseNotAfter() != null;
+                || command.releaseNotAfter() != null
+                || Boolean.TRUE.equals(command.cancelClassIfEmpty());
         if (!trialOptOut && !lateFundingRecovery && !tutorAbsence && hasExplicitFields) {
             throw new IllegalArgumentException("Explicit cutoff/audit fields require a supported system origin");
+        }
+        if (Boolean.TRUE.equals(command.cancelClassIfEmpty())) {
+            if (!trialOptOut || !"CLOSE".equals(command.action()) || command.wholeClass()) {
+                throw new IllegalArgumentException("cancelClassIfEmpty is only permitted on individual TRIAL_OPT_OUT CLOSE commands");
+            }
         }
         if (tutorAbsence) {
             if (!command.wholeClass()) {
@@ -306,8 +313,8 @@ public class LearningTerminationService {
             throw new IllegalArgumentException(command.origin() + " must be an individual HOLD or CLOSE command");
         }
         if ("CLOSE".equals(command.action())) {
-            if (command.commandId() == null) {
-                throw new IllegalArgumentException(command.origin() + " CLOSE requires commandId");
+            if (command.commandId() == null || command.requestedCutoffSession() == null || command.effectiveRequestedAt() == null) {
+                throw new IllegalArgumentException(command.origin() + " CLOSE requires commandId, cutoff and effective time");
             }
             return;
         }
@@ -354,6 +361,7 @@ public class LearningTerminationService {
             entry.setRequiredSessionSequencesCsv(snapshot.requiredSessions().stream()
                     .map(String::valueOf).collect(java.util.stream.Collectors.joining(",")));
             entry.setNextSessionStartAt(snapshot.nextSessionStart());
+            entry.setClassCancelled(Boolean.TRUE.equals(snapshot.classCancelled()));
             entry.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
             entry.setUpdatedAt(entry.getCreatedAt());
             inboxRepository.saveAndFlush(entry);
@@ -393,12 +401,12 @@ public class LearningTerminationService {
                 || !Objects.equals(stop.getCommandId(), command.commandId())) {
             throw new IllegalStateException("Trial opt-out replay does not match the persisted command");
         }
-        if ("HOLD".equals(command.action())) {
-            if (!Objects.equals(stop.getCutoffSession(), command.requestedCutoffSession())
-                    || stop.getEffectiveRequestedAt() == null
-                    || !stop.getEffectiveRequestedAt().toInstant().equals(command.effectiveRequestedAt().toInstant())) {
-                throw new IllegalStateException("Trial opt-out replay does not match the persisted command");
-            }
+        if (command.requestedCutoffSession() != null && !Objects.equals(stop.getCutoffSession(), command.requestedCutoffSession())) {
+            throw new IllegalStateException("Trial opt-out cutoff does not match the persisted stop");
+        }
+        if (command.effectiveRequestedAt() != null && stop.getEffectiveRequestedAt() != null
+                && !stop.getEffectiveRequestedAt().toInstant().equals(command.effectiveRequestedAt().toInstant())) {
+            throw new IllegalStateException("Trial opt-out effectiveRequestedAt does not match the persisted stop");
         }
     }
 
