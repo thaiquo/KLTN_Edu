@@ -295,6 +295,13 @@ Quy tắc thanh lý và đồng bộ trạng thái lớp học khi Học viên d
        - Gia sư không thể mở lại lớp học đã hủy.
 - **Bảo vệ chống tương tranh (Concurrency Guardrail)**:
   - Thao tác kích hoạt học viên `activateEnrollment()` thực hiện khóa bi quan (`PESSIMISTIC_WRITE`) trên bản ghi `class_rooms` nhằm tuần tự hóa các giao dịch giữa việc đóng lớp rỗng và sự kiện kích hoạt học viên mới, ngăn chặn việc kích hoạt học viên vào lớp đã hủy, đóng hoặc đang trong quá trình chấm dứt.
+- **Bảo toàn tính lũy đẳng qua Command Inbox (Flyway V18 Replay Idempotency)**:
+  - Bảng `learning_termination_command_inbox` lưu trữ kết quả snapshot của từng lệnh, bao gồm cờ `class_cancelled BOOLEAN NOT NULL DEFAULT FALSE`.
+  - Khi Contract Service retry hoặc replay cùng một command (cùng `commandId` và `action`): Learning Service đọc và trả về trực tiếp giá trị snapshot từ inbox thay vì đọc trạng thái động hiện tại của lớp học. Điều này ngăn ngừa trường hợp lệnh của học viên A (lớp không hủy) bị trả nhầm thành `classCancelled=true` khi sau đó học viên B rời lớp khiến lớp bị hủy.
+- **Ràng buộc an toàn tham số (Parameter Safety Guardrails)**:
+  - Cờ `cancelClassIfEmpty` chỉ được phép sử dụng khi thỏa mãn đồng thời: `action = 'CLOSE'`, `origin = 'TRIAL_OPT_OUT'`, `wholeClass = false`, có đầy đủ `commandId`, `requestedCutoffSession` và `effectiveRequestedAt`. Bất kỳ lệnh nào vi phạm đều bị từ chối với `IllegalArgumentException`.
+  - Lệnh `CLOSE` xác thực nghiêm ngặt rằng `requestedCutoffSession` và `effectiveRequestedAt` khớp hoàn toàn với bản ghi `LearningTerminationStop` đã lưu từ bước `HOLD`. Mọi sai lệch đều bị từ chối với `IllegalStateException`.
+  - Snapshot chỉ ưu tiên cutoff cấp lớp (`room.getTerminationCutoffSession()`) khi lệnh là `wholeClass = true`. Các lệnh chấm dứt cá nhân luôn giữ đúng cutoff của bản ghi stop cá nhân của học viên.
 - **Thông báo & Hiển thị**:
   - Thông báo tới Học viên opt-out: "Yêu cầu dừng sau buổi trải nghiệm đã hoàn tất; khoản hoàn tiền đã được xác nhận."
   - Thông báo tới Gia sư khi lớp tự hủy: "Lớp đã tự động hủy vì không còn học viên hiệu lực."

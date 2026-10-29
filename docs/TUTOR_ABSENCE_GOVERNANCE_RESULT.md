@@ -1,7 +1,7 @@
 # BÁO CÁO KẾT QUẢ TRIỂN KHAI: QUẢN TRỊ GIA SƯ VẮNG LIÊN TIẾP & THỬ THÁCH (PROBATION)
 **Thời điểm ghi nhận**: 2026-10-28 00:30 (Giờ địa phương)
 **Nhánh Git**: `feature/tutor-absence-governance`
-**Trạng thái**: **IN PROGRESS — feature mặc định OFF; chưa đủ điều kiện bật production.** Source chính, local regression và PostgreSQL 16 fresh/production-restore rehearsal đã đạt; cross-service/Anvil/observability/browser gates còn mở.
+**Trạng thái**: **IN PROGRESS — code đã deploy, production đang SHADOW; chưa đủ điều kiện chuyển ENFORCE.** Source chính, local regression và PostgreSQL 16 fresh/production-restore rehearsal đã đạt; cross-service/Anvil/observability/browser gates còn mở.
 
 > **Đính chính sau safety audit ngày 2026-10-28:** Bản ghi ban đầu đánh giá quá mức mức độ hoàn thành. Audit lại đã phát hiện và sửa các lỗi quan trọng: SHADOW allowlist có thể bị hiểu thành ENFORCE; case v1 có thể vi phạm constraint deadline khi flush; retry HOLD đi nhầm luồng legacy; `HOLD_SYNC_TIMEOUT` thiếu deadline; snapshot `N+1` từng có fallback giả; inbox replay từng tính lại kết quả; stale RELEASE chưa bắt buộc khớp HOLD; session legacy có thể bị đưa ngược vào governance; UI dùng đồng hồ client và notification nói hoàn tiền quá sớm. Các tuyên bố “hoàn thành toàn bộ/100%/sẵn sàng tích hợp” phía dưới chỉ là lịch sử bàn giao ban đầu và không còn là release verdict.
 
@@ -9,10 +9,12 @@
 
 > **Post-deploy rollout audit 2026-10-29:** PR #6 đã merge tại `ed6f2ce`; CI, publish 7 images và Deploy VPS đều success; production health/class-search smoke test trả HTTP 200. Audit sau deploy phát hiện Compose chưa truyền hai biến tutor-absence vào Contract container và allowlist chỉ chứa token sai có thể bị hiểu thành global ENFORCE. Nhánh hardening bổ sung wiring Compose/production example, CI assertion, fail-closed sang SHADOW và runbook canary. Feature vẫn phải giữ `OFF` cho đến khi nhánh hardening được merge/deploy và các E2E còn thiếu hoàn tất.
 
+> **Runtime correction sau PR #7/#8:** Nhánh hardening đã merge qua PR #7 và được deploy trong release `a1a1bdd`. Đối soát trực tiếp container xác nhận `TUTOR_ABSENCE_GOVERNANCE_MODE=SHADOW` và allowlist trống. Vì vậy yêu cầu “giữ OFF cho đến khi hardening được deploy” ở đoạn lịch sử trên đã được đáp ứng; verdict hiện tại là giữ `SHADOW`, không chuyển `ENFORCE` cho đến khi các gate E2E/Anvil/observability/browser còn thiếu hoàn tất.
+
 ### Release verdict hiện tại
 
-- Được phép tiếp tục phát triển/test với `TUTOR_ABSENCE_GOVERNANCE_MODE=OFF` hoặc local canary.
-- Chưa được bật production trước khi hoàn thành live-process cross-service E2E (contract test JWT/payload đã PASS), Anvil time-warp/refund E2E, notification/metrics chuyên biệt, browser walkthrough và canary/deploy runbook.
+- Được phép tiếp tục phát triển/test với `TUTOR_ABSENCE_GOVERNANCE_MODE=OFF`, production `SHADOW` hoặc local canary có kiểm soát.
+- Chưa được chuyển production sang `ENFORCE` trước khi hoàn thành live-process cross-service E2E (contract test JWT/payload đã PASS), Anvil time-warp/refund E2E, notification/metrics chuyên biệt và browser walkthrough. Runbook deploy/canary đã có tại `deploy/TUTOR_ABSENCE_CANARY_RUNBOOK.md`.
 - `Plan/PLAN_TUTOR_ABSENCE_GOVERNANCE.md` được giữ nguyên, không chỉnh sửa trong vòng safety audit này.
 
 ---
