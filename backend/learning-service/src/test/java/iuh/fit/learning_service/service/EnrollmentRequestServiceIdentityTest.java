@@ -9,12 +9,16 @@ import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
 import iuh.fit.learning_service.repository.TutorAuthorizationStateRepository;
+import iuh.fit.learning_service.enums.ClassRoomStatus;
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.ArgumentMatchers.any;
 
 class EnrollmentRequestServiceIdentityTest {
 
@@ -141,5 +145,89 @@ class EnrollmentRequestServiceIdentityTest {
         assertThatThrownBy(() -> service.activateEnrollment(22L, 33L, "agreement-a"))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("cannot be activated");
+    }
+
+    @Test
+    void refusesActivationWhenClassroomIsCancelled() {
+        EnrollmentRequest enrollment = new EnrollmentRequest();
+        ClassRoom classRoom = new ClassRoom();
+        org.springframework.test.util.ReflectionTestUtils.setField(classRoom, "id", 22L);
+        classRoom.setStatus(ClassRoomStatus.CANCELLED);
+        enrollment.setClassRoom(classRoom);
+        enrollment.setStudentId(33L);
+        enrollment.setAgreementId("agreement-a");
+        enrollment.setStatus(EnrollmentRequestStatus.ACCEPTED);
+        when(enrollmentRequestRepository.findByAgreementId("agreement-a"))
+                .thenReturn(java.util.Optional.of(enrollment));
+        when(classRoomRepository.findByIdForUpdate(22L))
+                .thenReturn(java.util.Optional.of(classRoom));
+
+        assertThatThrownBy(() -> service.activateEnrollment(22L, 33L, "agreement-a"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("cancelled or closed");
+    }
+
+    @Test
+    void refusesActivationWhenClassroomIsClosed() {
+        EnrollmentRequest enrollment = new EnrollmentRequest();
+        ClassRoom classRoom = new ClassRoom();
+        org.springframework.test.util.ReflectionTestUtils.setField(classRoom, "id", 22L);
+        classRoom.setStatus(ClassRoomStatus.CLOSED);
+        enrollment.setClassRoom(classRoom);
+        enrollment.setStudentId(33L);
+        enrollment.setAgreementId("agreement-a");
+        enrollment.setStatus(EnrollmentRequestStatus.ACCEPTED);
+        when(enrollmentRequestRepository.findByAgreementId("agreement-a"))
+                .thenReturn(java.util.Optional.of(enrollment));
+        when(classRoomRepository.findByIdForUpdate(22L))
+                .thenReturn(java.util.Optional.of(classRoom));
+
+        assertThatThrownBy(() -> service.activateEnrollment(22L, 33L, "agreement-a"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("cancelled or closed");
+    }
+
+    @Test
+    void refusesActivationWhenClassroomIsTerminating() {
+        EnrollmentRequest enrollment = new EnrollmentRequest();
+        ClassRoom classRoom = new ClassRoom();
+        org.springframework.test.util.ReflectionTestUtils.setField(classRoom, "id", 22L);
+        classRoom.setStatus(ClassRoomStatus.LOCKED);
+        classRoom.setTerminationCutoffSession(3);
+        enrollment.setClassRoom(classRoom);
+        enrollment.setStudentId(33L);
+        enrollment.setAgreementId("agreement-a");
+        enrollment.setStatus(EnrollmentRequestStatus.ACCEPTED);
+        when(enrollmentRequestRepository.findByAgreementId("agreement-a"))
+                .thenReturn(java.util.Optional.of(enrollment));
+        when(classRoomRepository.findByIdForUpdate(22L))
+                .thenReturn(java.util.Optional.of(classRoom));
+
+        assertThatThrownBy(() -> service.activateEnrollment(22L, 33L, "agreement-a"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Classroom is terminating");
+    }
+
+    @Test
+    void activatesEnrollmentWhenClassroomIsActive() {
+        EnrollmentRequest enrollment = new EnrollmentRequest();
+        ClassRoom classRoom = new ClassRoom();
+        org.springframework.test.util.ReflectionTestUtils.setField(classRoom, "id", 22L);
+        classRoom.setStatus(ClassRoomStatus.LOCKED);
+        enrollment.setClassRoom(classRoom);
+        enrollment.setStudentId(33L);
+        enrollment.setAgreementId("agreement-a");
+        enrollment.setStatus(EnrollmentRequestStatus.ACCEPTED);
+        when(enrollmentRequestRepository.findByAgreementId("agreement-a"))
+                .thenReturn(java.util.Optional.of(enrollment));
+        when(classRoomRepository.findByIdForUpdate(22L))
+                .thenReturn(java.util.Optional.of(classRoom));
+        when(enrollmentRequestRepository.save(any(EnrollmentRequest.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        var response = service.activateEnrollment(22L, 33L, "agreement-a");
+        assertThat(response).isNotNull();
+        assertThat(enrollment.getStatus()).isEqualTo(EnrollmentRequestStatus.ENROLLED);
+        verify(rollingSessionService).createMissingAttendancesForEnrollment(enrollment);
     }
 }

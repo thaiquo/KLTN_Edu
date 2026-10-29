@@ -1,13 +1,13 @@
 # KẾ HOẠCH TRIỂN KHAI GIAI ĐOẠN TRẢI NGHIỆM CÓ BẢO CHỨNG ESCROW
 
-> Trạng thái: **SOURCE IMPLEMENTED — RELEASE NO-GO, feature vẫn OFF**
+> Trạng thái: **MERGED + DEPLOYED — feature vẫn OFF (`ESCROW_TRIAL_ENABLED=false`)**
 > Phạm vi: Learning Service, Contract Service, Notification Service, Frontend Web và tài liệu hợp đồng.
 > Smart Contract Escrow V1 hiện tại được tái sử dụng; không thay đổi Solidity nếu audit triển khai không phát hiện yêu cầu mới.
 > Rollout: mặc định `ESCROW_TRIAL_ENABLED=false`; tuyệt đối không tự bật tính năng chỉ vì migration đã chạy.
 
 ## 0. Nhật ký triển khai và bàn giao cho AI tiếp theo
 
-> Cập nhật gần nhất: **2026-10-27**. Đây là trạng thái source/workspace, **không phải trạng thái đã deploy**. Không migration nào trong kế hoạch này đã được chạy trên VPS/production. Mọi kết quả `TESTED` bên dưới chỉ áp dụng cho môi trường local/CI được nêu rõ.
+> Cập nhật gần nhất: **2026-10-27**. Trạng thái phản ánh source **đã merge vào `main`** và **đã deploy VPS production** tại commit `986bc3c`. Migration V16/V21 đã chạy thành công trên production PostgreSQL. Feature vẫn OFF. Mọi kết quả `TESTED` bên dưới được ghi rõ môi trường (local/CI/Anvil/production).
 
 | Task | Trạng thái | Bằng chứng hiện tại |
 |---|---|---|
@@ -39,9 +39,11 @@
 | `WEB-03` | `IMPLEMENTED + TYPECHECKED` | `TrialCoolingOffBanner` đếm ngược bằng `serverNow`/`trialDeadline`, reset đúng khi đổi agreement và refresh khi hết hạn. |
 | `WEB-04` | `IMPLEMENTED + TYPECHECKED` | `TrialOptOutModal` ký EIP-712 đúng domain/type backend, chuẩn hóa reason trước khi ký để tránh hash mismatch và hiển thị USDC theo 6 decimals. |
 | `WEB-05` | `PARTIAL + TYPECHECKED` | `TrialCoolingOffBanner` kết nối với `activeTermination` (status, itemStatus, txHash), nhưng API hiện chưa cung cấp đủ trạng thái authoritative cho từng bước settlement -> cancel tx -> refund event; UI chỉ được mô tả là tiến trình ước lượng cho đến khi bổ sung stage detail. |
-| `TEST-MIGRATION-PG` | `LOCAL PASS / PRODUCTION PENDING` | Ngày 2026-10-27, current V16/V21 đã pass cả fresh và upgrade rehearsal trên PostgreSQL 16.15 cô lập. Flyway history/checksum, 10 CHECK constraints, 2 indexes và row counts đều được đối soát; legacy data không bị backfill trial. Đây là dump local/integration, chưa thay thế backup + restore rehearsal từ production ngay trước release. |
+| `TEST-MIGRATION-PG` | `LOCAL PASS + PRODUCTION VERIFIED` | Ngày 2026-10-27, V16/V21 đã pass fresh và upgrade rehearsal local PostgreSQL 16.15 cô lập. Flyway history/checksum, 10 CHECK constraints, 2 indexes và row counts đều đối soát; legacy data không bị backfill trial. **Sau merge:** Flyway V16 (`-1203505143`) và V21 (`-421953750`) xác minh trực tiếp trên production PostgreSQL container (`educonnect-postgres-1`), success=true. Legacy data production: 41 class_rooms, 0 trial_policy_version≠null, 1 contract_agreement, 0 agreement_trial rows — không bị ảnh hưởng. |
 | `TEST-REGRESSION` | `ALL PASSED (LOCAL + ANVIL)` | Learning full 260/260 pass; Contract default suite 244 tests pass với 8 Anvil tests skipped; Foundry 44/44 pass; toàn bộ 8/8 Anvil integration tests pass trên RPC 31337, gồm trial opt-out/refund; Account 171/171 và AI 266/266 (4 external skipped) không có source thay đổi; Frontend `tsc --noEmit` và production build pass. Anvil node đã shutdown sạch. Trial E2E hiện mock Learning/Notification và tự mở `DECISION_OPEN`, nên chưa phải cross-service E2E; late-funding on-chain E2E vẫn pending. |
 | Migration tooling | `HARDENED` | `scripts/rehearse-migrations.cjs` đã strip UTF-8 BOM giống Flyway để fresh rehearsal không lỗi giả. |
+| `BACKUP-OFF-VPS` | `DONE` | Backup production database export ngày 2026-10-27, file `kltn_db_prod_986bc3c.sql`, SHA-256: `E342ACE76FB272561223C4E738CB33461C5FFDFCD54F62540ACB1625776E4777`, lưu tại `.local-backups/` (gitignored). |
+| `DEPLOY-PROD` | `DONE` | PR #5 merge vào `main` tại commit `986bc3c`. CI: 16/16 pass. Workflow `Publish images` success: 7 images published. Job `Deploy VPS` success: `educonnect-release` preflight pass, smoke test HTTP 200. 12/12 containers running. `ESCROW_TRIAL_ENABLED=false` xác nhận trong VPS `.env` và container runtime. |
 
 Hậu điều kiện current migration rehearsal đã xác nhận:
 
@@ -68,21 +70,21 @@ Artifact cục bộ, đã được `.gitignore`:
 
 Điểm tiếp tục an toàn cho AI tiếp theo:
 
-1. Tiếp tục giữ `ESCROW_TRIAL_ENABLED=false` (mặc định OFF); hiện chưa có cohort/canary selector, bật flag sẽ áp dụng policy cho mọi lớp mới đủ điều kiện.
-2. Local PostgreSQL 16 fresh + upgrade rehearsal đã pass; trước merge `main` vẫn phải lấy backup production mới, kiểm SHA-256, restore cô lập và chạy lại rehearsal/preflight theo Mục 13.
-3. Mở rộng Anvil E2E hiện có thành cross-service E2E (không tự set `DECISION_OPEN`, không mock Learning) và bổ sung nhánh late-funding recovery on-chain.
-4. Bổ sung/kiểm chứng trạng thái chi tiết cho tracker settlement → cancel tx → refund event nếu muốn UI 4 bước chính xác.
-5. Không chạy `scripts/apply-migration-live.cjs`; VPS phải đi qua preflight, backup off-VPS và restore rehearsal ở Mục 13 khi deploy.
-6. Khi chuẩn bị release, thực hiện Phase 5 (Anvil E2E warp time và Sepolia staging).
+1. Production đang chạy `ESCROW_TRIAL_ENABLED=false` — không tự bật flag, hiện chưa có cohort/canary selector.
+2. Migration V16/V21 đã chạy thành công trên production và được xác minh checksum. Không cần chạy lại migration trừ khi có V mới.
+3. Backup production `kltn_db_prod_986bc3c.sql` đã có SHA-256 ở `.local-backups/`; nên lấy backup mới trước mỗi release lớn.
+4. Mở rộng Anvil E2E hiện có thành cross-service E2E (không tự set `DECISION_OPEN`, không mock Learning) và bổ sung nhánh late-funding recovery on-chain.
+5. Bổ sung/kiểm chứng trạng thái chi tiết cho tracker settlement → cancel tx → refund event nếu muốn UI 4 bước chính xác.
+6. Khi chuẩn bị bật trial (R3), thực hiện Phase 5 (Anvil E2E warp time, Sepolia staging, cohort selector, metrics/alerting).
 
 ### 0.1. Phán quyết release hiện tại
 
-- **Có thể tạo feature branch/PR để CI kiểm tra:** chỉ sau khi loại khỏi commit các artifact kế hoạch tạm (`extracted_plan.txt`, `planKhoaLuan.docx`, `read_plan.ps1`) nếu chúng không chủ đích thuộc release và rà lại toàn bộ diff.
-- **Không push trực tiếp vào `main`:** workflow hiện tại tự publish image và deploy VPS sau khi CI của push `main` thành công.
-- **R1/R2 feature OFF:** chỉ GO sau PostgreSQL 16 fresh + upgrade rehearsal trên current V16/V21, đối chiếu Flyway history/checksum/row count, backup off-VPS và restore rehearsal.
-- **Tương thích Learning legacy đã được harden:** lớp không có `trialPolicyVersion` tự fallback sang cách sinh lịch cũ khi persisted prefix lệch canonical; lớp trial vẫn fail-fast để bảo vệ lịch đã ký. Vẫn nên đối chiếu `class_sessions` trong rehearsal để phát hiện dữ liệu lệch và theo dõi cảnh báo vận hành, nhưng không còn là lỗi làm dừng batch của lớp legacy.
+- **✅ MERGED + DEPLOYED (2026-10-27):** PR #5 đã merge vào `main` tại `986bc3c`. CI 16/16 pass. 7 images published thành công. VPS deployment xác nhận 12/12 containers running, smoke test HTTP 200.
+- **✅ Migration V16/V21 PRODUCTION VERIFIED:** Flyway history xác minh trực tiếp trên PostgreSQL production; V16 checksum `-1203505143`, V21 checksum `-421953750`, cả hai `success=true`. Legacy data không bị ảnh hưởng.
+- **✅ `ESCROW_TRIAL_ENABLED=false` PRODUCTION CONFIRMED:** Xác minh trong VPS `.env` và biến môi trường container runtime Learning và Contract.
+- **✅ Backup off-VPS DONE:** `kltn_db_prod_986bc3c.sql`, SHA-256 `E342ACE76FB272561223C4E738CB33461C5FFDFCD54F62540ACB1625776E4777`.
+- **Tương thích Learning legacy đã được harden:** lớp không có `trialPolicyVersion` tự fallback sang cách sinh lịch cũ khi persisted prefix lệch canonical; lớp trial vẫn fail-fast để bảo vệ lịch đã ký.
 - **R3 bật `ESCROW_TRIAL_ENABLED=true`:** NO-GO cho đến khi hoàn thiện cross-service/late-funding E2E, Sepolia staging evidence, metrics/alerting và cơ chế canary/cohort; hiện bật flag sẽ áp dụng cho mọi lớp mới đủ điều kiện.
-- Mọi lần deploy trước R3 phải xác nhận production giữ `ESCROW_TRIAL_ENABLED=false` ở cả Learning và Contract.
 
 ## 1. Quyết định nghiệp vụ đã chốt
 
@@ -798,7 +800,9 @@ Quy trình Staff/Admin khi cảnh báo `TRIAL_LATE_FUNDING_INCIDENT` xuất hi�
 | Attendance | TUTOR_ABSENT | Hoàn buổi đó và refund phần còn lại nếu opt-out |
 | Schedule | Hai ca không chồng lấn cùng ngày | Planner sinh đủ và đúng thứ tự `(date,startTime)` |
 | Schedule | Đổi lịch sau khi agreement bắt đầu ký | Từ chối trong V1 |
-| Isolation | Một Student opt-out trong lớp nhiều Student | Student khác không bị ảnh hưởng |
+| Isolation | Một Student opt-out trong lớp nhiều Student | Chỉ Student đó bị hủy; lớp và các Student khác tiếp tục nguyên vẹn |
+| Last Student | Student cuối cùng opt-out (`activeRemaining == 0`) | Agreement/enrollment hủy; lớp chuyển `CANCELLED`, future sessions `CANCELLED`, pending requests `CANCELLED` |
+| Concurrency | Student opt-out đồng thời với `activateEnrollment` | Khóa bi quan `class_rooms` serialize; nếu lớp đã hủy thì từ chối kích hoạt, không có lớp CANCELLED chứa học viên ENROLLED |
 | Settlement | Buổi trial đang PROPOSED/DISPUTED | Hold ngay, refund chờ final |
 | Safety | Có proposal session sau cutoff | Không cancel tự động; đưa vào recovery/audit |
 | Blockchain | Transaction failed/retry | Không duplicate; tracker hiển thị lỗi phục hồi |

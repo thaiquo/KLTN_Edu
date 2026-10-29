@@ -398,4 +398,139 @@ class LearningTerminationServiceTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("expectedHoldCommandId mismatch");
     }
+
+    @Test
+    void trialOptOutCloseCancelsClassroomWhenLastStudent() {
+        var first = session(1, LocalDateTime.now().minusDays(1));
+        first.setStatus(ClassSessionStatus.COMPLETED);
+        var second = session(2, LocalDateTime.now().plusDays(1));
+        prepare(List.of(first, second));
+
+        UUID cmdId = UUID.randomUUID();
+        var stop = new LearningTerminationStop();
+        stop.setAgreementId(agreement);
+        stop.setClassroomId(1L);
+        stop.setStudentId(2L);
+        stop.setCutoffSession(1);
+        stop.setOrigin("TRIAL_OPT_OUT");
+        stop.setCommandId(cmdId);
+        when(stops.findById(agreement)).thenReturn(Optional.of(stop));
+
+        var pendingReq = new EnrollmentRequest();
+        pendingReq.setId(99L);
+        pendingReq.setStatus(EnrollmentRequestStatus.PENDING);
+        when(enrollments.findByClassRoomIdAndStatus(1L, EnrollmentRequestStatus.PENDING))
+                .thenReturn(List.of(pendingReq));
+
+        when(enrollments.countByClassRoomIdAndStatusIn(1L,
+                List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED)))
+                .thenReturn(0L);
+
+        var snapshot = service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "CLOSE", "TRIAL_OPT_OUT", null, null, cmdId, null, null, true));
+
+        assertThat(enrollment.getStatus()).isEqualTo(EnrollmentRequestStatus.CANCELLED);
+        assertThat(room.getStatus()).isEqualTo(ClassRoomStatus.CANCELLED);
+        assertThat(room.getTerminationCutoffSession()).isEqualTo(1);
+        assertThat(first.getStatus()).isEqualTo(ClassSessionStatus.COMPLETED);
+        assertThat(second.getStatus()).isEqualTo(ClassSessionStatus.CANCELLED);
+        assertThat(pendingReq.getStatus()).isEqualTo(EnrollmentRequestStatus.CANCELLED);
+        assertThat(stop.isClosed()).isTrue();
+        assertThat(snapshot.classCancelled()).isTrue();
+        verify(attendances).deleteBySession_Id(second.getId());
+    }
+
+    @Test
+    void trialOptOutCloseDoesNotCancelClassWhenOtherStudentsEnrolled() {
+        var first = session(1, LocalDateTime.now().minusDays(1));
+        var second = session(2, LocalDateTime.now().plusDays(1));
+        prepare(List.of(first, second));
+
+        UUID cmdId = UUID.randomUUID();
+        var stop = new LearningTerminationStop();
+        stop.setAgreementId(agreement);
+        stop.setClassroomId(1L);
+        stop.setStudentId(2L);
+        stop.setCutoffSession(1);
+        stop.setOrigin("TRIAL_OPT_OUT");
+        stop.setCommandId(cmdId);
+        when(stops.findById(agreement)).thenReturn(Optional.of(stop));
+
+        when(enrollments.countByClassRoomIdAndStatusIn(1L,
+                List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED)))
+                .thenReturn(1L);
+
+        var snapshot = service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "CLOSE", "TRIAL_OPT_OUT", null, null, cmdId, null, null, true));
+
+        assertThat(enrollment.getStatus()).isEqualTo(EnrollmentRequestStatus.CANCELLED);
+        assertThat(room.getStatus()).isEqualTo(ClassRoomStatus.LOCKED);
+        assertThat(room.getTerminationCutoffSession()).isNull();
+        assertThat(second.getStatus()).isEqualTo(ClassSessionStatus.SCHEDULED);
+        assertThat(stop.isClosed()).isTrue();
+        assertThat(snapshot.classCancelled()).isFalse();
+        verify(attendances, never()).deleteBySession_Id(any());
+        verify(attendances).deleteBySession_IdAndStudentId(second.getId(), 2L);
+    }
+
+    @Test
+    void trialOptOutCloseDoesNotCancelClassWhenOtherStudentAccepted() {
+        var first = session(1, LocalDateTime.now().minusDays(1));
+        var second = session(2, LocalDateTime.now().plusDays(1));
+        prepare(List.of(first, second));
+
+        UUID cmdId = UUID.randomUUID();
+        var stop = new LearningTerminationStop();
+        stop.setAgreementId(agreement);
+        stop.setClassroomId(1L);
+        stop.setStudentId(2L);
+        stop.setCutoffSession(1);
+        stop.setOrigin("TRIAL_OPT_OUT");
+        stop.setCommandId(cmdId);
+        when(stops.findById(agreement)).thenReturn(Optional.of(stop));
+
+        when(enrollments.countByClassRoomIdAndStatusIn(1L,
+                List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED)))
+                .thenReturn(1L); // e.g. 1 ACCEPTED student waiting for deposit
+
+        var snapshot = service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "CLOSE", "TRIAL_OPT_OUT", null, null, cmdId, null, null, true));
+
+        assertThat(enrollment.getStatus()).isEqualTo(EnrollmentRequestStatus.CANCELLED);
+        assertThat(room.getStatus()).isEqualTo(ClassRoomStatus.LOCKED);
+        assertThat(snapshot.classCancelled()).isFalse();
+    }
+
+    @Test
+    void trialOptOutCloseReplayReturnsSnapshotFromInbox() throws Exception {
+        var first = session(1, LocalDateTime.now().minusDays(1));
+        prepare(List.of(first));
+
+        UUID cmdId = UUID.randomUUID();
+        room.setStatus(ClassRoomStatus.CANCELLED);
+
+        var cmd = new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "CLOSE", "TRIAL_OPT_OUT", null, null, cmdId, null, null, true);
+
+        // compute hash
+        String raw = String.format("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|true",
+                cmdId, "CLOSE", 1L, agreement, false, "TRIAL_OPT_OUT", "null", "", "null", "");
+        var md = java.security.MessageDigest.getInstance("SHA-256");
+        String hash = java.util.HexFormat.of().formatHex(md.digest(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        var inbox = new LearningTerminationCommandInbox();
+        inbox.setCommandId(cmdId);
+        inbox.setAction("CLOSE");
+        inbox.setPayloadHash(hash);
+        inbox.setCutoffSession(1);
+        inbox.setRequiredSessionSequencesCsv("1");
+        inbox.setStatus("COMPLETED");
+
+        when(inboxRepository.findByCommandIdAndAction(cmdId, "CLOSE")).thenReturn(Optional.of(inbox));
+
+        var snapshot = service.apply(cmd);
+        assertThat(snapshot.cutoffSession()).isEqualTo(1);
+        assertThat(snapshot.classCancelled()).isTrue();
+        verify(stops, never()).findById(any());
+    }
 }

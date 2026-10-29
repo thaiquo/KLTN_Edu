@@ -170,23 +170,48 @@ public class TerminationProcessor {
         if (tx.getStatus() == BlockchainTransactionStatus.FAILED) item.setLastError("Transaction requires recovery; see transaction audit");
     }
     private void close(ContractAgreement a, TerminationCase c, TerminationItem item) {
+        TerminationLearningClient.Snapshot snapshot;
         if (isAbsenceGovernance(c)) {
-            learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), c.isWholeClass(), "CLOSE",
+            snapshot = learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), c.isWholeClass(), "CLOSE",
                     c.getOrigin(), c.getTriggerSessionSequence(), c.getCreatedAt(), governanceCommandId(c, a), null, null);
+        } else if ("TRIAL_OPT_OUT".equals(c.getOrigin())) {
+            boolean cancelClassIfEmpty = shouldCancelClassIfEmptyForTrial(a);
+            snapshot = learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), false, "CLOSE",
+                    c.getOrigin(), a.getTerminationCutoffSession(), c.getCreatedAt(), c.getId(), cancelClassIfEmpty);
         } else {
-            learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), c.isWholeClass(), "CLOSE");
+            snapshot = learning.send(a.getClassroomId(), a.getStudentId(), a.getId(), c.isWholeClass(), "CLOSE");
         }
         item.setStatus("COMPLETED");
-        notifications.sendAsync(a.getClassroomReviewerEmail(), null, "Đã hoàn tất thanh lý hợp đồng",
-                "Hợp đồng đã hoàn tất quyết toán và cập nhật quyền tham gia lớp. Mở hồ sơ để xem kết quả và giao dịch xác nhận.",
-                "TERMINATION_COMPLETED", "AGREEMENT", a.getId().toString());
-        String scope = c.isWholeClass() ? "lop hoc" : "hop dong";
-        notifications.sendAsync(a.getStudentEmail(), a.getStudentId(), "Ket qua cham dut hop dong",
-                "Admin da hoan tat xu ly " + scope + ". Danh sach lop va lich hoc tuong lai da duoc cap nhat.",
-                "TERMINATION_COMPLETED", "AGREEMENT", a.getId().toString());
-        notifications.sendAsync(a.getTutorEmail(), a.getTutorId(), "Cap nhat cham dut hop dong",
-                "Hop dong cua hoc vien da hoan tat thanh ly. Danh sach lop va tien do xu ly da duoc cap nhat.",
-                "TERMINATION_COMPLETED", "AGREEMENT", a.getId().toString());
+
+        if ("TRIAL_OPT_OUT".equals(c.getOrigin())) {
+            notifications.sendAsync(a.getClassroomReviewerEmail(), null, "Đã hoàn tất thanh lý hợp đồng học thử",
+                    "Hợp đồng học thử đã hoàn tất quyết toán và hoàn tiền. Mở hồ sơ để xem kết quả và giao dịch xác nhận.",
+                    "TERMINATION_COMPLETED", "AGREEMENT", a.getId().toString());
+            notifications.sendAsync(a.getStudentEmail(), a.getStudentId(), "Kết quả dừng học sau buổi trải nghiệm",
+                    "Yêu cầu dừng sau buổi trải nghiệm đã hoàn tất; khoản hoàn tiền đã được xác nhận.",
+                    "TERMINATION_COMPLETED", "AGREEMENT", a.getId().toString());
+            if (snapshot != null && Boolean.TRUE.equals(snapshot.classCancelled())) {
+                notifications.sendAsync(a.getTutorEmail(), a.getTutorId(), "Lớp học đã tự động hủy",
+                        "Lớp đã tự động hủy vì không còn học viên hiệu lực.",
+                        "TERMINATION_COMPLETED", "CLASSROOM", a.getClassroomId().toString());
+            } else {
+                notifications.sendAsync(a.getTutorEmail(), a.getTutorId(), "Cập nhật học viên dừng học sau trải nghiệm",
+                        "Học viên đã dừng học sau buổi trải nghiệm; lớp học tiếp tục với các học viên còn lại.",
+                        "TERMINATION_COMPLETED", "AGREEMENT", a.getId().toString());
+            }
+        } else {
+            notifications.sendAsync(a.getClassroomReviewerEmail(), null, "Đã hoàn tất thanh lý hợp đồng",
+                    "Hợp đồng đã hoàn tất quyết toán và cập nhật quyền tham gia lớp. Mở hồ sơ để xem kết quả và giao dịch xác nhận.",
+                    "TERMINATION_COMPLETED", "AGREEMENT", a.getId().toString());
+            String scope = c.isWholeClass() ? "lop hoc" : "hop dong";
+            notifications.sendAsync(a.getStudentEmail(), a.getStudentId(), "Ket qua cham dut hop dong",
+                    "Admin da hoan tat xu ly " + scope + ". Danh sach lop va lich hoc tuong lai da duoc cap nhat.",
+                    "TERMINATION_COMPLETED", "AGREEMENT", a.getId().toString());
+            notifications.sendAsync(a.getTutorEmail(), a.getTutorId(), "Cap nhat cham dut hop dong",
+                    "Hop dong cua hoc vien da hoan tat thanh ly. Danh sach lop va tien do xu ly da duoc cap nhat.",
+                    "TERMINATION_COMPLETED", "AGREEMENT", a.getId().toString());
+        }
+
         if (agreementTrialRepository != null
                 && Set.of("TRIAL_OPT_OUT", TerminationService.ORIGIN_SYSTEM_LATE_FUNDING).contains(c.getOrigin())) {
             agreementTrialRepository.findByAgreementId(a.getId()).ifPresent(trial -> {
@@ -202,6 +227,19 @@ public class TerminationProcessor {
                 }
             });
         }
+    }
+
+    private boolean shouldCancelClassIfEmptyForTrial(ContractAgreement a) {
+        var classAgreements = agreements.findByClassroomIdOrderByCreatedAtAsc(a.getClassroomId());
+        for (var other : classAgreements) {
+            if (other.getId().equals(a.getId())) continue;
+            if (!Set.of(ContractAgreementStatus.COMPLETED,
+                        ContractAgreementStatus.EXPIRED,
+                        ContractAgreementStatus.CANCELLED).contains(other.getStatus())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private boolean isAbsenceGovernance(TerminationCase c) {

@@ -18,7 +18,11 @@ public class TerminationLearningClient {
     private final String url;
     private final SecretKey key;
     private final ObjectMapper mapper;
-    public record Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart) {}
+    public record Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart, Boolean classCancelled) {
+        public Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart) {
+            this(cutoffSession, requiredSessions, nextSessionStart, false);
+        }
+    }
     public TerminationLearningClient(@Value("${LEARNING_SERVICE_URL:http://localhost:8082}") String url,
                                     @Value("${jwt.secret}") String secret, ObjectMapper mapper) {
         this.url = url;
@@ -26,17 +30,30 @@ public class TerminationLearningClient {
         this.mapper = mapper;
     }
     public Snapshot send(Long classroomId, Long studentId, UUID agreementId, boolean wholeClass, String action) {
-        return send(classroomId, studentId, agreementId, wholeClass, action, null, null, null, null);
+        return send(classroomId, studentId, agreementId, wholeClass, action, null, null, null, null, null, null, null);
     }
     public Snapshot send(Long classroomId, Long studentId, UUID agreementId, boolean wholeClass, String action,
                          String origin, Integer requestedCutoffSession, OffsetDateTime effectiveRequestedAt,
                          UUID commandId) {
         return send(classroomId, studentId, agreementId, wholeClass, action, origin, requestedCutoffSession,
-                effectiveRequestedAt, commandId, null, null);
+                effectiveRequestedAt, commandId, null, null, null);
+    }
+    public Snapshot send(Long classroomId, Long studentId, UUID agreementId, boolean wholeClass, String action,
+                         String origin, Integer requestedCutoffSession, OffsetDateTime effectiveRequestedAt,
+                         UUID commandId, Boolean cancelClassIfEmpty) {
+        return send(classroomId, studentId, agreementId, wholeClass, action, origin, requestedCutoffSession,
+                effectiveRequestedAt, commandId, null, null, cancelClassIfEmpty);
     }
     public Snapshot send(Long classroomId, Long studentId, UUID agreementId, boolean wholeClass, String action,
                          String origin, Integer requestedCutoffSession, OffsetDateTime effectiveRequestedAt,
                          UUID commandId, UUID expectedHoldCommandId, OffsetDateTime releaseNotAfter) {
+        return send(classroomId, studentId, agreementId, wholeClass, action, origin, requestedCutoffSession,
+                effectiveRequestedAt, commandId, expectedHoldCommandId, releaseNotAfter, null);
+    }
+    public Snapshot send(Long classroomId, Long studentId, UUID agreementId, boolean wholeClass, String action,
+                         String origin, Integer requestedCutoffSession, OffsetDateTime effectiveRequestedAt,
+                         UUID commandId, UUID expectedHoldCommandId, OffsetDateTime releaseNotAfter,
+                         Boolean cancelClassIfEmpty) {
         try {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("classroomId", classroomId);
@@ -50,6 +67,7 @@ public class TerminationLearningClient {
             if (commandId != null) payload.put("commandId", commandId);
             if (expectedHoldCommandId != null) payload.put("expectedHoldCommandId", expectedHoldCommandId);
             if (releaseNotAfter != null) payload.put("releaseNotAfter", releaseNotAfter);
+            if (cancelClassIfEmpty != null) payload.put("cancelClassIfEmpty", cancelClassIfEmpty);
             String body = mapper.writeValueAsString(payload);
             String token = Jwts.builder().subject("contract-service").claim("serviceScope", "learning-termination")
                     .expiration(Date.from(Instant.now().plusSeconds(60))).signWith(key).compact();

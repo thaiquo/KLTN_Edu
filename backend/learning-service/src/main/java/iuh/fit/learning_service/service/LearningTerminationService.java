@@ -32,9 +32,10 @@ public class LearningTerminationService {
             OffsetDateTime effectiveRequestedAt,
             UUID commandId,
             UUID expectedHoldCommandId,
-            OffsetDateTime releaseNotAfter) {
+            OffsetDateTime releaseNotAfter,
+            Boolean cancelClassIfEmpty) {
         public Command(Long classroomId, Long studentId, String agreementId, boolean wholeClass, String action) {
-            this(classroomId, studentId, agreementId, wholeClass, action, null, null, null, null, null, null);
+            this(classroomId, studentId, agreementId, wholeClass, action, null, null, null, null, null, null, null);
         }
         public Command(
                 Long classroomId,
@@ -46,10 +47,28 @@ public class LearningTerminationService {
                 Integer requestedCutoffSession,
                 OffsetDateTime effectiveRequestedAt,
                 UUID commandId) {
-            this(classroomId, studentId, agreementId, wholeClass, action, origin, requestedCutoffSession, effectiveRequestedAt, commandId, null, null);
+            this(classroomId, studentId, agreementId, wholeClass, action, origin, requestedCutoffSession, effectiveRequestedAt, commandId, null, null, null);
+        }
+        public Command(
+                Long classroomId,
+                Long studentId,
+                String agreementId,
+                boolean wholeClass,
+                String action,
+                String origin,
+                Integer requestedCutoffSession,
+                OffsetDateTime effectiveRequestedAt,
+                UUID commandId,
+                UUID expectedHoldCommandId,
+                OffsetDateTime releaseNotAfter) {
+            this(classroomId, studentId, agreementId, wholeClass, action, origin, requestedCutoffSession, effectiveRequestedAt, commandId, expectedHoldCommandId, releaseNotAfter, null);
         }
     }
-    public record Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart) {}
+    public record Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart, Boolean classCancelled) {
+        public Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart) {
+            this(cutoffSession, requiredSessions, nextSessionStart, false);
+        }
+    }
     private static final ZoneId BUSINESS_ZONE = CanonicalSessionPlanner.BUSINESS_ZONE;
     private static final String TRIAL_OPT_OUT = "TRIAL_OPT_OUT";
     private static final String SYSTEM_LATE_FUNDING = "SYSTEM_LATE_FUNDING";
@@ -92,7 +111,8 @@ public class LearningTerminationService {
                     throw new IllegalStateException("Learning termination command payload mismatch for commandId=" + command.commandId());
                 }
                 int cutoff = inbox.getCutoffSession();
-                return new Snapshot(cutoff, parseRequiredSessions(inbox.getRequiredSessionSequencesCsv()), inbox.getNextSessionStartAt());
+                boolean classCancelled = room.getStatus() == ClassRoomStatus.CANCELLED;
+                return new Snapshot(cutoff, parseRequiredSessions(inbox.getRequiredSessionSequencesCsv()), inbox.getNextSessionStartAt(), classCancelled);
             }
         }
 
@@ -123,7 +143,7 @@ public class LearningTerminationService {
             } else {
                 rollingSessions.createMissingAttendancesForEnrollment(enrollment);
             }
-            var releaseSnapshot = new Snapshot(0, List.of(), null);
+            var releaseSnapshot = new Snapshot(0, List.of(), null, false);
             recordInbox(command, releaseSnapshot);
             return releaseSnapshot;
         }
@@ -178,16 +198,42 @@ public class LearningTerminationService {
                 pending.setStatus(EnrollmentRequestStatus.CANCELLED);
             }
         }
+        boolean classCancelled = false;
         if ("CLOSE".equals(command.action())) {
             enrollment.setStatus(EnrollmentRequestStatus.CANCELLED);
+            enrollments.saveAndFlush(enrollment);
             for (var session : rows) {
                 if (session.getSequenceNumber() > stop.getCutoffSession()) {
                     attendances.deleteBySession_IdAndStudentId(session.getId(), enrollment.getStudentId());
                 }
             }
             stop.setClosed(true);
+
+            if (Boolean.TRUE.equals(command.cancelClassIfEmpty())) {
+                long activeStudents = enrollments.countByClassRoomIdAndStatusIn(
+                        room.getId(),
+                        List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED)
+                );
+                if (activeStudents == 0) {
+                    room.setStatus(ClassRoomStatus.CANCELLED);
+                    if (room.getTerminationCutoffSession() == null) {
+                        room.setTerminationCutoffSession(stop.getCutoffSession());
+                    }
+                    int cutoff = room.getTerminationCutoffSession();
+                    for (var session : rows) {
+                        if (session.getSequenceNumber() > cutoff) {
+                            session.setStatus(ClassSessionStatus.CANCELLED);
+                            attendances.deleteBySession_Id(session.getId());
+                        }
+                    }
+                    for (var pending : enrollments.findByClassRoomIdAndStatus(room.getId(), EnrollmentRequestStatus.PENDING)) {
+                        pending.setStatus(EnrollmentRequestStatus.CANCELLED);
+                    }
+                    classCancelled = true;
+                }
+            }
         }
-        final int cutoff = stop.getCutoffSession();
+        final int cutoff = room.getTerminationCutoffSession() != null ? room.getTerminationCutoffSession() : stop.getCutoffSession();
         OffsetDateTime nextSessionStart = rows.stream()
                 .filter(s -> s.getStatus() != ClassSessionStatus.CANCELLED)
                 .filter(s -> s.getSequenceNumber() > cutoff)
@@ -198,7 +244,7 @@ public class LearningTerminationService {
                 .orElse(null);
         var snapshot = new Snapshot(cutoff, rows.stream()
                 .filter(s -> s.getSequenceNumber() <= cutoff && s.getStatus() != ClassSessionStatus.CANCELLED)
-                .map(s -> s.getSequenceNumber().longValue()).toList(), nextSessionStart);
+                .map(s -> s.getSequenceNumber().longValue()).toList(), nextSessionStart, classCancelled);
         recordInbox(command, snapshot);
         return snapshot;
     }
@@ -256,8 +302,14 @@ public class LearningTerminationService {
         if (!trialOptOut && !lateFundingRecovery) {
             return;
         }
-        if (command.wholeClass() || !"HOLD".equals(command.action())) {
-            throw new IllegalArgumentException(command.origin() + " must be an individual HOLD command");
+        if (command.wholeClass() || (!"HOLD".equals(command.action()) && !"CLOSE".equals(command.action()))) {
+            throw new IllegalArgumentException(command.origin() + " must be an individual HOLD or CLOSE command");
+        }
+        if ("CLOSE".equals(command.action())) {
+            if (command.commandId() == null) {
+                throw new IllegalArgumentException(command.origin() + " CLOSE requires commandId");
+            }
+            return;
         }
         if (command.requestedCutoffSession() == null
                 || command.effectiveRequestedAt() == null
@@ -314,7 +366,7 @@ public class LearningTerminationService {
     }
 
     private String computePayloadHash(Command command) {
-        String raw = String.format("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s",
+        String raw = String.format("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s%s",
                 command.commandId(),
                 command.action(),
                 command.classroomId(),
@@ -324,7 +376,8 @@ public class LearningTerminationService {
                 command.requestedCutoffSession(),
                 command.effectiveRequestedAt() != null ? command.effectiveRequestedAt().toInstant().toEpochMilli() : "",
                 command.expectedHoldCommandId(),
-                command.releaseNotAfter() != null ? command.releaseNotAfter().toInstant().toEpochMilli() : ""
+                command.releaseNotAfter() != null ? command.releaseNotAfter().toInstant().toEpochMilli() : "",
+                Boolean.TRUE.equals(command.cancelClassIfEmpty()) ? "|true" : ""
         );
         try {
             var md = java.security.MessageDigest.getInstance("SHA-256");
@@ -337,11 +390,15 @@ public class LearningTerminationService {
 
     private void requireSameStableCutoffCommand(LearningTerminationStop stop, Command command) {
         if (!Objects.equals(command.origin(), stop.getOrigin())
-                || !Objects.equals(stop.getCommandId(), command.commandId())
-                || !Objects.equals(stop.getCutoffSession(), command.requestedCutoffSession())
-                || stop.getEffectiveRequestedAt() == null
-                || !stop.getEffectiveRequestedAt().toInstant().equals(command.effectiveRequestedAt().toInstant())) {
+                || !Objects.equals(stop.getCommandId(), command.commandId())) {
             throw new IllegalStateException("Trial opt-out replay does not match the persisted command");
+        }
+        if ("HOLD".equals(command.action())) {
+            if (!Objects.equals(stop.getCutoffSession(), command.requestedCutoffSession())
+                    || stop.getEffectiveRequestedAt() == null
+                    || !stop.getEffectiveRequestedAt().toInstant().equals(command.effectiveRequestedAt().toInstant())) {
+                throw new IllegalStateException("Trial opt-out replay does not match the persisted command");
+            }
         }
     }
 

@@ -274,7 +274,33 @@ Refinement (2026-10-09): Student follow is intentionally one-way from Student ac
   - Trong Portal Học viên (`StudentCommunityManagement`): Có Tab quản lý danh sách "Gia sư đang theo dõi" với thao tác hủy theo dõi và điều hướng nhanh.
   - Trong Portal Gia sư (`TutorCommunityManagement`): Có KPI thẻ thống kê "Người theo dõi".
 
-## 12. Change Policy
+## 12. Trial Opt-Out Last Student Classroom Auto-Cancellation (2026-10-29)
+
+Quy tắc thanh lý và đồng bộ trạng thái lớp học khi Học viên dừng học sau buổi trải nghiệm (Trial Opt-Out / Escrow Cooling-Off):
+
+- **Đơn quyền quyết định (Authoritative Service)**:
+  - Contract Service truyền ý định qua command `CLOSE` với cờ `cancelClassIfEmpty: true`, `origin: 'TRIAL_OPT_OUT'`, `commandId: <caseId>` sau khi refund on-chain được xác nhận và không còn agreement nào khác trong lớp ở trạng thái tài chính chưa kết thúc (`ACTIVE`, `WAITING_PAYMENT`, `PREPARING_BLOCKCHAIN`,...).
+  - Learning Service giữ quyền quyết định cuối cùng trong cùng transaction với khóa bi quan (`SELECT FOR UPDATE`) trên bảng `class_rooms`.
+- **Quy tắc chuyển đổi trạng thái**:
+  - Khi nhận `CLOSE` với `cancelClassIfEmpty = true`:
+    1. Đổi enrollment của học viên mục tiêu sang `CANCELLED`.
+    2. Đếm số học viên còn hiệu lực (`ACCEPTED` hoặc `ENROLLED`) trong lớp.
+    3. Nếu `activeRemaining > 0`: giữ nguyên lớp học, lịch học tương lai và quyền tham gia của các học viên còn lại.
+    4. Nếu `activeRemaining == 0`:
+       - Chuyển `class_rooms.status = 'CANCELLED'`.
+       - Thiết lập `terminationCutoffSession` bằng mốc cutoff của buổi trải nghiệm.
+       - Chuyển toàn bộ các buổi học sau mốc cutoff (`sequenceNumber > cutoff`) sang `ClassSessionStatus.CANCELLED`.
+       - Xóa điểm danh tương lai của các buổi sau cutoff.
+       - Chuyển toàn bộ yêu cầu đăng ký đang `PENDING` sang `CANCELLED`.
+       - Gia sư không thể mở lại lớp học đã hủy.
+- **Bảo vệ chống tương tranh (Concurrency Guardrail)**:
+  - Thao tác kích hoạt học viên `activateEnrollment()` thực hiện khóa bi quan trên `class_rooms` và kiểm tra trạng thái lớp: từ chối kích hoạt nếu lớp đã `CANCELLED`, `CLOSED`, hoặc có `terminationCutoffSession != null`. Điều này loại bỏ hoàn toàn race condition giữa việc đóng lớp rỗng và sự kiện nạp tiền kích hoạt học viên mới.
+- **Thông báo & Hiển thị**:
+  - Thông báo tới Học viên opt-out: "Yêu cầu dừng sau buổi trải nghiệm đã hoàn tất; khoản hoàn tiền đã được xác nhận."
+  - Thông báo tới Gia sư khi lớp tự hủy: "Lớp đã tự động hủy vì không còn học viên hiệu lực."
+  - Giao diện trạng thái `CANCELLED` sử dụng câu chữ trung tính: "Lớp đã hủy và hoàn tất thanh lý", không quy chụp mặc định cho Admin.
+
+## 13. Change Policy
 
 Business rules có thể thay đổi trong quá trình phát triển. Khi người dùng xác nhận business rule mới:
 
