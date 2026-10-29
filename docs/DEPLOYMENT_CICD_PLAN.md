@@ -1,7 +1,7 @@
 # EduConnect Deployment and CI/CD Plan
 
 > Status: Full Auto-CD via GitHub Actions operational (Release `a1a1bdd` verified live on VPS `103.74.100.232` / `educonnectiuh.duckdns.org` on 2026-10-29).
-> All 12 containers running (`--profile ai`), DNS/HTTPS via Caddy, CI gate (1081 backend tests PASS, 16/16 jobs PASS), GHCR publication, PostgreSQL migrations (Flyway Learning V18 & Contract V22 applied with success=true),
+> All 12 containers running (`--profile ai`), DNS/HTTPS via Caddy, CI gate (1081 backend tests run: 1069 passed, 12 skipped, 0 failures/errors; 16/16 jobs PASS), GHCR publication, PostgreSQL migrations (Flyway Learning V18 & Contract V22 applied with success=true),
 > shared demo dataset (49 accounts, 40 classes), and live Sepolia Escrow agreement for Class #41 (4.80 USDC locked) verified.
 > Classic Branch Protection on `main` active (PR required, 1 approval, `CI gate` required).
 > Audited against repository source, GitHub Actions live workflow runs, and VPS runtime evidence on 2026-10-29.

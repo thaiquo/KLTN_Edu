@@ -112,7 +112,7 @@ Contract Service owns termination governance.
   - **Trial Opt-Out Auto-Cancellation**: For individual trial opt-out (`TRIAL_OPT_OUT`), Contract calculates `cancelClassIfEmpty` when no active/pending agreements remain for the classroom and sends it with `CLOSE`.
   - **Learning Authoritative Execution**: Learning acquires a pessimistic write lock (`SELECT ... FOR UPDATE`) on `class_rooms`. It cancels the student's enrollment and, if `cancelClassIfEmpty = true` and remaining valid students (`ENROLLED` or `ACCEPTED`) count drops to 0, automatically cancels the classroom, future sessions, and pending requests.
   - **Replay Idempotency (Flyway V18)**: Learning persists `class_cancelled` along with the snapshot in `learning_termination_command_inbox`. On retry or replay of the same command ID, the inbox snapshot is returned directly, ensuring immutable replay outcomes.
-  - **Concurrency Serialization**: Late student activation (`activateEnrollment()`) locks `class_rooms` `FOR UPDATE` and rejects cancelled/closed/terminating rooms, guaranteeing strict serializability against empty-class auto-cancellation.
+  - **Concurrency Serialization**: Late student activation (`activateEnrollment()`) and empty-class auto-cancellation both lock the same `class_rooms` row `FOR UPDATE`; activation also rejects cancelled/closed/terminating rooms. This serializes those two Learning transaction paths under the current database transaction model. It is not a claim of global strict serializability across services; live cross-service concurrency E2E remains a rollout gate.
 - Frontend displays termination/refund progress for Student, Tutor, Staff and Admin according to role scope.
 
 ## 8. Event Architecture
