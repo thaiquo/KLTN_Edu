@@ -141,6 +141,132 @@ public class TerminationService {
     }
 
     @Transactional(readOnly = true)
+    public Set<UUID> activeAgreementIds(Collection<UUID> agreementIds) {
+        if (agreementIds == null || agreementIds.isEmpty()) return Set.of();
+        Set<UUID> requested = new HashSet<>(agreementIds);
+        List<TerminationCase> activeCases = cases.findActiveForAgreementIds(requested);
+        if (activeCases.isEmpty()) return Set.of();
+        Set<UUID> result = activeCases.stream()
+                .map(TerminationCase::getAnchorAgreementId)
+                .filter(requested::contains)
+                .collect(java.util.stream.Collectors.toCollection(HashSet::new));
+        Set<Long> activeWholeClassIds = activeCases.stream()
+                .filter(TerminationCase::isWholeClass)
+                .map(TerminationCase::getClassroomId)
+                .filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        if (!activeWholeClassIds.isEmpty()) {
+            agreements.findAllById(requested).stream()
+                    .filter(agreement -> activeWholeClassIds.contains(agreement.getClassroomId()))
+                    .map(ContractAgreement::getId)
+                    .forEach(result::add);
+        }
+        Set<UUID> caseIds = activeCases.stream().map(TerminationCase::getId).collect(java.util.stream.Collectors.toSet());
+        items.findByCaseIdIn(caseIds).stream()
+                .map(TerminationItem::getAgreementId)
+                .filter(requested::contains)
+                .forEach(result::add);
+        return Set.copyOf(result);
+    }
+
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<View> page(
+            ContractUserPrincipal user,
+            String status,
+            String statusGroup,
+            String origin,
+            String keyword,
+            String actor,
+            boolean reportOnly,
+            OffsetDateTime from,
+            OffsetDateTime to,
+            Long classroomId,
+            org.springframework.data.domain.Pageable pageable) {
+        org.springframework.data.jpa.domain.Specification<TerminationCase> scope = (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            if (user.hasActiveAuthority("STAFF") || user.hasActiveAuthority("STUDENT") || user.hasActiveAuthority("TUTOR")) {
+                var agreementIds = query.subquery(UUID.class);
+                var agreement = agreementIds.from(ContractAgreement.class);
+                List<jakarta.persistence.criteria.Predicate> ownership = new ArrayList<>();
+                if (user.hasActiveAuthority("STAFF")) {
+                    ownership.add(cb.equal(cb.lower(agreement.get("classroomReviewerEmail")), user.email().toLowerCase()));
+                } else if (user.hasActiveAuthority("STUDENT")) {
+                    predicates.add(cb.isFalse(root.get("wholeClass")));
+                    if (user.userId() != null) ownership.add(cb.equal(agreement.get("studentId"), user.userId()));
+                    if (!user.email().isBlank()) ownership.add(cb.equal(cb.lower(agreement.get("studentEmail")), user.email().toLowerCase()));
+                } else {
+                    if (user.userId() != null) ownership.add(cb.equal(agreement.get("tutorId"), user.userId()));
+                    if (!user.email().isBlank()) ownership.add(cb.equal(cb.lower(agreement.get("tutorEmail")), user.email().toLowerCase()));
+                }
+                agreementIds.select(agreement.get("id")).where(cb.or(ownership.toArray(jakarta.persistence.criteria.Predicate[]::new)));
+                predicates.add(root.get("anchorAgreementId").in(agreementIds));
+            } else if (!user.hasActiveAuthority("ADMIN")) {
+                predicates.add(cb.disjunction());
+            }
+            if (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status)) {
+                predicates.add(cb.equal(cb.upper(root.get("status")), status.trim().toUpperCase()));
+            }
+            if (statusGroup != null && !statusGroup.isBlank() && !"ALL".equalsIgnoreCase(statusGroup)) {
+                switch (statusGroup.trim().toUpperCase(Locale.ROOT)) {
+                    case "PENDING" -> predicates.add(cb.upper(root.get("status")).in("HOLD_PENDING", "REQUESTED"));
+                    case "ACTIVE" -> predicates.add(cb.not(cb.upper(root.get("status")).in("REJECTED", "COMPLETED")));
+                    case "RECOMMENDED" -> predicates.add(cb.equal(cb.upper(root.get("status")), "RECOMMENDED"));
+                    case "APPROVED" -> predicates.add(cb.upper(root.get("status")).in("APPROVED", "COMPLETED"));
+                    case "REJECTED" -> predicates.add(cb.equal(cb.upper(root.get("status")), "REJECTED"));
+                    default -> predicates.add(cb.disjunction());
+                }
+            }
+            if (origin != null && !origin.isBlank() && !"ALL".equalsIgnoreCase(origin)) {
+                switch (origin.trim().toUpperCase(Locale.ROOT)) {
+                    case "TUTOR_PROPOSAL" -> predicates.add(cb.and(
+                            cb.isTrue(root.get("wholeClass")),
+                            cb.notEqual(cb.upper(root.get("origin")), ORIGIN_AUTO_ABSENCE),
+                            cb.notEqual(cb.upper(root.get("origin")), ORIGIN_ADMIN)));
+                    case "AUTO_ABSENCE" -> predicates.add(cb.equal(cb.upper(root.get("origin")), ORIGIN_AUTO_ABSENCE));
+                    case "STUDENT_UNILATERAL" -> predicates.add(cb.and(
+                            cb.isFalse(root.get("wholeClass")),
+                            cb.notEqual(cb.upper(root.get("origin")), ORIGIN_ADMIN)));
+                    case "ADMIN_DIRECT" -> predicates.add(cb.equal(cb.upper(root.get("origin")), ORIGIN_ADMIN));
+                    default -> predicates.add(cb.disjunction());
+                }
+            }
+            if (classroomId != null) {
+                predicates.add(cb.equal(root.get("classroomId"), classroomId));
+            }
+            if (reportOnly) {
+                predicates.add(cb.isNotNull(root.get("updatedAt")));
+                predicates.add(cb.isNotNull(root.get("auditJson")));
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("auditJson")), "%\"role\":\"staff\"%"),
+                        cb.like(cb.lower(root.get("auditJson")), "%\"role\":\"admin\"%")));
+            }
+            if (actor != null && !actor.isBlank() && !"ALL".equalsIgnoreCase(actor)) {
+                String actorPattern = "%\"actor\":\"" + actor.trim().toLowerCase(Locale.ROOT) + "\"%";
+                predicates.add(cb.like(cb.lower(root.get("auditJson")), actorPattern));
+            }
+            if (from != null) predicates.add(cb.greaterThanOrEqualTo(root.get("updatedAt"), from));
+            if (to != null) predicates.add(cb.lessThan(root.get("updatedAt"), to));
+            if (keyword != null && !keyword.isBlank()) {
+                String pattern = "%" + keyword.trim().toLowerCase(Locale.ROOT) + "%";
+                var matchingAgreements = query.subquery(UUID.class);
+                var agreement = matchingAgreements.from(ContractAgreement.class);
+                matchingAgreements.select(agreement.get("id")).where(cb.or(
+                        cb.like(cb.lower(agreement.get("className")), pattern),
+                        cb.like(cb.lower(agreement.get("studentName")), pattern),
+                        cb.like(cb.lower(agreement.get("studentEmail")), pattern),
+                        cb.like(cb.lower(agreement.get("tutorName")), pattern),
+                        cb.like(cb.lower(agreement.get("tutorEmail")), pattern)));
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("reason")), pattern),
+                        cb.like(cb.lower(root.get("requestedBy")), pattern),
+                        root.get("anchorAgreementId").in(matchingAgreements)));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+        return cases.findAll(scope, pageable).map(this::view);
+    }
+
+    @Transactional(readOnly = true)
     public List<View> listRefunds(ContractUserPrincipal user) {
         if (!user.hasActiveAuthority("STUDENT")) return list(user);
         return cases.findAll().stream()

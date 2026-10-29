@@ -37,6 +37,7 @@ export interface AgreementSummary {
   onchainFunded?: boolean;
   legacyUnreconciled?: boolean;
   settlementEligible?: boolean;
+  terminationPending?: boolean;
   totalAmount?: number;
   remainingDeposit?: number;
   remainingAmountUsdc?: number;
@@ -250,6 +251,42 @@ export interface DisputeDto {
     sha256: string;
     createdAt: string | null;
   }>;
+  escalationStatus?: "NONE" | "PENDING_ADMIN" | "ACCEPTED_BY_ADMIN" | "RETURNED_TO_STAFF" | "CLOSED";
+  escalationReason?: string | null;
+  escalatedByEmail?: string | null;
+  escalatedAt?: string | null;
+  escalationHandledByEmail?: string | null;
+  escalationHandledAt?: string | null;
+  escalationReturnReason?: string | null;
+}
+
+export interface DisputeEscalationDto {
+  id: string;
+  disputeStatus: string;
+  escalationStatus: "NONE" | "PENDING_ADMIN" | "ACCEPTED_BY_ADMIN" | "RETURNED_TO_STAFF" | "CLOSED";
+  disputeReason: string;
+  escalationReason: string | null;
+  escalatedByEmail: string | null;
+  escalatedAt: string | null;
+  handledByEmail: string | null;
+  handledAt: string | null;
+  returnReason: string | null;
+  classroomId: number | null;
+  className: string | null;
+  assignedStaffEmail: string | null;
+  sessionId: number;
+  version: number;
+}
+
+export interface DisputeHistoryDto {
+  id: string;
+  action: string;
+  fromState: string | null;
+  toState: string | null;
+  reason: string | null;
+  actorEmail: string | null;
+  actorRole: string;
+  createdAt: string;
 }
 
 export interface AdminFinancialOverview {
@@ -311,9 +348,11 @@ export const contractsApi = {
   /**
    * List agreements - backend derives caller identity from the auth cookie.
    */
-  listAgreements(params?: { status?: string; page?: number; size?: number }): Promise<PagedResponse<AgreementSummary>> {
+  listAgreements(params?: { status?: string; keyword?: string; terminationPending?: boolean; page?: number; size?: number }): Promise<PagedResponse<AgreementSummary>> {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
+    if (params?.keyword) query.set("keyword", params.keyword);
+    if (params?.terminationPending !== undefined) query.set("terminationPending", String(params.terminationPending));
     if (params?.page !== undefined) query.set("page", String(params.page));
     if (params?.size !== undefined) query.set("size", String(params.size));
     const qs = query.toString() ? `?${query.toString()}` : "";
@@ -396,9 +435,21 @@ export const contractsApi = {
     return apiRequest(`/api/contracts/agreements/${agreementId}/transactions`);
   },
 
-  listDisputes(params?: { status?: string; page?: number; size?: number }): Promise<PagedResponse<DisputeDto>> {
+  listDisputes(params?: {
+    status?: string;
+    statusGroup?: string;
+    origin?: string;
+    reviewer?: string;
+    keyword?: string;
+    page?: number;
+    size?: number;
+  }): Promise<PagedResponse<DisputeDto>> {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
+    if (params?.statusGroup) query.set("statusGroup", params.statusGroup);
+    if (params?.origin) query.set("origin", params.origin);
+    if (params?.reviewer) query.set("reviewer", params.reviewer);
+    if (params?.keyword) query.set("keyword", params.keyword);
     if (params?.page !== undefined) query.set("page", String(params.page));
     if (params?.size !== undefined) query.set("size", String(params.size));
     const qs = query.toString() ? `?${query.toString()}` : "";
@@ -415,6 +466,43 @@ export const contractsApi = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ approved, reason }),
     });
+  },
+
+  escalateDispute(id: string, reason: string, idempotencyKey: string): Promise<DisputeEscalationDto> {
+    return apiRequest(`/api/contracts/disputes/${id}/escalation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  listEscalations(params?: { status?: string; keyword?: string; page?: number; size?: number }): Promise<PagedResponse<DisputeEscalationDto>> {
+    const query = new URLSearchParams();
+    if (params?.status) query.set("status", params.status);
+    if (params?.keyword) query.set("keyword", params.keyword);
+    if (params?.page !== undefined) query.set("page", String(params.page));
+    if (params?.size !== undefined) query.set("size", String(params.size));
+    return apiRequest(`/api/contracts/disputes/escalations?${query.toString()}`);
+  },
+
+  acceptEscalation(id: string, reason = ""): Promise<DisputeEscalationDto> {
+    return apiRequest(`/api/contracts/disputes/${id}/escalation/accept`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ reason: reason || "Admin tiếp nhận xử lý" }),
+    });
+  },
+
+  returnEscalation(id: string, reason: string): Promise<DisputeEscalationDto> {
+    return apiRequest(`/api/contracts/disputes/${id}/escalation/return`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ reason }),
+    });
+  },
+
+  getDisputeHistory(id: string): Promise<DisputeHistoryDto[]> {
+    return apiRequest(`/api/contracts/disputes/${id}/history`);
   },
 
   submitTutorDisputeEvidence(
@@ -523,10 +611,12 @@ export const contractsApi = {
     });
   },
 
-  listAllTransactions(params?: { page?: number; size?: number }): Promise<PagedResponse<BlockchainTxDto>> {
+  listAllTransactions(params?: { keyword?: string; statusGroup?: string; page?: number; size?: number }): Promise<PagedResponse<BlockchainTxDto>> {
     const query = new URLSearchParams();
     if (params?.page !== undefined) query.set("page", String(params.page));
     if (params?.size !== undefined) query.set("size", String(params.size));
+    if (params?.keyword) query.set("keyword", params.keyword);
+    if (params?.statusGroup) query.set("statusGroup", params.statusGroup);
     const qs = query.toString() ? `?${query.toString()}` : "";
     return apiRequest(`/api/contracts/transactions${qs}`);
   },
@@ -535,9 +625,11 @@ export const contractsApi = {
     return apiRequest(`/api/contracts/admin/financial-overview`);
   },
 
-  listAdminSettlements(params?: { status?: string; page?: number; size?: number }): Promise<PagedResponse<AdminSettlementDetail>> {
+  listAdminSettlements(params?: { status?: string; statusGroup?: string; keyword?: string; page?: number; size?: number }): Promise<PagedResponse<AdminSettlementDetail>> {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
+    if (params?.statusGroup) query.set("statusGroup", params.statusGroup);
+    if (params?.keyword) query.set("keyword", params.keyword);
     if (params?.page !== undefined) query.set("page", String(params.page));
     if (params?.size !== undefined) query.set("size", String(params.size));
     const qs = query.toString() ? `?${query.toString()}` : "";

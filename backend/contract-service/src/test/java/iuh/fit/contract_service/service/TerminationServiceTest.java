@@ -50,6 +50,49 @@ class TerminationServiceTest {
     ContractUserPrincipal user(long id, String email, String role) {
         return new ContractUserPrincipal(id, email, role, List.of(role));
     }
+
+    @Test
+    void activeAgreementLookupDoesNotTruncateCandidatesAfterFiftyRecords() {
+        List<UUID> requested = java.util.stream.IntStream.range(0, 75)
+                .mapToObj(index -> UUID.randomUUID())
+                .toList();
+        UUID caseId = UUID.randomUUID();
+        TerminationCase active = new TerminationCase();
+        active.setId(caseId);
+        active.setStatus("REQUESTED");
+        active.setAnchorAgreementId(requested.get(74));
+        TerminationItem item = new TerminationItem();
+        item.setCaseId(caseId);
+        item.setAgreementId(requested.get(73));
+        when(cases.findActiveForAgreementIds(anyCollection())).thenReturn(List.of(active));
+        when(items.findByCaseIdIn(Set.of(caseId))).thenReturn(List.of(item));
+
+        Set<UUID> result = service.activeAgreementIds(requested);
+
+        assertThat(result).containsExactlyInAnyOrder(requested.get(73), requested.get(74));
+        verify(cases).findActiveForAgreementIds(argThat(ids -> ids.size() == 75));
+    }
+
+    @Test
+    void wholeClassTerminationMarksEveryRequestedAgreementInThatClass() {
+        ContractAgreement second = ContractAgreement.builder()
+                .id(UUID.randomUUID())
+                .classroomId(a.getClassroomId())
+                .build();
+        TerminationCase active = new TerminationCase();
+        active.setId(UUID.randomUUID());
+        active.setStatus("REQUESTED");
+        active.setWholeClass(true);
+        active.setClassroomId(a.getClassroomId());
+        active.setAnchorAgreementId(UUID.randomUUID());
+        when(cases.findActiveForAgreementIds(anyCollection())).thenReturn(List.of(active));
+        when(agreements.findAllById(anyCollection())).thenReturn(List.of(a, second));
+
+        Set<UUID> result = service.activeAgreementIds(List.of(a.getId(), second.getId()));
+
+        assertThat(result).containsExactlyInAnyOrder(a.getId(), second.getId());
+    }
+
     TerminationCase request(String status, boolean wholeClass) {
         var c = new TerminationCase(); c.setId(UUID.randomUUID()); c.setClassroomId(1L); c.setAnchorAgreementId(a.getId());
         c.setStatus(status); c.setWholeClass(wholeClass); c.setAuditJson("[]");

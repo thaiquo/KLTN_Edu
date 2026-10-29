@@ -40,6 +40,7 @@ import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import { fetchUserDirectory, getUserDisplayName, UserSummary } from '../../utils/userDisplay';
 import { TerminationRequestModal } from './TerminationRequestModal';
 import { terminationCaseLabel, terminationItemLabel, terminationProgressText, terminationWaitingDetail } from './terminationStatus';
+import { Pager } from '../../portal/components/OperationalUi';
 
 const labels: Record<string, string> = {
   HOLD_PENDING: 'Đang tạm dừng lịch học',
@@ -122,10 +123,10 @@ interface TerminationPanelProps {
 const UNRESOLVED_DISPUTE_STATUSES = new Set(['OPENING', 'OPEN', 'UNDER_REVIEW', 'RESOLUTION_PENDING', 'FAILED_RETRYABLE']);
 
 const fetchAllDisputes = async (): Promise<DisputeDto[]> => {
-  const first = await contractsApi.listDisputes({ page: 0, size: 100 });
+  const first = await contractsApi.listDisputes({ page: 0, size: 50 });
   const rows = [...(first.content ?? [])];
   for (let page = 1; page < first.totalPages; page++) {
-    const next = await contractsApi.listDisputes({ page, size: 100 });
+    const next = await contractsApi.listDisputes({ page, size: 50 });
     rows.push(...(next.content ?? []));
   }
   return rows;
@@ -158,6 +159,14 @@ export function TerminationPanel({
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'RECOMMENDED' | 'APPROVED' | 'REJECTED'>('ALL');
   const [originFilter, setOriginFilter] = useState<'ALL' | 'TUTOR_PROPOSAL' | 'AUTO_ABSENCE' | 'STUDENT_UNILATERAL' | 'ADMIN_DIRECT'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalElements, setTotalElements] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [agreementPage, setAgreementPage] = useState(0);
+  const [agreementPages, setAgreementPages] = useState(1);
+  const [agreementTotal, setAgreementTotal] = useState(initialAgreements?.length || 0);
   const [expandedCaseIds, setExpandedCaseIds] = useState<Set<string>>(new Set());
   const [isTutorProposeModalOpen, setIsTutorProposeModalOpen] = useState(false);
   const [tutorProposeTargetAgreement, setTutorProposeTargetAgreement] = useState<AgreementSummary | null>(null);
@@ -231,13 +240,32 @@ export function TerminationPanel({
   const isAdmin = normalizedRole === 'admin';
   const isManager = isAdmin || isStaff;
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [statusFilter, originFilter, selectedClassFilter, debouncedSearch, pageSize]);
+
   const load = useCallback(async () => {
     try {
-      const [termList, userList] = await Promise.all([
-        terminationsApi.list(),
+      const [termResult, userList] = await Promise.all([
+        terminationsApi.page({
+          page,
+          size: pageSize,
+          statusGroup: statusFilter,
+          origin: originFilter,
+          keyword: debouncedSearch,
+          classroomId: selectedClassFilter,
+        }),
         fetchUserDirectory()
       ]);
-      setRequests(Array.isArray(termList) ? termList : []);
+      const termList = Array.isArray(termResult) ? termResult : termResult.content || [];
+      setRequests(termList);
+      setTotalElements(termResult.totalElements || 0);
+      setTotalPages(Math.max(1, termResult.totalPages || 1));
       setUsers(Array.isArray(userList) ? userList : []);
       setRefreshError('');
     } catch (e) {
@@ -245,7 +273,7 @@ export function TerminationPanel({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [debouncedSearch, originFilter, page, pageSize, selectedClassFilter, statusFilter]);
 
   useRealtimeRefresh(
     [
@@ -260,19 +288,26 @@ export function TerminationPanel({
   );
 
   useEffect(() => {
-    let active = true;
     void load();
+    const timer = window.setInterval(() => void load(), 30000);
+    return () => window.clearInterval(timer);
+  }, [load]);
+
+  useEffect(() => {
+    let active = true;
     const refreshRelated = () => {
       void (async () => {
         try {
-          const result: AgreementSummary[] = [];
-          for (let page = 0; ; page++) {
-            const response = await contractsApi.listAgreements({ page, size: 100 });
-            const content = response.content ?? [];
-            result.push(...content);
-            if (content.length < 100 || result.length >= response.totalElements) break;
+          const response = await contractsApi.listAgreements({
+            status: isTutor ? 'ACTIVE' : undefined,
+            page: isTutor ? agreementPage : 0,
+            size: 50,
+          });
+          if (active) {
+            setAgreements(response.content ?? []);
+            setAgreementTotal(response.totalElements || 0);
+            setAgreementPages(Math.max(1, response.totalPages || 1));
           }
-          if (active) setAgreements(result);
         } catch (e) {
           if (active) setError(message(e));
         }
@@ -289,15 +324,12 @@ export function TerminationPanel({
       }
     };
     refreshRelated();
-    const timer = window.setInterval(() => {
-      void load();
-      refreshRelated();
-    }, 30000);
+    const timer = window.setInterval(refreshRelated, 30000);
     return () => {
       active = false;
       window.clearInterval(timer);
     };
-  }, [load, isManager]);
+  }, [agreementPage, isManager, isTutor]);
 
   const agreementMap = useMemo(() => new Map(agreements.map((a) => [a.id, a])), [agreements]);
   const classroomMap = useMemo(() => {
@@ -345,13 +377,13 @@ export function TerminationPanel({
   };
 
   const stats = useMemo(() => {
-    const total = requests.length;
+    const total = isManager ? totalElements : requests.length;
     const pending = requests.filter((r) => ['HOLD_PENDING', 'REQUESTED'].includes(r.request.status)).length;
     const recommended = requests.filter((r) => r.request.status === 'RECOMMENDED').length;
     const approved = requests.filter((r) => ['APPROVED', 'COMPLETED'].includes(r.request.status)).length;
     const rejected = requests.filter((r) => r.request.status === 'REJECTED').length;
     return { total, pending, recommended, approved, rejected };
-  }, [requests]);
+  }, [isManager, requests, totalElements]);
 
   const originStats = useMemo(() => {
     let tutor = 0;
@@ -402,6 +434,14 @@ export function TerminationPanel({
   }, [selectedClassFilter, uniqueClassrooms]);
 
   const filteredRequests = useMemo(() => {
+    if (isManager) {
+      return requests.filter(({ request: c }) => {
+        if (!selectedAgreementId) return true;
+        const selected = agreementMap.get(selectedAgreementId);
+        return c.anchorAgreementId === selectedAgreementId
+          || Boolean(c.wholeClass && selected && String(selected.classroomId) === String(c.classroomId));
+      });
+    }
     return requests
       .filter(({ request: c }) => {
         if (selectedAgreementId && c.anchorAgreementId !== selectedAgreementId) {
@@ -450,7 +490,7 @@ export function TerminationPanel({
         if (isPendingA !== isPendingB) return isPendingB - isPendingA;
         return new Date(b.request.createdAt).getTime() - new Date(a.request.createdAt).getTime();
       });
-  }, [requests, selectedClassFilter, statusFilter, originFilter, searchQuery, agreementMap, selectedAgreementId]);
+  }, [requests, selectedClassFilter, statusFilter, originFilter, searchQuery, agreementMap, selectedAgreementId, isManager]);
 
   const activeAdminAgreements = useMemo(
     () => agreements.filter((agreement) => agreement.status === 'ACTIVE' && !agreement.legacyUnreconciled),
@@ -664,7 +704,7 @@ export function TerminationPanel({
                     return;
                   }
                 }
-                if (tutorActiveClasses.length === 1) {
+                if (tutorActiveClasses.length === 1 && agreementPages === 1) {
                   setTutorProposeTargetAgreement(tutorActiveClasses[0].agreements[0]);
                   setIsTutorProposeModalOpen(true);
                 } else {
@@ -2185,6 +2225,18 @@ export function TerminationPanel({
               </article>
             );
           })}
+          {totalPages > 1 && (
+            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <Pager
+                page={page}
+                pages={totalPages}
+                total={totalElements}
+                size={pageSize}
+                onChange={setPage}
+                onSizeChange={(nextSize) => setPageSize(nextSize)}
+              />
+            </div>
+          )}
         </div>
       )}
       {/* Tutor Active Class Picker Modal */}
@@ -2213,7 +2265,7 @@ export function TerminationPanel({
             <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
               {tutorActiveClasses.map((cls) => {
                 const totalEscrow = cls.agreements.reduce((sum, a) => sum + (Number(a.totalAmountUsdc) || 0), 0);
-                const hasPendingTerm = requests.some(
+                const hasPendingTerm = cls.agreements.some((agreement) => agreement.terminationPending) || requests.some(
                   (r) => r.request.classroomId === cls.classroomId && !['REJECTED', 'COMPLETED'].includes(r.request.status)
                 );
                 return (
@@ -2262,6 +2314,18 @@ export function TerminationPanel({
                 );
               })}
             </div>
+
+            {agreementPages > 1 && (
+              <div className="overflow-hidden rounded-xl border border-slate-200">
+                <Pager
+                  page={agreementPage}
+                  pages={agreementPages}
+                  total={agreementTotal}
+                  size={50}
+                  onChange={setAgreementPage}
+                />
+              </div>
+            )}
 
             <div className="flex justify-end pt-2 border-t border-slate-100">
               <button

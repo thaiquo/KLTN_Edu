@@ -224,14 +224,14 @@ class AnvilAgreementFundingIntegrationTest {
                     escrow_contract_address, token_address, token_symbol, token_decimals,
                     terms_json, terms_hash, contract_version, total_price_vnd,
                     vnd_per_usdc, total_amount_usdc_units, price_per_session_usdc_units,
-                    total_sessions, status, version, created_at, updated_at
+                    total_sessions, status, version, legacy_excluded, created_at, updated_at
                 ) VALUES (
                     ?, ?, ?, ?, 2,
                     ?, ?, ?, ?,
                     ?, ?, 'USDC', 6,
                     '{}', ?, 1, 1000000.00,
                     25000.00, 40000000, 4000000,
-                    10, 'PREPARING_BLOCKCHAIN', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    10, 'PREPARING_BLOCKCHAIN', 0, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 )
                 """,
                 id, onchainAgreementId, classroomId, studentId, student, tutor, platform, chainId,

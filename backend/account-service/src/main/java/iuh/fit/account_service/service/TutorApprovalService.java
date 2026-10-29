@@ -36,10 +36,15 @@ import iuh.fit.account_service.util.EmailNormalizer;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -87,11 +92,9 @@ public class TutorApprovalService {
     }
 
     @Transactional(readOnly = true)
-    public List<StaffTutorApplicationSummaryResponse> listPendingApplications() {
-        return tutorApplicationRepository.findByStatus(TutorApplicationStatus.PENDING)
-                .stream()
-                .map(this::toSummary)
-                .toList();
+    public Page<StaffTutorApplicationSummaryResponse> listPendingApplications(Pageable pageable) {
+        return tutorApplicationRepository.findByStatus(TutorApplicationStatus.PENDING, pageable)
+                .map(this::toSummary);
     }
 
     @Transactional(readOnly = true)
@@ -261,21 +264,46 @@ public class TutorApprovalService {
     }
 
     @Transactional(readOnly = true)
-    public List<StaffTutorApplicationSummaryResponse> listHistory(String currentUserEmail) {
+    public Page<StaffTutorApplicationSummaryResponse> listHistory(String currentUserEmail,
+                                                                  TutorApplicationStatus status,
+                                                                  String search,
+                                                                  String reviewerEmail,
+                                                                  OffsetDateTime from,
+                                                                  OffsetDateTime to,
+                                                                  Pageable pageable) {
         User currentUser = getReviewer(currentUserEmail);
         List<TutorApplicationStatus> reviewedStatuses = List.of(TutorApplicationStatus.APPROVED, TutorApplicationStatus.REJECTED);
 
-        List<TutorApplication> list;
-        if (currentUser != null && userRoleRepository.existsByUserIdAndRole(currentUser.getId(), Role.ADMIN)) {
-            // Admin sees all history reviewed across all staff/admins
-            list = tutorApplicationRepository.findByStatusInOrderByReviewedAtDesc(reviewedStatuses);
-        } else if (currentUser != null) {
-            // Staff sees history reviewed by themselves
-            list = tutorApplicationRepository.findByReviewedByIdAndStatusInOrderByReviewedAtDesc(currentUser.getId(), reviewedStatuses);
-        } else {
-            list = List.of();
-        }
-        return list.stream().map(this::toSummary).toList();
+        if (status != null && reviewedStatuses.contains(status)) reviewedStatuses = List.of(status);
+        if (currentUser == null) return Page.empty(pageable);
+        boolean admin = userRoleRepository.existsByUserIdAndRole(currentUser.getId(), Role.ADMIN);
+        List<TutorApplicationStatus> selectedStatuses = reviewedStatuses;
+        Specification<TutorApplication> spec = (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(root.get("status").in(selectedStatuses));
+            if (!admin) predicates.add(cb.equal(root.get("reviewedBy").get("id"), currentUser.getId()));
+            if (admin && StringUtils.hasText(reviewerEmail) && !"ALL".equalsIgnoreCase(reviewerEmail)) {
+                predicates.add(cb.equal(
+                        cb.lower(root.get("reviewedBy").get("email")),
+                        reviewerEmail.trim().toLowerCase()));
+            }
+            if (from != null) predicates.add(cb.greaterThanOrEqualTo(
+                    root.get("reviewedAt"), from.atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime()));
+            if (to != null) predicates.add(cb.lessThan(
+                    root.get("reviewedAt"), to.atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime()));
+            if (StringUtils.hasText(search)) {
+                String pattern = "%" + search.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("applicantFullName")), pattern),
+                        cb.like(cb.lower(root.get("applicantEmail")), pattern),
+                        cb.like(cb.lower(root.get("user").get("fullName")), pattern),
+                        cb.like(cb.lower(root.get("user").get("email")), pattern)
+                ));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+        Page<TutorApplication> list = tutorApplicationRepository.findAll(spec, pageable);
+        return list.map(this::toSummary);
     }
 
     private StaffTutorApplicationSummaryResponse toSummary(TutorApplication application) {

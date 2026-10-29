@@ -23,6 +23,10 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import jakarta.persistence.criteria.Subquery;
 
 import java.util.List;
 import java.util.Map;
@@ -60,10 +64,12 @@ public class AdminUserService {
     }
 
     @Transactional(readOnly = true)
-    public List<AdminUserResponse> listUsers(String search, String roleFilter, String statusFilter) {
-        List<User> users = userRepository.findAll();
-        List<UserRole> allRoles = userRoleRepository.findAll();
-        List<TutorApplication> allApps = tutorApplicationRepository.findAll();
+    public Page<AdminUserResponse> listUsers(String search, String roleFilter, String statusFilter, Pageable pageable) {
+        Specification<User> spec = userSpecification(search, roleFilter, statusFilter);
+        Page<User> users = userRepository.findAll(spec, pageable);
+        List<Long> userIds = users.stream().map(User::getId).toList();
+        List<UserRole> allRoles = userIds.isEmpty() ? List.of() : userRoleRepository.findByUserIdIn(userIds);
+        List<TutorApplication> allApps = userIds.isEmpty() ? List.of() : tutorApplicationRepository.findByUserIdIn(userIds);
 
         Map<Long, Set<String>> rolesByUserId = allRoles.stream()
                 .collect(Collectors.groupingBy(
@@ -78,32 +84,52 @@ public class AdminUserService {
                         (existing, replacement) -> existing
                 ));
 
-        return users.stream()
-                .filter(u -> {
-                    if (StringUtils.hasText(search)) {
-                        String q = search.toLowerCase().trim();
-                        boolean matchName = u.getFullName() != null && u.getFullName().toLowerCase().contains(q);
-                        boolean matchEmail = u.getEmail() != null && u.getEmail().toLowerCase().contains(q);
-                        boolean matchPhone = u.getPhone() != null && u.getPhone().contains(q);
-                        if (!matchName && !matchEmail && !matchPhone) return false;
-                    }
-                    if (StringUtils.hasText(roleFilter) && !"ALL".equalsIgnoreCase(roleFilter)) {
-                        Set<String> userRoles = rolesByUserId.getOrDefault(u.getId(), Set.of());
-                        if (!userRoles.contains(roleFilter.toUpperCase())) return false;
-                    }
-                    if (StringUtils.hasText(statusFilter) && !"ALL".equalsIgnoreCase(statusFilter)) {
-                        if (u.getAccountStatus() == null || !u.getAccountStatus().name().equalsIgnoreCase(statusFilter)) {
-                            return false;
-                        }
-                    }
-                    return true;
-                })
-                .map(u -> {
+        return users.map(u -> {
                     Set<String> roles = rolesByUserId.getOrDefault(u.getId(), Set.of());
                     TutorApplication app = appByUserId.get(u.getId());
                     return toAdminResponse(u, roles, app);
-                })
-                .toList();
+                });
+    }
+
+    private Specification<User> userSpecification(String search, String roleFilter, String statusFilter) {
+        return (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new java.util.ArrayList<>();
+            if (StringUtils.hasText(search)) {
+                String pattern = "%" + search.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("fullName")), pattern),
+                        cb.like(cb.lower(root.get("email")), pattern),
+                        cb.like(cb.lower(root.get("phone")), pattern)
+                ));
+            }
+            if (StringUtils.hasText(statusFilter) && !"ALL".equalsIgnoreCase(statusFilter)) {
+                predicates.add(cb.equal(root.get("accountStatus"), AccountStatus.valueOf(statusFilter.trim().toUpperCase())));
+            }
+            if (StringUtils.hasText(roleFilter) && !"ALL".equalsIgnoreCase(roleFilter)) {
+                Role role = Role.valueOf(roleFilter.trim().toUpperCase());
+                Subquery<Long> roleQuery = query.subquery(Long.class);
+                var roleRoot = roleQuery.from(UserRole.class);
+                roleQuery.select(roleRoot.get("user").get("id"))
+                        .where(cb.and(
+                                cb.equal(roleRoot.get("user").get("id"), root.get("id")),
+                                cb.equal(roleRoot.get("role"), role)
+                        ));
+                predicates.add(cb.exists(roleQuery));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Long> getUserStats() {
+        return Map.of(
+                "total", userRepository.count(),
+                "tutors", userRoleRepository.countByRole(Role.TUTOR),
+                "students", userRoleRepository.countByRole(Role.STUDENT),
+                "operators", userRoleRepository.countByRole(Role.ADMIN) + userRoleRepository.countByRole(Role.STAFF),
+                "suspended", userRepository.countByAccountStatus(AccountStatus.LOCKED)
+                        + userRepository.countByAccountStatus(AccountStatus.DISABLED)
+        );
     }
 
     @Transactional(readOnly = true)

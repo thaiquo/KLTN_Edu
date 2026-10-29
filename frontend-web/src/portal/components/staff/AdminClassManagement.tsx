@@ -1,5 +1,5 @@
 import { selectTerminationCase } from "../../../utils/terminationState";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
@@ -23,6 +23,7 @@ import { adminUsersApi } from "../../../api/adminUsers";
 import { terminationsApi, TerminationView } from "../../../api/terminationsApi";
 import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
 import { fetchUserDirectory, getUserDisplayName, UserSummary } from "../../../utils/userDisplay";
+import { Pager } from "../OperationalUi";
 
 type PortalRole = "student" | "tutor" | "staff" | "admin";
 
@@ -88,7 +89,13 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<ClassItem | null>(null);
   const [status, setStatus] = useState(initialStatus);
+  const [keywordInput, setKeywordInput] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [stats, setStats] = useState<any>({});
 
   useEffect(() => {
     const urlStatus = searchParams.get("status");
@@ -103,13 +110,17 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
       setLoading(true);
     }
     try {
-      const [data, termData, userRows] = await Promise.all([
-        classApi.adminGetAllClasses({ reviewedByMe: !isAdmin }),
-        terminationsApi.list().catch(() => [] as TerminationView[]),
+      const [data, classStats, termData, userRows] = await Promise.all([
+        classApi.adminGetAllClasses({ reviewedByMe: !isAdmin, status, keyword, page, size: pageSize }),
+        classApi.adminGetClassStats(),
+        terminationsApi.page({ page: 0, size: 50 }).catch(() => ({ content: [] as TerminationView[] })),
         fetchUserDirectory()
       ]);
-      setClasses(Array.isArray(data) ? data : []);
-      setTerminationCases(Array.isArray(termData) ? termData : []);
+      setClasses(Array.isArray(data?.content) ? data.content : []);
+      setPages(Math.max(1, Number(data?.totalPages || 1)));
+      setTotal(Number(data?.totalElements || 0));
+      setStats(classStats || {});
+      setTerminationCases(Array.isArray(termData?.content) ? termData.content : []);
       setUsers(Array.isArray(userRows) ? userRows : []);
     } finally {
       if (!isSilent) {
@@ -134,34 +145,7 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
 
   useEffect(() => {
     load(false);
-  }, [isAdmin]);
-
-  const filtered = useMemo(() => {
-    const q = keyword.trim().toLowerCase();
-    return classes.filter((item) => {
-      if (status !== "ALL" && item.status !== status) return false;
-      if (!q) return true;
-      return [
-        item.name,
-        item.tutorEmail,
-        item.tutorFullName,
-        item.registration?.subjectName,
-        item.registration?.categoryName,
-        item.level?.name,
-      ].some((value) => value?.toLowerCase().includes(q));
-    });
-  }, [classes, keyword, status]);
-
-  const stats = useMemo(() => ({
-    total: classes.length,
-    published: classes.filter((item) => item.status === "PUBLISHED").length,
-    privateCount: classes.filter((item) => item.status === "PRIVATE").length,
-    pending: classes.filter((item) => item.status === "PENDING_APPROVAL").length,
-    rejected: classes.filter((item) => item.status === "REJECTED").length,
-    locked: classes.filter((item) => item.status === "LOCKED").length,
-    cancelled: classes.filter((item) => item.status === "CANCELLED").length,
-    closed: classes.filter((item) => item.status === "CLOSED").length,
-  }), [classes]);
+  }, [isAdmin, page, pageSize, status, keyword]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-5 pb-10">
@@ -193,13 +177,13 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
       </header>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-7">
-        <StatCard label="Tổng số lớp" value={stats.total} icon={<BookOpen className="h-4 w-4" />} active={status === "ALL"} onClick={() => setStatus("ALL")} />
-        <StatCard label="Public" value={stats.published} icon={<Globe2 className="h-4 w-4" />} active={status === "PUBLISHED"} onClick={() => setStatus("PUBLISHED")} tone="emerald" />
-        <StatCard label="Private" value={stats.privateCount} icon={<Lock className="h-4 w-4" />} active={status === "PRIVATE"} onClick={() => setStatus("PRIVATE")} tone="sky" />
-        <StatCard label="Chờ duyệt" value={stats.pending} icon={<Calendar className="h-4 w-4" />} active={status === "PENDING_APPROVAL"} onClick={() => setStatus("PENDING_APPROVAL")} tone="amber" />
-        <StatCard label="Bị từ chối" value={stats.rejected} icon={<XCircle className="h-4 w-4" />} active={status === "REJECTED"} onClick={() => setStatus("REJECTED")} tone="rose" />
-        <StatCard label="Đã khóa" value={stats.locked} icon={<Lock className="h-4 w-4" />} active={status === "LOCKED"} onClick={() => setStatus("LOCKED")} tone="violet" />
-        <StatCard label="Đã hủy" value={stats.cancelled} icon={<XCircle className="h-4 w-4" />} active={status === "CANCELLED"} onClick={() => setStatus("CANCELLED")} tone="rose" />
+        <StatCard label="Tổng số lớp" value={stats.totalClasses || 0} icon={<BookOpen className="h-4 w-4" />} active={status === "ALL"} onClick={() => { setStatus("ALL"); setPage(0); }} />
+        <StatCard label="Public" value={stats.publishedCount || 0} icon={<Globe2 className="h-4 w-4" />} active={status === "PUBLISHED"} onClick={() => { setStatus("PUBLISHED"); setPage(0); }} tone="emerald" />
+        <StatCard label="Private" value={stats.privateCount || 0} icon={<Lock className="h-4 w-4" />} active={status === "PRIVATE"} onClick={() => { setStatus("PRIVATE"); setPage(0); }} tone="sky" />
+        <StatCard label="Chờ duyệt" value={stats.pendingCount || 0} icon={<Calendar className="h-4 w-4" />} active={status === "PENDING_APPROVAL"} onClick={() => { setStatus("PENDING_APPROVAL"); setPage(0); }} tone="amber" />
+        <StatCard label="Bị từ chối" value={stats.rejectedCount || 0} icon={<XCircle className="h-4 w-4" />} active={status === "REJECTED"} onClick={() => { setStatus("REJECTED"); setPage(0); }} tone="rose" />
+        <StatCard label="Đã khóa" value={stats.lockedCount || 0} icon={<Lock className="h-4 w-4" />} active={status === "LOCKED"} onClick={() => { setStatus("LOCKED"); setPage(0); }} tone="violet" />
+        <StatCard label="Đã hủy" value="—" icon={<XCircle className="h-4 w-4" />} active={status === "CANCELLED"} onClick={() => { setStatus("CANCELLED"); setPage(0); }} tone="rose" />
       </div>
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -209,7 +193,7 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
               <button
                 key={option.id}
                 type="button"
-                onClick={() => setStatus(option.id)}
+                onClick={() => { setStatus(option.id); setPage(0); }}
                 className={`rounded-xl px-3 py-2 text-xs font-black transition ${
                   status === option.id ? "bg-blue-700 text-white shadow-sm" : "bg-slate-50 text-slate-600 hover:bg-slate-100"
                 }`}
@@ -218,20 +202,21 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
               </button>
             ))}
           </div>
-          <div className="relative w-full lg:w-80">
+          <form onSubmit={event => { event.preventDefault(); setPage(0); setKeyword(keywordInput.trim()); }} className="relative w-full lg:w-96">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
-              value={keyword}
-              onChange={(event) => setKeyword(event.target.value)}
+              value={keywordInput}
+              onChange={(event) => setKeywordInput(event.target.value)}
               placeholder="Tìm lớp, môn, gia sư, email..."
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-3 text-sm font-semibold outline-none focus:border-blue-500"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-20 text-sm font-semibold outline-none focus:border-blue-500"
             />
-          </div>
+            <button className="absolute right-1.5 top-1.5 rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-black text-white">Tìm</button>
+          </form>
         </div>
 
         {loading ? (
           <div className="p-10 text-center text-sm font-bold text-slate-500">Đang tải danh sách lớp học...</div>
-        ) : filtered.length === 0 ? (
+        ) : classes.length === 0 ? (
           <div className="p-12 text-center">
             <BookOpen className="mx-auto h-10 w-10 text-slate-300" />
             <p className="mt-3 text-sm font-black text-slate-800">Không có lớp học phù hợp</p>
@@ -240,6 +225,7 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
             </p>
           </div>
         ) : (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[980px] text-left text-xs">
               <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500">
@@ -255,7 +241,7 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-semibold text-slate-600">
-                {filtered.map((item) => (
+                {classes.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/70">
                     <td className="max-w-[260px] px-4 py-3">
                       <p className="truncate font-black text-slate-950" title={item.name}>{item.name}</p>
@@ -318,6 +304,8 @@ export function AdminClassManagement({ activeRole }: { activeRole: PortalRole })
               </tbody>
             </table>
           </div>
+          <Pager page={page} pages={pages} total={total} size={pageSize} onChange={setPage} onSizeChange={next => { setPageSize(next); setPage(0); }} />
+          </>
         )}
       </section>
 

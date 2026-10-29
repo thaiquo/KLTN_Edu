@@ -17,8 +17,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -33,12 +35,22 @@ public class AdminUserController {
     }
 
     @GetMapping
-    public ResponseEntity<List<AdminUserResponse>> listUsers(
+    public ResponseEntity<Page<AdminUserResponse>> listUsers(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String role,
-            @RequestParam(required = false) String status
+            @RequestParam(required = false) String status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
     ) {
-        return ResponseEntity.ok(adminUserService.listUsers(search, role, status));
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(50, Math.max(1, size));
+        return ResponseEntity.ok(adminUserService.listUsers(search, role, status,
+                PageRequest.of(safePage, safeSize, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")))));
+    }
+
+    @GetMapping("/stats")
+    public ResponseEntity<Map<String, Long>> getUserStats() {
+        return ResponseEntity.ok(adminUserService.getUserStats());
     }
 
     @GetMapping("/{userId}")

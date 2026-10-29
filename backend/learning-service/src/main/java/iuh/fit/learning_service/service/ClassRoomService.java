@@ -27,6 +27,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -455,37 +458,76 @@ public class ClassRoomService {
     // ==========================================
 
     @Transactional(readOnly = true)
-    public List<ClassRoomDtos.ClassRoomResponse> getAllClassesForAdmin(
+    public Page<ClassRoomDtos.ClassRoomResponse> getAllClassesForAdmin(
             ClassRoomStatus status,
             String tutorEmail,
             Long subjectId,
             String keyword,
-            String reviewedByEmail
+            String reviewedByEmail,
+            Pageable pageable
     ) {
-        List<ClassRoom> list = classRoomRepository.findAllWithDetails();
-        return list.stream()
-                .filter(c -> status == null || c.getStatus() == status)
-                .filter(c -> reviewedByEmail == null || reviewedByEmail.isBlank()
-                        || (c.getReviewedByEmail() != null && c.getReviewedByEmail().equalsIgnoreCase(reviewedByEmail.trim())))
-                .filter(c -> tutorEmail == null || tutorEmail.isBlank() || c.getTutorEmail().equalsIgnoreCase(tutorEmail.trim()))
-                .filter(c -> {
-                    if (subjectId == null) return true;
-                    TutorSubjectRegistration reg = c.getTutorSubjectRegistration();
-                    return reg != null && reg.getSubject() != null && reg.getSubject().getId().equals(subjectId);
-                })
-                .filter(c -> {
-                    if (keyword == null || keyword.isBlank()) return true;
-                    String k = keyword.trim().toLowerCase();
-                    boolean matchName = c.getName().toLowerCase().contains(k);
-                    boolean matchTutorName = c.getTutorFullName() != null && c.getTutorFullName().toLowerCase().contains(k);
-                    boolean matchEmail = c.getTutorEmail().toLowerCase().contains(k);
-                    boolean matchSubject = c.getTutorSubjectRegistration() != null &&
-                            c.getTutorSubjectRegistration().getSubject() != null &&
-                            c.getTutorSubjectRegistration().getSubject().getName().toLowerCase().contains(k);
-                    return matchName || matchTutorName || matchEmail || matchSubject;
-                })
-                .map(this::toResponse)
-                .toList();
+        return getAllClassesForAdmin(status, tutorEmail, subjectId, keyword, reviewedByEmail, false, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ClassRoomDtos.ClassRoomResponse> getAllClassesForAdmin(
+            ClassRoomStatus status,
+            String tutorEmail,
+            Long subjectId,
+            String keyword,
+            String reviewedByEmail,
+            boolean approved,
+            Pageable pageable
+    ) {
+        return getAllClassesForAdmin(
+                status, tutorEmail, subjectId, keyword, reviewedByEmail, approved,
+                false, null, null, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ClassRoomDtos.ClassRoomResponse> getAllClassesForAdmin(
+            ClassRoomStatus status,
+            String tutorEmail,
+            Long subjectId,
+            String keyword,
+            String reviewedByEmail,
+            boolean approved,
+            boolean reviewedOnly,
+            LocalDateTime from,
+            LocalDateTime to,
+            Pageable pageable
+    ) {
+        Specification<ClassRoom> spec = (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            if (approved) {
+                predicates.add(root.get("status").in(ClassRoomStatus.ACTIVE, ClassRoomStatus.PRIVATE, ClassRoomStatus.PUBLISHED));
+            } else if (status != null) {
+                predicates.add(cb.equal(root.get("status"), status));
+            }
+            if (reviewedByEmail != null && !reviewedByEmail.isBlank()) {
+                predicates.add(cb.equal(cb.lower(root.get("reviewedByEmail")), reviewedByEmail.trim().toLowerCase()));
+            }
+            if (reviewedOnly) predicates.add(cb.isNotNull(root.get("reviewedAt")));
+            if (from != null) predicates.add(cb.greaterThanOrEqualTo(root.get("reviewedAt"), from));
+            if (to != null) predicates.add(cb.lessThan(root.get("reviewedAt"), to));
+            if (tutorEmail != null && !tutorEmail.isBlank()) {
+                predicates.add(cb.equal(cb.lower(root.get("tutorEmail")), tutorEmail.trim().toLowerCase()));
+            }
+            var registration = root.join("tutorSubjectRegistration", jakarta.persistence.criteria.JoinType.LEFT);
+            var subject = registration.join("subject", jakarta.persistence.criteria.JoinType.LEFT);
+            if (subjectId != null) predicates.add(cb.equal(subject.get("id"), subjectId));
+            if (keyword != null && !keyword.isBlank()) {
+                String pattern = "%" + keyword.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("name")), pattern),
+                        cb.like(cb.lower(root.get("tutorFullName")), pattern),
+                        cb.like(cb.lower(root.get("tutorEmail")), pattern),
+                        cb.like(cb.lower(subject.get("name")), pattern)
+                ));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+        return classRoomRepository.findAll(spec, pageable).map(this::toResponse);
     }
 
     @Transactional(readOnly = true)

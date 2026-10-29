@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { paginatedRequest } from './paginatedResponse';
 
 export const adminUsersApi = {
   list: (params = {}) => {
@@ -6,9 +7,13 @@ export const adminUsersApi = {
     if (params.search) query.append('search', params.search);
     if (params.role && params.role !== 'ALL') query.append('role', params.role);
     if (params.status && params.status !== 'ALL') query.append('status', params.status);
+    if (params.page != null) query.append('page', String(params.page));
+    if (params.size != null) query.append('size', String(params.size));
     const qs = query.toString();
-    return apiRequest('/api/users/admin' + (qs ? `?${qs}` : ''));
+    const endpoint = '/api/users/admin' + (qs ? `?${qs}` : '');
+    return paginatedRequest(apiRequest(endpoint), endpoint);
   },
+  stats: () => apiRequest('/api/users/admin/stats'),
   detail: (userId) => apiRequest(`/api/users/admin/${userId}`),
   createStaff: (payload) => apiRequest('/api/users/admin/staff', {
     method: 'POST',

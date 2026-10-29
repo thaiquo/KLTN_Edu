@@ -52,6 +52,29 @@ export interface TerminationView {
 
 export const terminationsApi = {
   list: (): Promise<TerminationView[]> => apiRequest('/api/contracts/terminations'),
+  page: ({ page = 0, size = 10, status, statusGroup, origin, keyword, classroomId }: {
+    page?: number;
+    size?: number;
+    status?: string;
+    statusGroup?: string;
+    origin?: string;
+    keyword?: string;
+    classroomId?: number | string;
+  } = {}): Promise<{
+    content: TerminationView[];
+    totalElements: number;
+    totalPages: number;
+    number: number;
+    size: number;
+  }> => {
+    const params = new URLSearchParams({ page: String(page), size: String(size) });
+    if (status && status !== 'ALL') params.set('status', status);
+    if (statusGroup && statusGroup !== 'ALL') params.set('statusGroup', statusGroup);
+    if (origin && origin !== 'ALL') params.set('origin', origin);
+    if (keyword?.trim()) params.set('keyword', keyword.trim());
+    if (classroomId != null && classroomId !== 'ALL') params.set('classroomId', String(classroomId));
+    return apiRequest(`/api/contracts/terminations/page?${params}`);
+  },
   listRefunds: (): Promise<TerminationView[]> => apiRequest('/api/contracts/terminations/refunds'),
   request: (
     agreementId: string,

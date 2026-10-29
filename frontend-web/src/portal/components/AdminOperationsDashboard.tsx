@@ -60,14 +60,20 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
   const [error, setError] = useState("");
   const [users, setUsers] = useState<any[]>([]);
   const [finance, setFinance] = useState<any>(null);
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [settlements, setSettlements] = useState<any[]>([]);
   const [disputes, setDisputes] = useState<any[]>([]);
   const [terminations, setTerminations] = useState<TerminationView[]>([]);
   const [tutorHistory, setTutorHistory] = useState<any[]>([]);
   const [teachingHistory, setTeachingHistory] = useState<any[]>([]);
   const [classes, setClasses] = useState<any[]>([]);
   const [selectedAudit, setSelectedAudit] = useState<AuditItem | null>(null);
+  const [summaryTotals, setSummaryTotals] = useState({
+    staff: 0,
+    activeStaff: 0,
+    openDisputes: 0,
+    pendingTerminations: 0,
+    failedTransactions: 0,
+    pendingSettlements: 0,
+  });
 
   const load = async (opts?: boolean | unknown) => {
     const isSilent = opts === true;
@@ -76,30 +82,40 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
     }
     setError("");
     try {
-      const [userRows, financialOverview, txPage, settlementPage, disputePage, terminationRows, tutorRows, teachingRows, classRows] = await Promise.all([
-        adminUsersApi.list().catch(() => []),
+      const [userRows, financialOverview, disputePage, terminationRows, tutorRows, teachingRows, classRows, staffPage, activeStaffPage, openDisputesPage, pendingTerminationsPage, failedTransactionsPage, pendingSettlementsPage] = await Promise.all([
+        adminUsersApi.list({ page: 0, size: 50 }).catch(() => ({ content: [] })),
         contractsApi.getAdminFinancialOverview().catch(() => null),
-        contractsApi.listAllTransactions({ page: 0, size: 50 }).catch(() => ({ content: [] })),
-        contractsApi.listAdminSettlements({ page: 0, size: 100 }).catch(() => ({ content: [] })),
-        contractsApi.listDisputes({ page: 0, size: 100 }).catch(() => ({ content: [] })),
-        terminationsApi.list().catch(() => []),
-        staffTutorsApi.history().catch(() => []),
-        teachingRegistrationApi.adminHistory().catch(() => []),
-        classApi.adminGetAllClasses().catch(() => [])
+        contractsApi.listDisputes({ page: 0, size: 50 }).catch(() => ({ content: [] })),
+        terminationsApi.page({ page: 0, size: 50 }).catch(() => ({ content: [] })),
+        staffTutorsApi.history({ page: 0, size: 50 }).catch(() => ({ content: [] })),
+        teachingRegistrationApi.adminHistory({ page: 0, size: 50 }).catch(() => ({ content: [] })),
+        classApi.adminGetAllClasses({ page: 0, size: 50 }).catch(() => ({ content: [] })),
+        adminUsersApi.list({ role: "STAFF", page: 0, size: 1 }).catch(() => ({ totalElements: 0 })),
+        adminUsersApi.list({ role: "STAFF", status: "ACTIVE", page: 0, size: 1 }).catch(() => ({ totalElements: 0 })),
+        contractsApi.listDisputes({ page: 0, size: 1, statusGroup: "PENDING" }).catch(() => ({ totalElements: 0 })),
+        terminationsApi.page({ page: 0, size: 1, statusGroup: "PENDING" }).catch(() => ({ totalElements: 0 })),
+        contractsApi.listAllTransactions({ page: 0, size: 1, statusGroup: "FAILED" }).catch(() => ({ totalElements: 0 })),
+        contractsApi.listAdminSettlements({ page: 0, size: 1, statusGroup: "PENDING" }).catch(() => ({ totalElements: 0 }))
       ]);
-      const classList = Array.isArray(classRows) ? classRows : [];
+      const classList = pageItems(classRows);
       const disputeList = pageItems(disputePage);
-      const terminationList = Array.isArray(terminationRows) ? terminationRows : [];
+      const terminationList = pageItems(terminationRows);
 
-      setUsers(Array.isArray(userRows) ? userRows : []);
+      setUsers(pageItems(userRows));
       setFinance(financialOverview);
-      setTransactions(pageItems(txPage));
-      setSettlements(pageItems(settlementPage));
       setDisputes(disputeList);
       setTerminations(terminationList);
-      setTutorHistory(Array.isArray(tutorRows) ? tutorRows : []);
-      setTeachingHistory(Array.isArray(teachingRows) ? teachingRows : []);
+      setTutorHistory(pageItems(tutorRows));
+      setTeachingHistory(pageItems(teachingRows));
       setClasses(classList);
+      setSummaryTotals({
+        staff: Number(staffPage?.totalElements || 0),
+        activeStaff: Number(activeStaffPage?.totalElements || 0),
+        openDisputes: Number(openDisputesPage?.totalElements || 0),
+        pendingTerminations: Number(pendingTerminationsPage?.totalElements || 0),
+        failedTransactions: Number(failedTransactionsPage?.totalElements || 0),
+        pendingSettlements: Number(pendingSettlementsPage?.totalElements || 0),
+      });
     } catch (err: any) {
       setError(err?.message || "Không thể tải bảng điều hành Admin.");
     } finally {
@@ -193,16 +209,6 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
       .sort(byNewest);
   }, [classes, disputes, teachingHistory, terminations, tutorHistory, users]);
 
-  const stats = useMemo(() => {
-    const staffCount = users.filter((u) => u.roles?.includes("STAFF")).length;
-    const activeStaff = users.filter((u) => u.roles?.includes("STAFF") && u.accountStatus === "ACTIVE").length;
-    const openDisputes = disputes.filter((d) => ["OPENING", "OPEN", "UNDER_REVIEW", "RESOLUTION_PENDING", "FAILED_RETRYABLE"].includes(d.status)).length;
-    const pendingTerminations = terminations.filter((t) => !["COMPLETED", "REJECTED"].includes(t.request.status)).length;
-    const failedTx = transactions.filter((tx) => ["FAILED", "FAILED_RETRYABLE"].includes(tx.status)).length;
-    const pendingSettlements = settlements.filter((s) => !["SETTLED", "REFUNDED"].includes(s.status)).length;
-    return { staffCount, activeStaff, openDisputes, pendingTerminations, failedTx, pendingSettlements };
-  }, [disputes, settlements, terminations, transactions, users]);
-
   const staffBoard = useMemo(() => {
     const map = new Map<string, { email: string; total: number; approved: number; rejected: number; disputes: number; terminations: number; last?: string | null }>();
     for (const item of audit) {
@@ -242,12 +248,12 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
       )}
 
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Metric icon={Users} label="Staff hoạt động" value={loading ? "..." : `${stats.activeStaff}/${stats.staffCount}`} />
+        <Metric icon={Users} label="Staff hoạt động" value={loading ? "..." : `${summaryTotals.activeStaff}/${summaryTotals.staff}`} />
         <Metric icon={WalletCards} label="Escrow đang khóa" value={loading ? "..." : `$${Number(finance?.totalEscrowLockedUsdc || 0).toFixed(2)}`} tone="indigo" />
-        <Metric icon={ShieldAlert} label="Khiếu nại mở" value={loading ? "..." : stats.openDisputes} tone="amber" />
-        <Metric icon={ShieldCheck} label="Thanh lý chờ" value={loading ? "..." : stats.pendingTerminations} tone="rose" />
-        <Metric icon={Activity} label="Tx lỗi" value={loading ? "..." : stats.failedTx} tone="rose" />
-        <Metric icon={CheckCircle2} label="Settlement chờ" value={loading ? "..." : stats.pendingSettlements} tone="emerald" />
+        <Metric icon={ShieldAlert} label="Khiếu nại mở" value={loading ? "..." : summaryTotals.openDisputes} tone="amber" />
+        <Metric icon={ShieldCheck} label="Thanh lý chờ" value={loading ? "..." : summaryTotals.pendingTerminations} tone="rose" />
+        <Metric icon={Activity} label="Tx lỗi" value={loading ? "..." : summaryTotals.failedTransactions} tone="rose" />
+        <Metric icon={CheckCircle2} label="Settlement chờ" value={loading ? "..." : summaryTotals.pendingSettlements} tone="emerald" />
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">

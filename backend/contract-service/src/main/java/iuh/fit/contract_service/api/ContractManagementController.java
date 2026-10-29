@@ -10,7 +10,10 @@ import iuh.fit.contract_service.entity.SessionSettlement;
 import iuh.fit.contract_service.entity.BlockchainTransaction;
 import iuh.fit.contract_service.entity.Dispute;
 import iuh.fit.contract_service.entity.DisputeEvidence;
+import iuh.fit.contract_service.entity.TerminationCase;
+import iuh.fit.contract_service.entity.TerminationItem;
 import iuh.fit.contract_service.enums.ContractAgreementStatus;
+import iuh.fit.contract_service.enums.BlockchainTransactionStatus;
 import iuh.fit.contract_service.enums.DisputeStatus;
 import iuh.fit.contract_service.enums.SettlementOutcome;
 import iuh.fit.contract_service.enums.SettlementStatus;
@@ -36,6 +39,9 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.server.ResponseStatusException;
@@ -45,6 +51,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.OffsetDateTime;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -672,46 +679,31 @@ public class ContractManagementController {
     @GetMapping("/agreements")
     public ResponseEntity<Page<AgreementSummaryDto>> listAgreements(
             @RequestParam(value = "status", required = false) String statusFilter,
-            @PageableDefault(size = 20) Pageable pageable) {
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "terminationPending", required = false) Boolean terminationPending,
+            @PageableDefault(size = 10) Pageable pageable) {
 
         ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-        List<ContractAgreement> filtered = accessControl.filterAgreements(agreementRepository.findAll(), currentUser);
-
-        // Filter by status
+        ContractAgreementStatus status = null;
         if (statusFilter != null && !statusFilter.isBlank()) {
             try {
-                ContractAgreementStatus st = ContractAgreementStatus.valueOf(statusFilter.toUpperCase());
-                filtered = filtered.stream()
-                        .filter(a -> a.getStatus() == st)
-                        .collect(Collectors.toList());
+                status = ContractAgreementStatus.valueOf(statusFilter.toUpperCase());
             } catch (IllegalArgumentException ignored) {}
         }
-
-        // Sort by createdAt desc
-        filtered = filtered.stream()
-                .sorted(Comparator.comparing(ContractAgreement::getCreatedAt).reversed())
-                .toList();
-
-        // Manual pagination
-        int start = (int) pageable.getOffset();
-        int end = Math.min(start + pageable.getPageSize(), filtered.size());
-        List<AgreementSummaryDto> page = (start >= filtered.size())
-                ? Collections.emptyList()
-                : filtered.subList(start, end).stream()
-                        .map(this::toAgreementSummary)
-                        .collect(Collectors.toList());
-
-        return ResponseEntity.ok(new PageImpl<>(page, pageable, filtered.size()));
+        Specification<ContractAgreement> spec = agreementScope(
+                currentUser, status, keyword, Boolean.TRUE.equals(terminationPending));
+        Page<ContractAgreement> result = agreementRepository.findAll(spec, normalizedPage(pageable, "createdAt"));
+        Set<UUID> activeTerminationAgreementIds = terminationService.activeAgreementIds(
+                result.getContent().stream().map(ContractAgreement::getId).toList());
+        return ResponseEntity.ok(result.map(agreement -> toAgreementSummary(
+                agreement, activeTerminationAgreementIds.contains(agreement.getId()))));
     }
 
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     @GetMapping("/admin/financial-overview")
     public ResponseEntity<AdminFinancialOverviewDto> getAdminFinancialOverview() {
         ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-        if (!accessControl.canViewTransactionsAsStaffOrAdmin(currentUser)) {
-            throw new ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN,
-                    "Only admin or staff can view financial overview");
-        }
+        accessControl.requireCanViewPlatformFinancials(currentUser);
 
         List<ContractAgreement> agreements = agreementRepository.findAll().stream()
                 .filter(a -> !a.isLegacyExcluded())
@@ -825,36 +817,43 @@ public class ContractManagementController {
     @GetMapping("/admin/settlements")
     public ResponseEntity<Page<AdminSettlementDetailDto>> listAdminSettlements(
             @RequestParam(required = false) String status,
-            @PageableDefault(size = 30) Pageable pageable) {
+            @RequestParam(required = false) String statusGroup,
+            @RequestParam(required = false) String keyword,
+            @PageableDefault(size = 10) Pageable pageable) {
         ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-        if (!accessControl.canViewTransactionsAsStaffOrAdmin(currentUser)) {
-            throw new ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN,
-                    "Only admin or staff can view administrative settlements");
-        }
+        accessControl.requireCanViewPlatformFinancials(currentUser);
 
-        Map<UUID, ContractAgreement> agreementMap = agreementRepository.findAll().stream()
-                .collect(Collectors.toMap(ContractAgreement::getId, a -> a, (k1, k2) -> k1));
-
-        List<SessionSettlement> all = settlementRepository.findAll().stream()
-                .filter(s -> s.getStatus() != SettlementStatus.EXCLUDED_LEGACY)
-                .filter(s -> {
-                    ContractAgreement a = (s.getAgreement() != null) ? agreementMap.get(s.getAgreement().getId()) : null;
-                    return a == null || !a.isLegacyExcluded();
-                })
-                .filter(s -> status == null || status.isBlank() || "ALL".equalsIgnoreCase(status)
-                        || (s.getStatus() != null && s.getStatus().name().equalsIgnoreCase(status.trim())))
-                .sorted(Comparator.comparing(SessionSettlement::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
-                .toList();
-
-        int start = (int) pageable.getOffset();
-        int end = Math.min(start + pageable.getPageSize(), all.size());
-        List<AdminSettlementDetailDto> page = (start >= all.size())
-                ? Collections.emptyList()
-                : all.subList(start, end).stream()
-                        .map(s -> toAdminSettlementDetailDto(s, agreementMap))
-                        .toList();
-
-        return ResponseEntity.ok(new PageImpl<>(page, pageable, all.size()));
+        Specification<SessionSettlement> spec = (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.notEqual(root.get("status"), SettlementStatus.EXCLUDED_LEGACY));
+            var agreement = root.join("agreement", jakarta.persistence.criteria.JoinType.LEFT);
+            predicates.add(cb.or(cb.isNull(agreement.get("legacyExcluded")), cb.isFalse(agreement.get("legacyExcluded"))));
+            if (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status)) {
+                try { predicates.add(cb.equal(root.get("status"), SettlementStatus.valueOf(status.trim().toUpperCase()))); }
+                catch (IllegalArgumentException ignored) {}
+            } else if (statusGroup != null && "PENDING".equalsIgnoreCase(statusGroup.trim())) {
+                predicates.add(root.get("status").in(
+                        SettlementStatus.PREPARING,
+                        SettlementStatus.PROPOSE_PENDING,
+                        SettlementStatus.PROPOSED,
+                        SettlementStatus.DISPUTE_OPENING,
+                        SettlementStatus.DISPUTED,
+                        SettlementStatus.FINALIZE_PENDING,
+                        SettlementStatus.FAILED_RETRYABLE));
+            }
+            if (keyword != null && !keyword.isBlank()) {
+                String pattern = "%" + keyword.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(agreement.get("className")), pattern),
+                        cb.like(cb.lower(agreement.get("studentName")), pattern),
+                        cb.like(cb.lower(agreement.get("tutorName")), pattern)
+                ));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+        Page<SessionSettlement> result = settlementRepository.findAll(spec, normalizedPage(pageable, "updatedAt"));
+        return ResponseEntity.ok(result.map(s -> toAdminSettlementDetailDto(s,
+                Map.of(s.getAgreement().getId(), s.getAgreement()))));
     }
 
     @GetMapping("/agreements/{id}")
@@ -1103,34 +1102,27 @@ public class ContractManagementController {
     @GetMapping("/disputes")
     public ResponseEntity<Page<DisputeSummaryDto>> listDisputes(
             @RequestParam(value = "status", required = false) String statusFilter,
-            @PageableDefault(size = 20) Pageable pageable) {
+            @RequestParam(value = "statusGroup", required = false) String statusGroup,
+            @RequestParam(value = "origin", required = false) String origin,
+            @RequestParam(value = "reviewer", required = false) String reviewer,
+            @RequestParam(value = "actor", required = false) String actor,
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "reportOnly", defaultValue = "false") boolean reportOnly,
+            @RequestParam(value = "from", required = false) Instant from,
+            @RequestParam(value = "to", required = false) Instant to,
+            @PageableDefault(size = 10) Pageable pageable) {
 
         ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-        List<Dispute> filtered = accessControl.filterDisputes(
-                disputeRepository.findAllWithSettlementAndAgreement(), currentUser);
-
+        DisputeStatus status = null;
         if (statusFilter != null && !statusFilter.isBlank()) {
             try {
-                DisputeStatus st = DisputeStatus.valueOf(statusFilter.toUpperCase());
-                filtered = filtered.stream()
-                        .filter(d -> d.getStatus() == st)
-                        .collect(Collectors.toList());
+                status = DisputeStatus.valueOf(statusFilter.toUpperCase());
             } catch (IllegalArgumentException ignored) {}
         }
-
-        filtered = filtered.stream()
-                .sorted(Comparator.comparing(Dispute::getCreatedAt).reversed())
-                .toList();
-
-        int start = (int) pageable.getOffset();
-        int end = Math.min(start + pageable.getPageSize(), filtered.size());
-        List<DisputeSummaryDto> page = (start >= filtered.size())
-                ? Collections.emptyList()
-                : filtered.subList(start, end).stream()
-                        .map(dispute -> toDisputeDto(dispute, currentUser))
-                        .collect(Collectors.toList());
-
-        return ResponseEntity.ok(new PageImpl<>(page, pageable, filtered.size()));
+        Page<Dispute> result = disputeRepository.findAll(
+                disputeScope(currentUser, status, statusGroup, origin, reviewer, actor, keyword, reportOnly, from, to),
+                normalizedPage(pageable, reportOnly ? "resolvedAt" : "createdAt"));
+        return ResponseEntity.ok(result.map(dispute -> toDisputeDto(dispute, currentUser)));
     }
 
     @GetMapping("/disputes/{id}")
@@ -1477,43 +1469,210 @@ public class ContractManagementController {
 
     @GetMapping("/transactions")
     public ResponseEntity<Page<BlockchainTxDto>> listAllTransactions(
-            @PageableDefault(size = 30) Pageable pageable) {
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String statusGroup,
+            @PageableDefault(size = 10) Pageable pageable) {
 
         ContractUserPrincipal currentUser = currentUserContext.requireCurrentUser();
-        List<BlockchainTransaction> all = transactionRepository.findAll();
-
-        List<BlockchainTransaction> filtered;
-        if (accessControl.canViewTransactionsAsStaffOrAdmin(currentUser)) {
-            filtered = all;
-        } else {
-            // Student/Tutor see only their own agreement transactions
-            Set<UUID> myAgreementIds = agreementRepository.findAll().stream()
-                    .filter(a -> currentUser.matchesUserId(a.getStudentId()) || currentUser.matchesUserId(a.getTutorId()))
-                    .map(ContractAgreement::getId)
-                    .collect(Collectors.toSet());
-            filtered = all.stream()
-                    .filter(t -> t.getAgreementId() != null && myAgreementIds.contains(t.getAgreementId()))
-                    .collect(Collectors.toList());
+        Specification<BlockchainTransaction> spec = (root, query, cb) -> cb.conjunction();
+        if (!accessControl.canViewAllTransactions(currentUser)) {
+            accessControl.requireCanViewOwnTransactions(currentUser);
+            spec = (root, query, cb) -> {
+                var agreementIds = query.subquery(UUID.class);
+                var agreement = agreementIds.from(ContractAgreement.class);
+                List<jakarta.persistence.criteria.Predicate> owners = new ArrayList<>();
+                if (currentUser.userId() != null) {
+                    owners.add(cb.equal(agreement.get("studentId"), currentUser.userId()));
+                    owners.add(cb.equal(agreement.get("tutorId"), currentUser.userId()));
+                }
+                if (!currentUser.email().isBlank()) {
+                    owners.add(cb.equal(cb.lower(agreement.get("studentEmail")), currentUser.email().toLowerCase()));
+                    owners.add(cb.equal(cb.lower(agreement.get("tutorEmail")), currentUser.email().toLowerCase()));
+                }
+                agreementIds.select(agreement.get("id")).where(cb.or(owners.toArray(jakarta.persistence.criteria.Predicate[]::new)));
+                return root.get("agreementId").in(agreementIds);
+            };
         }
-
-        filtered.sort(Comparator.comparing(BlockchainTransaction::getCreatedAt).reversed());
-
-        int start = (int) pageable.getOffset();
-        int end = Math.min(start + pageable.getPageSize(), filtered.size());
-        List<BlockchainTxDto> page = (start >= filtered.size())
-                ? Collections.emptyList()
-                : filtered.subList(start, end).stream()
-                        .map(this::toTxDto)
-                        .collect(Collectors.toList());
-
-        return ResponseEntity.ok(new PageImpl<>(page, pageable, filtered.size()));
+        if (keyword != null && !keyword.isBlank()) {
+            String pattern = "%" + keyword.trim().toLowerCase() + "%";
+            Specification<BlockchainTransaction> searchSpec = (root, query, cb) -> cb.or(
+                    cb.like(cb.lower(root.get("action")), pattern),
+                    cb.like(cb.lower(root.get("transactionHash")), pattern),
+                    cb.like(cb.lower(root.get("status").as(String.class)), pattern)
+            );
+            spec = spec.and(searchSpec);
+        }
+        if (statusGroup != null && "FAILED".equalsIgnoreCase(statusGroup.trim())) {
+            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), BlockchainTransactionStatus.FAILED));
+        }
+        return ResponseEntity.ok(transactionRepository.findAll(spec, normalizedPage(pageable, "createdAt")).map(this::toTxDto));
     }
 
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // MAPPERS
     // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+    private Pageable normalizedPage(Pageable requested, String primarySort) {
+        int page = requested == null ? 0 : Math.max(0, requested.getPageNumber());
+        int size = requested == null ? 10 : Math.min(50, Math.max(1, requested.getPageSize()));
+        return PageRequest.of(page, size, Sort.by(Sort.Order.desc(primarySort), Sort.Order.desc("id")));
+    }
+
+    private Specification<ContractAgreement> agreementScope(
+            ContractUserPrincipal user,
+            ContractAgreementStatus status,
+            String keyword,
+            boolean terminationPending) {
+        return (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            if (user.hasActiveAuthority("STAFF")) {
+                predicates.add(cb.equal(cb.lower(root.get("classroomReviewerEmail")), user.email().toLowerCase()));
+            } else if (!user.hasActiveAuthority("ADMIN")) {
+                List<jakarta.persistence.criteria.Predicate> owners = new ArrayList<>();
+                if (user.hasActiveAuthority("STUDENT")) {
+                    if (user.userId() != null) owners.add(cb.equal(root.get("studentId"), user.userId()));
+                    if (!user.email().isBlank()) owners.add(cb.equal(cb.lower(root.get("studentEmail")), user.email().toLowerCase()));
+                } else if (user.hasActiveAuthority("TUTOR")) {
+                    if (user.userId() != null) owners.add(cb.equal(root.get("tutorId"), user.userId()));
+                    if (!user.email().isBlank()) owners.add(cb.equal(cb.lower(root.get("tutorEmail")), user.email().toLowerCase()));
+                } else {
+                    owners.add(cb.disjunction());
+                }
+                predicates.add(cb.or(owners.toArray(jakarta.persistence.criteria.Predicate[]::new)));
+            }
+            if (status != null) predicates.add(cb.equal(root.get("status"), status));
+            if (keyword != null && !keyword.isBlank()) {
+                String pattern = "%" + keyword.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("className")), pattern),
+                        cb.like(cb.lower(root.get("studentEmail")), pattern),
+                        cb.like(cb.lower(root.get("tutorEmail")), pattern)
+                ));
+            }
+            if (terminationPending) {
+                var activeAnchor = query.subquery(UUID.class);
+                var anchorCase = activeAnchor.from(TerminationCase.class);
+                activeAnchor.select(anchorCase.get("id")).where(
+                        cb.not(cb.upper(anchorCase.get("status")).in("REJECTED", "COMPLETED")),
+                        cb.equal(anchorCase.get("anchorAgreementId"), root.get("id")));
+
+                var activeItem = query.subquery(UUID.class);
+                var item = activeItem.from(TerminationItem.class);
+                var itemCase = activeItem.from(TerminationCase.class);
+                activeItem.select(item.get("id")).where(
+                        cb.equal(item.get("agreementId"), root.get("id")),
+                        cb.equal(item.get("caseId"), itemCase.get("id")),
+                        cb.not(cb.upper(itemCase.get("status")).in("REJECTED", "COMPLETED")));
+
+                predicates.add(cb.or(cb.exists(activeAnchor), cb.exists(activeItem)));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+    }
+
+    private Specification<Dispute> disputeScope(
+            ContractUserPrincipal user,
+            DisputeStatus status,
+            String statusGroup,
+            String origin,
+            String reviewer,
+            String actor,
+            String keyword,
+            boolean reportOnly,
+            Instant from,
+            Instant to) {
+        return (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            var settlement = root.join("settlement");
+            var agreement = settlement.join("agreement");
+            if (user.hasActiveAuthority("STAFF")) {
+                predicates.add(cb.equal(cb.lower(agreement.get("classroomReviewerEmail")), user.email().toLowerCase()));
+            } else if (!user.hasActiveAuthority("ADMIN")) {
+                List<jakarta.persistence.criteria.Predicate> owners = new ArrayList<>();
+                if (user.hasActiveAuthority("TUTOR")) {
+                    if (user.userId() != null) owners.add(cb.equal(agreement.get("tutorId"), user.userId()));
+                    if (!user.email().isBlank()) owners.add(cb.equal(cb.lower(agreement.get("tutorEmail")), user.email().toLowerCase()));
+                } else if (user.hasActiveAuthority("STUDENT")) {
+                    predicates.add(cb.equal(cb.upper(root.get("complainantRole")), "STUDENT"));
+                    if (user.userId() != null) owners.add(cb.equal(agreement.get("studentId"), user.userId()));
+                    if (!user.email().isBlank()) owners.add(cb.equal(cb.lower(agreement.get("studentEmail")), user.email().toLowerCase()));
+                } else {
+                    owners.add(cb.disjunction());
+                }
+                predicates.add(cb.or(owners.toArray(jakarta.persistence.criteria.Predicate[]::new)));
+            }
+            if (status != null) predicates.add(cb.equal(root.get("status"), status));
+            if (status == null && statusGroup != null && !statusGroup.isBlank()) {
+                switch (statusGroup.trim().toUpperCase()) {
+                    case "PENDING" -> predicates.add(root.get("status").in(
+                            DisputeStatus.OPENING,
+                            DisputeStatus.OPEN,
+                            DisputeStatus.UNDER_REVIEW,
+                            DisputeStatus.RESOLUTION_PENDING,
+                            DisputeStatus.FAILED_RETRYABLE));
+                    case "RESOLVED" -> predicates.add(root.get("status").in(
+                            DisputeStatus.APPROVED,
+                            DisputeStatus.REJECTED));
+                    case "NEEDS_RESPONSE" -> {
+                        predicates.add(cb.equal(root.get("status"), DisputeStatus.OPEN));
+                        predicates.add(cb.equal(cb.upper(root.get("complainantRole")), "STUDENT"));
+                        predicates.add(cb.isNull(root.get("tutorResponse")));
+                    }
+                    default -> { }
+                }
+            }
+            if (origin != null && !origin.isBlank() && !"ALL".equalsIgnoreCase(origin)) {
+                predicates.add(cb.equal(cb.upper(root.get("complainantRole")), origin.trim().toUpperCase()));
+            }
+            if (user.hasActiveAuthority("ADMIN") && reviewer != null && !reviewer.isBlank()
+                    && !"ALL".equalsIgnoreCase(reviewer)) {
+                if ("UNASSIGNED".equalsIgnoreCase(reviewer)) {
+                    predicates.add(cb.or(
+                            cb.isNull(agreement.get("classroomReviewerEmail")),
+                            cb.equal(cb.trim(agreement.get("classroomReviewerEmail")), "")));
+                } else {
+                    predicates.add(cb.equal(
+                            cb.lower(agreement.get("classroomReviewerEmail")),
+                            reviewer.trim().toLowerCase()));
+                }
+            }
+            if (reportOnly) predicates.add(cb.isNotNull(root.get("resolvedAt")));
+            if (user.hasActiveAuthority("ADMIN") && actor != null && !actor.isBlank()
+                    && !"ALL".equalsIgnoreCase(actor)) {
+                predicates.add(cb.equal(cb.lower(root.get("resolvedByEmail")), actor.trim().toLowerCase()));
+            }
+            if (from != null) predicates.add(cb.greaterThanOrEqualTo(root.get("resolvedAt"), from));
+            if (to != null) predicates.add(cb.lessThan(root.get("resolvedAt"), to));
+            if (keyword != null && !keyword.isBlank()) {
+                String trimmed = keyword.trim();
+                String pattern = "%" + trimmed.toLowerCase() + "%";
+                List<jakarta.persistence.criteria.Predicate> matches = new ArrayList<>();
+                matches.add(cb.like(cb.lower(root.get("reason")), pattern));
+                matches.add(cb.like(cb.lower(root.get("resolutionReason")), pattern));
+                matches.add(cb.like(cb.lower(agreement.get("className")), pattern));
+                matches.add(cb.like(cb.lower(agreement.get("studentName")), pattern));
+                matches.add(cb.like(cb.lower(agreement.get("studentEmail")), pattern));
+                matches.add(cb.like(cb.lower(agreement.get("tutorName")), pattern));
+                matches.add(cb.like(cb.lower(agreement.get("tutorEmail")), pattern));
+                try {
+                    UUID id = UUID.fromString(trimmed);
+                    matches.add(cb.equal(root.get("id"), id));
+                    matches.add(cb.equal(agreement.get("id"), id));
+                } catch (IllegalArgumentException ignored) { }
+                try {
+                    matches.add(cb.equal(settlement.get("sessionId"), Long.parseLong(trimmed.replace("#", ""))));
+                } catch (NumberFormatException ignored) { }
+                predicates.add(cb.or(matches.toArray(jakarta.persistence.criteria.Predicate[]::new)));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+    }
+
     private AgreementSummaryDto toAgreementSummary(ContractAgreement a) {
+        return toAgreementSummary(a, terminationService.activeAgreementIds(List.of(a.getId())).contains(a.getId()));
+    }
+
+    private AgreementSummaryDto toAgreementSummary(ContractAgreement a, boolean terminationPending) {
         var confirmedSettlements = settlementRepository.findByAgreementId(a.getId()).stream()
                 .filter(s -> s.getStatus() == SettlementStatus.SETTLED
                         || s.getStatus() == SettlementStatus.REFUNDED)
@@ -1591,6 +1750,7 @@ public class ContractManagementController {
                 onchainFunded,
                 legacyUnreconciled,
                 settlementEligible,
+                terminationPending,
                 toUsdc(remaining, a.getTokenDecimals()),
                 toUsdc(released, a.getTokenDecimals()),
                 toUsdc(refunded, a.getTokenDecimals()),
@@ -1826,7 +1986,13 @@ public class ContractManagementController {
                 a != null ? a.getStudentEmail() : null,
                 a != null ? a.getTutorName() : null,
                 a != null ? a.getTutorEmail() : null,
-                a != null && a.getPricePerSessionUsdcUnits() != null ? toUsdc(a.getPricePerSessionUsdcUnits(), a.getTokenDecimals()) : null
+                a != null && a.getPricePerSessionUsdcUnits() != null ? toUsdc(a.getPricePerSessionUsdcUnits(), a.getTokenDecimals()) : null,
+                d.getEscalationStatus() != null ? d.getEscalationStatus().name() : "NONE",
+                d.getEscalationReason(), d.getEscalatedByEmail(),
+                d.getEscalatedAt() != null ? d.getEscalatedAt().toString() : null,
+                d.getEscalationHandledByEmail(),
+                d.getEscalationHandledAt() != null ? d.getEscalationHandledAt().toString() : null,
+                d.getEscalationReturnReason()
         );
     }
 
@@ -1869,7 +2035,8 @@ public class ContractManagementController {
             int totalSessions, int settledSessions,
             String status, String createdAt, String paymentDeadline,
             Long chainId, String escrowContractAddress, String classroomReviewerEmail,
-            boolean onchainFunded, boolean legacyUnreconciled, boolean settlementEligible, double remainingDeposit,
+            boolean onchainFunded, boolean legacyUnreconciled, boolean settlementEligible, boolean terminationPending,
+            double remainingDeposit,
             double releasedAmountUsdc, double refundedAmountUsdc, String fundedTxHash) {}
 
     public record TrialDetailDto(
@@ -1924,7 +2091,9 @@ public class ContractManagementController {
             Long classroomId, String className,
             String studentName, String studentEmail,
             String tutorName, String tutorEmail,
-            Double sessionPriceUsdc) {}
+            Double sessionPriceUsdc,
+            String escalationStatus, String escalationReason, String escalatedByEmail, String escalatedAt,
+            String escalationHandledByEmail, String escalationHandledAt, String escalationReturnReason) {}
 
     public record DisputeEvidenceDto(
             String id,

@@ -478,14 +478,14 @@ class AgreementFundingWorkflowTest {
                     escrow_contract_address, token_address, token_symbol, token_decimals,
                     terms_json, terms_hash, contract_version, total_price_vnd,
                     vnd_per_usdc, total_amount_usdc_units, price_per_session_usdc_units,
-                    total_sessions, status, version, created_at, updated_at
+                    total_sessions, status, version, legacy_excluded, created_at, updated_at
                 ) VALUES (
                     ?, ?, 1, 1, 2,
                     ?, ?, ?, ?,
                     ?, ?, 'USDC', 6,
                     '{}', ?, 1, 1000000.00,
                     25000.00, 40000000, 4000000,
-                    10, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    10, ?, 0, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 )
                 """,
                 id, onchainAgreementId, STUDENT, TUTOR, PLATFORM, CHAIN_ID,
@@ -500,7 +500,7 @@ class AgreementFundingWorkflowTest {
                     escrow_contract_address, token_address, token_symbol, token_decimals,
                     terms_json, terms_hash, contract_version, total_price_vnd,
                     vnd_per_usdc, total_amount_usdc_units, price_per_session_usdc_units,
-                    total_sessions, status, version, created_at, updated_at,
+                    total_sessions, status, version, legacy_excluded, created_at, updated_at,
                     student_email, tutor_email, student_name, tutor_name, class_name,
                     student_phone, tutor_phone, payment_deadline
                 ) VALUES (
@@ -509,7 +509,7 @@ class AgreementFundingWorkflowTest {
                     ?, ?, 'USDC', 6,
                     ?, ?, 1, 1000000.00,
                     25000.00, 40000000, 4000000,
-                    10, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
+                    10, ?, 0, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,
                     'student@example.com', 'tutor@example.com', 'Nguyen Van Student', 'Tran Van Tutor', 'Toan 12',
                     '0900000001', '0900000002', ?
                 )

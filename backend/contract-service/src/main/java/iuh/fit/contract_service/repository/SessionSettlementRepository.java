@@ -3,12 +3,13 @@ package iuh.fit.contract_service.repository;
 import iuh.fit.contract_service.entity.SessionSettlement;
 import iuh.fit.contract_service.enums.SettlementStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface SessionSettlementRepository extends JpaRepository<SessionSettlement, UUID> {
+public interface SessionSettlementRepository extends JpaRepository<SessionSettlement, UUID>, JpaSpecificationExecutor<SessionSettlement> {
     List<SessionSettlement> findTop50ByStatusAndDisputeDeadlineBeforeOrderByDisputeDeadlineAsc(
             SettlementStatus status, java.time.OffsetDateTime deadline);
     Optional<SessionSettlement> findByAgreementIdAndSessionId(UUID agreementId, Long sessionId);

@@ -133,6 +133,12 @@ public class ContractAccessControl {
             return false;
         }
         ContractAgreement agreement = dispute.getSettlement().getAgreement();
+        if (isActiveAdmin(user)) {
+            return true;
+        }
+        if (isActiveStaff(user)) {
+            return user.matchesEmail(agreement.getClassroomReviewerEmail());
+        }
         if (user.hasActiveAuthority("TUTOR")) {
             return user.matchesUserId(agreement.getTutorId()) || user.matchesEmail(agreement.getTutorEmail());
         }
@@ -156,8 +162,22 @@ public class ContractAccessControl {
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Only assigned staff or admin can resolve this dispute.");
     }
 
-    public boolean canViewTransactionsAsStaffOrAdmin(ContractUserPrincipal user) {
-        return isActiveAdmin(user) || isActiveStaff(user);
+    public void requireCanViewPlatformFinancials(ContractUserPrincipal user) {
+        if (!isActiveAdmin(user)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only admin can view platform-wide financial data.");
+        }
+    }
+
+    public boolean canViewAllTransactions(ContractUserPrincipal user) {
+        return isActiveAdmin(user);
+    }
+
+    public void requireCanViewOwnTransactions(ContractUserPrincipal user) {
+        if (!user.hasActiveAuthority("STUDENT") && !user.hasActiveAuthority("TUTOR")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Only admin can view all transactions; students and tutors can view their own.");
+        }
     }
 
     private boolean isActiveAdmin(ContractUserPrincipal user) {

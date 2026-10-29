@@ -3,13 +3,14 @@ package iuh.fit.contract_service.repository;
 import iuh.fit.contract_service.entity.ContractAgreement;
 import iuh.fit.contract_service.enums.ContractAgreementStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface ContractAgreementRepository extends JpaRepository<ContractAgreement, UUID> {
+public interface ContractAgreementRepository extends JpaRepository<ContractAgreement, UUID>, JpaSpecificationExecutor<ContractAgreement> {
     List<ContractAgreement> findByClassroomIdOrderByCreatedAtAsc(Long classroomId);
 
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
