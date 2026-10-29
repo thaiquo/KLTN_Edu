@@ -169,6 +169,13 @@ Termination API prefix: `/api/contracts/terminations`.
 
 Funding, settlement, expiration and refunds are authoritative only after Contract ingests confirmed blockchain events.
 
+Tutor-absence governance v1 extends the internal auto-propose payload with `learningSessionId`,
+`sessionSequence`, class-level `tutorAttendanceOutcome`, immutable `finalizedAt`/`sourceEventId`,
+and the real next-session snapshot. Contract persists that signal idempotently before detection.
+Governance HOLD/RELEASE commands carry stable command IDs and cutoff fences; RELEASE also carries
+`expectedHoldCommandId` and `releaseNotAfter`. Public termination views expose both deadlines,
+probation state and `serverNow`; clients must not use the browser clock as the authority.
+
 ## 9. Notification and Human Chat APIs
 
 Bell notification API:

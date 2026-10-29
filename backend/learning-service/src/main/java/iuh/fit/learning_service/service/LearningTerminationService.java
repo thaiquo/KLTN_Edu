@@ -19,6 +19,7 @@ public class LearningTerminationService {
     private final LearningTerminationStopRepository stops;
     private final SessionAttendanceRepository attendances;
     private final RollingSessionService rollingSessions;
+    private final LearningTerminationCommandInboxRepository inboxRepository;
 
     public record Command(
             Long classroomId,
@@ -29,15 +30,31 @@ public class LearningTerminationService {
             String origin,
             Integer requestedCutoffSession,
             OffsetDateTime effectiveRequestedAt,
-            UUID commandId) {
+            UUID commandId,
+            UUID expectedHoldCommandId,
+            OffsetDateTime releaseNotAfter) {
         public Command(Long classroomId, Long studentId, String agreementId, boolean wholeClass, String action) {
-            this(classroomId, studentId, agreementId, wholeClass, action, null, null, null, null);
+            this(classroomId, studentId, agreementId, wholeClass, action, null, null, null, null, null, null);
+        }
+        public Command(
+                Long classroomId,
+                Long studentId,
+                String agreementId,
+                boolean wholeClass,
+                String action,
+                String origin,
+                Integer requestedCutoffSession,
+                OffsetDateTime effectiveRequestedAt,
+                UUID commandId) {
+            this(classroomId, studentId, agreementId, wholeClass, action, origin, requestedCutoffSession, effectiveRequestedAt, commandId, null, null);
         }
     }
     public record Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart) {}
     private static final ZoneId BUSINESS_ZONE = CanonicalSessionPlanner.BUSINESS_ZONE;
     private static final String TRIAL_OPT_OUT = "TRIAL_OPT_OUT";
     private static final String SYSTEM_LATE_FUNDING = "SYSTEM_LATE_FUNDING";
+    public static final String AUTO_TUTOR_ABSENCE = "AUTO_TUTOR_ABSENCE";
+    public static final String AUTO_TUTOR_ABSENCE_RELAPSE = "AUTO_TUTOR_ABSENCE_RELAPSE";
 
     @Transactional
     public Snapshot apply(Command command) {
@@ -62,10 +79,40 @@ public class LearningTerminationService {
         if (!Set.of("HOLD", "RELEASE", "FREEZE", "CLOSE").contains(command.action())) throw new IllegalArgumentException("Unknown action");
         boolean trialOptOut = TRIAL_OPT_OUT.equals(command.origin());
         boolean lateFundingRecovery = SYSTEM_LATE_FUNDING.equals(command.origin());
-        boolean stableCutoffCommand = trialOptOut || lateFundingRecovery;
+        boolean tutorAbsence = AUTO_TUTOR_ABSENCE.equals(command.origin()) || AUTO_TUTOR_ABSENCE_RELAPSE.equals(command.origin());
+        boolean stableCutoffCommand = trialOptOut || lateFundingRecovery || tutorAbsence;
         validateExtendedCommand(command, room, rows, trialOptOut, lateFundingRecovery);
+
+        if (command.commandId() != null) {
+            String payloadHash = computePayloadHash(command);
+            var inboxOpt = inboxRepository.findByCommandIdAndAction(command.commandId(), command.action());
+            if (inboxOpt.isPresent()) {
+                var inbox = inboxOpt.get();
+                if (!Objects.equals(inbox.getPayloadHash(), payloadHash)) {
+                    throw new IllegalStateException("Learning termination command payload mismatch for commandId=" + command.commandId());
+                }
+                int cutoff = inbox.getCutoffSession();
+                return new Snapshot(cutoff, parseRequiredSessions(inbox.getRequiredSessionSequencesCsv()), inbox.getNextSessionStartAt());
+            }
+        }
+
         var stop = stops.findById(command.agreementId()).orElse(null);
         if ("RELEASE".equals(command.action())) {
+            if (command.releaseNotAfter() != null) {
+                OffsetDateTime nowUtc = OffsetDateTime.now(ZoneOffset.UTC);
+                if (!nowUtc.isBefore(command.releaseNotAfter())) {
+                    throw new IllegalStateException("RELEASE command received after releaseNotAfter deadline");
+                }
+            }
+            if (tutorAbsence) {
+                if (stop == null || command.expectedHoldCommandId() == null
+                        || !Objects.equals(stop.getCommandId(), command.expectedHoldCommandId())) {
+                    throw new IllegalStateException("RELEASE expectedHoldCommandId mismatch with existing stop");
+                }
+                if (!Objects.equals(stop.getCutoffSession(), command.requestedCutoffSession())) {
+                    throw new IllegalStateException("RELEASE cutoff does not match the persisted hold");
+                }
+            }
             if (stop != null && !stop.isClosed()) stops.delete(stop);
             if (command.wholeClass()) room.setTerminationCutoffSession(null);
             if (command.wholeClass()) {
@@ -76,7 +123,9 @@ public class LearningTerminationService {
             } else {
                 rollingSessions.createMissingAttendancesForEnrollment(enrollment);
             }
-            return new Snapshot(0, List.of(), null);
+            var releaseSnapshot = new Snapshot(0, List.of(), null);
+            recordInbox(command, releaseSnapshot);
+            return releaseSnapshot;
         }
         if (stableCutoffCommand && stop != null) {
             requireSameStableCutoffCommand(stop, command);
@@ -147,9 +196,11 @@ public class LearningTerminationService {
                 .min(LocalDateTime::compareTo)
                 .map(start -> start.atZone(BUSINESS_ZONE).toOffsetDateTime())
                 .orElse(null);
-        return new Snapshot(cutoff, rows.stream()
+        var snapshot = new Snapshot(cutoff, rows.stream()
                 .filter(s -> s.getSequenceNumber() <= cutoff && s.getStatus() != ClassSessionStatus.CANCELLED)
                 .map(s -> s.getSequenceNumber().longValue()).toList(), nextSessionStart);
+        recordInbox(command, snapshot);
+        return snapshot;
     }
 
     private void validateExtendedCommand(
@@ -158,11 +209,49 @@ public class LearningTerminationService {
             List<ClassSession> rows,
             boolean trialOptOut,
             boolean lateFundingRecovery) {
-        boolean hasTrialFields = command.requestedCutoffSession() != null
+        boolean tutorAbsence = AUTO_TUTOR_ABSENCE.equals(command.origin())
+                || AUTO_TUTOR_ABSENCE_RELAPSE.equals(command.origin());
+        boolean hasExplicitFields = command.requestedCutoffSession() != null
                 || command.effectiveRequestedAt() != null
-                || command.commandId() != null;
-        if (!trialOptOut && !lateFundingRecovery && hasTrialFields) {
+                || command.commandId() != null
+                || command.expectedHoldCommandId() != null
+                || command.releaseNotAfter() != null;
+        if (!trialOptOut && !lateFundingRecovery && !tutorAbsence && hasExplicitFields) {
             throw new IllegalArgumentException("Explicit cutoff/audit fields require a supported system origin");
+        }
+        if (tutorAbsence) {
+            if (!command.wholeClass()) {
+                throw new IllegalArgumentException(command.origin() + " must be a whole-class command");
+            }
+            if (command.commandId() == null) {
+                throw new IllegalArgumentException(command.origin() + " requires commandId");
+            }
+            if ("RELEASE".equals(command.action())) {
+                if (command.requestedCutoffSession() == null
+                        || command.effectiveRequestedAt() == null
+                        || command.expectedHoldCommandId() == null
+                        || command.releaseNotAfter() == null) {
+                    throw new IllegalArgumentException(command.origin()
+                            + " RELEASE requires cutoff, effective time, expected hold command and release deadline");
+                }
+            }
+            if ("HOLD".equals(command.action()) || "FREEZE".equals(command.action())) {
+                if (command.requestedCutoffSession() == null || command.effectiveRequestedAt() == null) {
+                    throw new IllegalArgumentException(command.origin() + " requires cutoff and effective time");
+                }
+                int requestedCutoff = command.requestedCutoffSession();
+                if (requestedCutoff <= 0
+                        || (room.getTotalSessions() != null && requestedCutoff > room.getTotalSessions())) {
+                    throw new IllegalArgumentException("Requested tutor absence cutoff is outside the classroom session range");
+                }
+                boolean cutoffSessionExists = rows.stream()
+                        .anyMatch(session -> session.getSequenceNumber() == requestedCutoff
+                                && session.getStatus() != ClassSessionStatus.CANCELLED);
+                if (!cutoffSessionExists) {
+                    throw new IllegalStateException("Requested tutor absence cutoff session is not available");
+                }
+            }
+            return;
         }
         if (!trialOptOut && !lateFundingRecovery) {
             return;
@@ -195,6 +284,54 @@ public class LearningTerminationService {
                         && session.getStatus() != ClassSessionStatus.CANCELLED);
         if (!cutoffSessionExists) {
             throw new IllegalStateException("Requested trial cutoff session is not available");
+        }
+    }
+
+    private void recordInbox(Command command, Snapshot snapshot) {
+        if (command.commandId() != null) {
+            String payloadHash = computePayloadHash(command);
+            var entry = new LearningTerminationCommandInbox();
+            entry.setId(UUID.randomUUID());
+            entry.setCommandId(command.commandId());
+            entry.setAction(command.action());
+            entry.setClassroomId(command.classroomId());
+            entry.setAgreementId(command.agreementId());
+            entry.setCutoffSession(snapshot.cutoffSession());
+            entry.setPayloadHash(payloadHash);
+            entry.setStatus("COMPLETED");
+            entry.setRequiredSessionSequencesCsv(snapshot.requiredSessions().stream()
+                    .map(String::valueOf).collect(java.util.stream.Collectors.joining(",")));
+            entry.setNextSessionStartAt(snapshot.nextSessionStart());
+            entry.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+            entry.setUpdatedAt(entry.getCreatedAt());
+            inboxRepository.saveAndFlush(entry);
+        }
+    }
+
+    private List<Long> parseRequiredSessions(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        return Arrays.stream(value.split(",")).map(Long::parseLong).toList();
+    }
+
+    private String computePayloadHash(Command command) {
+        String raw = String.format("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s",
+                command.commandId(),
+                command.action(),
+                command.classroomId(),
+                command.agreementId(),
+                command.wholeClass(),
+                command.origin(),
+                command.requestedCutoffSession(),
+                command.effectiveRequestedAt() != null ? command.effectiveRequestedAt().toInstant().toEpochMilli() : "",
+                command.expectedHoldCommandId(),
+                command.releaseNotAfter() != null ? command.releaseNotAfter().toInstant().toEpochMilli() : ""
+        );
+        try {
+            var md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(hash);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new RuntimeException(e);
         }
     }
 

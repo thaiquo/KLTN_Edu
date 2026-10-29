@@ -367,6 +367,9 @@ public class SessionAttendanceService {
                 }
 
                 session.setStatus(ClassSessionStatus.COMPLETED);
+                if (session.getAttendanceFinalizedAt() == null) {
+                    session.setAttendanceFinalizedAt(java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC));
+                }
                 classSessionRepository.save(session);
 
                 log.info("Auto-finalized Session #{} for ClassRoom #{} after reaching endTime {}. Outcomes resolved.",

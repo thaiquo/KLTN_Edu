@@ -88,6 +88,11 @@ Một lớp nhiều Student tạo nhiều agreement độc lập. Với cùng se
 
 Không có cơ chế “một Student khiếu nại thì hoàn cả lớp” trong V1. Tutor vắng được Learning chốt `TUTOR_ABSENT` riêng cho từng attendance/agreement và mọi Student có agreement hợp lệ đều nhận refund của phần mình.
 
+Quản trị ba buổi Tutor vắng liên tiếp chỉ quyết định cutoff/chấm dứt ở cấp lớp; nó không tạo
+session bù, không tăng `totalSessions` và không sửa terms/hash on-chain. Quyết định “hủy ngay”
+không đồng nghĩa USDC đã về ví: từng settlement `TUTOR_ABSENT` và phần cọc chưa dùng chỉ được
+hiển thị là đã hoàn sau khi Contract Service ingest event blockchain xác nhận tương ứng.
+
 ## 6. Off-chain/on-chain boundary
 
 Off-chain lưu:

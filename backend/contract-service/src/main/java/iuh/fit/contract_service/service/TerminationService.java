@@ -38,6 +38,9 @@ public class TerminationService {
     private final Eip712VerificationService verificationService;
     private final TerminationLearningClient learning;
     private final AgreementTrialRepository agreementTrialRepository;
+    private final TutorAbsenceProbationRepository probationRepository;
+    private final TutorAbsenceDeadlinePolicy deadlinePolicy;
+    private final iuh.fit.contract_service.config.TutorAbsenceGovernanceProperties absenceGovernanceProperties;
 
     public TerminationService(
             TerminationCaseRepository cases,
@@ -51,7 +54,60 @@ public class TerminationService {
             NotificationDispatcher notifications,
             Eip712VerificationService verificationService,
             TerminationLearningClient learning) {
-        this(cases, items, evidence, agreements, settlements, disputes, access, mapper, notifications, verificationService, learning, null);
+        this(cases, items, evidence, agreements, settlements, disputes, access, mapper, notifications, verificationService, learning, null, null, null, null);
+    }
+
+    public TerminationService(
+            TerminationCaseRepository cases,
+            TerminationItemRepository items,
+            TerminationEvidenceRepository evidence,
+            ContractAgreementRepository agreements,
+            SessionSettlementRepository settlements,
+            DisputeRepository disputes,
+            ContractAccessControl access,
+            ObjectMapper mapper,
+            NotificationDispatcher notifications,
+            Eip712VerificationService verificationService,
+            TerminationLearningClient learning,
+            AgreementTrialRepository agreementTrialRepository) {
+        this(cases, items, evidence, agreements, settlements, disputes, access, mapper, notifications, verificationService, learning, agreementTrialRepository, null, null, null);
+    }
+
+    public TerminationService(
+            TerminationCaseRepository cases,
+            TerminationItemRepository items,
+            TerminationEvidenceRepository evidence,
+            ContractAgreementRepository agreements,
+            SessionSettlementRepository settlements,
+            DisputeRepository disputes,
+            ContractAccessControl access,
+            ObjectMapper mapper,
+            NotificationDispatcher notifications,
+            Eip712VerificationService verificationService,
+            TerminationLearningClient learning,
+            AgreementTrialRepository agreementTrialRepository,
+            TutorAbsenceProbationRepository probationRepository) {
+        this(cases, items, evidence, agreements, settlements, disputes, access, mapper, notifications, verificationService, learning, agreementTrialRepository, probationRepository, null, null);
+    }
+
+    public TerminationService(
+            TerminationCaseRepository cases,
+            TerminationItemRepository items,
+            TerminationEvidenceRepository evidence,
+            ContractAgreementRepository agreements,
+            SessionSettlementRepository settlements,
+            DisputeRepository disputes,
+            ContractAccessControl access,
+            ObjectMapper mapper,
+            NotificationDispatcher notifications,
+            Eip712VerificationService verificationService,
+            TerminationLearningClient learning,
+            AgreementTrialRepository agreementTrialRepository,
+            TutorAbsenceProbationRepository probationRepository,
+            TutorAbsenceDeadlinePolicy deadlinePolicy) {
+        this(cases, items, evidence, agreements, settlements, disputes, access, mapper, notifications,
+                verificationService, learning, agreementTrialRepository, probationRepository, deadlinePolicy,
+                null);
     }
 
     @Autowired
@@ -67,7 +123,10 @@ public class TerminationService {
             NotificationDispatcher notifications,
             Eip712VerificationService verificationService,
             TerminationLearningClient learning,
-            AgreementTrialRepository agreementTrialRepository) {
+            AgreementTrialRepository agreementTrialRepository,
+            TutorAbsenceProbationRepository probationRepository,
+            TutorAbsenceDeadlinePolicy deadlinePolicy,
+            iuh.fit.contract_service.config.TutorAbsenceGovernanceProperties absenceGovernanceProperties) {
         this.cases = cases;
         this.items = items;
         this.evidence = evidence;
@@ -80,6 +139,9 @@ public class TerminationService {
         this.verificationService = verificationService;
         this.learning = learning;
         this.agreementTrialRepository = agreementTrialRepository;
+        this.probationRepository = probationRepository;
+        this.deadlinePolicy = deadlinePolicy != null ? deadlinePolicy : new TutorAbsenceDeadlinePolicy();
+        this.absenceGovernanceProperties = absenceGovernanceProperties;
     }
 
     private static final long SIGNATURE_CLOCK_SKEW_SECONDS = 300;
@@ -91,6 +153,7 @@ public class TerminationService {
     private static final String ORIGIN_SYSTEM_REVIEW = "SYSTEM_REVIEW";
     private static final String ORIGIN_ADMIN = "ADMIN_DIRECT";
     static final String ORIGIN_SYSTEM_LATE_FUNDING = "SYSTEM_LATE_FUNDING";
+    public static final String ORIGIN_AUTO_TUTOR_ABSENCE_RELAPSE = "AUTO_TUTOR_ABSENCE_RELAPSE";
 
     public record ItemView(UUID agreementId, String status, String lastError, String transactionHash,
                            String refundedUnits, String studentName, int tokenDecimals, Long chainId,
@@ -98,7 +161,12 @@ public class TerminationService {
                            String sessionRefundedUnits, String remainingUnits, OffsetDateTime updatedAt) {}
     public record EvidenceView(UUID id, String originalFilename, String contentType, long sizeBytes,
                                String submittedByRole, java.time.Instant createdAt) {}
-    public record View(TerminationCase request, List<ItemView> items, List<EvidenceView> evidence) {}
+    public record View(TerminationCase request, List<ItemView> items, List<EvidenceView> evidence,
+                       TutorAbsenceProbation probation, OffsetDateTime serverNow) {
+        public View(TerminationCase request, List<ItemView> items, List<EvidenceView> evidence) {
+            this(request, items, evidence, null, OffsetDateTime.now(ZoneOffset.UTC));
+        }
+    }
     private View view(TerminationCase c) {
         var itemViews = items.findByCaseIdOrderByAgreementId(c.getId()).stream()
                 .map(i -> itemView(i, agreements.findById(i.getAgreementId()).orElseThrow())).toList();
@@ -106,7 +174,8 @@ public class TerminationService {
                 .map(item -> new EvidenceView(item.getId(), item.getOriginalFilename(), item.getContentType(),
                         item.getSizeBytes(), item.getSubmittedByRole(), item.getCreatedAt()))
                 .toList();
-        return new View(c, itemViews, evidenceViews);
+        var probation = probationRepository != null ? probationRepository.findBySourceCaseId(c.getId()).orElse(null) : null;
+        return new View(c, itemViews, evidenceViews, probation, OffsetDateTime.now(ZoneOffset.UTC));
     }
 
     private ItemView itemView(TerminationItem item, ContractAgreement agreement) {
@@ -185,6 +254,12 @@ public class TerminationService {
         summary.setStatus(c.getStatus());
         summary.setOrigin(c.getOrigin());
         summary.setResponseDeadline(c.getResponseDeadline());
+        summary.setDecisionDeadline(c.getDecisionDeadline());
+        summary.setTriggerSessionSequence(c.getTriggerSessionSequence());
+        summary.setNextSessionSequence(c.getNextSessionSequence());
+        summary.setNextSessionStartAt(c.getNextSessionStartAt());
+        summary.setAutoDecisionAt(c.getAutoDecisionAt());
+        summary.setAutoDecisionReason(c.getAutoDecisionReason());
         summary.setCreatedAt(c.getCreatedAt());
         summary.setUpdatedAt(c.getUpdatedAt());
         summary.setAuditJson("[]");
@@ -479,8 +554,13 @@ public class TerminationService {
             case "RESPOND" -> {
                 requireStatus(c, "HOLD_PENDING", "REQUESTED", "RECOMMENDED");
                 if (manager) fail(HttpStatus.FORBIDDEN, "Use review actions for Staff/Admin");
-                if (ORIGIN_AUTO_ABSENCE.equals(c.getOrigin()) && !user.hasActiveAuthority("TUTOR")) {
-                    fail(HttpStatus.FORBIDDEN, "Only the Tutor can explain an automatic absence warning");
+                if (ORIGIN_AUTO_ABSENCE.equals(c.getOrigin())) {
+                    if (!user.hasActiveAuthority("TUTOR")) {
+                        fail(HttpStatus.FORBIDDEN, "Only the Tutor can explain an automatic absence warning");
+                    }
+                    if (deadlinePolicy.isResponseExpired(c.getResponseDeadline(), OffsetDateTime.now())) {
+                        fail(HttpStatus.CONFLICT, "Thời hạn gửi giải trình đã kết thúc.");
+                    }
                 }
                 if (user.hasActiveAuthority("TUTOR")) c.setTutorRespondedAt(OffsetDateTime.now());
             }
@@ -497,6 +577,34 @@ public class TerminationService {
                 if (!user.hasActiveAuthority("ADMIN")) fail(HttpStatus.FORBIDDEN, "Only Admin can reject termination and restore learning");
                 requireStatus(c, "REQUESTED", "RECOMMENDED");
                 requireNoPendingDisputes(c);
+                if (ORIGIN_AUTO_ABSENCE.equals(c.getOrigin())) {
+                    if (c.getTutorRespondedAt() == null) {
+                        fail(HttpStatus.CONFLICT, "Tutor must submit an explanation before the class can continue");
+                    }
+                    if (deadlinePolicy.isDecisionExpired(c.getDecisionDeadline(), OffsetDateTime.now())) {
+                        fail(HttpStatus.CONFLICT, "Thời hạn ra quyết định cho lớp tiếp tục đã hết. Không thể khôi phục lớp sau giờ bắt đầu buổi học tiếp theo.");
+                    }
+                    if (c.getReleaseCommandId() == null) {
+                        c.setReleaseCommandId(UUID.randomUUID());
+                    }
+                    if (probationRepository != null && c.getClassroomId() != null) {
+                        var probation = probationRepository.findBySourceCaseId(c.getId())
+                                .orElseGet(() -> {
+                                    var p = new TutorAbsenceProbation();
+                                    p.setId(UUID.randomUUID());
+                                    p.setClassroomId(c.getClassroomId());
+                                    p.setSourceCaseId(c.getId());
+                                    p.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                                    return p;
+                                });
+                        probation.setSessionSequence(c.getNextSessionSequence() != null ? c.getNextSessionSequence() : c.getTriggerSessionSequence() + 1);
+                        probation.setSessionStartAt(c.getNextSessionStartAt() != null ? c.getNextSessionStartAt() : c.getDecisionDeadline());
+                        probation.setStatus("ACTIVE");
+                        probation.setActiveClassroomGuard(c.getClassroomId());
+                        probation.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                        probationRepository.saveAndFlush(probation);
+                    }
+                }
                 c.setStatus("RELEASE_PENDING");
                 synchronizeRelease(c, anchor);
             }
@@ -511,22 +619,7 @@ public class TerminationService {
                 if (anchor.getTerminationCutoffSession() == null) {
                     fail(HttpStatus.CONFLICT, "Learning hold is not ready; retry after synchronization");
                 }
-                var targets = c.isWholeClass() ? agreements.findByClassroomIdOrderByCreatedAtAsc(c.getClassroomId()) : List.of(anchor);
-                for (var target : targets) {
-                    if (!activeTerminationAgreement(target)) continue;
-                    if (target.isLegacyExcluded()) fail(HttpStatus.CONFLICT, "Class contains audit-only agreements; reconcile before closure");
-                    var locked = agreements.lockById(target.getId()).orElseThrow();
-                    if (!activeTerminationAgreement(locked)) continue;
-                    if (items.existsById(locked.getId())) {
-                        if (terminal(locked) && "COMPLETED".equals(items.findById(locked.getId()).orElseThrow().getStatus())) continue;
-                        fail(HttpStatus.CONFLICT, "Agreement already belongs to an approved termination");
-                    }
-                    if (locked.getTerminationCutoffSession() == null) {
-                        fail(HttpStatus.CONFLICT, "Learning hold is not ready; retry after synchronization");
-                    }
-                    var item = new TerminationItem(); item.setAgreementId(locked.getId()); item.setCaseId(c.getId());
-                    item.setStatus("LEARNING_PENDING"); item.setUpdatedAt(OffsetDateTime.now()); items.save(item);
-                }
+                createTerminationItemsForApproval(c, anchor);
                 c.setStatus("APPROVED");
             }
             default -> fail(HttpStatus.BAD_REQUEST, "Unknown termination action");
@@ -600,6 +693,11 @@ public class TerminationService {
             fail(HttpStatus.FORBIDDEN, "Only the contract parties can submit termination evidence");
         }
         requireStatus(termination, "HOLD_PENDING", "REQUESTED", "RECOMMENDED");
+        if (ORIGIN_AUTO_ABSENCE.equals(termination.getOrigin()) && user.hasActiveAuthority("TUTOR")) {
+            if (deadlinePolicy.isResponseExpired(termination.getResponseDeadline(), OffsetDateTime.now())) {
+                fail(HttpStatus.CONFLICT, "Thời hạn tải minh chứng cho cảnh cáo vắng học đã kết thúc.");
+            }
+        }
         if (user.userId() == null) fail(HttpStatus.FORBIDDEN, "Authenticated user id is required");
         if (evidence.countByTerminationCaseIdAndSubmittedByUserId(id, user.userId()) >= 5) {
             fail(HttpStatus.CONFLICT, "Mỗi bên chỉ được tải tối đa 5 file minh chứng cho một hồ sơ.");
@@ -730,7 +828,9 @@ public class TerminationService {
     public void retryLearningSynchronization(UUID id) {
         var c = cases.lockById(id).orElseThrow();
         var anchor = agreements.lockById(c.getAnchorAgreementId()).orElseThrow();
-        if ("HOLD_PENDING".equals(c.getStatus())) synchronizeHold(c, anchor);
+        if ("HOLD_PENDING".equals(c.getStatus()) && c.getAbsenceGovernanceVersion() != null) {
+            synchronizeAbsenceHold(c, anchor, c.getTriggerSessionSequence(), c.getHoldCommandId(), c.getCreatedAt());
+        } else if ("HOLD_PENDING".equals(c.getStatus())) synchronizeHold(c, anchor);
         else if ("RELEASE_PENDING".equals(c.getStatus())) synchronizeRelease(c, anchor);
         cases.save(c);
         if (Set.of("REQUESTED", "REJECTED").contains(c.getStatus()))
@@ -829,8 +929,35 @@ public class TerminationService {
     }
 
     private void synchronizeRelease(TerminationCase c, ContractAgreement anchor) {
+        if (c.getAbsenceGovernanceVersion() != null && c.getAbsenceGovernanceVersion() == 1) {
+            if (deadlinePolicy.isDecisionExpired(c.getDecisionDeadline(), OffsetDateTime.now())) {
+                createTerminationItemsForApproval(c, anchor);
+                c.setStatus("APPROVED");
+                c.setAutoDecisionAt(OffsetDateTime.now(ZoneOffset.UTC));
+                c.setAutoDecisionReason("RELEASE_TIMEOUT");
+                c.setLastError("Release fence exceeded decision deadline");
+                audit(c, new ContractUserPrincipal(0L, "system@educonnect.invalid", "ADMIN", List.of("ADMIN")),
+                        "AUTO_APPROVED", "RELEASE_TIMEOUT");
+                if (probationRepository != null && c.getClassroomId() != null) {
+                    probationRepository.findByClassroomIdAndStatus(c.getClassroomId(), "ACTIVE")
+                            .forEach(p -> {
+                                p.setStatus("CANCELLED");
+                                p.setActiveClassroomGuard(null);
+                                p.setResolvedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                                probationRepository.save(p);
+                            });
+                }
+                return;
+            }
+        }
         try {
-            learning.send(anchor.getClassroomId(), anchor.getStudentId(), anchor.getId(), c.isWholeClass(), "RELEASE");
+            if (c.getAbsenceGovernanceVersion() != null && c.getAbsenceGovernanceVersion() == 1) {
+                learning.send(anchor.getClassroomId(), anchor.getStudentId(), anchor.getId(), c.isWholeClass(), "RELEASE",
+                        c.getOrigin(), c.getTriggerSessionSequence(), c.getHoldEffectiveAt(),
+                        c.getReleaseCommandId(), c.getHoldCommandId(), c.getDecisionDeadline());
+            } else {
+                learning.send(anchor.getClassroomId(), anchor.getStudentId(), anchor.getId(), c.isWholeClass(), "RELEASE");
+            }
             var targets = c.isWholeClass()
                     ? agreements.findByClassroomIdOrderByCreatedAtAsc(c.getClassroomId())
                     : List.of(anchor);
@@ -875,6 +1002,279 @@ public class TerminationService {
         String origin = detectionKey.startsWith("TUTOR_ABSENT:") ? ORIGIN_AUTO_ABSENCE : ORIGIN_SYSTEM_REVIEW;
         var view = requestInternal(agreementId, true, reason, null, null, null, system, origin);
         view.request().setDetectionKey(detectionKey);
+    }
+
+    void createTerminationItemsForApproval(TerminationCase c, ContractAgreement anchor) {
+        var targets = c.isWholeClass() ? agreements.findByClassroomIdOrderByCreatedAtAsc(c.getClassroomId()) : List.of(anchor);
+        for (var target : targets) {
+            if (!activeTerminationAgreement(target)) continue;
+            if (target.isLegacyExcluded()) fail(HttpStatus.CONFLICT, "Class contains audit-only agreements; reconcile before closure");
+            var locked = agreements.lockById(target.getId()).orElseThrow();
+            if (!activeTerminationAgreement(locked)) continue;
+            if (items.existsById(locked.getId())) {
+                if (terminal(locked) && "COMPLETED".equals(items.findById(locked.getId()).orElseThrow().getStatus())) continue;
+                fail(HttpStatus.CONFLICT, "Agreement already belongs to an approved termination");
+            }
+            if (locked.getTerminationCutoffSession() == null) {
+                if (c.getAbsenceGovernanceVersion() != null && c.getTriggerSessionSequence() != null) {
+                    locked.setTerminationCutoffSession(c.getTriggerSessionSequence());
+                    agreements.save(locked);
+                } else {
+                    fail(HttpStatus.CONFLICT, "Learning hold is not ready; retry after synchronization");
+                }
+            }
+            var item = new TerminationItem();
+            item.setAgreementId(locked.getId());
+            item.setCaseId(c.getId());
+            item.setStatus("LEARNING_PENDING");
+            item.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+            items.save(item);
+        }
+    }
+
+    @Transactional
+    public void requestAbsenceGovernanceCase(Long classroomId, int triggerSequence, Integer nextSequence, OffsetDateTime nextStartAt) {
+        if (nextSequence == null || nextStartAt == null || nextSequence <= triggerSequence) {
+            return;
+        }
+        lockClass(classroomId);
+        var activeAgreements = agreements.findByClassroomIdOrderByCreatedAtAsc(classroomId).stream()
+                .filter(TerminationService::activeTerminationAgreement)
+                .toList();
+        if (activeAgreements.isEmpty()) return;
+
+        var anchor = activeAgreements.getFirst();
+        String detectionKey = "AUTO_TUTOR_ABSENCE:" + classroomId + ":" + triggerSequence;
+        var existingCases = cases.findByClassroomIdOrderByCreatedAtDesc(classroomId);
+        if (existingCases.stream().anyMatch(c -> detectionKey.equals(c.getDetectionKey())
+                || !Set.of("REJECTED", "COMPLETED").contains(c.getStatus()))) {
+            return;
+        }
+
+        UUID holdCommandId = UUID.randomUUID();
+        OffsetDateTime nowUtc = OffsetDateTime.now(ZoneOffset.UTC);
+
+        var c = new TerminationCase();
+        c.setId(UUID.randomUUID());
+        c.setAnchorAgreementId(anchor.getId());
+        c.setClassroomId(classroomId);
+        c.setWholeClass(true);
+        c.setReason("He thong ghi nhan Gia su vang 3 buoi lien tiep (buoi " + triggerSequence + "). Yeu cau giai trinh va tam giu lich tuong lai.");
+        c.setRequestedBy("system@educonnect.invalid");
+        c.setOrigin(ORIGIN_AUTO_ABSENCE);
+        c.setStatus("HOLD_PENDING");
+        c.setDetectionKey(detectionKey);
+        c.setAbsenceGovernanceVersion((short) 1);
+        c.setTriggerSessionSequence(triggerSequence);
+        c.setNextSessionSequence(nextSequence);
+        c.setNextSessionStartAt(nextStartAt);
+        c.setDecisionDeadline(nextStartAt);
+        c.setResponseDeadline(nextStartAt);
+        c.setHoldCommandId(holdCommandId);
+        c.setCreatedAt(nowUtc);
+        c.setUpdatedAt(nowUtc);
+        c.setAuditJson("[]");
+
+        var system = new ContractUserPrincipal(0L, "system@educonnect.invalid", "ADMIN", List.of("ADMIN"));
+        audit(c, system, "REQUESTED", c.getReason());
+
+        for (var target : activeAgreements) {
+            target.setTerminationCutoffSession(triggerSequence);
+            agreements.save(target);
+        }
+        cases.saveAndFlush(c);
+
+        synchronizeAbsenceHold(c, anchor, triggerSequence, holdCommandId, nowUtc);
+        cases.saveAndFlush(c);
+
+        if ("REQUESTED".equals(c.getStatus())) {
+            notifyParties(anchor, c, "Hệ thống ghi nhận Gia sư vắng 3 buổi liên tiếp. Lịch tương lai đã được tạm giữ; Gia sư cần gửi giải trình và minh chứng trước hạn hiển thị trong hồ sơ.");
+        } else if ("APPROVED".equals(c.getStatus())) {
+            notifyParties(anchor, c, "Không còn đủ cửa sổ an toàn trước buổi học tiếp theo. Hệ thống đã chuyển hồ sơ sang hủy; hoàn tiền chỉ được xác nhận sau khi quyết toán và blockchain hoàn tất.");
+        }
+    }
+
+    @Transactional
+    public void requestAbsenceGovernanceRelapse(Long classroomId, TutorAbsenceProbation probation, ClassTutorAttendanceSignal signal) {
+        lockClass(classroomId);
+        var activeAgreements = agreements.findByClassroomIdOrderByCreatedAtAsc(classroomId).stream()
+                .filter(TerminationService::activeTerminationAgreement)
+                .toList();
+        if (activeAgreements.isEmpty()) return;
+
+        var anchor = activeAgreements.getFirst();
+        String detectionKey = "AUTO_TUTOR_ABSENCE_RELAPSE:" + classroomId + ":" + probation.getSessionSequence();
+        var existingCases = cases.findByClassroomIdOrderByCreatedAtDesc(classroomId);
+        if (existingCases.stream().anyMatch(c -> detectionKey.equals(c.getDetectionKey())
+                || !Set.of("REJECTED", "COMPLETED").contains(c.getStatus()))) {
+            return;
+        }
+
+        UUID holdCommandId = UUID.randomUUID();
+        OffsetDateTime nowUtc = OffsetDateTime.now(ZoneOffset.UTC);
+
+        var c = new TerminationCase();
+        c.setId(UUID.randomUUID());
+        c.setAnchorAgreementId(anchor.getId());
+        c.setClassroomId(classroomId);
+        c.setWholeClass(true);
+        c.setReason("Gia su tiep tuc vang tai buoi thu thach #" + probation.getSessionSequence() + ". Tu dong cham dut va huy lop.");
+        c.setRequestedBy("system@educonnect.invalid");
+        c.setOrigin(ORIGIN_AUTO_TUTOR_ABSENCE_RELAPSE);
+        c.setStatus("HOLD_PENDING");
+        c.setDetectionKey(detectionKey);
+        c.setAbsenceGovernanceVersion((short) 1);
+        c.setTriggerSessionSequence(probation.getSessionSequence());
+        c.setHoldCommandId(holdCommandId);
+        c.setCreatedAt(nowUtc);
+        c.setUpdatedAt(nowUtc);
+        c.setAuditJson("[]");
+
+        var system = new ContractUserPrincipal(0L, "system@educonnect.invalid", "ADMIN", List.of("ADMIN"));
+        audit(c, system, "REQUESTED", c.getReason());
+
+        for (var target : activeAgreements) {
+            target.setTerminationCutoffSession(probation.getSessionSequence());
+            agreements.save(target);
+        }
+        cases.saveAndFlush(c);
+
+        probation.setStatus("FAILED");
+        probation.setActiveClassroomGuard(null);
+        probation.setFailureCaseId(c.getId());
+        probation.setResolvedAt(nowUtc);
+        if (probationRepository != null) {
+            probationRepository.saveAndFlush(probation);
+        }
+
+        synchronizeAbsenceHold(c, anchor, probation.getSessionSequence(), holdCommandId, nowUtc);
+
+        createTerminationItemsForApproval(c, anchor);
+        c.setStatus("APPROVED");
+        c.setAutoDecisionAt(nowUtc);
+        c.setAutoDecisionReason("PROBATION_RELAPSE");
+        audit(c, system, "AUTO_APPROVED", "PROBATION_RELAPSE");
+        cases.saveAndFlush(c);
+
+        notifyParties(anchor, c, "Gia sư tiếp tục vắng tại buổi thử thách. Lớp học tự động chấm dứt.");
+    }
+
+    private void synchronizeAbsenceHold(TerminationCase c, ContractAgreement anchor, int cutoff, UUID holdCommandId, OffsetDateTime effectiveAt) {
+        try {
+            var snapshot = learning.send(
+                    anchor.getClassroomId(), anchor.getStudentId(), anchor.getId(), true, "HOLD",
+                    c.getOrigin(), cutoff, effectiveAt, holdCommandId);
+            if (snapshot.cutoffSession() != cutoff) {
+                throw new IllegalStateException("Learning cutoff mismatch: expected " + cutoff + " got " + snapshot.cutoffSession());
+            }
+
+            OffsetDateTime holdConfirmedAt = OffsetDateTime.now(ZoneOffset.UTC);
+            c.setHoldEffectiveAt(holdConfirmedAt);
+            var targets = agreements.findByClassroomIdOrderByCreatedAtAsc(c.getClassroomId());
+            for (var target : targets) {
+                if (activeTerminationAgreement(target)) target.setTerminationCutoffSession(snapshot.cutoffSession());
+            }
+
+            OffsetDateTime nextStart = c.getNextSessionStartAt();
+            if (ORIGIN_AUTO_TUTOR_ABSENCE_RELAPSE.equals(c.getOrigin())) {
+                c.setStatus("HOLD_PENDING");
+                c.setLastError(null);
+                c.setUpdatedAt(holdConfirmedAt);
+                return;
+            }
+            if (snapshot.nextSessionStart() == null
+                    || !snapshot.nextSessionStart().toInstant().equals(nextStart.toInstant())) {
+                throw new IllegalStateException("Learning next-session snapshot does not match the attendance signal");
+            }
+
+            var deadlines = deadlinePolicy.calculateDeadlines(holdConfirmedAt, nextStart);
+            c.setDecisionDeadline(deadlines.decisionDeadline());
+            c.setResponseDeadline(deadlines.responseDeadline());
+
+            if (deadlines.insufficientReviewWindow()) {
+                createTerminationItemsForApproval(c, anchor);
+                c.setStatus("APPROVED");
+                c.setAutoDecisionAt(OffsetDateTime.now(ZoneOffset.UTC));
+                c.setAutoDecisionReason("INSUFFICIENT_REVIEW_WINDOW");
+                audit(c, new ContractUserPrincipal(0L, "system@educonnect.invalid", "ADMIN", List.of("ADMIN")),
+                        "AUTO_APPROVED", "INSUFFICIENT_REVIEW_WINDOW");
+                return;
+            }
+
+            c.setStatus("REQUESTED");
+            c.setLastError(null);
+            c.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        } catch (Exception error) {
+            c.setStatus("HOLD_PENDING");
+            c.setLastError(shortError(error, "Learning hold pending"));
+            c.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        }
+    }
+
+    @Transactional
+    public void processAbsenceExpiry(UUID caseId, String expectedReason) {
+        var opt = cases.lockById(caseId);
+        if (opt.isEmpty()) return;
+        var c = opt.get();
+        if (c.getAbsenceGovernanceVersion() == null || c.getAbsenceGovernanceVersion() != 1) return;
+        if (absenceGovernanceProperties != null
+                && absenceGovernanceProperties.getEffectiveMode(c.getClassroomId())
+                != iuh.fit.contract_service.config.TutorAbsenceGovernanceProperties.Mode.ENFORCE) return;
+
+        OffsetDateTime nowUtc = OffsetDateTime.now(ZoneOffset.UTC);
+
+        switch (expectedReason) {
+            case "NO_TUTOR_RESPONSE" -> {
+                if (!"REQUESTED".equals(c.getStatus())) return;
+                if (c.getTutorRespondedAt() != null) return;
+                if (!deadlinePolicy.isResponseExpired(c.getResponseDeadline(), nowUtc)) return;
+            }
+            case "NO_ADMIN_DECISION" -> {
+                if (!Set.of("REQUESTED", "RECOMMENDED").contains(c.getStatus())) return;
+                if (!deadlinePolicy.isDecisionExpired(c.getDecisionDeadline(), nowUtc)) return;
+            }
+            case "RELEASE_TIMEOUT" -> {
+                if (!"RELEASE_PENDING".equals(c.getStatus())) return;
+                if (!deadlinePolicy.isDecisionExpired(c.getDecisionDeadline(), nowUtc)) return;
+            }
+            case "HOLD_SYNC_TIMEOUT" -> {
+                if (!"HOLD_PENDING".equals(c.getStatus())) return;
+                if (!deadlinePolicy.isDecisionExpired(c.getDecisionDeadline(), nowUtc)) return;
+            }
+            default -> { return; }
+        }
+
+        var anchor = agreements.lockById(c.getAnchorAgreementId()).orElse(null);
+        if (anchor == null) return;
+
+        createTerminationItemsForApproval(c, anchor);
+        c.setStatus("APPROVED");
+        c.setAutoDecisionAt(nowUtc);
+        c.setAutoDecisionReason(expectedReason);
+        c.setUpdatedAt(nowUtc);
+
+        var system = new ContractUserPrincipal(0L, "system@educonnect.invalid", "ADMIN", List.of("ADMIN"));
+        audit(c, system, "AUTO_APPROVED", expectedReason);
+
+        if (probationRepository != null && c.getClassroomId() != null) {
+            probationRepository.findByClassroomIdAndStatus(c.getClassroomId(), "ACTIVE")
+                    .forEach(p -> {
+                        p.setStatus("CANCELLED");
+                        p.setActiveClassroomGuard(null);
+                        p.setResolvedAt(nowUtc);
+                        probationRepository.save(p);
+                    });
+        }
+
+        cases.saveAndFlush(c);
+
+        String message = switch (expectedReason) {
+            case "NO_TUTOR_RESPONSE" -> "Gia sư không gửi giải trình trước hạn. Lớp học tự động chuyển sang hủy; tiền chỉ được ghi nhận đã hoàn sau khi quyết toán và blockchain xác nhận.";
+            case "NO_ADMIN_DECISION" -> "Hết thời hạn ra quyết định trước buổi học tiếp theo. Hệ thống tự động chuyển sang hủy; hoàn cọc được xử lý bất đồng bộ và chờ blockchain xác nhận.";
+            case "RELEASE_TIMEOUT" -> "Khôi phục lịch học không hoàn tất trước giờ bắt đầu. Lớp học tự động chuyển sang hủy.";
+            default -> "Hệ thống tự động phê duyệt hủy lớp do quá hạn: " + expectedReason;
+        };
+        notifyParties(anchor, c, message);
     }
     private void audit(TerminationCase c, ContractUserPrincipal user, String action, String reason) {
         var array = (tools.jackson.databind.node.ArrayNode) mapper.readTree(c.getAuditJson());

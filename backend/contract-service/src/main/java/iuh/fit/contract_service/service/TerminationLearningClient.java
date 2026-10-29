@@ -31,6 +31,12 @@ public class TerminationLearningClient {
     public Snapshot send(Long classroomId, Long studentId, UUID agreementId, boolean wholeClass, String action,
                          String origin, Integer requestedCutoffSession, OffsetDateTime effectiveRequestedAt,
                          UUID commandId) {
+        return send(classroomId, studentId, agreementId, wholeClass, action, origin, requestedCutoffSession,
+                effectiveRequestedAt, commandId, null, null);
+    }
+    public Snapshot send(Long classroomId, Long studentId, UUID agreementId, boolean wholeClass, String action,
+                         String origin, Integer requestedCutoffSession, OffsetDateTime effectiveRequestedAt,
+                         UUID commandId, UUID expectedHoldCommandId, OffsetDateTime releaseNotAfter) {
         try {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("classroomId", classroomId);
@@ -42,6 +48,8 @@ public class TerminationLearningClient {
             if (requestedCutoffSession != null) payload.put("requestedCutoffSession", requestedCutoffSession);
             if (effectiveRequestedAt != null) payload.put("effectiveRequestedAt", effectiveRequestedAt);
             if (commandId != null) payload.put("commandId", commandId);
+            if (expectedHoldCommandId != null) payload.put("expectedHoldCommandId", expectedHoldCommandId);
+            if (releaseNotAfter != null) payload.put("releaseNotAfter", releaseNotAfter);
             String body = mapper.writeValueAsString(payload);
             String token = Jwts.builder().subject("contract-service").claim("serviceScope", "learning-termination")
                     .expiration(Date.from(Instant.now().plusSeconds(60))).signWith(key).compact();
