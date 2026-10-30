@@ -41,7 +41,8 @@ class TerminationFlowIntegrationTest {
                 .studentWallet(student).tutorWallet("0x" + "2".repeat(40)).platformWallet("0x" + "3".repeat(40))
                 .classroomReviewerEmail("staff@test.vn").chainId(31337L).escrowContractAddress(escrow)
                 .onchainAgreementId("0x" + String.format("%064x", studentId)).tokenSymbol("USDC").tokenDecimals((short)6)
-                .termsJson("{}").termsHash("0x" + "a".repeat(64)).contractVersion(1)
+                .termsJson("{\"schemaVersion\":\"contract-terms-v3\",\"classroom\":{\"startDate\":\"2020-01-01\",\"schedules\":[{\"dayOfWeek\":2,\"startTime\":\"08:00\",\"endTime\":\"09:00\"}]}}")
+                .termsHash("0x" + "a".repeat(64)).contractVersion(1)
                 .totalPriceVnd(BigDecimal.valueOf(100000)).vndPerUsdc(BigDecimal.valueOf(25000))
                 .totalAmountUsdcUnits(BigInteger.valueOf(4000000)).pricePerSessionUsdcUnits(BigInteger.valueOf(1000000))
                 .totalSessions(4).status(ContractAgreementStatus.ACTIVE).createdAt(now).updatedAt(now).build());

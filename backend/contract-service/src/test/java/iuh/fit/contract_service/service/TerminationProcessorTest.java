@@ -117,14 +117,48 @@ class TerminationProcessorTest {
         trial.setTerminationCaseId(c.getId());
         trial.setStatus(TrialStatus.OPT_OUT_PENDING);
         when(trialRepository.findByAgreementId(a.getId())).thenReturn(Optional.of(trial));
+        when(agreements.findByClassroomIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(a));
+        when(learning.send(1L, 2L, a.getId(), false, "CLOSE", "TRIAL_OPT_OUT", 1, c.getCreatedAt(), c.getId(), true))
+                .thenReturn(new TerminationLearningClient.Snapshot(1, List.of(), null, true));
 
         processor.process(a.getId());
 
         assertThat(item.getStatus()).isEqualTo("COMPLETED");
         assertThat(trial.getStatus()).isEqualTo(TrialStatus.TERMINATED);
         verify(learning, never()).send(any(), any(), any(), anyBoolean(), eq("FREEZE"));
-        verify(learning).send(1L, 2L, a.getId(), false, "CLOSE");
+        verify(learning).send(1L, 2L, a.getId(), false, "CLOSE", "TRIAL_OPT_OUT", 1, c.getCreatedAt(), c.getId(), true);
+        verify(notifications).sendAsync(eq(a.getTutorEmail()), eq(a.getTutorId()), eq("Lớp học đã tự động hủy"),
+                contains("không còn học viên hiệu lực"), eq("TERMINATION_COMPLETED"), eq("CLASSROOM"), eq("1"));
+        verify(notifications).sendAsync(eq(a.getStudentEmail()), eq(a.getStudentId()), eq("Kết quả dừng học sau buổi trải nghiệm"),
+                contains("khoản hoàn tiền đã được xác nhận"), eq("TERMINATION_COMPLETED"), eq("AGREEMENT"), eq(a.getId().toString()));
         verify(trialRepository).save(trial);
+    }
+    @Test void trialOptOutWhenOtherAgreementIsActiveSendsCancelClassIfEmptyFalse() {
+        a.setStatus(ContractAgreementStatus.CANCELLED);
+        a.setOnchainAgreementId(null);
+        a.setTerminationCutoffSession(1);
+        a.setTerminationSessionsJson("[101]");
+        c.setOrigin("TRIAL_OPT_OUT");
+        when(cases.findById(c.getId())).thenReturn(Optional.of(c));
+
+        var other = ContractAgreement.builder().id(UUID.randomUUID()).classroomId(1L).status(ContractAgreementStatus.ACTIVE).build();
+        when(agreements.findByClassroomIdOrderByCreatedAtAsc(1L)).thenReturn(List.of(a, other));
+
+        var trial = new AgreementTrial();
+        trial.setAgreementId(a.getId());
+        trial.setTrialSessionSequence(1);
+        trial.setTerminationCaseId(c.getId());
+        trial.setStatus(TrialStatus.OPT_OUT_PENDING);
+        when(trialRepository.findByAgreementId(a.getId())).thenReturn(Optional.of(trial));
+        when(learning.send(1L, 2L, a.getId(), false, "CLOSE", "TRIAL_OPT_OUT", 1, c.getCreatedAt(), c.getId(), false))
+                .thenReturn(new TerminationLearningClient.Snapshot(1, List.of(), null, false));
+
+        processor.process(a.getId());
+
+        assertThat(item.getStatus()).isEqualTo("COMPLETED");
+        verify(learning).send(1L, 2L, a.getId(), false, "CLOSE", "TRIAL_OPT_OUT", 1, c.getCreatedAt(), c.getId(), false);
+        verify(notifications).sendAsync(eq(a.getTutorEmail()), eq(a.getTutorId()), eq("Cập nhật học viên dừng học sau trải nghiệm"),
+                contains("lớp học tiếp tục với các học viên còn lại"), eq("TERMINATION_COMPLETED"), eq("AGREEMENT"), eq(a.getId().toString()));
     }
     @Test void lateFundingRecoveryUsesPersistedZeroCutoffAndClosesLinkedTrial() {
         a.setStatus(ContractAgreementStatus.CANCELLED);

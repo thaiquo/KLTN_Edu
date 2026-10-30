@@ -112,8 +112,14 @@ public record ContractDocumentViewDto(
             Integer paymentWindowHours,
             Integer tutorPayoutBps,
             Integer platformFeeBps,
-            String settlementRule
-    ) {}
+            String settlementRule,
+            String studentTerminationRule
+    ) {
+        public EscrowPolicyDto(Integer paymentWindowHours, Integer tutorPayoutBps,
+                               Integer platformFeeBps, String settlementRule) {
+            this(paymentWindowHours, tutorPayoutBps, platformFeeBps, settlementRule, null);
+        }
+    }
 
     public record SignatureProofDto(
             boolean signed,

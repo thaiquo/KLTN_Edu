@@ -157,6 +157,8 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
 - **Điều kiện kích hoạt nút Hủy hợp đồng:**
   - Nút **"Hủy hợp đồng"** trong văn bản hợp đồng chỉ hiển thị và có hiệu lực khi hợp đồng đã ở trạng thái **`ACTIVE`** (cả hai bên đã ký số EIP-712 và học viên đã thanh toán nạp cọc Smart Contract Escrow thành công).
   - Khi hợp đồng chưa được kích hoạt (`DRAFT`, `PENDING_SIGNATURE`, `SIGNED`, `AWAITING_PAYMENT`), các bên chưa nạp cọc tài chính nên nút hủy hợp đồng bị ẩn / vô hiệu hóa; không cho phép kích hoạt quy trình giải ngân/hoàn cọc khi chưa có tài sản ký quỹ on-chain.
+  - Với agreement có chính sách trải nghiệm, khi `trialDeadline` kết thúc thì chỉ nút/quyền **dừng học thử tự động** đóng lại. Agreement vẫn `ACTIVE`; Học viên vẫn có thể gửi **yêu cầu chấm dứt thông thường** nhưng phải qua Staff/Admin thẩm định, không còn được tự động chấp thuận theo chính sách trải nghiệm. Giao diện phải phân biệt rõ hai hành động này và không dùng chung nhãn gây hiểu nhầm.
+  - Từ snapshot `contract-terms-v5`, Học viên chỉ được gửi yêu cầu chấm dứt sau **thời điểm kết thúc buổi học đầu tiên theo lịch đã ký**. Trước mốc này nút phải bị vô hiệu hóa và API phải từ chối, để cửa sổ điểm danh của buổi đầu tiên diễn ra đầy đủ. Các buổi trước cutoff vẫn phải hoàn tất quyết toán/khiếu nại; chỉ số dư ký quỹ chưa sử dụng mới được hoàn. Snapshot `v2`-`v4` tiếp tục giữ nguyên quy tắc đã ký, không bị hồi tố bởi chính sách `v5`.
 - **Phân định trách nhiệm và phạm vi theo Actor:**
   - **Phía Học viên (Student):** Mỗi học viên chỉ có **1 hợp đồng duy nhất** ở 1 lớp học. Vì vậy, khi gia sư vi phạm cam kết hoặc học viên gặp sự cố bất khả kháng, học viên có quyền gửi **yêu cầu đơn phương chấm dứt hợp đồng** của chính mình (`wholeClass = false`). Thao tác được thực hiện trực tiếp trong văn bản hợp đồng cá nhân.
   - **Phía Gia sư (Tutor):** Gia sư quản lý **toàn bộ lớp học** gồm nhiều học viên (nhiều hợp đồng). Gia sư **không được phép tự ý chấm dứt riêng lẻ từng hợp đồng** của từng học viên vì lý do cá nhân không thể tiếp tục giảng dạy. Nếu gia sư gặp sự cố bất khả kháng (sức khỏe, tai nạn, bận đột xuất...), gia sư phải vào mục **"Lớp học của tôi"** để gửi **"Đề xuất dừng giảng dạy & Hủy lớp học"** cho toàn bộ lớp (`wholeClass = true`).
@@ -165,11 +167,19 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
   - Hệ thống kiểm tra đối chiếu ví kết nối MetaMask: nếu địa chỉ ví không khớp với ví đã ký hợp đồng và nạp cọc ban đầu, yêu cầu sẽ bị từ chối ngay lập tức để chống giả mạo danh tính và gian lận tài chính.
   - Quá trình ký EIP-712 hoàn toàn gasless (0 Sepolia ETH).
 - **Quy trình thẩm định và phân xử của Ban Quản trị (Staff vs Admin):**
-  - Hệ thống cảnh cáo khi ghi nhận **3 buổi liên tiếp** có kết quả `TUTOR_ABSENT` của cùng lớp. Việc đếm dựa trên session riêng biệt, không nhân số lần theo số học viên/agreement trong lớp. Ngay khi lập hồ sơ `AUTO_TUTOR_ABSENCE`, Learning giữ các buổi tương lai của cả lớp để buổi tiếp theo không diễn ra trong lúc chờ xử lý.
-  - Hạn Gia sư giải trình tối đa 24 giờ. Nếu buổi tiếp theo còn ít nhất 6 giờ, hạn được rút về trước giờ bắt đầu buổi đó 2 giờ; nếu buổi tiếp theo còn dưới 6 giờ thì buổi đó tiếp tục bị giữ và Gia sư vẫn có đủ cửa sổ 24 giờ. Minh chứng hoặc lời giải thích của Gia sư được ghi nhận vào `tutorRespondedAt`.
-  - Với cảnh cáo tự động, Staff chỉ kiến nghị chấm dứt sau khi Gia sư đã phản hồi hoặc hết hạn. Chỉ Admin được cho lớp tiếp tục (từ chối hủy và release hold). Admin được dùng quyết định khẩn cấp trước hạn khi có căn cứ nghiêm trọng; thao tác và lý do phải được lưu audit.
+  - Hệ thống cảnh cáo khi Learning đã chốt **3 buổi liên tiếp** có kết quả gia sư vắng ở cấp lớp. Contract lưu tín hiệu theo `(classroomId, sessionSequence)` một cách idempotent; không suy ra việc gia sư vắng cả lớp từ settlement của riêng một Student và không nhân số lần theo số học viên. Settlement theo agreement vẫn quyết định dòng tiền từng học viên. Ngay khi lập hồ sơ `AUTO_TUTOR_ABSENCE`, Learning giữ các buổi sau sequence vi phạm cuối để buổi kế tiếp không diễn ra trong lúc chờ xử lý.
+  - Quy tắc áp dụng cho chuỗi vi phạm kết thúc ở Buổi `N`; buổi thử thách là buổi kế tiếp `N+1` theo snapshot Learning, không hard-code Buổi 4.
+  - **Thời hạn nộp minh chứng & Cửa sổ thẩm định:** với `T0` là thời điểm Contract nhận xác nhận Learning đã áp dụng HOLD và `S` là giờ bắt đầu Buổi `N+1`, hạn Gia sư giải trình là $\min(T0 + 24\text{h}, S - 12\text{h})$; hạn Admin cho tiếp tục là trước `S`. Thời điểm phát hiện được lưu riêng để audit; cửa sổ giải trình không âm thầm chạy khi HOLD liên dịch vụ còn lỗi. Minh chứng được lưu trên S3 kèm SHA-256. Nếu tại `T0` đã không còn đủ 12 giờ trước `S`, governance v1 không được release buổi đó muộn hoặc tự dời lịch; hệ thống chuyển sang nhánh hủy vì không còn cửa sổ thẩm định an toàn.
+  - **Quyền quyết định của Staff/Admin & Hủy tự động:**
+    - Nếu Gia sư nộp minh chứng không hợp lý hoặc gian lận: Staff kiến nghị và Admin có quyền bấm **Duyệt hủy ngay lập tức** mà không cần chờ đến Buổi `N+1`, khởi động pipeline quyết toán và hoàn cọc các buổi chưa dùng. Về API, quyết định trước hạn tái sử dụng `FORCE_APPROVE` hiện có với lý do audit bắt buộc; `APPROVE` là nhánh thông thường khi hồ sơ đã đủ điều kiện.
+    - Nếu Gia sư có minh chứng bất khả kháng hợp lệ: Admin bấm **Cho tiếp tục (`REJECT` hủy)** trước hạn để release lịch và đặt Buổi `N+1` vào diện thử thách. Chỉ coi release thành công khi Learning xác nhận trước giờ buổi đó.
+    - Nếu hết hạn nộp mà Gia sư không phản hồi, hoặc đến giờ Buổi `N+1` mà chưa release thành công: hệ thống tự phê duyệt hủy lớp và khởi động pipeline thanh lý Escrow.
+  - **Quy tắc probation & Không sinh lịch bù trên Blockchain:**
+    - Buổi `N+1` là cơ hội duy nhất. Nếu Gia sư tiếp tục vắng (`TUTOR_ABSENT`), hệ thống quyết định hủy tức thì (`AUTO_TUTOR_ABSENCE_RELAPSE`), không cấp vòng giải trình thứ hai.
+    - `TUTOR_ABSENT` có tỷ lệ `0/0/100`, nhưng chỉ được thông báo “đã hoàn tiền” sau khi settlement và event blockchain xác nhận. Quyết định hủy có thể có hiệu lực ngay trong hệ thống; cancel/refund on-chain vẫn bất đồng bộ và phải chờ mọi open settlement kết thúc.
+    - Hệ thống **không chèn buổi học bù**, không tăng `totalSessions` và không sửa lịch/terms đã ký. Việc phụ đạo ngoài nền tảng không thuộc Escrow hoặc trách nhiệm tài chính của EduConnect.
   - Admin có thể chủ động tạo hồ sơ quản trị cho toàn lớp hoặc một agreement/học viên. Hold vận hành có hiệu lực ngay khi Learning xác nhận; Admin có thể chỉ tạm dừng để xem xét hoặc đồng thời phê duyệt hủy. Admin không ký thay Student/Tutor và hồ sơ quản trị được đánh dấu `ADMIN_DIRECT`.
-  - Khi có yêu cầu chấm dứt hoặc đề xuất hủy lớp, hệ thống đồng bộ hold với Learning (`HOLD_PENDING` nếu cần retry, sau đó `REQUESTED`). Cutoff lấy theo thời gian server lúc hold thành công, không lấy theo thời gian Admin xử lý.
+  - Khi có yêu cầu chấm dứt hoặc đề xuất hủy lớp, hệ thống đồng bộ hold với Learning (`HOLD_PENDING` nếu cần retry, sau đó `REQUESTED`). Với governance v1 do vắng liên tiếp, cutoff là sequence vi phạm cuối đã persist và không được tính lại khi retry; các luồng legacy còn lại dùng snapshot hold hiện hữu, không lấy theo thời gian Admin xử lý.
   - Student hold chỉ chặn các buổi tương lai của hợp đồng đó; lớp và các Student khác tiếp tục bình thường. Tutor hold chặn các buổi tương lai của toàn lớp, đóng băng đăng ký mới và hiển thị `Chờ duyệt hủy lớp`.
   - Hold không gửi giao dịch blockchain và không hoàn tiền. Buổi đã bắt đầu trước cutoff vẫn hoàn tất attendance, settlement và cửa sổ dispute như bình thường.
   - Khiếu nại chỉ giữ quyết toán của buổi học và agreement liên quan; các buổi tương lai vẫn diễn ra bình thường nếu không có yêu cầu chấm dứt/hủy lớp riêng. Với luồng xét duyệt thông thường, khi Staff kiến nghị hoặc Admin duyệt/từ chối yêu cầu chấm dứt, mọi khiếu nại còn mở trên các agreement bị ảnh hưởng phải được phân xử trước. `FORCE_APPROVE` cho phép Admin ra quyết định dừng khẩn cấp khi khiếu nại còn mở; worker vẫn chờ kết quả dispute và settlement của từng buổi được xác nhận trước khi hoàn cọc dư.
@@ -266,7 +276,40 @@ Refinement (2026-10-09): Student follow is intentionally one-way from Student ac
   - Trong Portal Học viên (`StudentCommunityManagement`): Có Tab quản lý danh sách "Gia sư đang theo dõi" với thao tác hủy theo dõi và điều hướng nhanh.
   - Trong Portal Gia sư (`TutorCommunityManagement`): Có KPI thẻ thống kê "Người theo dõi".
 
-## 12. Change Policy
+## 12. Trial Opt-Out Last Student Classroom Auto-Cancellation (2026-10-29)
+
+Quy tắc thanh lý và đồng bộ trạng thái lớp học khi Học viên dừng học sau buổi trải nghiệm (Trial Opt-Out / Escrow Cooling-Off):
+
+- **Đơn quyền quyết định (Authoritative Service)**:
+  - Contract Service truyền ý định qua command `CLOSE` với cờ `cancelClassIfEmpty: true`, `origin: 'TRIAL_OPT_OUT'`, `commandId: <caseId>` sau khi refund on-chain được xác nhận và không còn agreement nào khác trong lớp ở trạng thái tài chính chưa kết thúc (`ACTIVE`, `WAITING_PAYMENT`, `PREPARING_BLOCKCHAIN`,...).
+  - Learning Service giữ quyền quyết định cuối cùng trong cùng transaction với khóa bi quan (`SELECT FOR UPDATE`) trên bảng `class_rooms`.
+- **Quy tắc chuyển đổi trạng thái**:
+  - Khi nhận `CLOSE` với `cancelClassIfEmpty = true`:
+    1. Đổi enrollment của học viên mục tiêu sang `CANCELLED`.
+    2. Đếm số học viên còn hiệu lực (`ACCEPTED` hoặc `ENROLLED`) trong lớp.
+    3. Nếu `activeRemaining > 0`: giữ nguyên lớp học, lịch học tương lai và quyền tham gia của các học viên còn lại.
+    4. Nếu `activeRemaining == 0`:
+       - Chuyển `class_rooms.status = 'CANCELLED'`.
+       - Thiết lập `terminationCutoffSession` bằng mốc cutoff của buổi trải nghiệm.
+       - Chuyển toàn bộ các buổi học sau mốc cutoff (`sequenceNumber > cutoff`) sang `ClassSessionStatus.CANCELLED`.
+       - Xóa điểm danh tương lai của các buổi sau cutoff.
+       - Chuyển toàn bộ yêu cầu đăng ký đang `PENDING` sang `CANCELLED`.
+       - Gia sư không thể mở lại lớp học đã hủy.
+- **Bảo vệ chống tương tranh (Concurrency Guardrail)**:
+  - Thao tác kích hoạt học viên `activateEnrollment()` thực hiện khóa bi quan (`PESSIMISTIC_WRITE`) trên bản ghi `class_rooms` nhằm tuần tự hóa các giao dịch giữa việc đóng lớp rỗng và sự kiện kích hoạt học viên mới, ngăn chặn việc kích hoạt học viên vào lớp đã hủy, đóng hoặc đang trong quá trình chấm dứt.
+- **Bảo toàn tính lũy đẳng qua Command Inbox (Flyway V18 Replay Idempotency)**:
+  - Bảng `learning_termination_command_inbox` lưu trữ kết quả snapshot của từng lệnh, bao gồm cờ `class_cancelled BOOLEAN NOT NULL DEFAULT FALSE`.
+  - Khi Contract Service retry hoặc replay cùng một command (cùng `commandId` và `action`): Learning Service đọc và trả về trực tiếp giá trị snapshot từ inbox thay vì đọc trạng thái động hiện tại của lớp học. Điều này ngăn ngừa trường hợp lệnh của học viên A (lớp không hủy) bị trả nhầm thành `classCancelled=true` khi sau đó học viên B rời lớp khiến lớp bị hủy.
+- **Ràng buộc an toàn tham số (Parameter Safety Guardrails)**:
+  - Cờ `cancelClassIfEmpty` chỉ được phép sử dụng khi thỏa mãn đồng thời: `action = 'CLOSE'`, `origin = 'TRIAL_OPT_OUT'`, `wholeClass = false`, có đầy đủ `commandId`, `requestedCutoffSession` và `effectiveRequestedAt`. Bất kỳ lệnh nào vi phạm đều bị từ chối với `IllegalArgumentException`.
+  - Lệnh `CLOSE` xác thực nghiêm ngặt rằng `requestedCutoffSession` và `effectiveRequestedAt` khớp hoàn toàn với bản ghi `LearningTerminationStop` đã lưu từ bước `HOLD`. Mọi sai lệch đều bị từ chối với `IllegalStateException`.
+  - Snapshot chỉ ưu tiên cutoff cấp lớp (`room.getTerminationCutoffSession()`) khi lệnh là `wholeClass = true`. Các lệnh chấm dứt cá nhân luôn giữ đúng cutoff của bản ghi stop cá nhân của học viên.
+- **Thông báo & Hiển thị**:
+  - Thông báo tới Học viên opt-out: "Yêu cầu dừng sau buổi trải nghiệm đã hoàn tất; khoản hoàn tiền đã được xác nhận."
+  - Thông báo tới Gia sư khi lớp tự hủy: "Lớp đã tự động hủy vì không còn học viên hiệu lực."
+  - Giao diện trạng thái `CANCELLED` sử dụng câu chữ trung tính: "Lớp đã hủy và hoàn tất thanh lý", không quy chụp mặc định cho Admin.
+
+## 13. Change Policy
 
 Business rules có thể thay đổi trong quá trình phát triển. Khi người dùng xác nhận business rule mới:
 

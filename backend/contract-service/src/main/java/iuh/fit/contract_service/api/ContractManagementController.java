@@ -92,6 +92,8 @@ public class ContractManagementController {
     private final iuh.fit.contract_service.service.ContractSourceSnapshotClient sourceSnapshotClient;
     private final iuh.fit.contract_service.repository.AgreementTrialRepository agreementTrialRepository;
     private final iuh.fit.contract_service.config.EscrowTrialProperties escrowTrialProperties;
+    private final iuh.fit.contract_service.service.TutorAttendanceSignalService tutorAttendanceSignalService;
+    private final iuh.fit.contract_service.service.TerminationSignals terminationSignals;
 
     public ContractManagementController(
             ContractAgreementRepository agreementRepository,
@@ -124,7 +126,43 @@ public class ContractManagementController {
                 escrowPaymentRepository, processedEventRepository, terminationItemRepository, acceptanceRepository,
                 learningServiceDispatcher, currentUserContext, accessControl, blockchainGateway,
                 blockchainEventIngestionService, operationalFundingPolicy, terminationService, sourceSnapshotClient,
-                null, null);
+                null, null, null, null);
+    }
+
+    public ContractManagementController(
+            ContractAgreementRepository agreementRepository,
+            SessionSettlementRepository settlementRepository,
+            BlockchainTransactionRepository transactionRepository,
+            DisputeRepository disputeRepository,
+            DisputeEvidenceRepository disputeEvidenceRepository,
+            DisputeWorkflowService disputeWorkflowService,
+            SessionSettlementWorkflowService settlementWorkflowService,
+            AgreementLifecycleWorkflowService lifecycleWorkflowService,
+            iuh.fit.contract_service.service.NotificationDispatcher notificationDispatcher,
+            iuh.fit.contract_service.service.ContractSignatureService signatureService,
+            iuh.fit.contract_service.service.AgreementFundingWorkflowService fundingWorkflowService,
+            iuh.fit.contract_service.service.AgreementRegistrationWorkflowService registrationWorkflowService,
+            iuh.fit.contract_service.repository.EscrowPaymentRepository escrowPaymentRepository,
+            ProcessedEventRepository processedEventRepository,
+            TerminationItemRepository terminationItemRepository,
+            ContractAcceptanceRepository acceptanceRepository,
+            iuh.fit.contract_service.service.LearningServiceDispatcher learningServiceDispatcher,
+            CurrentUserContext currentUserContext,
+            ContractAccessControl accessControl,
+            org.springframework.beans.factory.ObjectProvider<iuh.fit.contract_service.blockchain.EduConnectEscrowReadGateway> blockchainGateway,
+            ObjectProvider<BlockchainEventIngestionService> blockchainEventIngestionService,
+            OperationalFundingPolicy operationalFundingPolicy,
+            iuh.fit.contract_service.service.TerminationService terminationService,
+            iuh.fit.contract_service.service.ContractSourceSnapshotClient sourceSnapshotClient,
+            iuh.fit.contract_service.repository.AgreementTrialRepository agreementTrialRepository,
+            iuh.fit.contract_service.config.EscrowTrialProperties escrowTrialProperties) {
+        this(agreementRepository, settlementRepository, transactionRepository, disputeRepository,
+                disputeEvidenceRepository, disputeWorkflowService, settlementWorkflowService, lifecycleWorkflowService,
+                notificationDispatcher, signatureService, fundingWorkflowService, registrationWorkflowService,
+                escrowPaymentRepository, processedEventRepository, terminationItemRepository, acceptanceRepository,
+                learningServiceDispatcher, currentUserContext, accessControl, blockchainGateway,
+                blockchainEventIngestionService, operationalFundingPolicy, terminationService, sourceSnapshotClient,
+                agreementTrialRepository, escrowTrialProperties, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -154,7 +192,9 @@ public class ContractManagementController {
             iuh.fit.contract_service.service.TerminationService terminationService,
             iuh.fit.contract_service.service.ContractSourceSnapshotClient sourceSnapshotClient,
             iuh.fit.contract_service.repository.AgreementTrialRepository agreementTrialRepository,
-            iuh.fit.contract_service.config.EscrowTrialProperties escrowTrialProperties) {
+            iuh.fit.contract_service.config.EscrowTrialProperties escrowTrialProperties,
+            iuh.fit.contract_service.service.TutorAttendanceSignalService tutorAttendanceSignalService,
+            iuh.fit.contract_service.service.TerminationSignals terminationSignals) {
         this.agreementRepository = agreementRepository;
         this.settlementRepository = settlementRepository;
         this.transactionRepository = transactionRepository;
@@ -181,6 +221,8 @@ public class ContractManagementController {
         this.sourceSnapshotClient = sourceSnapshotClient;
         this.agreementTrialRepository = agreementTrialRepository;
         this.escrowTrialProperties = escrowTrialProperties;
+        this.tutorAttendanceSignalService = tutorAttendanceSignalService;
+        this.terminationSignals = terminationSignals;
     }
 
     public record InitiateAgreementRequest(
@@ -377,9 +419,8 @@ public class ContractManagementController {
         }
 
         ContractTermsSnapshot.TrialPolicyTerms trialTerms = null;
-        String schemaVersion = ContractTermsSnapshotService.SCHEMA_VERSION_V3;
+        String schemaVersion = ContractTermsSnapshotService.SCHEMA_VERSION_V5;
         if (trialPolicyEnabled) {
-            schemaVersion = ContractTermsSnapshotService.SCHEMA_VERSION_V4;
             trialTerms = new ContractTermsSnapshot.TrialPolicyTerms(
                     true,
                     request.trialPolicyVersion().intValue(),
@@ -415,7 +456,8 @@ public class ContractManagementController {
                         pricePerSessionUnits.toString(), totalAmountUnits.toString(), totalSessions),
                 new ContractTermsSnapshot.PlatformTerms(chainId, platformWallet, escrowAddress, tokenAddress),
                 new ContractTermsSnapshot.EscrowPolicyTerms(24, 8500, 1500,
-                        "24h dispute after proposal; BOTH_PRESENT=85/15/0; STUDENT_ABSENT_TUTOR_PRESENT=45/10/45; TUTOR_ABSENT=0/0/100; tutor-fraud dispute only for BOTH_PRESENT"),
+                        "24h dispute after proposal; BOTH_PRESENT=85/15/0; STUDENT_ABSENT_TUTOR_PRESENT=45/10/45; TUTOR_ABSENT=0/0/100; tutor-fraud dispute only for BOTH_PRESENT",
+                        "Student termination requests open only after the signed schedule's first session end; earlier attendance remains uninterrupted"),
                 trialTerms));
         String termsHash = snapshotService.hash(termsJson);
 
@@ -1327,7 +1369,20 @@ public class ContractManagementController {
     }
 
     public record StudentAttendanceOutcome(Long studentId, String outcome) {}
-    public record InternalAutoProposeRequest(List<StudentAttendanceOutcome> attendances) {}
+    public record InternalAutoProposeRequest(
+            List<StudentAttendanceOutcome> attendances,
+            Long learningSessionId,
+            Integer sessionSequence,
+            String tutorAttendanceOutcome,
+            OffsetDateTime finalizedAt,
+            String sourceEventId,
+            Integer nextSessionSequence,
+            OffsetDateTime nextSessionStartAt
+    ) {
+        public InternalAutoProposeRequest(List<StudentAttendanceOutcome> attendances) {
+            this(attendances, null, null, null, null, null, null, null);
+        }
+    }
 
     /**
      * Internal endpoint called by learning-service when a session is finalized/completed.
@@ -1338,6 +1393,23 @@ public class ContractManagementController {
             @PathVariable Long classroomId,
             @PathVariable Long sessionId,
             @RequestBody(required = false) InternalAutoProposeRequest body) {
+
+        if (body != null && body.sourceEventId() != null && tutorAttendanceSignalService != null) {
+            tutorAttendanceSignalService.ingest(
+                    classroomId,
+                    body.learningSessionId(),
+                    body.sessionSequence(),
+                    body.tutorAttendanceOutcome(),
+                    body.finalizedAt(),
+                    body.sourceEventId(),
+                    body.nextSessionSequence(),
+                    body.nextSessionStartAt()
+            );
+            if (terminationSignals != null) {
+                terminationSignals.detectForClassroom(classroomId, body.nextSessionSequence(), body.nextSessionStartAt());
+            }
+        }
+
         List<ContractAgreement> agreements = agreementRepository.findAll().stream()
                 .filter(a -> a.getClassroomId().equals(classroomId) && isSettlementEligible(a))
                 .filter(a -> a.getTerminationCutoffSession() == null || a.getTerminationCutoffSession() < 0
@@ -1799,6 +1871,13 @@ public class ContractManagementController {
 
     private AgreementDetailDto toAgreementDetail(ContractAgreement a) {
         AgreementSummaryDto summary = toAgreementSummary(a);
+        var terminationResult = iuh.fit.contract_service.service.StudentTerminationEligibilityPolicy
+                .evaluate(a, OffsetDateTime.now(java.time.ZoneOffset.UTC));
+        var terminationEligibility = new TerminationEligibilityDto(
+                terminationResult.eligible(),
+                terminationResult.code(),
+                terminationResult.message(),
+                terminationResult.firstSessionEnd() != null ? terminationResult.firstSessionEnd().toString() : null);
         TrialDetailDto trialDto = null;
         if (agreementTrialRepository != null) {
             var trialOpt = agreementTrialRepository.findByAgreementId(a.getId());
@@ -1827,7 +1906,8 @@ public class ContractManagementController {
                 );
             }
         }
-        return new AgreementDetailDto(summary, a.getTermsHash(), a.getContractVersion(), a.getTotalPriceVnd(), trialDto);
+        return new AgreementDetailDto(summary, a.getTermsHash(), a.getContractVersion(), a.getTotalPriceVnd(), trialDto,
+                terminationEligibility);
     }
 
     private SettlementDto toSettlementDto(SessionSettlement s, short decimals) {
@@ -2052,12 +2132,20 @@ public class ContractManagementController {
             Integer nextSessionSequence
     ) {}
 
+    public record TerminationEligibilityDto(
+            boolean eligible,
+            String code,
+            String message,
+            String firstSessionEnd
+    ) {}
+
     public record AgreementDetailDto(
             AgreementSummaryDto summary,
             String termsHash, Integer contractVersion, BigDecimal totalPriceVnd,
-            TrialDetailDto trial) {
+            TrialDetailDto trial,
+            TerminationEligibilityDto terminationEligibility) {
         public AgreementDetailDto(AgreementSummaryDto summary, String termsHash, Integer contractVersion, BigDecimal totalPriceVnd) {
-            this(summary, termsHash, contractVersion, totalPriceVnd, null);
+            this(summary, termsHash, contractVersion, totalPriceVnd, null, null);
         }
     }
 

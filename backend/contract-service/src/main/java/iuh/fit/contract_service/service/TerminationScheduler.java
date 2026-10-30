@@ -20,6 +20,7 @@ public class TerminationScheduler {
         catch (Exception e) { log.warn("Termination signal scan failed: {}", e.getMessage()); }
         synchronize("HOLD_PENDING");
         synchronize("RELEASE_PENDING");
+        expireAbsenceCases();
         for (var c : cases.findTop50ByStatusOrderByUpdatedAtAsc("APPROVED")) {
             for (var item : items.findByCaseIdOrderByAgreementId(c.getId())) {
                 if ("COMPLETED".equals(item.getStatus())) continue;
@@ -28,6 +29,26 @@ public class TerminationScheduler {
             }
             try { processor.finish(c.getId()); }
             catch (Exception e) { processor.caseFailure(c.getId(), e.getMessage()); }
+        }
+    }
+
+    private void expireAbsenceCases() {
+        java.time.OffsetDateTime now = java.time.OffsetDateTime.now(java.time.ZoneOffset.UTC);
+        for (var id : cases.findExpiredResponseCandidateIds(now)) {
+            try { service.processAbsenceExpiry(id, "NO_TUTOR_RESPONSE"); }
+            catch (Exception e) { log.warn("Failed to expire tutor response for case {}: {}", id, e.getMessage()); }
+        }
+        for (var id : cases.findExpiredDecisionCandidateIds(now)) {
+            try { service.processAbsenceExpiry(id, "NO_ADMIN_DECISION"); }
+            catch (Exception e) { log.warn("Failed to expire admin decision for case {}: {}", id, e.getMessage()); }
+        }
+        for (var id : cases.findExpiredReleaseCandidateIds(now)) {
+            try { service.processAbsenceExpiry(id, "RELEASE_TIMEOUT"); }
+            catch (Exception e) { log.warn("Failed to expire release for case {}: {}", id, e.getMessage()); }
+        }
+        for (var id : cases.findExpiredHoldSyncCandidateIds(now)) {
+            try { service.processAbsenceExpiry(id, "HOLD_SYNC_TIMEOUT"); }
+            catch (Exception e) { log.warn("Failed to expire hold sync for case {}: {}", id, e.getMessage()); }
         }
     }
 

@@ -1172,7 +1172,7 @@ export function TutorClassManagement() {
                   <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl text-rose-900 space-y-1">
                     <span className="font-black text-xs flex items-center gap-1.5 text-rose-800">
                       <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                      Lớp đã hủy theo quyết định Admin
+                      Lớp đã hủy và hoàn tất thanh lý
                     </span>
                     <p className="text-[11px] font-semibold text-rose-700">
                       Toàn bộ hợp đồng trong lớp đã hoàn tất quy trình thanh lý. Lớp không thể mở lại bởi Gia sư.

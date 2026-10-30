@@ -42,7 +42,7 @@ import {
 } from 'lucide-react';
 import { EtherscanLink } from '../common/EtherscanLink';
 import { DEFAULT_CHAIN_ID } from '../../web3/web3Config';
-import { contractsApi, DisputeDto } from '../../api/contractsApi';
+import { contractsApi, DisputeDto, EligibleDisputeSession } from '../../api/contractsApi';
 import { fetchUserDirectory, getUserDisplayName, UserSummary } from '../../utils/userDisplay';
 import { Loader2 } from 'lucide-react';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
@@ -75,7 +75,7 @@ interface DisputeManagementPanelProps {
   userEmail?: string;
 }
 
-interface EligibleDisputeSession {
+interface EligibleDisputeSessionOption {
   key: string;
   agreementId: string;
   classroomId: number;
@@ -275,8 +275,11 @@ export function DisputeManagementPanel({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [agreementIdInput, setAgreementIdInput] = useState<string>('');
   const [sessionIdInput, setSessionIdInput] = useState<string>('1');
-  const [eligibleSessions, setEligibleSessions] = useState<EligibleDisputeSession[]>([]);
+  const [eligibleSessions, setEligibleSessions] = useState<EligibleDisputeSessionOption[]>([]);
   const [eligibleSessionsLoading, setEligibleSessionsLoading] = useState(false);
+  const [eligibleSessionPage, setEligibleSessionPage] = useState(0);
+  const [eligibleSessionPages, setEligibleSessionPages] = useState(1);
+  const [eligibleSessionTotal, setEligibleSessionTotal] = useState(0);
   const [reasonInput, setReasonInput] = useState<string>('');
   const [evidenceTextInput, setEvidenceTextInput] = useState<string>('');
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
@@ -302,32 +305,20 @@ export function DisputeManagementPanel({
     if (activeRole !== 'student') return;
     if (!isSilent) setEligibleSessionsLoading(true);
     try {
-      const agreementPage = await contractsApi.listAgreements({ page: 0, size: 50 });
-      const agreements = agreementPage?.content ?? [];
-      const settlementLists = await Promise.all(
-        agreements.map(async (agreement) => ({
-          agreement,
-          settlements: await contractsApi.getSettlements(agreement.id).catch(() => []),
-        }))
-      );
-      const currentTime = Date.now();
-      const options = settlementLists.flatMap(({ agreement, settlements }) =>
-        settlements
-          .filter((settlement) => settlement.status === 'PROPOSED'
-            && settlement.outcome === 'BOTH_PRESENT'
-            && !!settlement.disputeDeadline
-            && new Date(settlement.disputeDeadline).getTime() >= currentTime)
-          .map((settlement) => ({
-            key: `${agreement.id}:${settlement.sessionId}`,
-            agreementId: agreement.id,
-            classroomId: agreement.classroomId,
-            className: agreement.className || `Lớp học #${agreement.classroomId}`,
-            studentName: agreement.studentName,
-            sessionId: settlement.sessionId,
-            disputeDeadline: settlement.disputeDeadline as string,
-          }))
-      );
+      const response = await contractsApi.listEligibleDisputeSessions({
+        page: requestedSessionId != null ? 0 : eligibleSessionPage,
+        size: 10,
+        sessionId: requestedSessionId ?? undefined,
+        classroomId: requestedClassroomId ?? undefined,
+      });
+      const options = (response.content || []).map((session: EligibleDisputeSession) => ({
+        ...session,
+        key: `${session.agreementId}:${session.sessionId}`,
+        className: session.className || `Lớp học #${session.classroomId}`,
+      }));
       setEligibleSessions(options);
+      setEligibleSessionTotal(response.totalElements || 0);
+      setEligibleSessionPages(Math.max(1, response.totalPages || 1));
       const requestedOption = requestedSessionId == null
         ? null
         : options.find((option) => option.sessionId === requestedSessionId
@@ -354,7 +345,7 @@ export function DisputeManagementPanel({
     } finally {
       if (!isSilent) setEligibleSessionsLoading(false);
     }
-  }, [activeRole, requestedSessionId, requestedClassroomId]);
+  }, [activeRole, eligibleSessionPage, requestedSessionId, requestedClassroomId]);
 
   useEffect(() => {
     fetchEligibleDisputeSessions();
@@ -1259,7 +1250,7 @@ export function DisputeManagementPanel({
               </div>
               <div>
                 <h4 className="font-display font-black text-slate-900 text-sm sm:text-base">
-                  Buổi học đang trong thời hạn khiếu nại 24h ({eligibleSessions.length} buổi)
+                  Buổi học đang trong thời hạn khiếu nại 24h ({eligibleSessionTotal} buổi)
                 </h4>
                 <p className="text-xs text-slate-600">
                   Bạn có thể xem xét và gửi khiếu nại bảo vệ quyền lợi học phí trước khi hệ thống hoàn tất giải ngân on-chain.
@@ -1302,6 +1293,15 @@ export function DisputeManagementPanel({
               </div>
             ))}
           </div>
+          {eligibleSessionPages > 1 && (
+            <Pager
+              page={eligibleSessionPage}
+              pages={eligibleSessionPages}
+              total={eligibleSessionTotal}
+              size={10}
+              onChange={setEligibleSessionPage}
+            />
+          )}
         </div>
       )}
 

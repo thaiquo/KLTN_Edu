@@ -22,4 +22,24 @@ public interface TerminationCaseRepository extends JpaRepository<TerminationCase
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from TerminationCase c where c.id = :id")
     Optional<TerminationCase> lockById(@org.springframework.data.repository.query.Param("id") UUID id);
+
+    @Query("SELECT c.id FROM TerminationCase c WHERE c.absenceGovernanceVersion = 1 " +
+           "AND c.status = 'REQUESTED' AND c.tutorRespondedAt IS NULL " +
+           "AND c.responseDeadline <= :now ORDER BY c.responseDeadline ASC")
+    List<UUID> findExpiredResponseCandidateIds(@org.springframework.data.repository.query.Param("now") java.time.OffsetDateTime now);
+
+    @Query("SELECT c.id FROM TerminationCase c WHERE c.absenceGovernanceVersion = 1 " +
+           "AND c.status IN ('REQUESTED', 'RECOMMENDED') " +
+           "AND c.decisionDeadline <= :now ORDER BY c.decisionDeadline ASC")
+    List<UUID> findExpiredDecisionCandidateIds(@org.springframework.data.repository.query.Param("now") java.time.OffsetDateTime now);
+
+    @Query("SELECT c.id FROM TerminationCase c WHERE c.absenceGovernanceVersion = 1 " +
+           "AND c.status = 'RELEASE_PENDING' " +
+           "AND c.decisionDeadline <= :now ORDER BY c.decisionDeadline ASC")
+    List<UUID> findExpiredReleaseCandidateIds(@org.springframework.data.repository.query.Param("now") java.time.OffsetDateTime now);
+
+    @Query("SELECT c.id FROM TerminationCase c WHERE c.absenceGovernanceVersion = 1 " +
+           "AND c.status = 'HOLD_PENDING' " +
+           "AND c.decisionDeadline <= :now ORDER BY c.decisionDeadline ASC")
+    List<UUID> findExpiredHoldSyncCandidateIds(@org.springframework.data.repository.query.Param("now") java.time.OffsetDateTime now);
 }

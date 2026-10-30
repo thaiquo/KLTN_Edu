@@ -401,6 +401,16 @@ public class EnrollmentRequestService {
             throw new BadRequestException("Enrollment request cannot be activated from status: " + req.getStatus());
         }
 
+        final Long targetClassId = req.getClassRoom().getId();
+        ClassRoom classRoom = classRoomRepository.findByIdForUpdate(targetClassId)
+                .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + targetClassId));
+        if (classRoom.getStatus() == ClassRoomStatus.CANCELLED || classRoom.getStatus() == ClassRoomStatus.CLOSED) {
+            throw new BadRequestException("Classroom is already cancelled or closed");
+        }
+        if (classRoom.getTerminationCutoffSession() != null) {
+            throw new BadRequestException("Classroom is terminating");
+        }
+
         req.setStatus(EnrollmentRequestStatus.ENROLLED);
         if (agreementId != null && !agreementId.isBlank()) {
             req.setAgreementId(agreementId.trim());

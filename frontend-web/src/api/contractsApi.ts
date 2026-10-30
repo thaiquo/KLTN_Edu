@@ -66,6 +66,23 @@ export interface AgreementDetail {
   contractVersion: number;
   totalPriceVnd: number;
   trial?: TrialDetail | null;
+  terminationEligibility?: TerminationEligibility | null;
+}
+
+export interface EligibleDisputeSession {
+  agreementId: string;
+  classroomId: number;
+  className: string;
+  studentName?: string;
+  sessionId: number;
+  disputeDeadline: string;
+}
+
+export interface TerminationEligibility {
+  eligible: boolean;
+  code: string | null;
+  message: string;
+  firstSessionEnd: string | null;
 }
 
 export interface ContractDocumentParty {
@@ -125,6 +142,7 @@ export interface ContractDocumentView {
     tutorPayoutBps: number | null;
     platformFeeBps: number | null;
     settlementRule: string | null;
+    studentTerminationRule: string | null;
   };
   termsHash: string;
   termsJson: string;
@@ -381,6 +399,20 @@ export const contractsApi = {
 
   getSettlements(agreementId: string): Promise<SettlementDto[]> {
     return apiRequest(`/api/contracts/agreements/${agreementId}/settlements`);
+  },
+
+  listEligibleDisputeSessions(params?: {
+    page?: number;
+    size?: number;
+    sessionId?: number;
+    classroomId?: number;
+  }): Promise<PagedResponse<EligibleDisputeSession>> {
+    const query = new URLSearchParams();
+    if (params?.page !== undefined) query.set("page", String(params.page));
+    if (params?.size !== undefined) query.set("size", String(params.size));
+    if (params?.sessionId !== undefined) query.set("sessionId", String(params.sessionId));
+    if (params?.classroomId !== undefined) query.set("classroomId", String(params.classroomId));
+    return apiRequest(`/api/contracts/disputes/eligible-sessions?${query}`);
   },
 
   proposeSettlement(

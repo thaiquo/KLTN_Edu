@@ -28,5 +28,15 @@ public class TerminationCase {
     private String signerWallet;
     @Column(columnDefinition = "TEXT") private String signature;
     private Long requestedAtTimestamp;
+    private Short absenceGovernanceVersion;
+    private Integer triggerSessionSequence;
+    private Integer nextSessionSequence;
+    private OffsetDateTime nextSessionStartAt;
+    private OffsetDateTime holdEffectiveAt;
+    private UUID holdCommandId;
+    private UUID releaseCommandId;
+    private OffsetDateTime decisionDeadline;
+    private OffsetDateTime autoDecisionAt;
+    private String autoDecisionReason;
     @Version private Long version;
 }

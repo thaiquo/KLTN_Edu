@@ -700,7 +700,7 @@ function ClassSummaryCard({
       return {
         label: activeRefundCase && !activeRefundCase.request.wholeClass
           ? 'Hợp đồng của bạn đã chấm dứt (Xem lịch sử)'
-          : classroomDetails?.status === 'CLOSED' ? 'Lớp đã kết thúc (Xem lịch sử)' : 'Lớp đã hủy theo quyết định Admin (Xem lịch sử)',
+          : classroomDetails?.status === 'CLOSED' ? 'Lớp đã kết thúc (Xem lịch sử)' : 'Lớp đã hủy và hoàn tất thanh lý (Xem lịch sử)',
         className: 'bg-rose-50 text-rose-800 border-rose-200'
       };
     }

@@ -14,7 +14,8 @@ public class ContractTermsSnapshotService {
     public static final String SCHEMA_VERSION_V2 = "contract-terms-v2";
     public static final String SCHEMA_VERSION_V3 = "contract-terms-v3";
     public static final String SCHEMA_VERSION_V4 = "contract-terms-v4";
-    public static final String SCHEMA_VERSION = SCHEMA_VERSION_V3;
+    public static final String SCHEMA_VERSION_V5 = "contract-terms-v5";
+    public static final String SCHEMA_VERSION = SCHEMA_VERSION_V5;
     public static final String PROTECTED_MEETING_LINK = "Chỉ cung cấp cho học viên sau khi điểm danh trong giờ học";
 
     private final ObjectMapper objectMapper = new ObjectMapper()

@@ -20,6 +20,7 @@ class LearningTerminationServiceTest {
     @Mock LearningTerminationStopRepository stops;
     @Mock SessionAttendanceRepository attendances;
     @Mock RollingSessionService rollingSessions;
+    @Mock LearningTerminationCommandInboxRepository inboxRepository;
     @InjectMocks LearningTerminationService service;
     ClassRoom room;
     EnrollmentRequest enrollment;
@@ -264,5 +265,344 @@ class LearningTerminationServiceTest {
                 1, OffsetDateTime.now(ZoneOffset.UTC), UUID.randomUUID())))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("cutoff session 0");
+    }
+
+    @Test
+    void autoTutorAbsenceWholeClassHoldSetsCutoffAndDeletesFutureAttendanceForAllStudents() {
+        room.setTotalSessions(10);
+        var s1 = session(1, LocalDateTime.now().minusDays(2));
+        var s2 = session(2, LocalDateTime.now().minusDays(1));
+        var s3 = session(3, LocalDateTime.now().minusHours(1));
+        var s4 = session(4, LocalDateTime.now().plusDays(1));
+        prepare(List.of(s1, s2, s3, s4));
+
+        UUID cmdId = UUID.randomUUID();
+        OffsetDateTime effectiveAt = OffsetDateTime.now(ZoneOffset.UTC);
+
+        var snapshot = service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, true, "HOLD", "AUTO_TUTOR_ABSENCE",
+                3, effectiveAt, cmdId));
+
+        assertThat(snapshot.cutoffSession()).isEqualTo(3);
+        assertThat(snapshot.requiredSessions()).containsExactly(1L, 2L, 3L);
+        assertThat(room.getTerminationCutoffSession()).isEqualTo(3);
+
+        verify(attendances).deleteBySession_Id(s4.getId());
+        verify(inboxRepository).saveAndFlush(any());
+    }
+
+    @Test
+    void autoTutorAbsenceReplayReturnsInboxSnapshotWithoutReExecuting() {
+        room.setTotalSessions(10);
+        var s1 = session(1, LocalDateTime.now().minusDays(2));
+        var s2 = session(2, LocalDateTime.now().minusDays(1));
+        prepare(List.of(s1, s2));
+
+        UUID cmdId = UUID.randomUUID();
+        OffsetDateTime effectiveAt = OffsetDateTime.now(ZoneOffset.UTC);
+
+        // Pre-populate inbox with matching hash
+        var cmd = new LearningTerminationService.Command(
+                1L, 2L, agreement, true, "HOLD", "AUTO_TUTOR_ABSENCE",
+                1, effectiveAt, cmdId);
+
+        // Compute expected hash by calling once or stubbing inbox
+        var existingInbox = new LearningTerminationCommandInbox();
+        existingInbox.setCommandId(cmdId);
+        existingInbox.setAction("HOLD");
+        existingInbox.setCutoffSession(1);
+        // Let's compute actual hash
+        String raw = String.format("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s",
+                cmdId, "HOLD", 1L, agreement, true, "AUTO_TUTOR_ABSENCE",
+                1, effectiveAt.toInstant().toEpochMilli(), null, "");
+        try {
+            var md = java.security.MessageDigest.getInstance("SHA-256");
+            existingInbox.setPayloadHash(java.util.HexFormat.of().formatHex(md.digest(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8))));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+
+        when(inboxRepository.findByCommandIdAndAction(cmdId, "HOLD")).thenReturn(Optional.of(existingInbox));
+
+        var snapshot = service.apply(cmd);
+        assertThat(snapshot.cutoffSession()).isEqualTo(1);
+        verify(stops, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void commandInboxReplayRejectsPayloadMismatch() {
+        room.setTotalSessions(10);
+        prepare(List.of(session(1, LocalDateTime.now())));
+
+        UUID cmdId = UUID.randomUUID();
+        var existingInbox = new LearningTerminationCommandInbox();
+        existingInbox.setCommandId(cmdId);
+        existingInbox.setAction("HOLD");
+        existingInbox.setPayloadHash("different-hash");
+
+        when(inboxRepository.findByCommandIdAndAction(cmdId, "HOLD")).thenReturn(Optional.of(existingInbox));
+
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, true, "HOLD", "AUTO_TUTOR_ABSENCE",
+                1, OffsetDateTime.now(ZoneOffset.UTC), cmdId)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("payload mismatch");
+    }
+
+    @Test
+    void releaseExpiredAfterReleaseNotAfterThrowsException() {
+        room.setTotalSessions(10);
+        prepare(List.of(session(1, LocalDateTime.now())));
+
+        OffsetDateTime expiredDeadline = OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(5);
+
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, true, "RELEASE", "AUTO_TUTOR_ABSENCE", 1,
+                OffsetDateTime.now(ZoneOffset.UTC), UUID.randomUUID(), UUID.randomUUID(), expiredDeadline)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("RELEASE command received after releaseNotAfter deadline");
+    }
+
+    @Test
+    void tutorAbsenceReleaseRequiresCompleteReleaseFence() {
+        room.setTotalSessions(10);
+        prepare(List.of(session(1, LocalDateTime.now())));
+
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, true, "RELEASE", "AUTO_TUTOR_ABSENCE", 1,
+                OffsetDateTime.now(ZoneOffset.UTC), UUID.randomUUID(), UUID.randomUUID(), null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("RELEASE requires cutoff, effective time, expected hold command and release deadline");
+
+        verify(stops, never()).delete(any());
+        verify(inboxRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void releaseMismatchingExpectedHoldCommandIdThrowsException() {
+        room.setTotalSessions(10);
+        prepare(List.of(session(1, LocalDateTime.now())));
+
+        var stop = new LearningTerminationStop();
+        stop.setAgreementId(agreement);
+        stop.setCommandId(UUID.randomUUID());
+        when(stops.findById(agreement)).thenReturn(Optional.of(stop));
+
+        UUID differentExpectedCmd = UUID.randomUUID();
+        OffsetDateTime futureDeadline = OffsetDateTime.now(ZoneOffset.UTC).plusHours(2);
+
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, true, "RELEASE", "AUTO_TUTOR_ABSENCE", 1,
+                OffsetDateTime.now(ZoneOffset.UTC),
+                UUID.randomUUID(), differentExpectedCmd, futureDeadline)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("expectedHoldCommandId mismatch");
+    }
+
+    @Test
+    void trialOptOutCloseCancelsClassroomWhenLastStudent() {
+        var first = session(1, LocalDateTime.now().minusDays(1));
+        first.setStatus(ClassSessionStatus.COMPLETED);
+        var second = session(2, LocalDateTime.now().plusDays(1));
+        prepare(List.of(first, second));
+
+        UUID cmdId = UUID.randomUUID();
+        OffsetDateTime effectiveAt = OffsetDateTime.now(ZoneOffset.UTC);
+        var stop = new LearningTerminationStop();
+        stop.setAgreementId(agreement);
+        stop.setClassroomId(1L);
+        stop.setStudentId(2L);
+        stop.setCutoffSession(1);
+        stop.setOrigin("TRIAL_OPT_OUT");
+        stop.setCommandId(cmdId);
+        stop.setEffectiveRequestedAt(effectiveAt);
+        when(stops.findById(agreement)).thenReturn(Optional.of(stop));
+
+        var pendingReq = new EnrollmentRequest();
+        pendingReq.setId(99L);
+        pendingReq.setStatus(EnrollmentRequestStatus.PENDING);
+        when(enrollments.findByClassRoomIdAndStatus(1L, EnrollmentRequestStatus.PENDING))
+                .thenReturn(List.of(pendingReq));
+
+        when(enrollments.countByClassRoomIdAndStatusIn(1L,
+                List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED)))
+                .thenReturn(0L);
+
+        var snapshot = service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "CLOSE", "TRIAL_OPT_OUT", 1, effectiveAt, cmdId, null, null, true));
+
+        assertThat(enrollment.getStatus()).isEqualTo(EnrollmentRequestStatus.CANCELLED);
+        assertThat(room.getStatus()).isEqualTo(ClassRoomStatus.CANCELLED);
+        assertThat(room.getTerminationCutoffSession()).isEqualTo(1);
+        assertThat(first.getStatus()).isEqualTo(ClassSessionStatus.COMPLETED);
+        assertThat(second.getStatus()).isEqualTo(ClassSessionStatus.CANCELLED);
+        assertThat(pendingReq.getStatus()).isEqualTo(EnrollmentRequestStatus.CANCELLED);
+        assertThat(stop.isClosed()).isTrue();
+        assertThat(snapshot.classCancelled()).isTrue();
+        verify(attendances).deleteBySession_Id(second.getId());
+    }
+
+    @Test
+    void trialOptOutCloseDoesNotCancelClassWhenOtherStudentsEnrolled() {
+        var first = session(1, LocalDateTime.now().minusDays(1));
+        var second = session(2, LocalDateTime.now().plusDays(1));
+        prepare(List.of(first, second));
+
+        UUID cmdId = UUID.randomUUID();
+        OffsetDateTime effectiveAt = OffsetDateTime.now(ZoneOffset.UTC);
+        var stop = new LearningTerminationStop();
+        stop.setAgreementId(agreement);
+        stop.setClassroomId(1L);
+        stop.setStudentId(2L);
+        stop.setCutoffSession(1);
+        stop.setOrigin("TRIAL_OPT_OUT");
+        stop.setCommandId(cmdId);
+        stop.setEffectiveRequestedAt(effectiveAt);
+        when(stops.findById(agreement)).thenReturn(Optional.of(stop));
+
+        when(enrollments.countByClassRoomIdAndStatusIn(1L,
+                List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED)))
+                .thenReturn(1L);
+
+        var snapshot = service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "CLOSE", "TRIAL_OPT_OUT", 1, effectiveAt, cmdId, null, null, true));
+
+        assertThat(enrollment.getStatus()).isEqualTo(EnrollmentRequestStatus.CANCELLED);
+        assertThat(room.getStatus()).isEqualTo(ClassRoomStatus.LOCKED);
+        assertThat(room.getTerminationCutoffSession()).isNull();
+        assertThat(second.getStatus()).isEqualTo(ClassSessionStatus.SCHEDULED);
+        assertThat(stop.isClosed()).isTrue();
+        assertThat(snapshot.classCancelled()).isFalse();
+        verify(attendances, never()).deleteBySession_Id(any());
+        verify(attendances).deleteBySession_IdAndStudentId(second.getId(), 2L);
+    }
+
+    @Test
+    void trialOptOutCloseDoesNotCancelClassWhenOtherStudentAccepted() {
+        var first = session(1, LocalDateTime.now().minusDays(1));
+        var second = session(2, LocalDateTime.now().plusDays(1));
+        prepare(List.of(first, second));
+
+        UUID cmdId = UUID.randomUUID();
+        OffsetDateTime effectiveAt = OffsetDateTime.now(ZoneOffset.UTC);
+        var stop = new LearningTerminationStop();
+        stop.setAgreementId(agreement);
+        stop.setClassroomId(1L);
+        stop.setStudentId(2L);
+        stop.setCutoffSession(1);
+        stop.setOrigin("TRIAL_OPT_OUT");
+        stop.setCommandId(cmdId);
+        stop.setEffectiveRequestedAt(effectiveAt);
+        when(stops.findById(agreement)).thenReturn(Optional.of(stop));
+
+        when(enrollments.countByClassRoomIdAndStatusIn(1L,
+                List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED)))
+                .thenReturn(1L); // e.g. 1 ACCEPTED student waiting for deposit
+
+        var snapshot = service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "CLOSE", "TRIAL_OPT_OUT", 1, effectiveAt, cmdId, null, null, true));
+
+        assertThat(enrollment.getStatus()).isEqualTo(EnrollmentRequestStatus.CANCELLED);
+        assertThat(room.getStatus()).isEqualTo(ClassRoomStatus.LOCKED);
+        assertThat(snapshot.classCancelled()).isFalse();
+    }
+
+    @Test
+    void trialOptOutCloseReplayReturnsSnapshotFromInbox() throws Exception {
+        var first = session(1, LocalDateTime.now().minusDays(1));
+        prepare(List.of(first));
+
+        UUID cmdId = UUID.randomUUID();
+        OffsetDateTime effectiveAt = OffsetDateTime.of(2026, 10, 29, 10, 0, 0, 0, ZoneOffset.UTC);
+        room.setStatus(ClassRoomStatus.CANCELLED);
+
+        var cmd = new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "CLOSE", "TRIAL_OPT_OUT", 1, effectiveAt, cmdId, null, null, true);
+
+        // compute hash
+        String raw = String.format("%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|true",
+                cmdId, "CLOSE", 1L, agreement, false, "TRIAL_OPT_OUT", 1, effectiveAt.toInstant().toEpochMilli(), "null", "");
+        var md = java.security.MessageDigest.getInstance("SHA-256");
+        String hash = java.util.HexFormat.of().formatHex(md.digest(raw.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        var inbox = new LearningTerminationCommandInbox();
+        inbox.setCommandId(cmdId);
+        inbox.setAction("CLOSE");
+        inbox.setPayloadHash(hash);
+        inbox.setCutoffSession(1);
+        inbox.setRequiredSessionSequencesCsv("1");
+        inbox.setStatus("COMPLETED");
+        inbox.setClassCancelled(true);
+
+        when(inboxRepository.findByCommandIdAndAction(cmdId, "CLOSE")).thenReturn(Optional.of(inbox));
+
+        var snapshot = service.apply(cmd);
+        assertThat(snapshot.cutoffSession()).isEqualTo(1);
+        assertThat(snapshot.classCancelled()).isTrue();
+        verify(stops, never()).findById(any());
+    }
+
+    @Test
+    void cancelClassIfEmptyRejectedWhenNotTrialOptOutClose() {
+        var first = session(1, LocalDateTime.now().minusDays(1));
+        prepare(List.of(first));
+        UUID cmdId = UUID.randomUUID();
+        OffsetDateTime effectiveAt = OffsetDateTime.now(ZoneOffset.UTC);
+
+        // 1. Rejected on HOLD
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "HOLD", "TRIAL_OPT_OUT", 1, effectiveAt, cmdId, null, null, true)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cancelClassIfEmpty is only permitted on individual TRIAL_OPT_OUT CLOSE commands");
+
+        // 2. Rejected on wholeClass
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, true, "CLOSE", "TRIAL_OPT_OUT", 1, effectiveAt, cmdId, null, null, true)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cancelClassIfEmpty is only permitted on individual TRIAL_OPT_OUT CLOSE commands");
+
+        // 3. Rejected on other origin
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "CLOSE", "SYSTEM_LATE_FUNDING", 0, effectiveAt, cmdId, null, null, true)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("cancelClassIfEmpty is only permitted on individual TRIAL_OPT_OUT CLOSE commands");
+    }
+
+    @Test
+    void trialOptOutCloseRejectsMismatchedCutoffOrEffectiveTime() {
+        var first = session(1, LocalDateTime.now().minusDays(1));
+        prepare(List.of(first));
+        UUID cmdId = UUID.randomUUID();
+        OffsetDateTime effectiveAt = OffsetDateTime.of(2026, 10, 29, 10, 0, 0, 0, ZoneOffset.UTC);
+
+        var stop = new LearningTerminationStop();
+        stop.setAgreementId(agreement);
+        stop.setClassroomId(1L);
+        stop.setStudentId(2L);
+        stop.setCutoffSession(1);
+        stop.setOrigin("TRIAL_OPT_OUT");
+        stop.setCommandId(cmdId);
+        stop.setEffectiveRequestedAt(effectiveAt);
+        when(stops.findById(agreement)).thenReturn(Optional.of(stop));
+
+        // Cutoff mismatch
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "CLOSE", "TRIAL_OPT_OUT", 2, effectiveAt, cmdId, null, null, true)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Trial opt-out cutoff does not match the persisted stop");
+
+        // Effective time mismatch
+        OffsetDateTime differentEffectiveAt = effectiveAt.plusHours(1);
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "CLOSE", "TRIAL_OPT_OUT", 1, differentEffectiveAt, cmdId, null, null, true)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Trial opt-out effectiveRequestedAt does not match the persisted stop");
+
+        // CommandId mismatch
+        UUID differentCmdId = UUID.randomUUID();
+        assertThatThrownBy(() -> service.apply(new LearningTerminationService.Command(
+                1L, 2L, agreement, false, "CLOSE", "TRIAL_OPT_OUT", 1, effectiveAt, differentCmdId, null, null, true)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Trial opt-out replay does not match the persisted command");
     }
 }

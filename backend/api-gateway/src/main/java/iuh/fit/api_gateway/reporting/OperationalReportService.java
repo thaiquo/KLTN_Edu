@@ -204,7 +204,7 @@ public class OperationalReportService {
     }
 
     private Activity tutor(JsonNode row) {
-        return activity("tutor-" + text(row, "id"), text(row, "reviewedAt"), text(row, "reviewedByEmail"),
+        return activity("tutor-" + first(row, "applicationId", "id"), text(row, "reviewedAt"), text(row, "reviewedByEmail"),
                 "TUTOR_PROFILES", "Duyệt hồ sơ & CCCD",
                 first(row, "applicantFullName", "fullName", "email"), text(row, "status"),
                 first(row, "rejectionReason", "reviewNote"));

@@ -40,7 +40,7 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
-        "contract.document.template-version=EDUCONNECT_HOP_DONG_TEMPLATE_V1_1_20260923",
+        "contract.document.template-version=EDUCONNECT_HOP_DONG_TEMPLATE_V1_2_20261030",
         "contract.document.verification-base-url=http://localhost:5173/contracts/verify",
         "contract.document.platform-contact-address=EduConnect",
         "contract.document.platform-operator-name=EduConnect",

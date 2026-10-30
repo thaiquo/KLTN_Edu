@@ -149,11 +149,12 @@ public class ContractDocumentQueryService {
 
     private ContractDocumentViewDto.EscrowPolicyDto toEscrowPolicy(ContractTermsSnapshot snapshot) {
         if (snapshot == null || snapshot.escrowPolicy() == null) {
-            return new ContractDocumentViewDto.EscrowPolicyDto(null, null, null, null);
+            return new ContractDocumentViewDto.EscrowPolicyDto(null, null, null, null, null);
         }
         ContractTermsSnapshot.EscrowPolicyTerms policy = snapshot.escrowPolicy();
         return new ContractDocumentViewDto.EscrowPolicyDto(
-                policy.paymentWindowHours(), policy.tutorPayoutBps(), policy.platformFeeBps(), policy.settlementRule());
+                policy.paymentWindowHours(), policy.tutorPayoutBps(), policy.platformFeeBps(), policy.settlementRule(),
+                policy.studentTerminationRule());
     }
 
     private Optional<ContractAcceptance> findAcceptance(

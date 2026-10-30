@@ -136,7 +136,7 @@ class OperationalReportServiceTest {
             StringBuilder content = new StringBuilder("[");
             for (int index = from; index < Math.min(from + size, 300); index++) {
                 if (index > from) content.append(',');
-                content.append("{\"id\":").append(index)
+                content.append("{\"applicationId\":").append(index)
                         .append(",\"reviewedAt\":\"")
                         .append(Instant.parse("2026-10-29T23:00:00Z").minusSeconds(index))
                         .append("\",\"reviewedByEmail\":\"staff@test.vn\",\"status\":\"APPROVED\"}");
