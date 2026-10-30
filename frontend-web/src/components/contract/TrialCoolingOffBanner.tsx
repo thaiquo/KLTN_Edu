@@ -280,9 +280,12 @@ export function TrialCoolingOffBanner({
   // Status: CONTINUED
   if (trial.trialStatus === 'CONTINUED') {
     return (
-      <div className="p-2.5 bg-purple-500/10 border border-purple-500/20 rounded-xl text-purple-300 text-xs font-medium flex items-center gap-2">
+      <div className="p-3 bg-purple-500/10 border border-purple-500/20 rounded-xl text-purple-300 text-xs font-medium flex items-start gap-2">
         <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
-        <span>Đã hoàn thành giai đoạn trải nghiệm có bảo chứng • Khóa học đang tiếp tục theo hợp đồng đã ký.</span>
+        <span>
+          Đã hết thời hạn dừng học thử tự động • Khóa học đang tiếp tục theo hợp đồng đã ký.
+          Nếu phát sinh sự cố, Học viên vẫn có thể gửi <strong>yêu cầu chấm dứt thông thường</strong> để Staff/Admin xét duyệt; đây không còn là luồng dừng học thử tự động.
+        </span>
       </div>
     );
   }

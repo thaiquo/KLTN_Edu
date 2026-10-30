@@ -3,6 +3,7 @@ package iuh.fit.contract_service.service;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -27,6 +28,7 @@ public record ContractTermsSnapshot(
     public static final String SCHEMA_VERSION_V2 = "contract-terms-v2";
     public static final String SCHEMA_VERSION_V3 = "contract-terms-v3";
     public static final String SCHEMA_VERSION_V4 = "contract-terms-v4";
+    public static final String SCHEMA_VERSION_V5 = "contract-terms-v5";
 
     public ContractTermsSnapshot(
             String schemaVersion,
@@ -86,13 +88,20 @@ public record ContractTermsSnapshot(
     @JsonPropertyOrder({"chainId", "platformWallet", "escrowContractAddress", "tokenAddress"})
     public record PlatformTerms(Long chainId, String platformWallet, String escrowContractAddress, String tokenAddress) {}
 
-    @JsonPropertyOrder({"paymentWindowHours", "tutorPayoutBps", "platformFeeBps", "settlementRule"})
+    @JsonPropertyOrder({"paymentWindowHours", "tutorPayoutBps", "platformFeeBps", "settlementRule", "studentTerminationRule"})
     public record EscrowPolicyTerms(
             Integer paymentWindowHours,
             Integer tutorPayoutBps,
             Integer platformFeeBps,
-            String settlementRule
-    ) {}
+            String settlementRule,
+            @JsonInclude(JsonInclude.Include.NON_NULL)
+            String studentTerminationRule
+    ) {
+        public EscrowPolicyTerms(Integer paymentWindowHours, Integer tutorPayoutBps,
+                                 Integer platformFeeBps, String settlementRule) {
+            this(paymentWindowHours, tutorPayoutBps, platformFeeBps, settlementRule, null);
+        }
+    }
 
     @JsonPropertyOrder({
             "enabled", "version", "trialSessionSequence", "nextSessionSequence",

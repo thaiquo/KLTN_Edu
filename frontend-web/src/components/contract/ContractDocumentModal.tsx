@@ -25,6 +25,8 @@ import {
   ContractDocumentArtifact,
   ContractSignatureProof,
   AgreementSummary,
+  TrialDetail,
+  TerminationEligibility,
   contractsApi
 } from "../../api/contractsApi";
 import { useAuth } from "../../hooks/useAuth";
@@ -32,6 +34,7 @@ import { useWeb3Wallet } from "../../web3/useWeb3Wallet";
 import { signContractAgreementEip712 } from "../../web3/eip712Signer";
 import { DEFAULT_CHAIN_ID } from "../../web3/web3Config";
 import { TerminationRequestModal, TerminationAgreementTarget } from "./TerminationRequestModal";
+import { TrialOptOutModal } from "./TrialOptOutModal";
 import { terminationsApi, TerminationView } from "../../api/terminationsApi";
 
 interface ContractDocumentModalProps {
@@ -85,20 +88,28 @@ export function ContractDocumentModal({
   const [signing, setSigning] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [showTerminationModal, setShowTerminationModal] = useState(false);
+  const [showTrialOptOutModal, setShowTrialOptOutModal] = useState(false);
   const [activeTermination, setActiveTermination] = useState<TerminationView | null>(null);
+  const [liveAgreement, setLiveAgreement] = useState<AgreementSummary | null>(agreementSummary || null);
+  const [liveTrial, setLiveTrial] = useState<TrialDetail | null>(null);
+  const [terminationEligibility, setTerminationEligibility] = useState<TerminationEligibility | null>(null);
 
   const loadData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const [data, terminationCases] = await Promise.all([
+      const [data, agreementDetail, terminationCases] = await Promise.all([
         contractsApi.getContractDocument(agreementId),
-        terminationsApi.list().catch(() => [] as TerminationView[]),
+        contractsApi.getAgreement(agreementId).catch(() => null),
+        (activeRole === 'student' ? terminationsApi.listRefunds() : terminationsApi.list())
+          .catch(() => [] as TerminationView[]),
       ]);
       setDocument(data);
+      setLiveAgreement(agreementDetail?.summary || agreementSummary || null);
+      setLiveTrial(agreementDetail?.trial || null);
+      setTerminationEligibility(agreementDetail?.terminationEligibility || null);
       setActiveTermination(terminationCases.find(({ request }) =>
         request.anchorAgreementId === agreementId
-        && !request.wholeClass
         && !["REJECTED", "COMPLETED"].includes(request.status)
       ) || null);
     } catch (loadError: any) {
@@ -112,7 +123,7 @@ export function ContractDocumentModal({
 
   useEffect(() => {
     void loadData();
-  }, [agreementId, user?.id, user?.email]);
+  }, [agreementId, user?.id, user?.email, activeRole]);
 
   useEffect(() => {
     const previousOverflow = window.document.body.style.overflow;
@@ -295,7 +306,21 @@ export function ContractDocumentModal({
     && tutorSigned
     && !studentSigned;
 
-  const canStudentRequestTermination = isStudentUser && !activeTermination && isActive && !isExpired && !isCancelled && !isCompleted;
+  const canStudentStartExit = isStudentUser && !activeTermination && isActive && !isExpired && !isCancelled && !isCompleted;
+  const canUseTrialOptOut = canStudentStartExit
+    && liveTrial?.trialStatus === 'DECISION_OPEN'
+    && liveTrial.canOptOut
+    && !!liveAgreement;
+  const canStudentRequestTermination = canUseTrialOptOut
+    || (canStudentStartExit && terminationEligibility?.eligible === true);
+  const waitingForFirstSessionEnd = canStudentStartExit
+    && !canUseTrialOptOut
+    && terminationEligibility?.eligible !== true;
+  const trialHasContinued = liveTrial?.trialStatus === 'CONTINUED';
+  const openStudentExitFlow = () => {
+    if (canUseTrialOptOut) setShowTrialOptOutModal(true);
+    else setShowTerminationModal(true);
+  };
 
   const terminationTarget: TerminationAgreementTarget | null = document ? {
     id: document.agreementId,
@@ -326,6 +351,21 @@ export function ContractDocumentModal({
           setShowTerminationModal(false);
           void loadData();
           onSignedSuccess?.();
+        }}
+      />
+    );
+  }
+
+  if (showTrialOptOutModal && liveAgreement && liveTrial) {
+    return (
+      <TrialOptOutModal
+        isOpen
+        agreement={liveAgreement}
+        trial={liveTrial}
+        onClose={() => setShowTrialOptOutModal(false)}
+        onSuccess={() => {
+          setShowTrialOptOutModal(false);
+          void loadData();
         }}
       />
     );
@@ -547,12 +587,30 @@ export function ContractDocumentModal({
           {canStudentRequestTermination && (
             <button
               type="button"
-              onClick={() => setShowTerminationModal(true)}
+              onClick={openStudentExitFlow}
               className="px-3 py-2 bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-300 hover:text-rose-100 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 shrink-0 cursor-pointer"
-              title="Học viên gửi yêu cầu kết thúc hợp đồng đơn phương với chữ ký số xác thực MetaMask"
+              title={canUseTrialOptOut
+                ? "Dừng trong thời hạn trải nghiệm theo chính sách tự động"
+                : trialHasContinued
+                  ? "Thời hạn dừng học thử đã kết thúc; gửi yêu cầu chấm dứt thông thường để Staff/Admin xét duyệt"
+                  : "Học viên gửi yêu cầu kết thúc hợp đồng đơn phương với chữ ký số xác thực MetaMask"}
             >
               <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-              <span>Kết thúc hợp đồng</span>
+              <span>{canUseTrialOptOut ? 'Dừng học thử' : trialHasContinued ? 'Yêu cầu chấm dứt' : 'Kết thúc hợp đồng'}</span>
+            </button>
+          )}
+
+          {waitingForFirstSessionEnd && (
+            <button
+              type="button"
+              disabled
+              className="px-3 py-2 border border-slate-600/50 bg-slate-700/40 text-slate-400 text-xs font-bold rounded-xl flex items-center gap-1.5 shrink-0 cursor-not-allowed"
+              title={terminationEligibility?.firstSessionEnd
+                ? `Mở sau khi buổi học đầu tiên kết thúc: ${formatDate(terminationEligibility.firstSessionEnd, true)}`
+                : terminationEligibility?.message || 'Chưa đến thời điểm được yêu cầu chấm dứt'}
+            >
+              <Clock className="w-3.5 h-3.5 shrink-0" />
+              <span>Mở sau buổi học đầu tiên</span>
             </button>
           )}
 
@@ -754,8 +812,9 @@ export function ContractDocumentModal({
 
               <Clause title="ĐIỀU 9: CHẤM DỨT HỢP ĐỒNG VÀ HOÀN TRẢ TIỀN KÝ QUỸ TRƯỚC THỜI HẠN">
                 <p>9.1. Trường hợp một trong hai bên gặp hoàn cảnh bất khả kháng (sức khỏe, tai nạn, sự cố cá nhân) hoặc vi phạm thỏa thuận giảng dạy, bên bị ảnh hưởng có quyền gửi yêu cầu chấm dứt hợp đồng qua hệ thống EduConnect.</p>
-                <p>9.2. Yêu cầu chấm dứt bắt buộc phải được xác thực bằng chữ ký số EIP-712 phát hành từ đúng địa chỉ ví Web3 đã ký hợp đồng này. Mọi thay đổi ví hoặc sai lệch chữ ký đều bị từ chối bảo vệ an toàn tài sản.</p>
-                <p>9.3. Khi yêu cầu chấm dứt được phê duyệt hợp lệ, Smart Contract Escrow sẽ thực hiện hủy hợp đồng on-chain và hoàn trả toàn bộ số tiền học phí của các buổi học chưa diễn ra trực tiếp về ví của Học viên.</p>
+                {document.escrowPolicy.studentTerminationRule && <p>9.2. Học viên chỉ được gửi yêu cầu chấm dứt thông thường sau khi buổi học đầu tiên theo lịch đã ký kết thúc, nhằm bảo đảm điểm danh của cả hai bên diễn ra trọn vẹn.</p>}
+                <p>{document.escrowPolicy.studentTerminationRule ? '9.3' : '9.2'}. Yêu cầu chấm dứt bắt buộc phải được xác thực bằng chữ ký số EIP-712 phát hành từ đúng địa chỉ ví Web3 đã ký hợp đồng này. Mọi thay đổi ví hoặc sai lệch chữ ký đều bị từ chối bảo vệ an toàn tài sản.</p>
+                <p>{document.escrowPolicy.studentTerminationRule ? '9.4' : '9.3'}. Khi yêu cầu chấm dứt được phê duyệt hợp lệ và các buổi trước mốc dừng đã quyết toán xong, Smart Contract Escrow sẽ hủy agreement on-chain và hoàn trả 100% số dư ký quỹ chưa sử dụng trực tiếp về ví của Học viên. Đây không phải là hoàn lại toàn bộ khoản nạp ban đầu nếu đã có buổi học được quyết toán.</p>
               </Clause>
 
               {document.trialPolicy?.enabled && (
@@ -764,7 +823,7 @@ export function ContractDocumentModal({
                   <p>10.2. Quyền dừng học thử: Sau khi buổi trải nghiệm hoàn thành, Học viên (Bên B) có quyền dừng hợp đồng trước thời điểm buổi học kế tiếp (Buổi {document.trialPolicy.nextSessionSequence || 2}) bắt đầu{document.trialPolicy.initialTrialDeadline ? ` (Hạn chót dự kiến: ${formatDate(document.trialPolicy.initialTrialDeadline, true)})` : ""}.</p>
                   <p>10.3. Yêu cầu dừng trong giai đoạn trải nghiệm được gửi qua hệ thống kèm chữ ký số EIP-712 từ đúng ví của Học viên trước deadline và được tự động chấp thuận theo chính sách mà không cần xét duyệt đơn phương.</p>
                   <p>10.4. Quyết toán và hoàn cọc: Buổi trải nghiệm được quyết toán theo kết quả điểm danh (85% Gia sư nếu đủ mặt, hoàn trả nếu Gia sư vắng mặt); toàn bộ học phí ký quỹ của các buổi học chưa học sẽ được Smart Contract Escrow hoàn trả về ví Học viên sau khi các buổi trước cutoff hoàn tất đối soát.</p>
-                  <p>10.5. Tự động tiếp tục: Nếu Học viên không gửi yêu cầu dừng trước hạn chót (serverReceivedAt &lt; trialDeadline), hợp đồng sẽ tự động tiếp tục cho toàn bộ khóa học mà không cần ký lại hay nạp quỹ bổ sung.</p>
+                  <p>10.5. Tự động tiếp tục: Nếu Học viên không gửi yêu cầu dừng trước hạn chót (serverReceivedAt &lt; trialDeadline), quyền dừng học thử tự động đóng lại và hợp đồng tiếp tục cho toàn bộ khóa học mà không cần ký lại hay nạp quỹ bổ sung. Sau thời điểm này, Học viên chỉ có thể sử dụng quy trình yêu cầu chấm dứt thông thường tại Điều 9 và phải chờ Staff/Admin xét duyệt.</p>
                 </Clause>
               )}
             </div>
@@ -841,24 +900,28 @@ export function ContractDocumentModal({
                       </div>
                       <div className="space-y-1">
                         <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                          <span>Quy trình Đơn phương Chấm dứt hợp đồng (Học viên)</span>
+                          <span>{canUseTrialOptOut
+                            ? 'Quyền dừng trong giai đoạn trải nghiệm (Học viên)'
+                            : 'Quy trình Yêu cầu Chấm dứt hợp đồng (Học viên)'}</span>
                           <span className="text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200">
                             Bảo vệ bởi Escrow
                           </span>
                         </h4>
                         <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">
-                          Bạn có thể ký yêu cầu chấm dứt bằng đúng ví MetaMask của hợp đồng. Sau khi tiếp nhận, hệ thống tạm dừng các buổi tương lai của riêng bạn để Ban quản trị xác minh; chưa có giao dịch hoàn tiền cho đến khi Admin phê duyệt.
+                          {canUseTrialOptOut
+                            ? 'Bạn đang ở trong thời hạn dừng học thử. Yêu cầu hợp lệ được tự động chấp thuận theo chính sách trải nghiệm; buổi đã học vẫn được quyết toán và chỉ số dư ký quỹ chưa sử dụng được hoàn sau đối soát on-chain.'
+                            : 'Bạn có thể ký yêu cầu chấm dứt bằng đúng ví MetaMask của hợp đồng. Sau khi tiếp nhận, hệ thống tạm dừng các buổi tương lai của riêng bạn để Ban quản trị xác minh; chưa có giao dịch hoàn tiền cho đến khi Admin phê duyệt.'}
                         </p>
                       </div>
                     </div>
 
                     <button
                       type="button"
-                      onClick={() => setShowTerminationModal(true)}
+                      onClick={openStudentExitFlow}
                       className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-700 hover:to-amber-700 text-white text-xs font-black rounded-xl shadow-md shadow-rose-600/20 transition-all cursor-pointer shrink-0"
                     >
                       <AlertTriangle className="w-4 h-4" />
-                      <span>Yêu cầu kết thúc hợp đồng này</span>
+                      <span>{canUseTrialOptOut ? 'Dừng trong giai đoạn trải nghiệm' : trialHasContinued ? 'Gửi yêu cầu chấm dứt thông thường' : 'Yêu cầu kết thúc hợp đồng này'}</span>
                     </button>
                   </div>
 
@@ -882,6 +945,16 @@ export function ContractDocumentModal({
                       </span>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {waitingForFirstSessionEnd && (
+                <div className="mt-8 p-4 rounded-2xl border border-slate-200 bg-slate-50 text-xs text-slate-700 print:hidden">
+                  <p className="font-bold text-slate-900">Chưa mở quyền yêu cầu chấm dứt</p>
+                  <p className="mt-1 leading-relaxed">
+                    Để bảo đảm buổi học đầu tiên được điểm danh và quyết toán đầy đủ, hệ thống chỉ mở quyền sau khi buổi này kết thúc
+                    {terminationEligibility?.firstSessionEnd ? ` (${formatDate(terminationEligibility.firstSessionEnd, true)})` : ''}.
+                  </p>
                 </div>
               )}
 

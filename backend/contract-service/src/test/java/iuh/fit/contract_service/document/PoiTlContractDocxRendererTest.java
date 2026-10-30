@@ -130,6 +130,8 @@ class PoiTlContractDocxRendererTest {
         model.put("eip712DomainName", "EduConnectEscrow");
         model.put("eip712DomainVersion", "1");
         model.put("verificationUrl", "http://localhost:5173/contracts/verify/test-uuid-1234");
+        model.put("hasStudentTerminationRule", true);
+        model.put("studentTerminationRule", "Student termination opens after the first session end");
         model.put("hasTrialPolicy", true);
         model.put("trialPolicyVersion", "1");
         model.put("trialSessionSequence", "1");
@@ -152,8 +154,12 @@ class PoiTlContractDocxRendererTest {
             assertTrue(text.contains("agreement đã hoàn tất, hết hạn hoặc chấm dứt trước đó không bị xử lý hay hoàn tiền lần hai"));
             assertTrue(text.contains("Tệp DOCX/PDF chính thức được phát hành từ snapshot đã ký"));
             assertTrue(text.contains("Trạng thái tại thời điểm phát hành"));
+            assertTrue(text.contains("THỜI ĐIỂM MỞ QUYỀN YÊU CẦU CHẤM DỨT CỦA HỌC VIÊN"));
+            assertTrue(text.contains("chức năng điểm danh vẫn hoạt động bình thường"));
             assertTrue(text.contains("PHỤ LỤC ĐIỀU KHOẢN GIAI ĐOẠN TRẢI NGHIỆM CÓ BẢO CHỨNG ESCROW"));
             assertTrue(text.contains("03/10/2026 18:00:00"));
+            assertTrue(text.contains("chỉ quyền dừng học thử tự động đóng lại"));
+            assertTrue(text.contains("quy trình chấm dứt thông thường"));
             assertFalse(text.contains("{{"));
         } catch (java.io.IOException ex) {
             throw new AssertionError("Không thể kiểm tra nội dung DOCX đã render", ex);
