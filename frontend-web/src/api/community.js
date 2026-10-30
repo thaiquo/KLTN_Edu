@@ -119,10 +119,12 @@ export const communityApi = {
     return apiRequest(`/api/community/moderation/queue?${params.toString()}`);
   },
 
-  getModerationDetail: (postId) => apiRequest(`/api/community/moderation/posts/${postId}`),
+  getModerationDetail: (postId, source) => apiRequest(
+    `/api/community/moderation/posts/${postId}${source ? `?source=${encodeURIComponent(source)}` : ''}`
+  ),
 
-  moderatePost: (postId, action, reason, expectedContentRevision) => apiRequest(`/api/community/moderation/posts/${postId}/actions`, {
-    method: 'POST', body: JSON.stringify({ action, reason, expectedContentRevision })
+  moderatePost: (postId, action, reason, expectedContentRevision, source) => apiRequest(`/api/community/moderation/posts/${postId}/actions`, {
+    method: 'POST', body: JSON.stringify({ action, reason, expectedContentRevision, source })
   }),
 
   // Smart Class Conversion

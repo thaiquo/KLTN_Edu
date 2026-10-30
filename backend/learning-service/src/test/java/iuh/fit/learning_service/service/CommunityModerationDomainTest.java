@@ -34,7 +34,9 @@ class CommunityModerationDomainTest {
     @Test void policyFailsClosedAndMapsCategories() {
         assertEquals(CommunityModerationStatus.FAILED, policy.map(null));
         assertEquals(CommunityModerationStatus.ALLOWED, policy.map(result(CommunityModerationPolicy.Recommendation.ALLOW, CommunityModerationPolicy.Risk.LOW, List.of())));
-        assertEquals(CommunityModerationStatus.NEEDS_EDIT, policy.map(result(CommunityModerationPolicy.Recommendation.ALLOW, CommunityModerationPolicy.Risk.MEDIUM, List.of(CommunityModerationPolicy.Category.SPAM))));
+        assertEquals(CommunityModerationStatus.NEEDS_REVIEW, policy.map(result(CommunityModerationPolicy.Recommendation.ALLOW, CommunityModerationPolicy.Risk.MEDIUM, List.of(CommunityModerationPolicy.Category.SPAM))));
+        assertEquals(CommunityModerationStatus.NEEDS_EDIT, policy.map(result(CommunityModerationPolicy.Recommendation.NEEDS_EDIT, CommunityModerationPolicy.Risk.MEDIUM, List.of(CommunityModerationPolicy.Category.SPAM))));
+        assertEquals(CommunityModerationStatus.NEEDS_REVIEW, policy.map(result(CommunityModerationPolicy.Recommendation.NEEDS_REVIEW, CommunityModerationPolicy.Risk.MEDIUM, List.of(CommunityModerationPolicy.Category.OTHER_UNSAFE))));
         assertEquals(CommunityModerationStatus.REJECTED, policy.map(result(CommunityModerationPolicy.Recommendation.REJECT, CommunityModerationPolicy.Risk.HIGH, List.of(CommunityModerationPolicy.Category.SPAM))));
     }
     @Test void matchingRevisionPersistsWithoutChangingLifecycle() {

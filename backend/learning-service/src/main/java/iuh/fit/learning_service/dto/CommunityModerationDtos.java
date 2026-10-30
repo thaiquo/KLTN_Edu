@@ -12,8 +12,13 @@ public final class CommunityModerationDtos {
     private CommunityModerationDtos() {}
     public record ReportRequest(@NotBlank @Size(max = 80) String reason, @Size(max = 2000) String details) {}
     public record ActionRequest(@NotNull Action action, @NotBlank @Size(max = 2000) String reason,
-                                @NotNull Long expectedContentRevision) {}
+                                @NotNull Long expectedContentRevision, ModerationSource source) {
+        public ActionRequest(Action action, String reason, Long expectedContentRevision) {
+            this(action, reason, expectedContentRevision, null);
+        }
+    }
     public enum Action { APPROVE, REJECT, HIDE, RESTORE }
+    public enum ModerationSource { USER_REPORT, AI_POST_REVIEW, AI_REVISION_REVIEW }
     public record Report(Long id, Long reporterUserId, String reporterRole, String reason, String details,
                          String status, LocalDateTime createdAt) {}
     public record History(Long id, Long actorUserId, String actorEmail, String actorRole, String action,
@@ -22,6 +27,8 @@ public final class CommunityModerationDtos {
     public record QueueItem(Long postId, String title, String content, Long authorId, String authorName,
                             String authorRole, PostStatus postStatus, CommunityModerationStatus moderationStatus,
                             String moderationReason, List<String> moderationCategories, long contentRevision,
-                            long openReportCount, LocalDateTime createdAt, LocalDateTime updatedAt) {}
+                            long openReportCount, LocalDateTime createdAt, LocalDateTime updatedAt,
+                            ModerationSource source, Long revisionId, String currentTitle, String currentContent,
+                            String proposedTitle, String proposedContent) {}
     public record Detail(QueueItem post, List<Report> reports, List<History> history) {}
 }

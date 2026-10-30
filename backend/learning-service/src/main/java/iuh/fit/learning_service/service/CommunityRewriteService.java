@@ -23,8 +23,7 @@ import java.util.Set;
 
 @Service
 public class CommunityRewriteService {
-    private static final Set<CommunityModerationStatus> ELIGIBLE = Set.of(
-            CommunityModerationStatus.NEEDS_EDIT, CommunityModerationStatus.REJECTED);
+    private static final Set<CommunityModerationStatus> ELIGIBLE = Set.of(CommunityModerationStatus.NEEDS_EDIT);
 
     private final CommunityPostRepository postRepository;
     private final CommunityPostPendingRevisionRepository pendingRepository;
@@ -89,8 +88,11 @@ public class CommunityRewriteService {
     }
 
     private void ensureEligible(CommunityModerationStatus status) {
+        if (status == CommunityModerationStatus.REJECTED) {
+            throw new ForbiddenException("Nội dung hiện tại thể hiện mục đích không phù hợp với môi trường giáo dục. Hãy viết lại yêu cầu theo mục tiêu học tập hợp lệ.");
+        }
         if (!ELIGIBLE.contains(status)) {
-            throw new ConflictException("Chỉ nội dung cần chỉnh sửa hoặc bị từ chối mới có thể dùng AI gợi ý");
+            throw new ConflictException("Chỉ nội dung cần chỉnh sửa mới có thể dùng AI gợi ý");
         }
     }
 

@@ -9,6 +9,8 @@ import iuh.fit.notification_service.messaging.event.TeachingRegistrationReviewed
 import iuh.fit.notification_service.messaging.event.TutorApplicationSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApprovedEvent;
 import iuh.fit.notification_service.messaging.event.TutorRejectedEvent;
+import iuh.fit.notification_service.messaging.event.ClassReviewedNotificationEvent;
+import iuh.fit.notification_service.messaging.event.CommunityPostModeratedEvent;
 import iuh.fit.notification_service.repository.NotificationRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -35,7 +37,7 @@ class NotificationEventConsumerTests {
 
     @Test
     void tutorApprovedCreatesNotificationAndDeduplicatesRedelivery() {
-        var event = new TutorApprovedEvent("approved-1", 101L, 202L, 303L, Set.of(), LocalDateTime.now());
+        var event = new TutorApprovedEvent("approved-1", 101L, 202L, 303L, Set.of("ONLINE"), Set.of(), LocalDateTime.now());
 
         consumer.onTutorApproved(event);
         consumer.onTutorApproved(event);
@@ -59,6 +61,70 @@ class NotificationEventConsumerTests {
     }
 
     @Test
+    void classApprovedAndRejectedCreatePersistentNotifications() {
+        consumer.onClassReviewed(new ClassReviewedNotificationEvent(
+                "class-approved-1", "CLASS_REVIEWED", LocalDateTime.now(), "learning-service",
+                501L, 301L, "tutor@example.com", "Toán 10", "APPROVED", null, "staff@example.com"));
+        consumer.onClassReviewed(new ClassReviewedNotificationEvent(
+                "class-rejected-1", "CLASS_REVIEWED", LocalDateTime.now(), "learning-service",
+                502L, 301L, "tutor@example.com", "Toán 11", "REJECTED", "Thiếu giáo trình", "staff@example.com"));
+
+        assertThat(notificationRepository.findByEventIdAndRecipientUserId("class-approved-1", 301L)).isPresent();
+        assertThat(notificationRepository.findByEventIdAndRecipientUserId("class-rejected-1", 301L))
+                .get().extracting("message").asString().contains("Thiếu giáo trình");
+    }
+
+    @Test
+    void communityHumanReviewOutcomesNotifyAuthorAndDeduplicate() {
+        var approved = new CommunityPostModeratedEvent(
+                "community-reviewed-1", "COMMUNITY_POST_REVIEWED", LocalDateTime.now(), "learning-service",
+                91L, 202L, "STUDENT", "Tìm gia sư Toán", "APPROVED", "Nội dung hợp lệ", 1L,
+                "COMMUNITY_POST", "91");
+        var rejected = new CommunityPostModeratedEvent(
+                "community-reviewed-2", "COMMUNITY_POST_REVIEWED", LocalDateTime.now(), "learning-service",
+                92L, 203L, "TUTOR", "Bài viết chưa rõ", "REJECTED", "Không đủ ngữ cảnh giáo dục", 5L,
+                "COMMUNITY_POST", "92");
+
+        consumer.onCommunityPostModerated(approved);
+        consumer.onCommunityPostModerated(approved);
+        consumer.onCommunityPostModerated(rejected);
+
+        var approvedNotification = notificationRepository
+                .findByEventIdAndRecipientUserId("community-reviewed-1", 202L).orElseThrow();
+        var rejectedNotification = notificationRepository
+                .findByEventIdAndRecipientUserId("community-reviewed-2", 203L).orElseThrow();
+        assertThat(approvedNotification.getReadAt()).isNull();
+        assertThat(approvedNotification.getReferenceType()).isEqualTo("COMMUNITY_POST");
+        assertThat(rejectedNotification.getMessage()).contains("Không đủ ngữ cảnh giáo dục");
+        assertThat(notificationRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    void communityRevisionReviewOutcomesUseRevisionSpecificPersistentNotifications() {
+        var approved = new CommunityPostModeratedEvent(
+                "community-revision-reviewed-1", "COMMUNITY_POST_REVISION_REVIEWED", LocalDateTime.now(),
+                "learning-service", 93L, 202L, "STUDENT", "Bài viết đã sửa", "APPROVED",
+                "Nội dung hợp lệ", 1L, "COMMUNITY_POST", "93");
+        var rejected = new CommunityPostModeratedEvent(
+                "community-revision-reviewed-2", "COMMUNITY_POST_REVISION_REVIEWED", LocalDateTime.now(),
+                "learning-service", 94L, 203L, "TUTOR", "Bài viết đã sửa", "REJECTED",
+                "Nội dung còn mơ hồ", 5L, "COMMUNITY_POST", "94");
+
+        consumer.onCommunityPostModerated(approved);
+        consumer.onCommunityPostModerated(rejected);
+
+        var approvedNotification = notificationRepository
+                .findByEventIdAndRecipientUserId("community-revision-reviewed-1", 202L).orElseThrow();
+        var rejectedNotification = notificationRepository
+                .findByEventIdAndRecipientUserId("community-revision-reviewed-2", 203L).orElseThrow();
+        assertThat(approvedNotification.getType()).isEqualTo("COMMUNITY_POST_REVISION_REVIEWED");
+        assertThat(approvedNotification.getMessage()).contains("Bản chỉnh sửa bài viết của bạn đã được duyệt");
+        assertThat(rejectedNotification.getMessage())
+                .contains("Bản chỉnh sửa bài viết của bạn đã bị từ chối")
+                .contains("Nội dung còn mơ hồ");
+    }
+
+    @Test
     void subjectRequestReviewedCreatesTutorNotification() {
         consumer.onSubjectRequestApproved(new SubjectRequestApprovedEvent("subject-approved-1", 10L, 20L, 30L, LocalDateTime.now()));
         consumer.onSubjectRequestRejected(new SubjectRequestRejectedEvent("subject-rejected-1", 11L, 20L, "Trung danh muc", LocalDateTime.now()));
@@ -73,7 +139,7 @@ class NotificationEventConsumerTests {
     @Test
     void invalidOrReviewerOnlyEventsDoNotCreateNotification() {
         consumer.onTutorApplicationSubmitted(new TutorApplicationSubmittedEvent("submitted-1", 1L, 2L, LocalDateTime.now()));
-        consumer.onTutorApproved(new TutorApprovedEvent(null, 101L, 202L, 303L, Set.of(), LocalDateTime.now()));
+        consumer.onTutorApproved(new TutorApprovedEvent(null, 101L, 202L, 303L, Set.of("ONLINE"), Set.of(), LocalDateTime.now()));
         consumer.onSubjectRequestApproved(new SubjectRequestApprovedEvent("invalid-subject", 10L, null, 30L, LocalDateTime.now()));
         consumer.onEnrollmentRequested(enrollmentEvent("invalid-enrollment", "ENROLLMENT_REQUESTED", null, 100L, null));
 

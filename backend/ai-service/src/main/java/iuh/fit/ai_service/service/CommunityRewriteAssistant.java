@@ -21,7 +21,7 @@ public class CommunityRewriteAssistant {
 
     private static final Set<String> SUPPORTED_TYPES = Set.of(
             "STUDENT_FIND_TUTOR", "STUDENT_GROUP_STUDY", "TUTOR_ANNOUNCEMENT", "TUTOR_POLL", "TUTOR_CLASS_SHARE");
-    private static final Set<String> ELIGIBLE_STATUSES = Set.of("NEEDS_EDIT", "REJECTED");
+    private static final Set<String> ELIGIBLE_STATUSES = Set.of("NEEDS_EDIT");
     private static final Set<String> OUTPUT_FIELDS = Set.of(
             "canRewrite", "suggestedTitle", "suggestedContent", "summaryOfChanges");
     private static final Pattern EMAIL = Pattern.compile("(?i)[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}");

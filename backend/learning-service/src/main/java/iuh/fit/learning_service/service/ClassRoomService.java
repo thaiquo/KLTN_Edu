@@ -537,6 +537,7 @@ public class ClassRoomService {
         return toResponse(classRoom);
     }
 
+    @Transactional
     public ClassRoomDtos.ClassRoomResponse approveClass(Long id, String reviewerEmail) {
         ClassRoom classRoom = classRoomRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + id));
@@ -553,6 +554,7 @@ public class ClassRoomService {
         return toResponse(saved);
     }
 
+    @Transactional
     public ClassRoomDtos.ClassRoomResponse rejectClass(Long id, String reviewerEmail, String reason) {
         ClassRoom classRoom = classRoomRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + id));

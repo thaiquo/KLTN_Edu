@@ -6,7 +6,7 @@ import java.util.List;
 
 @Component
 public class CommunityModerationPolicy {
-    public enum Recommendation { ALLOW, NEEDS_EDIT, REJECT }
+    public enum Recommendation { ALLOW, NEEDS_EDIT, NEEDS_REVIEW, REJECT }
     public enum Risk { LOW, MEDIUM, HIGH }
     public enum Category { SPAM, HARASSMENT, PROFANITY, SEXUAL_INAPPROPRIATE, SCAM_FRAUD, OTHER_UNSAFE }
     public record Result(Recommendation recommendation, Risk riskLevel, List<Category> categories,
@@ -22,6 +22,7 @@ public class CommunityModerationPolicy {
                 && result.categories().isEmpty()) return CommunityModerationStatus.ALLOWED;
         if (result.recommendation() == Recommendation.REJECT && result.riskLevel() == Risk.HIGH
                 && !result.categories().isEmpty()) return CommunityModerationStatus.REJECTED;
-        return CommunityModerationStatus.NEEDS_EDIT;
+        if (result.recommendation() == Recommendation.NEEDS_EDIT) return CommunityModerationStatus.NEEDS_EDIT;
+        return CommunityModerationStatus.NEEDS_REVIEW;
     }
 }

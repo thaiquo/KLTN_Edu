@@ -8,6 +8,7 @@ import iuh.fit.learning_service.messaging.event.TeachingRegistrationReviewedEven
 import iuh.fit.learning_service.messaging.event.TeachingRegistrationSubmittedEvent;
 import iuh.fit.learning_service.messaging.event.CommunityPostConvertedEvent;
 import iuh.fit.learning_service.messaging.event.CommunityPostInteractionEvent;
+import iuh.fit.learning_service.messaging.event.CommunityPostModeratedEvent;
 import iuh.fit.learning_service.service.StaffNotificationRecipientLookup;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -23,6 +24,25 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.ArgumentMatchers.eq;
 
 class LearningEventPublisherTest {
+
+    @Test
+    void publishCommunityRevisionModeratedUsesRevisionSpecificEventTypeAndStableId() {
+        RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+        LearningEventPublisher publisher = newPublisher(rabbitTemplate);
+        ArgumentCaptor<CommunityPostModeratedEvent> captor =
+                ArgumentCaptor.forClass(CommunityPostModeratedEvent.class);
+
+        publisher.publishCommunityPostRevisionModerated(
+                10L, 4L, 30L, "STUDENT", "Bài viết", "APPROVED", "Hợp lệ", 5L);
+
+        verify(rabbitTemplate).convertAndSend(
+                eq(LearningRabbitConfig.EXCHANGE),
+                eq(LearningRabbitConfig.COMMUNITY_POST_MODERATED_ROUTING_KEY),
+                captor.capture());
+        assertThat(captor.getValue().eventId()).isEqualTo("community-post-revision-moderated:10:4:APPROVED");
+        assertThat(captor.getValue().eventType()).isEqualTo("COMMUNITY_POST_REVISION_REVIEWED");
+        assertThat(captor.getValue().recipientUserId()).isEqualTo(30L);
+    }
 
     @Test
     void publishCommunityConversionUsesStableRecipientEventId() {

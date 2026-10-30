@@ -154,7 +154,6 @@ public class TutorApprovalService {
             profile.setBio(application.getBio());
         }
         profile = tutorProfileRepository.save(profile);
-        publishTutorApproved(application, profile, applicationSubjects);
         markDocumentsVerified(documents);
 
         application.setStatus(TutorApplicationStatus.APPROVED);
@@ -164,6 +163,7 @@ public class TutorApprovalService {
         application.setReviewNote(normalize(request == null ? null : request.getNote()));
 
         tutorApplicationRepository.save(application);
+        publishTutorApproved(application, profile, applicationSubjects);
         publishReviewRealtime(application, "APPROVED");
         return toDetail(application);
     }
@@ -198,17 +198,13 @@ public class TutorApprovalService {
         tutorDocumentRepository.saveAll(documents);
 
         tutorApplicationRepository.save(application);
-        try {
-            eventPublisher.publishTutorRejected(new TutorRejectedEvent(
+        eventPublisher.publishTutorRejected(new TutorRejectedEvent(
                     UUID.randomUUID().toString(),
                     application.getId(),
                     application.getUser().getId(),
                     application.getRejectionReason(),
                     LocalDateTime.now()
             ));
-        } catch (Exception ex) {
-            System.err.println("Warning: failed to publish TutorRejectedEvent: " + ex.getMessage());
-        }
         publishReviewRealtime(application, "REJECTED");
         return toDetail(application);
     }
@@ -442,7 +438,6 @@ public class TutorApprovalService {
     }
 
     private void publishTutorApproved(TutorApplication application, TutorProfile profile, List<TutorApplicationSubject> subjects) {
-        try {
             Set<TutorApprovedEvent.SubjectItem> items = Set.of();
             if (subjects != null && !subjects.isEmpty()) {
                 items = subjects.stream()
@@ -465,9 +460,6 @@ public class TutorApprovalService {
                     items,
                     LocalDateTime.now()
             ));
-        } catch (Exception ex) {
-            System.err.println("Warning: failed to publish TutorApprovedEvent: " + ex.getMessage());
-        }
     }
 
     private List<String> validateCompleteness(User user, TutorApplication application, List<TutorApplicationSubject> subjects, List<TutorDocument> documents) {

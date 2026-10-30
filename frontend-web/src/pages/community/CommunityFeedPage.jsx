@@ -215,6 +215,8 @@ export function CommunityFeedPage({
         loadPosts(true);
       } else if (status === 'NEEDS_EDIT') {
         feedback.warning(detail.payload?.reason || 'Bài viết cần được chỉnh sửa trước khi đăng.');
+      } else if (status === 'NEEDS_REVIEW') {
+        feedback.warning('Bài viết cần được Staff/Admin kiểm duyệt trước khi hiển thị công khai.');
       } else if (status === 'REJECTED') {
         feedback.error(detail.payload?.reason || 'Không thể đăng bài vì nội dung chưa phù hợp.');
       } else if (status === 'FAILED') {

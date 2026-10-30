@@ -41,7 +41,10 @@ public class CommunityModerationController {
 
     @GetMapping("/moderation/posts/{postId}")
     @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
-    public Detail detail(@PathVariable Long postId) { return service.detail(postId); }
+    public Detail detail(@PathVariable Long postId,
+                         @RequestParam(required = false) ModerationSource source) {
+        return service.detail(postId, source);
+    }
 
     @PostMapping("/moderation/posts/{postId}/actions")
     @PreAuthorize("hasAnyRole('STAFF','ADMIN')")
