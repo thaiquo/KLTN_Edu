@@ -294,6 +294,15 @@ public class TerminationService {
         if (anchor.getStatus() != ContractAgreementStatus.ACTIVE || anchor.isLegacyExcluded()) {
             fail(HttpStatus.CONFLICT, "Chỉ có thể yêu cầu chấm dứt đối với hợp đồng đã được hai bên ký kết và hoàn tất nạp cọc Escrow (ACTIVE).");
         }
+        if (!wholeClass && user.hasActiveAuthority("STUDENT")) {
+            var eligibility = StudentTerminationEligibilityPolicy.evaluate(anchor, OffsetDateTime.now(ZoneOffset.UTC));
+            if (!eligibility.eligible()) {
+                String suffix = eligibility.firstSessionEnd() == null
+                        ? ""
+                        : " Thời điểm mở quyền dự kiến: " + eligibility.firstSessionEnd() + ".";
+                fail(HttpStatus.CONFLICT, eligibility.code() + ": " + eligibility.message() + suffix);
+            }
+        }
         for (var existing : cases.findByClassroomIdOrderByCreatedAtDesc(anchor.getClassroomId())) {
             if (!Set.of("REJECTED", "COMPLETED").contains(existing.getStatus())
                     && (wholeClass || existing.isWholeClass() || existing.getAnchorAgreementId().equals(agreementId))) {
@@ -880,6 +889,14 @@ public class TerminationService {
                 snapshot = learning.send(anchor.getClassroomId(), anchor.getStudentId(), anchor.getId(), c.isWholeClass(), "HOLD");
             }
             if (snapshot.cutoffSession() < 0) throw new IllegalStateException("Invalid Learning hold cutoff");
+            if (ORIGIN_PARTY.equals(c.getOrigin()) && !c.isWholeClass()) {
+                var eligibility = StudentTerminationEligibilityPolicy.evaluate(
+                        anchor, OffsetDateTime.now(ZoneOffset.UTC));
+                if (eligibility.firstSessionEnd() != null && snapshot.cutoffSession() < 1) {
+                    throw new IllegalStateException(
+                            "Learning has not included the completed first session in the termination cutoff");
+                }
+            }
             var targets = c.isWholeClass()
                     ? agreements.findByClassroomIdOrderByCreatedAtAsc(c.getClassroomId())
                     : List.of(anchor);

@@ -66,7 +66,7 @@ class ContractDocumentArtifactServiceTest {
 
         assertThat(artifact.getStatus()).isEqualTo(ContractDocumentArtifactStatus.READY);
         assertThat(artifact.getDocxObjectKey()).isNull();
-        assertThat(artifact.getTemplateVersion()).isEqualTo("EDUCONNECT_HOP_DONG_TEMPLATE_V1_1_20260923");
+        assertThat(artifact.getTemplateVersion()).isEqualTo("EDUCONNECT_HOP_DONG_TEMPLATE_V1_2_20261030");
         verify(storage, times(1)).put(any(), any(), any());
         ArgumentCaptor<Map<String, Object>> model = ArgumentCaptor.forClass(Map.class);
         verify(renderer).render(model.capture());
@@ -78,10 +78,38 @@ class ContractDocumentArtifactServiceTest {
         assertThat(model.getValue().get("studentAddress")).isEqualTo("TP. Hồ Chí Minh");
     }
 
+    @Test
+    void readyLegacyPdfIsNeverRegeneratedWithTheNewTemplate() {
+        UUID agreementId = UUID.randomUUID();
+        ContractDocumentArtifact existing = ContractDocumentArtifact.builder()
+                .id(UUID.randomUUID())
+                .agreementId(agreementId)
+                .contractVersion(1)
+                .templateVersion("EDUCONNECT_HOP_DONG_TEMPLATE_V1_1_20260923")
+                .status(ContractDocumentArtifactStatus.READY)
+                .pdfObjectKey("contracts/legacy/final/contract.pdf")
+                .pdfSha256("a".repeat(64))
+                .pdfSize(123L)
+                .createdAt(OffsetDateTime.now())
+                .updatedAt(OffsetDateTime.now())
+                .build();
+        when(queryService.findDocumentView(agreementId)).thenReturn(Optional.of(view(agreementId, "ACTIVE")));
+        when(artifactRepository.findByAgreementIdAndContractVersion(agreementId, 1))
+                .thenReturn(Optional.of(existing));
+
+        ContractDocumentArtifact result = service().finalizeDocument(agreementId);
+
+        assertThat(result).isSameAs(existing);
+        assertThat(result.getTemplateVersion()).isEqualTo("EDUCONNECT_HOP_DONG_TEMPLATE_V1_1_20260923");
+        verify(renderer, never()).render(anyMap());
+        verify(converter, never()).docxToPdf(any(), any());
+        verify(storage, never()).put(any(), any(), any());
+    }
+
     private ContractDocumentArtifactService service() {
         ContractDocumentProperties properties = new ContractDocumentProperties(
                 "classpath:contract-templates/EDUCONNECT_HOP_DONG_TEMPLATE_V1.docx",
-                "EDUCONNECT_HOP_DONG_TEMPLATE_V1_1_20260923",
+                "EDUCONNECT_HOP_DONG_TEMPLATE_V1_2_20261030",
                 "http://localhost:3000/forms/libreoffice/convert",
                 Duration.ofSeconds(5), Duration.ofSeconds(60),
                 10_485_760L, 20_971_520L,

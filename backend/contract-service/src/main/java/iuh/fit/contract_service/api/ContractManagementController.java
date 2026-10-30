@@ -412,9 +412,8 @@ public class ContractManagementController {
         }
 
         ContractTermsSnapshot.TrialPolicyTerms trialTerms = null;
-        String schemaVersion = ContractTermsSnapshotService.SCHEMA_VERSION_V3;
+        String schemaVersion = ContractTermsSnapshotService.SCHEMA_VERSION_V5;
         if (trialPolicyEnabled) {
-            schemaVersion = ContractTermsSnapshotService.SCHEMA_VERSION_V4;
             trialTerms = new ContractTermsSnapshot.TrialPolicyTerms(
                     true,
                     request.trialPolicyVersion().intValue(),
@@ -450,7 +449,8 @@ public class ContractManagementController {
                         pricePerSessionUnits.toString(), totalAmountUnits.toString(), totalSessions),
                 new ContractTermsSnapshot.PlatformTerms(chainId, platformWallet, escrowAddress, tokenAddress),
                 new ContractTermsSnapshot.EscrowPolicyTerms(24, 8500, 1500,
-                        "24h dispute after proposal; BOTH_PRESENT=85/15/0; STUDENT_ABSENT_TUTOR_PRESENT=45/10/45; TUTOR_ABSENT=0/0/100; tutor-fraud dispute only for BOTH_PRESENT"),
+                        "24h dispute after proposal; BOTH_PRESENT=85/15/0; STUDENT_ABSENT_TUTOR_PRESENT=45/10/45; TUTOR_ABSENT=0/0/100; tutor-fraud dispute only for BOTH_PRESENT",
+                        "Student termination requests open only after the signed schedule's first session end; earlier attendance remains uninterrupted"),
                 trialTerms));
         String termsHash = snapshotService.hash(termsJson);
 
@@ -1711,6 +1711,13 @@ public class ContractManagementController {
 
     private AgreementDetailDto toAgreementDetail(ContractAgreement a) {
         AgreementSummaryDto summary = toAgreementSummary(a);
+        var terminationResult = iuh.fit.contract_service.service.StudentTerminationEligibilityPolicy
+                .evaluate(a, OffsetDateTime.now(java.time.ZoneOffset.UTC));
+        var terminationEligibility = new TerminationEligibilityDto(
+                terminationResult.eligible(),
+                terminationResult.code(),
+                terminationResult.message(),
+                terminationResult.firstSessionEnd() != null ? terminationResult.firstSessionEnd().toString() : null);
         TrialDetailDto trialDto = null;
         if (agreementTrialRepository != null) {
             var trialOpt = agreementTrialRepository.findByAgreementId(a.getId());
@@ -1739,7 +1746,8 @@ public class ContractManagementController {
                 );
             }
         }
-        return new AgreementDetailDto(summary, a.getTermsHash(), a.getContractVersion(), a.getTotalPriceVnd(), trialDto);
+        return new AgreementDetailDto(summary, a.getTermsHash(), a.getContractVersion(), a.getTotalPriceVnd(), trialDto,
+                terminationEligibility);
     }
 
     private SettlementDto toSettlementDto(SessionSettlement s, short decimals) {
@@ -1957,12 +1965,20 @@ public class ContractManagementController {
             Integer nextSessionSequence
     ) {}
 
+    public record TerminationEligibilityDto(
+            boolean eligible,
+            String code,
+            String message,
+            String firstSessionEnd
+    ) {}
+
     public record AgreementDetailDto(
             AgreementSummaryDto summary,
             String termsHash, Integer contractVersion, BigDecimal totalPriceVnd,
-            TrialDetailDto trial) {
+            TrialDetailDto trial,
+            TerminationEligibilityDto terminationEligibility) {
         public AgreementDetailDto(AgreementSummaryDto summary, String termsHash, Integer contractVersion, BigDecimal totalPriceVnd) {
-            this(summary, termsHash, contractVersion, totalPriceVnd, null);
+            this(summary, termsHash, contractVersion, totalPriceVnd, null, null);
         }
     }
 

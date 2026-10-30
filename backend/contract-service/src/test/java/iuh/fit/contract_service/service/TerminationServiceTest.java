@@ -38,6 +38,7 @@ class TerminationServiceTest {
                 .tutorId(3L).tutorEmail("t@test.vn").tutorWallet("0x2222222222222222222222222222222222222222")
                 .chainId(11155111L).escrowContractAddress("0x3333333333333333333333333333333333333333")
                 .classroomReviewerEmail("staff@test.vn")
+                .termsJson("{\"schemaVersion\":\"contract-terms-v3\",\"classroom\":{\"startDate\":\"2020-01-01\",\"schedules\":[{\"dayOfWeek\":2,\"startTime\":\"08:00\",\"endTime\":\"09:00\"}]}}")
                 .status(ContractAgreementStatus.ACTIVE).tokenDecimals((short)6).build();
         lenient().when(agreements.findById(a.getId())).thenReturn(Optional.of(a));
         lenient().when(agreements.lockById(a.getId())).thenReturn(Optional.of(a));
@@ -102,6 +103,16 @@ class TerminationServiceTest {
                 .hasMessageContaining("409")
                 .hasMessageContaining("ACTIVE");
     }
+    @Test void studentRequestRejectsBeforeFirstSessionEnds() {
+        a.setTermsJson("{\"schemaVersion\":\"contract-terms-v5\",\"classroom\":{\"startDate\":\"2099-01-01\",\"schedules\":[{\"dayOfWeek\":2,\"startTime\":\"08:00\",\"endTime\":\"09:00\"}]}}");
+        assertThatThrownBy(() -> service.request(a.getId(), false, "Accident", "0xsig",
+                "0x1111111111111111111111111111111111111111", now(),
+                user(2, "s@test.vn", "STUDENT")))
+                .hasMessageContaining("409")
+                .hasMessageContaining("FIRST_SESSION_NOT_ENDED");
+        verify(cases, never()).saveAndFlush(any());
+        verifyNoInteractions(learning);
+    }
     @Test void managersCannotSubmitUnsignedPartyRequests() {
         assertThatThrownBy(() -> service.request(a.getId(), false, "Accident",
                 user(1, "admin@test.vn", "ADMIN")))
@@ -118,6 +129,21 @@ class TerminationServiceTest {
         assertThat(a.getTerminationCutoffSession()).isEqualTo(1);
         verify(learning).send(1L, 2L, a.getId(), false, "HOLD");
         verify(items, never()).save(any());
+    }
+    @Test void v5StudentRequestWaitsWhenLearningHasNotIncludedFirstSessionInCutoff() {
+        a.setTermsJson("{\"schemaVersion\":\"contract-terms-v5\",\"classroom\":{"
+                + "\"startDate\":\"2020-01-01\",\"schedules\":[{"
+                + "\"dayOfWeek\":4,\"startTime\":\"08:00\",\"endTime\":\"09:00\"}]}}");
+        when(learning.send(1L, 2L, a.getId(), false, "HOLD"))
+                .thenReturn(new TerminationLearningClient.Snapshot(0, List.of(), null));
+
+        var view = service.request(a.getId(), false, "Accident", "0xsig",
+                "0x1111111111111111111111111111111111111111", now(),
+                user(2, "s@test.vn", "STUDENT"));
+
+        assertThat(view.request().getStatus()).isEqualTo("HOLD_PENDING");
+        assertThat(a.getTerminationCutoffSession()).isNull();
+        assertThat(view.request().getLastError()).contains("completed first session");
     }
     @Test void duplicateReportDoesNotBecomeAnotherCase() {
         var existing = new TerminationCase(); existing.setStatus("REQUESTED"); existing.setAnchorAgreementId(a.getId());

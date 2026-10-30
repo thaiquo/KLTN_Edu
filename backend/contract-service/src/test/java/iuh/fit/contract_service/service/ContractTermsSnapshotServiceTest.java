@@ -33,7 +33,9 @@ class ContractTermsSnapshotServiceTest {
                         "USDC", (short) 6, "10000000", "40000000", 4),
                 new ContractTermsSnapshot.PlatformTerms(11155111L, "0x0000000000000000000000000000000000000003",
                         "0x0000000000000000000000000000000000000004", "0x0000000000000000000000000000000000000005"),
-                new ContractTermsSnapshot.EscrowPolicyTerms(24, 8500, 1500, "SETTLE_PER_CONFIRMED_SESSION"));
+                new ContractTermsSnapshot.EscrowPolicyTerms(24, 8500, 1500,
+                        "SETTLE_PER_CONFIRMED_SESSION",
+                        "Student termination opens after the first session end"));
     }
 
     @Test
@@ -69,9 +71,15 @@ class ContractTermsSnapshotServiceTest {
         assertThat(parsed.get().trialPolicy().trialSessionSequence()).isEqualTo(1);
         assertThat(parsed.get().trialPolicy().nextSessionSequence()).isEqualTo(2);
 
-        // Backward compatibility: parsing legacy v3 json without trialPolicy
-        String v3Json = service.serialize(base);
+        // Backward compatibility: parsing legacy v3 json without trialPolicy or the v5 rule.
+        var v3Snapshot = new ContractTermsSnapshot(
+                ContractTermsSnapshotService.SCHEMA_VERSION_V3,
+                base.classroom(), base.parties(), base.financial(), base.platform(),
+                new ContractTermsSnapshot.EscrowPolicyTerms(24, 8500, 1500,
+                        "SETTLE_PER_CONFIRMED_SESSION"));
+        String v3Json = service.serialize(v3Snapshot);
         assertThat(v3Json).doesNotContain("trialPolicy");
+        assertThat(v3Json).doesNotContain("studentTerminationRule");
         var parsedV3 = service.parse(v3Json);
         assertThat(parsedV3).isPresent();
         assertThat(parsedV3.get().schemaVersion()).isEqualTo("contract-terms-v3");
@@ -79,5 +87,16 @@ class ContractTermsSnapshotServiceTest {
 
         // Hash changes when trial policy changes
         assertThat(service.hash(v4Json)).isNotEqualTo(service.hash(v3Json));
+    }
+
+    @Test
+    void v5SnapshotSignsTheFirstSessionTerminationRule() {
+        String json = service.serialize(snapshot("https://meet.google.com/v5"));
+
+        assertThat(json).contains("contract-terms-v5");
+        assertThat(json).contains("studentTerminationRule");
+        assertThat(service.parse(json)).get()
+                .extracting(value -> value.escrowPolicy().studentTerminationRule())
+                .isEqualTo("Student termination opens after the first session end");
     }
 }

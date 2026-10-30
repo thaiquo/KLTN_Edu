@@ -65,6 +65,14 @@ export interface AgreementDetail {
   contractVersion: number;
   totalPriceVnd: number;
   trial?: TrialDetail | null;
+  terminationEligibility?: TerminationEligibility | null;
+}
+
+export interface TerminationEligibility {
+  eligible: boolean;
+  code: string | null;
+  message: string;
+  firstSessionEnd: string | null;
 }
 
 export interface ContractDocumentParty {
@@ -124,6 +132,7 @@ export interface ContractDocumentView {
     tutorPayoutBps: number | null;
     platformFeeBps: number | null;
     settlementRule: string | null;
+    studentTerminationRule: string | null;
   };
   termsHash: string;
   termsJson: string;

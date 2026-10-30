@@ -192,8 +192,9 @@ public class ContractSignatureService {
     private boolean hasSupportedSnapshot(ContractAgreement agreement) {
         String version = snapshotVersion(agreement);
         return "contract-terms-v2".equals(version)
-                || ContractTermsSnapshotService.SCHEMA_VERSION.equals(version)
-                || ContractTermsSnapshotService.SCHEMA_VERSION_V4.equals(version);
+                || ContractTermsSnapshotService.SCHEMA_VERSION_V3.equals(version)
+                || ContractTermsSnapshotService.SCHEMA_VERSION_V4.equals(version)
+                || ContractTermsSnapshotService.SCHEMA_VERSION_V5.equals(version);
     }
 
     public List<ContractAcceptance> getAcceptances(UUID agreementId) {
