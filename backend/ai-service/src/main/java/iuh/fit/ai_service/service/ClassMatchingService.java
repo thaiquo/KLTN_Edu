@@ -12,6 +12,7 @@ import iuh.fit.ai_service.dto.ClassMatchingDtos.PublicClassSource;
 import iuh.fit.ai_service.dto.ClassRequirementGroundingDtos.GroundedClassRequirement;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.Budget;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.PreferredSchedule;
+import iuh.fit.ai_service.dto.RequirementAnalysisDtos.TimeOfDayHint;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.ScoreComponent;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.SemanticScoreComponent;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TeachingMode;
@@ -24,12 +25,14 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -128,7 +131,15 @@ public class ClassMatchingService {
                 rawScore,
                 new LinkedHashMap<>(WEIGHTS)
         );
-        ClassMatchResult result = toResult(source, rawScore, breakdown, matchingReasons(source, budget, schedule, capacity, rating), missingData);
+        MatchExplanation explanation = explain(requirement, source, budget, schedule, capacity, rating);
+        ClassMatchResult result = toResult(
+                source,
+                rawScore,
+                breakdown,
+                explanation.matchingReasons(),
+                explanation.mismatchReasons(),
+                missingData
+        );
         return java.util.Optional.of(new ScoredClassMatch(result, rawScore, rawScore, null, BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP)));
     }
 
@@ -177,9 +188,28 @@ public class ClassMatchingService {
             }
             LocalTime preferredStart = parseTime(slot.startTime());
             LocalTime preferredEnd = parseTime(slot.endTime());
+            if (preferredStart == null && preferredEnd == null && slot.timeOfDayHint() != null) {
+                return overlapsTimeOfDay(classStart, classEnd, slot.timeOfDayHint());
+            }
             return (preferredStart == null || !classStart.isBefore(preferredStart))
                     && (preferredEnd == null || !classEnd.isAfter(preferredEnd));
         });
+    }
+
+    private boolean overlapsTimeOfDay(LocalTime classStart, LocalTime classEnd, TimeOfDayHint hint) {
+        LocalTime windowStart = switch (hint) {
+            case MORNING -> LocalTime.of(5, 0);
+            case AFTERNOON -> LocalTime.NOON;
+            case EVENING -> LocalTime.of(18, 0);
+            case NIGHT -> LocalTime.of(22, 0);
+        };
+        LocalTime windowEnd = switch (hint) {
+            case MORNING -> LocalTime.NOON;
+            case AFTERNOON -> LocalTime.of(18, 0);
+            case EVENING -> LocalTime.of(22, 0);
+            case NIGHT -> LocalTime.MAX;
+        };
+        return classStart.isBefore(windowEnd) && classEnd.isAfter(windowStart);
     }
 
     private ScoreComponent budgetScore(Budget budget, BigDecimal price, List<String> missingData) {
@@ -361,6 +391,7 @@ public class ClassMatchingService {
                 percentage(hybridScore),
                 breakdown,
                 current.matchingReasons(),
+                current.mismatchReasons(),
                 current.missingData()
         );
         return new ScoredClassMatch(updated, scored.structuredScore(), hybridScore, semantic.normalizedSignal(), semanticBoost);
@@ -371,6 +402,7 @@ public class ClassMatchingService {
             BigDecimal score,
             ClassScoreBreakdown breakdown,
             List<String> reasons,
+            List<String> mismatchReasons,
             List<String> missingData
     ) {
         return new ClassMatchResult(
@@ -403,11 +435,13 @@ public class ClassMatchingService {
                 percentage(score),
                 breakdown,
                 reasons,
+                mismatchReasons,
                 List.copyOf(missingData)
         );
     }
 
-    private List<String> matchingReasons(
+    private MatchExplanation explain(
+            GroundedClassRequirement requirement,
             PublicClassSource source,
             ScoreComponent budget,
             ScoreComponent schedule,
@@ -415,13 +449,114 @@ public class ClassMatchingService {
             ScoreComponent rating
     ) {
         List<String> reasons = new ArrayList<>();
-        reasons.add("Lớp đúng môn, cấp độ và hình thức học.");
-        if (schedule.normalizedScore() >= 0.9) reasons.add("Lịch học phù hợp với khung thời gian đã chọn.");
-        if (budget.normalizedScore() >= 0.9) reasons.add("Học phí phù hợp với ngân sách.");
+        List<String> mismatches = new ArrayList<>();
+        reasons.add("Lớp đúng môn " + source.registration().subjectName()
+                + ", cấp độ " + source.level().name() + ".");
+
+        String evidenceText = classEvidenceText(source);
+        List<String> matchedTopics = supportedPhrases(requirement.weakTopics(), evidenceText);
+        List<String> matchedPreferences = supportedPhrases(requirement.classPreferences(), evidenceText);
+        if (!matchedTopics.isEmpty()) {
+            reasons.add("Nội dung lớp nêu rõ " + quotedList(matchedTopics, 2)
+                    + ", phù hợp phần kiến thức bạn đang yếu.");
+        } else if (!matchedPreferences.isEmpty()) {
+            reasons.add("Nội dung lớp phù hợp mong muốn " + quotedList(matchedPreferences, 2) + ".");
+        }
+
+        if (schedule.normalizedScore() >= 0.9 && requirement.availableSchedules() != null
+                && !requirement.availableSchedules().isEmpty()) {
+            List<Integer> days = safeList(source.schedules()).stream()
+                    .map(ClassSchedule::dayOfWeek)
+                    .filter(Objects::nonNull)
+                    .distinct()
+                    .toList();
+            reasons.add(days.isEmpty()
+                    ? "Lịch học phù hợp với thời gian đã chọn."
+                    : "Lịch lớp trùng " + days.stream().map(this::dayLabel)
+                            .collect(java.util.stream.Collectors.joining(", ")) + ".");
+        }
+        if (budgetWithinRequirement(requirement.budget(), source.pricePerSession())) {
+            reasons.add("Học phí nằm trong ngân sách đã nêu.");
+        }
         if (capacity.normalizedScore() >= 0.8) reasons.add("Lớp còn chỗ đăng ký.");
         if (rating.normalizedScore() >= 0.75) reasons.add("Gia sư của lớp có đánh giá tốt.");
-        if (source.startDate() != null) reasons.add("Ngày bắt đầu lớp rõ ràng.");
-        return reasons;
+        if (reasons.size() < 4) {
+            reasons.add(source.learningMode() == TeachingMode.ONLINE
+                    ? "Lớp hỗ trợ học online theo đúng hình thức bạn chọn."
+                    : "Lớp hỗ trợ học trực tiếp theo đúng hình thức bạn chọn.");
+        }
+
+        for (String topic : safeList(requirement.weakTopics())) {
+            if (!matchedTopics.contains(topic)) {
+                mismatches.add("Nội dung công khai chưa nêu rõ “" + topic + "”.");
+            }
+        }
+        if (requirement.budget() != null && !budgetWithinRequirement(requirement.budget(), source.pricePerSession())) {
+            mismatches.add("Học phí chưa khớp hoàn toàn với ngân sách đã nêu.");
+        }
+        return new MatchExplanation(distinctLimited(reasons, 4), distinctLimited(mismatches, 2));
+    }
+
+    private boolean budgetWithinRequirement(Budget budget, BigDecimal price) {
+        if (budget == null || price == null) return false;
+        if (budget.min() != null && price.compareTo(budget.min()) < 0) return false;
+        if (budget.max() != null && price.compareTo(budget.max()) > 0) return false;
+        return budget.min() != null || budget.max() != null;
+    }
+
+    private String classEvidenceText(PublicClassSource source) {
+        List<String> values = new ArrayList<>();
+        values.add(source.name());
+        values.add(source.description());
+        values.addAll(safeList(source.topicChips()));
+        safeList(source.chapters()).forEach(chapter -> {
+            values.add(chapter.title());
+            values.add(chapter.description());
+        });
+        String evidence = values.stream().filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.joining(" "));
+        return normalizeText(evidence);
+    }
+
+    private List<String> supportedPhrases(List<String> phrases, String evidenceText) {
+        return safeList(phrases).stream()
+                .filter(Objects::nonNull)
+                .filter(phrase -> phraseSupported(phrase, evidenceText))
+                .distinct()
+                .toList();
+    }
+
+    private boolean phraseSupported(String phrase, String evidenceText) {
+        String normalizedPhrase = normalizeText(phrase);
+        return !normalizedPhrase.isBlank()
+                && (" " + evidenceText + " ").contains(" " + normalizedPhrase + " ");
+    }
+
+    private String normalizeText(String value) {
+        return Normalizer.normalize(value, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .toLowerCase(Locale.ROOT)
+                .replace('đ', 'd')
+                .replaceAll("[^a-z0-9]+", " ")
+                .trim()
+                .replaceAll("\\s+", " ");
+    }
+
+    private String quotedList(List<String> values, int limit) {
+        return values.stream().limit(limit).map(value -> "“" + value + "”")
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    private String dayLabel(Integer day) {
+        return Integer.valueOf(8).equals(day) ? "Chủ nhật" : "Thứ " + day;
+    }
+
+    private <T> List<T> safeList(List<T> values) {
+        return values == null ? List.of() : values;
+    }
+
+    private List<String> distinctLimited(List<String> values, int limit) {
+        return values.stream().filter(Objects::nonNull).distinct().limit(limit).toList();
     }
 
     private ScoreComponent component(int weight, double normalizedScore, String policy) {
@@ -468,6 +603,9 @@ public class ClassMatchingService {
     }
 
     private record SemanticCandidateRank(SemanticClassCandidate candidate, double normalizedSignal) {
+    }
+
+    private record MatchExplanation(List<String> matchingReasons, List<String> mismatchReasons) {
     }
 
     private record ScoredClassMatch(

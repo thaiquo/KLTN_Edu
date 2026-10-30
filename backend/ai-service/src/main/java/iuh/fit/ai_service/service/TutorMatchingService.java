@@ -15,6 +15,7 @@ import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorCandidate;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorMatchResult;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorMatchingRequest;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorMatchingResponse;
+import iuh.fit.ai_service.dto.RequirementAnalysisDtos.TimeOfDayHint;
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSearchRequest;
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSearchResult;
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSearchStatus;
@@ -22,6 +23,8 @@ import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticTut
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchService;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -42,6 +45,7 @@ import java.util.regex.Pattern;
 
 @Service
 public class TutorMatchingService {
+    private static final Logger log = LoggerFactory.getLogger(TutorMatchingService.class);
     private static final int SUBJECT_WEIGHT = 22;
     private static final int SCHEDULE_WEIGHT = 20;
     private static final int BUDGET_WEIGHT = 18;
@@ -85,9 +89,17 @@ public class TutorMatchingService {
                 normalized.levelId(),
                 normalized.teachingMode()
         );
+        int maxExperienceYears = candidates.stream()
+                .map(candidate -> findMatchedCapability(normalized, candidate).orElse(null))
+                .filter(java.util.Objects::nonNull)
+                .map(SubjectCapability::experienceYears)
+                .filter(java.util.Objects::nonNull)
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(0);
 
         List<ScoredTutorMatch> structuredResults = candidates.stream()
-                .map(candidate -> scoreCandidate(normalized, candidate))
+                .map(candidate -> scoreCandidate(normalized, candidate, maxExperienceYears))
                 .flatMap(Optional::stream)
                 .sorted(resultComparator())
                 .toList();
@@ -117,7 +129,11 @@ public class TutorMatchingService {
         );
     }
 
-    private Optional<ScoredTutorMatch> scoreCandidate(TutorMatchingRequest request, TutorCandidate candidate) {
+    private Optional<ScoredTutorMatch> scoreCandidate(
+            TutorMatchingRequest request,
+            TutorCandidate candidate,
+            int maxExperienceYears
+    ) {
         Optional<SubjectCapability> matchedCapability = findMatchedCapability(request, candidate);
         if (matchedCapability.isEmpty() || !isEligible(request, candidate)) {
             return Optional.empty();
@@ -178,12 +194,15 @@ public class TutorMatchingService {
         }
 
         ScoreComponent experience = inactiveComponent("Người học chưa nêu yêu cầu kinh nghiệm; kinh nghiệm chỉ dùng để sắp xếp phụ.");
-        if (context.minExperienceYears() != null) {
-            experience = experienceScore(capability.experienceYears(), context.minExperienceYears(), missingData);
+        if (context.experienceRequested()) {
+            experience = experienceScore(
+                    capability.experienceYears(), context.minExperienceYears(), maxExperienceYears, missingData);
             drafts.add(criterionFromComponent(
                     "experience",
                     "Kinh nghiệm",
-                    "Tối thiểu " + context.minExperienceYears() + " năm",
+                    context.minExperienceYears() == null
+                            ? "Ưu tiên gia sư có nhiều năm kinh nghiệm"
+                            : "Tối thiểu " + context.minExperienceYears() + " năm",
                     capability.experienceYears() == null ? "Gia sư chưa công bố số năm kinh nghiệm." : capability.experienceYears() + " năm kinh nghiệm",
                     EXPERIENCE_WEIGHT,
                     experience
@@ -210,6 +229,7 @@ public class TutorMatchingService {
         }
 
         ScoreResult score = score(drafts);
+        MatchExplanation explanation = buildExplanation(request, context, candidate, capability, score.criteria());
         ScoreBreakdown breakdown = new ScoreBreakdown(
                 dynamicComponent(schedule, score, "schedule"),
                 dynamicComponent(budget, score, "budget"),
@@ -239,8 +259,8 @@ public class TutorMatchingService {
                 candidate.publishedClassCount() == null ? 0L : candidate.publishedClassCount(),
                 score.matchPercentage(),
                 breakdown,
-                matchingReasons(score.criteria()),
-                mismatchReasons(score.criteria()),
+                explanation.matchingReasons(),
+                explanation.mismatchReasons(),
                 List.copyOf(missingData),
                 List.of()
         );
@@ -264,18 +284,21 @@ public class TutorMatchingService {
         try {
             semanticResult = semanticSearchService.search(toSemanticRequest(request, structuredResults));
         } catch (RuntimeException exception) {
+            log.warn("Semantic tutor matching is unavailable; falling back to structured matching: {}",
+                    exception.getClass().getSimpleName());
             return structuredResults;
         }
-        if (semanticResult == null
-                || semanticResult.status() != SemanticSearchStatus.APPLICABLE
-                || semanticResult.candidates() == null
-                || semanticResult.candidates().isEmpty()) {
+        if (semanticResult == null || semanticResult.status() != SemanticSearchStatus.APPLICABLE) {
+            return structuredResults;
+        }
+        if (semanticResult.candidates() == null || semanticResult.candidates().isEmpty()) {
+            log.warn("Semantic tutor index returned no candidates; falling back to structured matching.");
             return structuredResults;
         }
 
         Map<Long, SemanticCandidateRank> semanticByTutorId = semanticRanks(semanticResult.candidates());
         return structuredResults.stream()
-                .map(result -> applySemanticEvidence(result, semanticByTutorId.get(result.result().tutorId())))
+                .map(result -> applySemanticRankBoost(result, semanticByTutorId.get(result.result().tutorId())))
                 .toList();
     }
 
@@ -308,19 +331,12 @@ public class TutorMatchingService {
         return ranks;
     }
 
-    private ScoredTutorMatch applySemanticEvidence(ScoredTutorMatch scored, SemanticCandidateRank semanticRank) {
+    private ScoredTutorMatch applySemanticRankBoost(ScoredTutorMatch scored, SemanticCandidateRank semanticRank) {
         TutorMatchResult current = scored.result();
         ScoreBreakdown currentBreakdown = current.scoreBreakdown();
-        List<CriterionDraft> drafts = currentBreakdown.criteria().stream()
-                .map(CriterionDraft::fromScore)
-                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
-        int specialtyIndex = indexOfCriterion(drafts, "specialty");
-        if (specialtyIndex < 0) {
-            return scored;
-        }
-
         SemanticScoreComponent semantic;
         Double semanticSignal = null;
+        BigDecimal boost = BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP);
         if (semanticRank == null) {
             semantic = new SemanticScoreComponent(
                     true,
@@ -331,40 +347,29 @@ public class TutorMatchingService {
             );
         } else {
             semanticSignal = semanticRank.normalizedSignal();
-            CriterionDraft currentSpecialty = drafts.get(specialtyIndex);
-            double semanticScore = clamp(0.82 + (semanticSignal * 0.18));
-            double nextScore = Math.max(currentSpecialty.normalizedScore(), semanticScore);
-            drafts.set(specialtyIndex, new CriterionDraft(
-                    currentSpecialty.criterion(),
-                    currentSpecialty.label(),
-                    currentSpecialty.requested(),
-                    "Truy hồi ngữ nghĩa xác nhận hồ sơ có nội dung gần với mục tiêu học tập đã nêu.",
-                    currentSpecialty.baseWeight(),
-                    nextScore,
-                    statusFor(nextScore),
-                    "Ngữ nghĩa được dùng làm bằng chứng cho tiêu chí mục tiêu/chủ đề yếu, không cộng như một phần trăm riêng biệt."
-            ));
+            boost = BigDecimal.valueOf(semanticSignal)
+                    .multiply(BigDecimal.valueOf(hybridProperties.maxSemanticRankBoost()))
+                    .setScale(4, RoundingMode.HALF_UP);
             semantic = new SemanticScoreComponent(
                     true,
-                    true,
+                    boost.compareTo(BigDecimal.ZERO) > 0,
                     semanticSignal,
-                    BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP),
-                    "Truy hồi ngữ nghĩa được dùng làm bằng chứng trong tiêu chí đang xét, không phải điểm cộng ẩn vào kết quả cuối."
+                    boost,
+                    "Ứng viên ngữ nghĩa đã xác thực nhận điểm cộng theo thứ hạng có giới hạn; cosine thô không được đổi thành phần trăm."
             );
         }
-
-        ScoreResult score = score(drafts);
+        BigDecimal hybridScore = scored.structuredScore().add(boost).setScale(4, RoundingMode.HALF_UP);
         ScoreBreakdown breakdown = new ScoreBreakdown(
-                rebuildComponent(currentBreakdown.schedule(), score, "schedule"),
-                rebuildComponent(currentBreakdown.budget(), score, "budget"),
-                rebuildComponent(currentBreakdown.location(), score, "location"),
-                rebuildComponent(currentBreakdown.experience(), score, "experience"),
-                rebuildComponent(currentBreakdown.ratingConfidence(), score, "ratingConfidence"),
+                currentBreakdown.schedule(),
+                currentBreakdown.budget(),
+                currentBreakdown.location(),
+                currentBreakdown.experience(),
+                currentBreakdown.ratingConfidence(),
                 semantic,
-                score.rawScore(),
-                score.weights(),
-                score.criteria(),
-                score.totalWeight()
+                currentBreakdown.rawScore(),
+                currentBreakdown.weights(),
+                currentBreakdown.criteria(),
+                currentBreakdown.totalWeight()
         );
         TutorMatchResult updated = new TutorMatchResult(
                 current.tutorId(),
@@ -380,23 +385,14 @@ public class TutorMatchingService {
                 current.averageRating(),
                 current.reviewCount(),
                 current.publishedClassCount(),
-                score.matchPercentage(),
+                percentage(hybridScore),
                 breakdown,
-                matchingReasons(score.criteria()),
-                mismatchReasons(score.criteria()),
+                current.matchingReasons(),
+                current.mismatchReasons(),
                 current.missingData(),
                 current.relaxedCriteria()
         );
-        return new ScoredTutorMatch(updated, score.rawScore(), score.rawScore(), semanticSignal, BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP));
-    }
-
-    private int indexOfCriterion(List<CriterionDraft> drafts, String criterion) {
-        for (int index = 0; index < drafts.size(); index++) {
-            if (criterion.equals(drafts.get(index).criterion())) {
-                return index;
-            }
-        }
-        return -1;
+        return new ScoredTutorMatch(updated, scored.structuredScore(), hybridScore, semanticSignal, boost);
     }
 
     private boolean isEligible(TutorMatchingRequest request, TutorCandidate candidate) {
@@ -506,13 +502,19 @@ public class TutorMatchingService {
         if (requested == null || available == null || !requested.dayOfWeek().equals(available.dayOfWeek())) {
             return 0.0;
         }
-        LocalTime requestedStart = LocalTime.parse(requested.startTime());
-        LocalTime requestedEnd = LocalTime.parse(requested.endTime());
         LocalTime availableStart = parseTime(available.startTime());
         LocalTime availableEnd = parseTime(available.endTime());
         if (availableStart == null || availableEnd == null || !availableStart.isBefore(availableEnd)) {
             return 0.0;
         }
+        if (!StringUtils.hasText(requested.startTime()) || !StringUtils.hasText(requested.endTime())) {
+            if (requested.timeOfDayHint() == null) {
+                return 0.80;
+            }
+            return overlapsTimeOfDay(availableStart, availableEnd, requested.timeOfDayHint()) ? 1.0 : 0.0;
+        }
+        LocalTime requestedStart = LocalTime.parse(requested.startTime());
+        LocalTime requestedEnd = LocalTime.parse(requested.endTime());
         if (!availableStart.isAfter(requestedStart) && !availableEnd.isBefore(requestedEnd)) {
             return 1.0;
         }
@@ -524,6 +526,22 @@ public class TutorMatchingService {
         long requestedMinutes = Math.max(1, Duration.between(requestedStart, requestedEnd).toMinutes());
         long overlapMinutes = Duration.between(overlapStart, overlapEnd).toMinutes();
         return clamp((overlapMinutes / (double) requestedMinutes) * 0.75);
+    }
+
+    private boolean overlapsTimeOfDay(LocalTime availableStart, LocalTime availableEnd, TimeOfDayHint hint) {
+        LocalTime start = switch (hint) {
+            case MORNING -> LocalTime.of(5, 0);
+            case AFTERNOON -> LocalTime.NOON;
+            case EVENING -> LocalTime.of(18, 0);
+            case NIGHT -> LocalTime.of(22, 0);
+        };
+        LocalTime end = switch (hint) {
+            case MORNING -> LocalTime.NOON;
+            case AFTERNOON -> LocalTime.of(18, 0);
+            case EVENING -> LocalTime.of(22, 0);
+            case NIGHT -> LocalTime.MAX;
+        };
+        return availableStart.isBefore(end) && availableEnd.isAfter(start);
     }
 
     private ScoreComponent locationScore(TutorMatchingRequest request, TutorCandidate candidate, List<String> missingData) {
@@ -545,13 +563,22 @@ public class TutorMatchingService {
         return component(LOCATION_WEIGHT, 0.15, "Gia sư ở ngoài tỉnh/thành đã nêu.");
     }
 
-    private ScoreComponent experienceScore(Integer experienceYears, int minExperienceYears, List<String> missingData) {
+    private ScoreComponent experienceScore(
+            Integer experienceYears,
+            Integer minExperienceYears,
+            int maxExperienceYears,
+            List<String> missingData
+    ) {
         if (experienceYears == null) {
             missingData.add("experienceYears");
             return component(EXPERIENCE_WEIGHT, 0.50, "Gia sư chưa công bố số năm kinh nghiệm.");
         }
-        double score = minExperienceYears <= 0 ? 1.0 : clamp(experienceYears / (double) minExperienceYears);
-        String policy = experienceYears >= minExperienceYears
+        double score = minExperienceYears == null
+                ? (maxExperienceYears <= 0 ? 0.50 : clamp(experienceYears / (double) maxExperienceYears))
+                : clamp(experienceYears / (double) minExperienceYears);
+        String policy = minExperienceYears == null
+                ? "Số năm kinh nghiệm được so sánh tương đối trong tập gia sư đủ điều kiện."
+                : experienceYears >= minExperienceYears
                 ? "Gia sư đáp ứng yêu cầu số năm kinh nghiệm."
                 : "Gia sư có ít kinh nghiệm hơn mức người học mong muốn.";
         return component(EXPERIENCE_WEIGHT, score, policy);
@@ -572,7 +599,6 @@ public class TutorMatchingService {
 
     private SpecialtyDraft specialtyScore(ScoringContext context, SubjectCapability capability, TutorCandidate candidate,
                                          SemanticCandidateRank semanticRank) {
-        String query = normalize(context.semanticText());
         String evidenceText = normalize(String.join(" ",
                 nullToEmpty(capability.description()),
                 nullToEmpty(capability.subjectName()),
@@ -580,11 +606,7 @@ public class TutorMatchingService {
                 nullToEmpty(candidate.bio()),
                 nullToEmpty(candidate.fullName())
         ));
-        if (!StringUtils.hasText(query)) {
-            return SpecialtyDraft.inactive();
-        }
-
-        double lexicalScore = lexicalSpecialtyScore(query, evidenceText);
+        double lexicalScore = lexicalSpecialtyScore(context, evidenceText);
         double score = lexicalScore;
         Double semanticSignal = null;
         String evidence = lexicalEvidence(lexicalScore);
@@ -605,12 +627,32 @@ public class TutorMatchingService {
         );
     }
 
-    private double lexicalSpecialtyScore(String query, String evidenceText) {
-        List<String> terms = significantTerms(query);
-        if (terms.isEmpty() || !StringUtils.hasText(evidenceText)) {
+    private double lexicalSpecialtyScore(ScoringContext context, String evidenceText) {
+        Set<String> evidenceTerms = new LinkedHashSet<>(significantTerms(evidenceText));
+        if (evidenceTerms.isEmpty()) {
             return 0.55;
         }
-        long matched = terms.stream().filter(evidenceText::contains).count();
+
+        List<SpecialtyTermGroup> groups = List.of(
+                new SpecialtyTermGroup(String.join(" ", context.weakTopics()), 6),
+                new SpecialtyTermGroup(context.learningGoal(), 3),
+                new SpecialtyTermGroup(String.join(" ", context.tutorPreferences()), 2)
+        );
+        double weightedScore = 0.0;
+        int totalWeight = 0;
+        for (SpecialtyTermGroup group : groups) {
+            List<String> terms = significantTerms(group.text());
+            if (terms.isEmpty()) {
+                continue;
+            }
+            weightedScore += lexicalGroupScore(terms, evidenceTerms) * group.weight();
+            totalWeight += group.weight();
+        }
+        return totalWeight == 0 ? 0.55 : clamp(weightedScore / totalWeight);
+    }
+
+    private double lexicalGroupScore(List<String> terms, Set<String> evidenceTerms) {
+        long matched = terms.stream().filter(evidenceTerms::contains).count();
         if (matched == 0) {
             return 0.55;
         }
@@ -722,63 +764,184 @@ public class TutorMatchingService {
         return new ScoreComponent(weight, round(clamped), weighted, policy);
     }
 
-    private List<String> matchingReasons(List<CriterionScore> criteria) {
-        List<String> reasons = new ArrayList<>();
-        for (CriterionScore criterion : criteria) {
-            if ("MATCH".equals(criterion.status())) {
-                reasons.add(matchReason(criterion));
-            } else if ("PARTIAL".equals(criterion.status())) {
-                reasons.add(partialReason(criterion));
+    private MatchExplanation buildExplanation(
+            TutorMatchingRequest request,
+            ScoringContext context,
+            TutorCandidate candidate,
+            SubjectCapability capability,
+            List<CriterionScore> criteria
+    ) {
+        Map<String, CriterionScore> byCriterion = criteria.stream()
+                .collect(java.util.stream.Collectors.toMap(
+                        CriterionScore::criterion,
+                        criterion -> criterion,
+                        (first, ignored) -> first,
+                        LinkedHashMap::new
+                ));
+        List<String> matches = new ArrayList<>();
+        List<String> mismatches = new ArrayList<>();
+
+        String levelName = capability.levels() == null ? null : capability.levels().stream()
+                .filter(level -> request.levelId().equals(level.levelId()))
+                .map(level -> level.levelName())
+                .findFirst()
+                .orElse(null);
+        matches.add("Đã được duyệt dạy " + joinedSubjectLevel(capability.subjectName(), levelName) + ".");
+
+        Set<String> profileTerms = profileEvidenceTerms(candidate, capability);
+        List<String> matchedTopics = supportedPhrases(context.weakTopics(), profileTerms);
+        List<String> matchedPreferences = supportedPhrases(context.tutorPreferences(), profileTerms);
+        if (!matchedTopics.isEmpty()) {
+            matches.add("Hồ sơ giảng dạy nhấn mạnh " + quotedList(matchedTopics, 2) + ".");
+        } else if (!matchedPreferences.isEmpty()) {
+            matches.add("Phương pháp giảng dạy có nội dung phù hợp với mong muốn "
+                    + quotedList(matchedPreferences, 2) + ".");
+        } else if (isPositive(byCriterion.get("specialty")) && learningGoalSupported(context.learningGoal(), profileTerms)) {
+            matches.add("Mô tả hồ sơ có nội dung trực tiếp liên quan đến mục tiêu học tập đã nêu.");
+        }
+
+        CriterionScore schedule = byCriterion.get("schedule");
+        List<Integer> matchingDays = matchingScheduleDays(request.preferredSchedules(), candidate.availability());
+        int requestedDayCount = safeList(request.preferredSchedules()).stream()
+                .map(PreferredScheduleRequest::dayOfWeek)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new))
+                .size();
+        boolean allRequestedDaysMatch = requestedDayCount > 0 && matchingDays.size() == requestedDayCount;
+        if (schedule != null && !matchingDays.isEmpty()
+                && (schedule.normalizedScore() >= 0.85 || allRequestedDaysMatch)) {
+            matches.add("Lịch rảnh trùng " + matchingDays.stream().map(this::dayLabel)
+                    .collect(java.util.stream.Collectors.joining(", ")) + " với lịch bạn mong muốn.");
+        }
+
+        CriterionScore experience = byCriterion.get("experience");
+        if (experience != null && experience.normalizedScore() >= 0.85 && capability.experienceYears() != null) {
+            matches.add("Có " + capability.experienceYears() + " năm kinh nghiệm theo hồ sơ đã duyệt.");
+        }
+
+        addSecondaryPositive(matches, byCriterion.get("location"), "Phù hợp khu vực dạy trực tiếp bạn đã chọn.");
+        if (matches.size() < 4 && request.teachingMode() != null) {
+            matches.add(request.teachingMode() == TeachingMode.ONLINE
+                    ? "Có hỗ trợ học online theo đúng hình thức bạn chọn."
+                    : "Có hỗ trợ học trực tiếp theo đúng hình thức bạn chọn.");
+        }
+        addSecondaryPositive(matches, byCriterion.get("budget"), "Mức nhận dạy nằm trong khoảng ngân sách bạn đã nêu.");
+        addSecondaryPositive(matches, byCriterion.get("ratingConfidence"), ratingReason(candidate));
+
+        if (schedule != null && schedule.normalizedScore() < 0.85) {
+            if (matchingDays.isEmpty()) {
+                mismatches.add("Lịch rảnh chưa trùng với các ngày bạn đã chọn.");
+            } else if (allRequestedDaysMatch) {
+                mismatches.add("Các ngày đều trùng, nhưng chưa có khung giờ cụ thể để kiểm tra chính xác.");
+            } else {
+                mismatches.add("Lịch chỉ trùng một phần vào " + matchingDays.stream().map(this::dayLabel)
+                        .collect(java.util.stream.Collectors.joining(", ")) + ".");
             }
         }
-        return reasons.stream().filter(StringUtils::hasText).distinct().toList();
-    }
-
-    private List<String> mismatchReasons(List<CriterionScore> criteria) {
-        List<String> reasons = new ArrayList<>();
-        for (CriterionScore criterion : criteria) {
-            if ("MISMATCH".equals(criterion.status()) || "UNKNOWN".equals(criterion.status()) || "PARTIAL".equals(criterion.status())) {
-                reasons.add(mismatchReason(criterion));
+        CriterionScore specialty = byCriterion.get("specialty");
+        if (specialty != null && specialty.normalizedScore() < 0.85 && !context.weakTopics().isEmpty()) {
+            List<String> unsupportedTopics = context.weakTopics().stream()
+                    .filter(topic -> !matchedTopics.contains(topic))
+                    .toList();
+            if (!unsupportedTopics.isEmpty()) {
+                mismatches.add("Hồ sơ chưa nêu rõ " + quotedList(unsupportedTopics, 2) + ".");
             }
         }
-        return reasons.stream().filter(StringUtils::hasText).distinct().toList();
+        if (experience != null && experience.normalizedScore() < 0.85) {
+            mismatches.add(capability.experienceYears() == null
+                    ? "Hồ sơ chưa công bố số năm kinh nghiệm."
+                    : "Có " + capability.experienceYears() + " năm kinh nghiệm, thấp hơn mức ưu tiên của bạn hoặc một số gia sư khác.");
+        }
+        addSecondaryMismatch(mismatches, byCriterion.get("budget"), "Học phí chưa khớp hoàn toàn với ngân sách đã nêu.");
+        addSecondaryMismatch(mismatches, byCriterion.get("location"), "Khu vực dạy trực tiếp chưa khớp hoàn toàn.");
+        addSecondaryMismatch(mismatches, byCriterion.get("ratingConfidence"), "Dữ liệu đánh giá hiện còn hạn chế.");
+
+        return new MatchExplanation(distinctLimited(matches, 4), distinctLimited(mismatches, 2));
     }
 
-    private String matchReason(CriterionScore criterion) {
-        return switch (criterion.criterion()) {
-            case "subjectLevel" -> "Dạy đúng môn và cấp độ học đã chọn.";
-            case "schedule" -> "Lịch dạy phù hợp với thời gian bạn mong muốn.";
-            case "budget" -> "Mức nhận dạy nằm trong khoảng ngân sách.";
-            case "location" -> "Phù hợp khu vực học trực tiếp.";
-            case "experience" -> "Đáp ứng yêu cầu kinh nghiệm bạn đã nêu.";
-            case "ratingConfidence" -> "Có đánh giá tích cực từ học viên.";
-            case "specialty" -> "Hồ sơ có tín hiệu phù hợp với mục tiêu hoặc phần bạn muốn cải thiện.";
-            default -> criterion.evidence();
-        };
+    private Set<String> profileEvidenceTerms(TutorCandidate candidate, SubjectCapability capability) {
+        return new LinkedHashSet<>(significantTerms(String.join(" ",
+                nullToEmpty(capability.description()),
+                nullToEmpty(capability.subjectName()),
+                nullToEmpty(capability.categoryName()),
+                nullToEmpty(candidate.bio())
+        )));
     }
 
-    private String partialReason(CriterionScore criterion) {
-        return switch (criterion.criterion()) {
-            case "schedule" -> "Có một phần lịch dạy trùng với thời gian bạn mong muốn.";
-            case "budget" -> "Mức nhận dạy gần với khoảng ngân sách.";
-            case "location" -> "Khu vực học trực tiếp gần đúng nhưng chưa khớp hoàn toàn.";
-            case "experience" -> "Kinh nghiệm gần với mức bạn mong muốn.";
-            case "ratingConfidence" -> "Đánh giá hiện có là tín hiệu tham khảo.";
-            case "specialty" -> "Hồ sơ có một phần nội dung gần với mục tiêu học tập.";
-            default -> criterion.evidence();
-        };
+    private List<String> supportedPhrases(List<String> phrases, Set<String> profileTerms) {
+        return safeList(phrases).stream()
+                .filter(StringUtils::hasText)
+                .filter(phrase -> phraseSupported(phrase, profileTerms))
+                .distinct()
+                .toList();
     }
 
-    private String mismatchReason(CriterionScore criterion) {
-        return switch (criterion.criterion()) {
-            case "schedule" -> "Lịch rảnh chưa khớp hoàn toàn với thời gian bạn đã nêu.";
-            case "budget" -> "Học phí chưa khớp hoàn toàn với ngân sách đã nêu.";
-            case "location" -> "Khu vực học trực tiếp chưa khớp hoàn toàn.";
-            case "experience" -> "Kinh nghiệm chưa đạt mức bạn mong muốn.";
-            case "ratingConfidence" -> "Dữ liệu đánh giá còn hạn chế.";
-            case "specialty" -> "Bằng chứng về mục tiêu/chủ đề yếu trong hồ sơ còn hạn chế.";
-            default -> null;
-        };
+    private boolean phraseSupported(String phrase, Set<String> profileTerms) {
+        List<String> terms = significantTerms(phrase);
+        if (terms.isEmpty()) {
+            return false;
+        }
+        long matched = terms.stream().filter(profileTerms::contains).count();
+        return matched >= Math.max(1, (int) Math.ceil(terms.size() * 0.5));
+    }
+
+    private boolean learningGoalSupported(String learningGoal, Set<String> profileTerms) {
+        List<String> terms = significantTerms(learningGoal);
+        if (terms.isEmpty()) {
+            return false;
+        }
+        return terms.stream().filter(profileTerms::contains).count() >= Math.max(2, (int) Math.ceil(terms.size() * 0.25));
+    }
+
+    private List<Integer> matchingScheduleDays(List<PreferredScheduleRequest> requested, List<AvailabilitySlot> available) {
+        LinkedHashSet<Integer> days = new LinkedHashSet<>();
+        for (PreferredScheduleRequest requestSlot : safeList(requested)) {
+            if (safeList(available).stream().anyMatch(slot -> scheduleSlotScore(requestSlot, slot) > 0.0)) {
+                days.add(requestSlot.dayOfWeek());
+            }
+        }
+        return List.copyOf(days);
+    }
+
+    private String dayLabel(Integer day) {
+        return Integer.valueOf(8).equals(day) ? "Chủ nhật" : "Thứ " + day;
+    }
+
+    private String joinedSubjectLevel(String subject, String level) {
+        return List.of(nullToEmpty(subject), nullToEmpty(level)).stream()
+                .filter(StringUtils::hasText)
+                .collect(java.util.stream.Collectors.joining(" - "));
+    }
+
+    private String quotedList(List<String> values, int limit) {
+        return values.stream().limit(limit).map(value -> "“" + value + "”")
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    private boolean isPositive(CriterionScore criterion) {
+        return criterion != null && criterion.normalizedScore() >= 0.60;
+    }
+
+    private void addSecondaryPositive(List<String> reasons, CriterionScore criterion, String reason) {
+        if (reasons.size() < 4 && criterion != null && criterion.normalizedScore() >= 0.85 && StringUtils.hasText(reason)) {
+            reasons.add(reason);
+        }
+    }
+
+    private void addSecondaryMismatch(List<String> reasons, CriterionScore criterion, String reason) {
+        if (reasons.size() < 2 && criterion != null && criterion.normalizedScore() < 0.85) {
+            reasons.add(reason);
+        }
+    }
+
+    private String ratingReason(TutorCandidate candidate) {
+        return safeReviewCount(candidate.reviewCount()) > 0
+                ? "Đạt " + safeRating(candidate.averageRating()) + "/5 từ " + safeReviewCount(candidate.reviewCount()) + " đánh giá."
+                : null;
+    }
+
+    private List<String> distinctLimited(List<String> reasons, int limit) {
+        return reasons.stream().filter(StringUtils::hasText).distinct().limit(limit).toList();
     }
 
     private String statusFor(double score) {
@@ -806,11 +969,29 @@ public class TutorMatchingService {
         if (matcher.find()) {
             minExperience = Integer.valueOf(matcher.group(1));
         }
+        boolean experienceDeprioritized = allText.contains("hon la so nam kinh nghiem")
+                || allText.contains("khong uu tien kinh nghiem")
+                || allText.contains("khong quan trong so nam kinh nghiem");
+        boolean qualitativeExperience = allText.matches(".*(?:nhieu|that nhieu|lau nam|day dan).*kinh nghiem.*")
+                || allText.matches(".*kinh nghiem.*(?:nhieu|lau nam|day dan).*")
+                || allText.matches(".*uu tien.*kinh nghiem.*");
+        boolean experienceRequested = !experienceDeprioritized
+                && (minExperience != null || qualitativeExperience);
         boolean ratingRequested = allText.contains("danh gia")
                 || allText.contains("review")
                 || allText.contains("uy tin")
                 || allText.contains("sao");
-        return new ScoringContext(semanticText, StringUtils.hasText(semanticText), minExperience, ratingRequested);
+        boolean hasSpecialtyContext = !significantTerms(semanticText).isEmpty();
+        return new ScoringContext(
+                semanticText,
+                hasSpecialtyContext,
+                trimToNull(request.learningGoal()),
+                cleanTextList(request.weakTopics()),
+                cleanTextList(request.tutorPreferences()),
+                minExperience,
+                experienceRequested,
+                ratingRequested
+        );
     }
 
     private boolean hasBudget(TutorMatchingRequest request) {
@@ -835,9 +1016,28 @@ public class TutorMatchingService {
 
     private String scheduleRequested(List<PreferredScheduleRequest> schedules) {
         return safeList(schedules).stream()
-                .map(slot -> "Thứ " + slot.dayOfWeek() + " " + slot.startTime() + "-" + slot.endTime())
+                .map(slot -> {
+                    if (StringUtils.hasText(slot.startTime()) && StringUtils.hasText(slot.endTime())) {
+                        return "Thứ " + slot.dayOfWeek() + " " + slot.startTime() + "-" + slot.endTime();
+                    }
+                    return "Thứ " + slot.dayOfWeek()
+                            + (slot.timeOfDayHint() == null ? "" : " " + timeOfDayLabel(slot.timeOfDayHint()));
+                })
                 .reduce((left, right) -> left + "; " + right)
                 .orElse("Lịch học đã nêu");
+    }
+
+    private String timeOfDayLabel(TimeOfDayHint hint) {
+        return switch (hint) {
+            case MORNING -> "buổi sáng";
+            case AFTERNOON -> "buổi chiều";
+            case EVENING -> "buổi tối";
+            case NIGHT -> "ban đêm";
+        };
+    }
+
+    private int percentage(BigDecimal score) {
+        return Math.max(0, Math.min(100, score.setScale(0, RoundingMode.HALF_UP).intValue()));
     }
 
     private String scheduleEvidence(ScoreComponent schedule, List<AvailabilitySlot> availability) {
@@ -1036,9 +1236,19 @@ public class TutorMatchingService {
     private record ScoringContext(
             String semanticText,
             boolean hasSemanticContext,
+            String learningGoal,
+            List<String> weakTopics,
+            List<String> tutorPreferences,
             Integer minExperienceYears,
+            boolean experienceRequested,
             boolean ratingRequested
     ) {
+    }
+
+    private record SpecialtyTermGroup(String text, int weight) {
+    }
+
+    private record MatchExplanation(List<String> matchingReasons, List<String> mismatchReasons) {
     }
 
     private record CriterionDraft(
@@ -1051,18 +1261,6 @@ public class TutorMatchingService {
             String status,
             String policy
     ) {
-        private static CriterionDraft fromScore(CriterionScore score) {
-            return new CriterionDraft(
-                    score.criterion(),
-                    score.label(),
-                    score.requested(),
-                    score.evidence(),
-                    score.weight(),
-                    score.normalizedScore(),
-                    score.status(),
-                    score.policy()
-            );
-        }
     }
 
     private record SpecialtyDraft(

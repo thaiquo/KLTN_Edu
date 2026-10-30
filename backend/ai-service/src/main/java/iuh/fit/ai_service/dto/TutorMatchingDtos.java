@@ -1,11 +1,11 @@
 package iuh.fit.ai_service.dto;
 
+import iuh.fit.ai_service.dto.RequirementAnalysisDtos.TimeOfDayHint;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -33,14 +33,23 @@ public final class TutorMatchingDtos {
             @Max(value = 8, message = "dayOfWeek must be from 2 to 8")
             Integer dayOfWeek,
 
-            @NotBlank(message = "startTime is required")
             @Pattern(regexp = "^([01]\\d|2[0-3]):[0-5]\\d$", message = "startTime must use HH:mm")
             String startTime,
 
-            @NotBlank(message = "endTime is required")
             @Pattern(regexp = "^([01]\\d|2[0-3]):[0-5]\\d$", message = "endTime must use HH:mm")
-            String endTime
+            String endTime,
+
+            TimeOfDayHint timeOfDayHint
     ) {
+        public PreferredScheduleRequest(Integer dayOfWeek, String startTime, String endTime) {
+            this(dayOfWeek, startTime, endTime, null);
+        }
+
+        @AssertTrue(message = "startTime and endTime must be provided together")
+        public boolean isTimeRangeComplete() {
+            return hasText(startTime) == hasText(endTime);
+        }
+
         @AssertTrue(message = "startTime must be before endTime")
         public boolean isTimeRangeValid() {
             if (startTime == null || endTime == null) {

@@ -46,8 +46,13 @@ export function buildTutorMatchPayload(requirement: GroundedRequirement, optiona
     budgetMin: requirement.budget?.min ?? target, budgetMax: requirement.budget?.max ?? target,
     provinceCode: requirement.teachingMode === 'OFFLINE' ? requirement.location?.provinceCode || null : null,
     communeCode: requirement.teachingMode === 'OFFLINE' ? requirement.location?.communeCode || null : null,
-    preferredSchedules: (requirement.preferredSchedules || []).filter(slot => slot.dayOfWeek && slot.startTime && slot.endTime)
-      .map(slot => ({ dayOfWeek: Number(slot.dayOfWeek), startTime: slot.startTime, endTime: slot.endTime })),
+    preferredSchedules: (requirement.preferredSchedules || []).filter(slot => slot.dayOfWeek)
+      .map(slot => ({
+        dayOfWeek: Number(slot.dayOfWeek),
+        startTime: slot.startTime || null,
+        endTime: slot.endTime || null,
+        timeOfDayHint: slot.timeOfDayHint || null,
+      })),
     learningGoal: requirement.learningGoal || optional.learningGoal?.trim() || null,
     weakTopics: requirement.weakTopics?.length ? requirement.weakTopics : list(optional.weakTopics),
     tutorPreferences: requirement.tutorPreferences?.length ? requirement.tutorPreferences : list(optional.tutorPreferences),

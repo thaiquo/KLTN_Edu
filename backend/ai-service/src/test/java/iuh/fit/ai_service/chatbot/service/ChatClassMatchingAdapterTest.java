@@ -113,6 +113,7 @@ class ChatClassMatchingAdapterTest {
                 91,
                 null,
                 List.of("Đúng môn học", "Lịch học phù hợp"),
+                List.of(),
                 List.of()
         );
     }

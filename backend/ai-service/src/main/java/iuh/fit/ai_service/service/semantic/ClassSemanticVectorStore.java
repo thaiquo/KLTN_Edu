@@ -4,6 +4,8 @@ import iuh.fit.ai_service.service.embedding.EmbeddingVector;
 
 import java.util.List;
 
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.VectorStoreHealth;
+
 public interface ClassSemanticVectorStore {
     void initializeCollection();
 
@@ -16,4 +18,8 @@ public interface ClassSemanticVectorStore {
     List<ClassSemanticStoredPoint> listPayloads();
 
     List<ClassSemanticSearchHit> search(EmbeddingVector queryVector, ClassSemanticSearchFilter filter, int limit);
+
+    default VectorStoreHealth health() {
+        return VectorStoreHealth.unavailable(null);
+    }
 }
