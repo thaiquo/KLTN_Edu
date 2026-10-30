@@ -1,6 +1,6 @@
 # EduConnect — Tổng quan dự án
 
-> Cập nhật theo source và dữ liệu kiểm chứng ngày **2026-10-29**.
+> Cập nhật theo source và dữ liệu kiểm chứng ngày **2026-10-30**.
 > Đây là trang bắt đầu để đọc dự án. Trạng thái chi tiết nằm ở [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 ## 1. Mục tiêu
@@ -100,7 +100,7 @@ Audit note (2026-10-29): current compact migration lineages are Account V1..V3 (
 - AI Matching đã có luồng Tutor/Class Analyze -> Ground -> Match, Qdrant semantic retrieval, Matching V3 explainability và chatbot RAG/tools; production evaluation vẫn còn là việc vận hành tiếp theo.
 - Đã hỗ trợ Student post tìm gia sư trên Community; violation/support ticket, báo cáo quản trị nâng cao và mobile feature parity chưa có.
 - Bốn agreement legacy nạp sai bằng raw ERC-20 transfer đã được `legacy_excluded`; không tham gia KPI hoặc tự quyết toán.
-- Đã hoàn thành Full Auto-CD qua GitHub Actions (cập nhật 2026-10-29): quy trình Pull Request -> CI kiểm tra (1081 backend tests run, 0 failures/errors, 12 skipped; 16/16 jobs PASS) -> 1 approval -> merge main -> tự động build & publish 7 Docker images lên GHCR -> tự động SSH deploy lên VPS Ubuntu (chạy kịch bản `/usr/local/sbin/educonnect-release` với auto database backup & container healthcheck). Bản dựng mới nhất `a1a1bdd` (PR #8) đang hoạt động trực tiếp trên VPS behind Caddy (https://educonnectiuh.duckdns.org), đủ 12/12 containers Up. Đã kích hoạt Classic Branch Protection trên nhánh main.
+- Đã hoàn thành Full Auto-CD qua GitHub Actions (cập nhật 2026-10-30): quy trình Pull Request -> CI kiểm tra -> 1 approval -> merge `main` -> tự động build và publish 7 Docker images lên GHCR -> tự động SSH deploy lên VPS Ubuntu bằng `/usr/local/sbin/educonnect-release` với database backup và container healthcheck. PR #10 đã merge tại `e19db2c`; workflow `Publish images #11` thành công trong 3m42s, toàn bộ sáu backend image, Web image và `Deploy VPS` đều xanh. Lần đối soát trực tiếp VPS gần nhất vẫn là release `a1a1bdd` với 12/12 container Up và HTTP 200; chưa tuyên bố đã đối soát trực tiếp release tag/database/feature flags của `e19db2c` chỉ từ ảnh workflow. Classic Branch Protection đang bật trên `main`.
 - Đã triển khai và đối soát production an toàn: (1) Trải nghiệm Escrow Cooling-Off vẫn bị vô hiệu hóa bằng `ESCROW_TRIAL_ENABLED=false`; (2) quản trị vắng mặt gia sư chỉ quan sát với `TUTOR_ABSENCE_GOVERNANCE_MODE=SHADOW`; (3) mã tự hủy lớp khi học viên cuối cùng opt-out học thử đã deploy, nhưng chỉ được sử dụng khi trial được bật có kiểm soát. Flyway V18 lưu kết quả command inbox để replay lũy đẳng; khóa bi quan tuần tự hóa hai đường ghi Learning là đóng lớp rỗng và kích hoạt enrollment.
 - Phân định rõ ràng hai loại khóa bảo mật: (1) Khóa ví Web3 Sepolia Operator (cấu hình trong .env trên VPS qua BLOCKCHAIN_OPERATOR_PRIVATE_KEY để nạp/giải ngân Escrow) và (2) Khóa mạng SSH deploy (cặp khóa ed25519 educonnect-gh-actions lưu trong GitHub Secrets VPS_SSH_KEY để GitHub Actions tự động deploy). Hai loại khóa này hoàn toàn độc lập.
 
@@ -120,3 +120,10 @@ Audit note (2026-10-29): current compact migration lineages are Account V1..V3 (
 Các master plan/lịch sử triển khai dài trong thư mục con là tài liệu tham chiếu theo thời điểm. Khi khác với code hoặc tài liệu canonical ở trên, ưu tiên code hiện tại và `IMPLEMENTATION_STATUS.md`.
 
 > **AI handoff hiện tại:** `Plan/PLAN_TUTOR_ABSENCE_GOVERNANCE.md` được cố ý giữ nguyên như đặc tả trước triển khai, nên header/checklist trong file đó không phản ánh trạng thái runtime mới nhất. Với tutor-absence, đọc `IMPLEMENTATION_STATUS.md`, `TUTOR_ABSENCE_GOVERNANCE_RESULT.md` và runbook canary; production hiện là `SHADOW`, chưa được phép chuyển `ENFORCE`. Với escrow trial, code đã deploy nhưng `ESCROW_TRIAL_ENABLED=false`; concurrency/live cross-service E2E và canary vẫn là điều kiện trước khi bật.
+
+## 10. Quy ước nhánh làm việc
+
+- Nhánh làm việc dài hạn đã được người dùng xác nhận là `feature/quocthai`.
+- Mọi thay đổi mới mặc định được đồng bộ từ `origin/main`, commit và push lên `feature/quocthai`; không tự tạo thêm nhánh task/feature nếu người dùng chưa yêu cầu.
+- `main` tiếp tục là nhánh bảo vệ và nguồn phát hành. Chỉ merge `feature/quocthai` vào `main` qua Pull Request sau khi CI/review đạt yêu cầu; merge thành công mới kích hoạt publish image và deploy VPS.
+- Các nhánh cũ chỉ giữ vai trò lịch sử. AI làm việc lần sau phải đọc quy tắc chi tiết trong `/AGENTS.md` trước khi thao tác Git.
