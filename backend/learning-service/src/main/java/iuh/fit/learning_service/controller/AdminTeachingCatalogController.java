@@ -8,6 +8,10 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 
 @RestController
 @RequestMapping("/api/admin/teaching-catalog")
@@ -18,6 +22,22 @@ public class AdminTeachingCatalogController {
 
     @GetMapping
     public AdminCatalogDtos.CatalogSnapshot snapshot() { return service.snapshot(); }
+
+    @GetMapping("/references")
+    public AdminCatalogDtos.CatalogReferences references() { return service.references(); }
+
+    @GetMapping("/categories")
+    public Page<AdminCatalogDtos.ManagedCategory> categories(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String programCode,
+            @RequestParam(defaultValue = "false") boolean includeInactive,
+            Pageable pageable) {
+        int page = Math.max(0, pageable.getPageNumber());
+        int size = Math.min(50, Math.max(1, pageable.isPaged() ? pageable.getPageSize() : 10));
+        Pageable normalized = PageRequest.of(page, size, Sort.by(
+                Sort.Order.asc("orderIndex"), Sort.Order.asc("name"), Sort.Order.asc("id")));
+        return service.categories(keyword, programCode, includeInactive, normalized);
+    }
 
     @PostMapping("/categories")
     public ResponseEntity<AdminCatalogDtos.ManagedCategory> createCategory(

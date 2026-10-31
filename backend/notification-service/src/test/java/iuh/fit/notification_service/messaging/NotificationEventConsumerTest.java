@@ -16,13 +16,27 @@ import org.mockito.ArgumentCaptor;
 import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doThrow;
 
 class NotificationEventConsumerTest {
+
+    @Test
+    void persistenceFailurePropagatesToRabbitListenerContainer() {
+        NotificationService notificationService = mock(NotificationService.class);
+        doThrow(new IllegalStateException("database unavailable"))
+                .when(notificationService).createIfAbsent(any());
+        NotificationEventConsumer consumer = new NotificationEventConsumer(notificationService);
+
+        assertThrows(IllegalStateException.class, () -> consumer.onClassReviewed(new ClassReviewedNotificationEvent(
+                "evt-failure", "CLASS_REVIEWED", LocalDateTime.now(), "learning-service",
+                22L, 33L, "tutor@example.com", "Math 10", "APPROVED", null, "staff@example.com")));
+    }
 
     @Test
     void onTutorApplicationSubmittedCreatesStaffNotification() {

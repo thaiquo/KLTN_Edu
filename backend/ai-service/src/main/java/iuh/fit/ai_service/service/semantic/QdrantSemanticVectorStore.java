@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TeachingMode;
 import iuh.fit.ai_service.service.embedding.EmbeddingVector;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.ReadinessStatus;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.VectorStoreHealth;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -109,6 +111,26 @@ public class QdrantSemanticVectorStore implements SemanticVectorStore {
         return resultList(response).stream()
                 .map(this::toHit)
                 .toList();
+    }
+
+    @Override
+    public VectorStoreHealth health() {
+        try {
+            Map<String, Object> info = collectionInfo();
+            if (info == null) {
+                return new VectorStoreHealth(properties.collection(), false, 0, ReadinessStatus.DEGRADED_EMPTY);
+            }
+            Map<String, Object> result = asMap(info.get("result"));
+            long pointCount = asLong(result.get("points_count"));
+            return new VectorStoreHealth(
+                    properties.collection(),
+                    true,
+                    pointCount,
+                    pointCount > 0 ? ReadinessStatus.READY : ReadinessStatus.DEGRADED_EMPTY
+            );
+        } catch (RuntimeException exception) {
+            return VectorStoreHealth.unavailable(properties.collection());
+        }
     }
 
     private Map<String, Object> collectionInfo() {
@@ -249,6 +271,10 @@ public class QdrantSemanticVectorStore implements SemanticVectorStore {
 
     private double asDouble(Object value) {
         return value instanceof Number number ? number.doubleValue() : 0.0;
+    }
+
+    private long asLong(Object value) {
+        return value instanceof Number number ? number.longValue() : 0L;
     }
 
     private String asString(Object value) {

@@ -11,6 +11,7 @@ import iuh.fit.notification_service.messaging.event.TeachingRegistrationSubmitte
 import iuh.fit.notification_service.messaging.event.SubjectRequestSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.CommunityPostConvertedEvent;
 import iuh.fit.notification_service.messaging.event.CommunityPostInteractionEvent;
+import iuh.fit.notification_service.messaging.event.CommunityPostModeratedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApplicationSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApprovedEvent;
 import iuh.fit.notification_service.messaging.event.TutorRejectedEvent;
@@ -400,6 +401,48 @@ public class NotificationEventConsumer {
         }
         if (StringUtils.hasText(commentPreview)) {
             message += ". Nội dung: \"" + commentPreview + "\"";
+        }
+
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                event.eventType(),
+                title,
+                message,
+                StringUtils.hasText(event.targetRole()) ? event.targetRole().trim().toUpperCase() : null,
+                "COMMUNITY_POST",
+                String.valueOf(event.postId())
+        ));
+    }
+
+    @RabbitListener(queues = NotificationRabbitConfig.COMMUNITY_POST_MODERATED_QUEUE)
+    public void onCommunityPostModerated(CommunityPostModeratedEvent event) {
+        if (event == null
+                || !StringUtils.hasText(event.eventId())
+                || event.recipientUserId() == null
+                || event.postId() == null
+                || (!"COMMUNITY_POST_REVIEWED".equals(event.eventType())
+                    && !"COMMUNITY_POST_REVISION_REVIEWED".equals(event.eventType()))
+                || (!"APPROVED".equals(event.decision()) && !"REJECTED".equals(event.decision()))) {
+            log.warn("Skipping invalid community post moderated notification event");
+            return;
+        }
+
+        boolean approved = "APPROVED".equals(event.decision());
+        boolean revision = "COMMUNITY_POST_REVISION_REVIEWED".equals(event.eventType());
+        String title = revision
+                ? (approved ? "Bản chỉnh sửa đã được duyệt" : "Bản chỉnh sửa không được duyệt")
+                : (approved ? "Bài viết đã được duyệt" : "Bài viết không được duyệt");
+        String message = revision
+                ? (approved
+                    ? "Bản chỉnh sửa bài viết của bạn đã được duyệt."
+                    : "Bản chỉnh sửa bài viết của bạn đã bị từ chối.")
+                : (approved
+                    ? "Bài viết của bạn đã được duyệt và hiện đã được đăng."
+                    : "Bài viết của bạn đã bị từ chối sau khi kiểm duyệt.");
+        String reason = safeReason(event.reason());
+        if (!approved && StringUtils.hasText(reason)) {
+            message += " Lý do: " + reason;
         }
 
         notificationService.createIfAbsent(new NotificationCommand(

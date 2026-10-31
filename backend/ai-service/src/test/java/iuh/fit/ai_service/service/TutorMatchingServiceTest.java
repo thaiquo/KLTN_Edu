@@ -10,6 +10,7 @@ import iuh.fit.ai_service.dto.TutorMatchingDtos.TeachingMode;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorCandidate;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorMatchingRequest;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorMatchingResponse;
+import iuh.fit.ai_service.dto.RequirementAnalysisDtos.TimeOfDayHint;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -169,6 +170,95 @@ class TutorMatchingServiceTest {
     }
 
     @Test
+    void dayOnlyScheduleRemainsAUsefulMatchingSignal() {
+        TutorMatchingRequest request = requestBuilder()
+                .preferredSchedules(List.of(new PreferredScheduleRequest(2, null, null, null)))
+                .build();
+
+        var result = service(List.of(candidate(1L))).match(request).results().getFirst();
+
+        assertThat(result.scoreBreakdown().schedule().normalizedScore()).isEqualTo(0.80);
+    }
+
+    @Test
+    void timeOfDayHintMatchesBroadAvailabilityWithoutExactTimes() {
+        TutorMatchingRequest request = requestBuilder()
+                .preferredSchedules(List.of(new PreferredScheduleRequest(2, null, null, TimeOfDayHint.EVENING)))
+                .build();
+
+        var result = service(List.of(candidate(1L))).match(request).results().getFirst();
+
+        assertThat(result.scoreBreakdown().schedule().normalizedScore()).isEqualTo(1.0);
+    }
+
+    @Test
+    void qualitativeExperiencePreferenceUsesRelativeCandidateExperience() {
+        TutorCandidate lessExperienced = candidateBuilder(1L).capability(capability(2)).build();
+        TutorCandidate moreExperienced = candidateBuilder(2L).capability(capability(8)).build();
+        TutorMatchingRequest request = requestBuilder()
+                .tutorPreferences(List.of("uu tien gia su nhieu kinh nghiem"))
+                .build();
+
+        TutorMatchingResponse response = service(List.of(lessExperienced, moreExperienced)).match(request);
+
+        assertThat(response.results().getFirst().tutorId()).isEqualTo(2L);
+        assertThat(response.results().getFirst().scoreBreakdown().criteria())
+                .extracting("criterion")
+                .contains("experience");
+        assertThat(response.results().getFirst().scoreBreakdown().experience().normalizedScore()).isEqualTo(1.0);
+        assertThat(response.results().get(1).scoreBreakdown().experience().normalizedScore()).isEqualTo(0.25);
+    }
+
+    @Test
+    void explicitPreferenceForMethodOverYearsDoesNotActivateExperienceCriterion() {
+        TutorMatchingRequest request = requestBuilder()
+                .tutorPreferences(List.of("uu tien chuyen mon va phuong phap hon la so nam kinh nghiem"))
+                .build();
+
+        var result = service(List.of(candidate(1L))).match(request).results().getFirst();
+
+        assertThat(result.scoreBreakdown().criteria()).extracting("criterion").doesNotContain("experience");
+        assertThat(result.scoreBreakdown().experience().weight()).isZero();
+    }
+
+    @Test
+    void explicitWeakTopicOutweighsGenericGoalAndStyleTerms() {
+        TutorCandidate topicSpecialist = candidateBuilder(1L)
+                .capability(capability(5, "Chuyen hinh hoc lop 12"))
+                .build();
+        TutorCandidate genericExamTutor = candidateBuilder(2L)
+                .capability(capability(5, "On thi va giang de hieu"))
+                .build();
+        TutorMatchingRequest request = requestBuilder()
+                .learningGoal("on thi")
+                .weakTopics(List.of("hinh hoc"))
+                .tutorPreferences(List.of("giang de hieu"))
+                .build();
+
+        TutorMatchingResponse response = service(List.of(genericExamTutor, topicSpecialist)).match(request);
+
+        assertThat(response.results().getFirst().tutorId()).isEqualTo(1L);
+    }
+
+    @Test
+    void lexicalMatchingUsesWholeTokensInsteadOfSubstrings() {
+        TutorCandidate substringOnly = candidateBuilder(1L)
+                .capability(capability(5, "Thien ve dai so"))
+                .build();
+        TutorCandidate exactExamTerm = candidateBuilder(2L)
+                .capability(capability(5, "On thi lop 12"))
+                .build();
+        TutorMatchingRequest request = requestBuilder()
+                .learningGoal("thi")
+                .weakTopics(List.of())
+                .build();
+
+        TutorMatchingResponse response = service(List.of(substringOnly, exactExamTerm)).match(request);
+
+        assertThat(response.results().getFirst().tutorId()).isEqualTo(2L);
+    }
+
+    @Test
     void onlineLocationIsNotPenalized() {
         TutorCandidate candidate = candidateBuilder(1L)
                 .location(new SafeLocation(null, null, null, null, null))
@@ -325,6 +415,74 @@ class TutorMatchingServiceTest {
     }
 
     @Test
+    void explanationsUseTutorSpecificProfileEvidenceAndActualScheduleDays() {
+        TutorMatchingRequest request = requestBuilder()
+                .weakTopics(List.of("hình học không gian"))
+                .tutorPreferences(List.of("giảng chậm từng bước"))
+                .preferredSchedules(List.of(
+                        schedule(2, "18:00", "20:00"),
+                        schedule(4, "18:00", "20:00")
+                ))
+                .build();
+        TutorCandidate tutor = candidateBuilder(1L)
+                .capability(capability(5, "Chuyên hình học không gian, giảng chậm từng bước"))
+                .availability(List.of(slot(2, "17:00", "21:00"), slot(4, "17:00", "21:00")))
+                .build();
+
+        var result = service(List.of(tutor)).match(request).results().getFirst();
+
+        assertThat(result.matchingReasons()).hasSizeBetween(2, 4);
+        assertThat(result.matchingReasons()).anySatisfy(reason -> assertThat(reason).contains("hình học không gian"));
+        assertThat(result.matchingReasons()).anySatisfy(reason -> assertThat(reason).contains("Thứ 2", "Thứ 4"));
+        assertThat(result.matchingReasons()).allSatisfy(reason -> assertThat(reason)
+                .doesNotContain("semantic", "cosine", "normalizedScore"));
+    }
+
+    @Test
+    void explanationDoesNotClaimUnsupportedTopicFromSemanticLikeContext() {
+        TutorMatchingRequest request = requestBuilder()
+                .weakTopics(List.of("hình học không gian"))
+                .learningGoal("Cải thiện hình học để thi tốt")
+                .build();
+        TutorCandidate tutor = candidateBuilder(1L)
+                .capability(capability(5, "Chuyên đại số và khảo sát hàm số"))
+                .build();
+
+        var result = service(List.of(tutor)).match(request).results().getFirst();
+
+        assertThat(result.matchingReasons()).noneMatch(reason -> reason.contains("hình học không gian"));
+        assertThat(result.mismatchReasons()).anySatisfy(reason -> assertThat(reason).contains("hình học không gian"));
+    }
+
+    @Test
+    void partialScheduleAndRelativeExperienceProduceSupportedMismatches() {
+        TutorMatchingRequest request = requestBuilder()
+                .preferredSchedules(List.of(
+                        schedule(2, "18:00", "20:00"),
+                        schedule(4, "18:00", "20:00")
+                ))
+                .tutorPreferences(List.of("Ưu tiên gia sư nhiều kinh nghiệm"))
+                .build();
+        TutorCandidate lessExperienced = candidateBuilder(1L)
+                .capability(capability(2, "Ôn thi và củng cố kiến thức"))
+                .availability(List.of(slot(2, "17:00", "21:00")))
+                .build();
+        TutorCandidate benchmark = candidateBuilder(2L)
+                .capability(capability(8, "Ôn thi và củng cố kiến thức"))
+                .availability(List.of(slot(2, "17:00", "21:00"), slot(4, "17:00", "21:00")))
+                .build();
+
+        var result = service(List.of(lessExperienced, benchmark)).match(request).results().stream()
+                .filter(item -> item.tutorId().equals(1L))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(result.mismatchReasons()).hasSizeBetween(1, 2);
+        assertThat(result.mismatchReasons()).anySatisfy(reason -> assertThat(reason).contains("Thứ 2"));
+        assertThat(result.mismatchReasons()).anySatisfy(reason -> assertThat(reason).contains("2 năm kinh nghiệm"));
+    }
+
+    @Test
     void absentOptionalCriteriaAreNotPartOfDynamicDenominator() {
         TutorMatchingRequest request = requestBuilder()
                 .budgetMin(null)
@@ -412,6 +570,25 @@ class TutorMatchingServiceTest {
         );
     }
 
+    private SubjectCapability capability(Integer experienceYears) {
+        return capability(experienceYears, "On thi va cung co kien thuc");
+    }
+
+    private SubjectCapability capability(Integer experienceYears, String description) {
+        return new SubjectCapability(
+                1000L,
+                SUBJECT_ID,
+                "Toan",
+                30L,
+                "Tu nhien",
+                List.of(new Level(LEVEL_ID, "Lop 12")),
+                experienceYears,
+                BigDecimal.valueOf(200_000),
+                BigDecimal.valueOf(250_000),
+                description
+        );
+    }
+
     private SubjectCapability capabilityWithMissingSoftData() {
         return new SubjectCapability(
                 1000L,
@@ -435,6 +612,7 @@ class TutorMatchingServiceTest {
         private String communeCode;
         private List<PreferredScheduleRequest> preferredSchedules = List.of(schedule(2, "18:00", "20:00"));
         private String learningGoal = "Muốn học chắc kiến thức nền";
+        private List<String> weakTopics = List.of();
         private List<String> tutorPreferences = List.of();
 
         RequestBuilder teachingMode(TeachingMode teachingMode) {
@@ -472,6 +650,11 @@ class TutorMatchingServiceTest {
             return this;
         }
 
+        RequestBuilder weakTopics(List<String> weakTopics) {
+            this.weakTopics = weakTopics;
+            return this;
+        }
+
         RequestBuilder tutorPreferences(List<String> tutorPreferences) {
             this.tutorPreferences = tutorPreferences;
             return this;
@@ -488,7 +671,7 @@ class TutorMatchingServiceTest {
                     communeCode,
                     preferredSchedules,
                     learningGoal,
-                    List.of(),
+                    weakTopics,
                     tutorPreferences
             );
         }

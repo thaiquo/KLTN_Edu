@@ -3,6 +3,7 @@ package iuh.fit.contract_service.repository;
 import iuh.fit.contract_service.entity.BlockchainTransaction;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -13,7 +14,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface BlockchainTransactionRepository extends JpaRepository<BlockchainTransaction, UUID> {
+public interface BlockchainTransactionRepository extends JpaRepository<BlockchainTransaction, UUID>, JpaSpecificationExecutor<BlockchainTransaction> {
     Optional<BlockchainTransaction> findByIdempotencyKey(String idempotencyKey);
 
     Optional<BlockchainTransaction> findByChainIdAndTransactionHash(Long chainId, String transactionHash);

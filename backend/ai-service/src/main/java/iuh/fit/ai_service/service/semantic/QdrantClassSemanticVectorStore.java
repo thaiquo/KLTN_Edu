@@ -17,6 +17,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.ReadinessStatus;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.VectorStoreHealth;
+
 @Component
 public class QdrantClassSemanticVectorStore implements ClassSemanticVectorStore {
     private static final String DISTANCE = "Cosine";
@@ -130,6 +133,26 @@ public class QdrantClassSemanticVectorStore implements ClassSemanticVectorStore 
                 .retrieve()
                 .body(mapType()));
         return resultList(response).stream().map(this::toHit).toList();
+    }
+
+    @Override
+    public VectorStoreHealth health() {
+        try {
+            Map<String, Object> info = collectionInfo();
+            if (info == null) {
+                return new VectorStoreHealth(properties.collection(), false, 0, ReadinessStatus.DEGRADED_EMPTY);
+            }
+            Map<String, Object> result = asMap(info.get("result"));
+            long pointCount = asLong(result.get("points_count"));
+            return new VectorStoreHealth(
+                    properties.collection(),
+                    true,
+                    pointCount,
+                    pointCount > 0 ? ReadinessStatus.READY : ReadinessStatus.DEGRADED_EMPTY
+            );
+        } catch (RuntimeException exception) {
+            return VectorStoreHealth.unavailable(properties.collection());
+        }
     }
 
     private Map<String, Object> collectionInfo() {
@@ -271,6 +294,10 @@ public class QdrantClassSemanticVectorStore implements ClassSemanticVectorStore 
 
     private double asDouble(Object value) {
         return value instanceof Number number ? number.doubleValue() : 0.0;
+    }
+
+    private long asLong(Object value) {
+        return value instanceof Number number ? number.longValue() : 0L;
     }
 
     private String asString(Object value) {

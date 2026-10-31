@@ -11,6 +11,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.sql.Timestamp;
@@ -44,6 +47,60 @@ public class AdminCatalogService {
                 educationLevels.findAllByOrderByOrderIndexAscNameAsc().stream().map(this::reference).toList(),
                 categories.findAllByOrderByOrderIndexAscNameAsc().stream().map(this::managedCategory).toList()
         );
+    }
+
+    @Transactional(readOnly = true)
+    public AdminCatalogDtos.CatalogReferences references() {
+        return new AdminCatalogDtos.CatalogReferences(
+                programTypes.findAllByOrderByOrderIndexAscNameAsc().stream().map(this::reference).toList(),
+                educationLevels.findAllByOrderByOrderIndexAscNameAsc().stream().map(this::reference).toList());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<AdminCatalogDtos.ManagedCategory> categories(
+            String keyword,
+            String programCode,
+            boolean includeInactive,
+            Pageable pageable) {
+        Specification<CatalogCategory> spec = (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            if (!includeInactive) predicates.add(cb.isTrue(root.get("active")));
+            if (programCode != null && !programCode.isBlank() && !"ALL".equalsIgnoreCase(programCode)) {
+                predicates.add(cb.equal(cb.upper(root.join("programType").get("code")), programCode.trim().toUpperCase()));
+            }
+            if (keyword != null && !keyword.isBlank()) {
+                String pattern = "%" + keyword.trim().toLowerCase(Locale.ROOT) + "%";
+                var matchingCategories = query.subquery(Long.class);
+                var subject = matchingCategories.from(CatalogSubject.class);
+                matchingCategories.select(subject.get("category").get("id")).where(cb.or(
+                        cb.like(cb.lower(subject.get("code")), pattern),
+                        cb.like(cb.lower(subject.get("name")), pattern)));
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("code")), pattern),
+                        cb.like(cb.lower(root.get("name")), pattern),
+                        root.get("id").in(matchingCategories)));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
+
+        Page<CatalogCategory> page = categories.findAll(spec, pageable);
+        List<Long> categoryIds = page.getContent().stream().map(CatalogCategory::getId).toList();
+        if (categoryIds.isEmpty()) return page.map(value -> managedCategory(value, List.of()));
+
+        List<CatalogSubject> pageSubjects = subjects.findByCategoryIdInOrderByOrderIndexAscNameAsc(categoryIds);
+        List<Long> subjectIds = pageSubjects.stream().map(CatalogSubject::getId).toList();
+        Map<Long, List<CatalogLevel>> levelsBySubject = subjectIds.isEmpty()
+                ? Map.of()
+                : levels.findBySubject_IdInOrderByOrderIndexAscNameAsc(subjectIds).stream()
+                        .collect(java.util.stream.Collectors.groupingBy(level -> level.getSubject().getId()));
+        Map<Long, List<CatalogSubject>> subjectsByCategory = pageSubjects.stream()
+                .collect(java.util.stream.Collectors.groupingBy(subject -> subject.getCategory().getId()));
+
+        return page.map(category -> managedCategory(
+                category,
+                subjectsByCategory.getOrDefault(category.getId(), List.of()).stream()
+                        .map(subject -> managedSubjectWithLevels(subject, levelsBySubject.getOrDefault(subject.getId(), List.of())))
+                        .toList()));
     }
 
     @Transactional
@@ -258,6 +315,12 @@ public class AdminCatalogService {
     private AdminCatalogDtos.ManagedCategory managedCategory(CatalogCategory value) {
         List<AdminCatalogDtos.ManagedSubject> managedSubjects = subjects
                 .findByCategoryIdOrderByOrderIndexAscNameAsc(value.getId()).stream().map(this::managedSubject).toList();
+        return managedCategory(value, managedSubjects);
+    }
+
+    private AdminCatalogDtos.ManagedCategory managedCategory(
+            CatalogCategory value,
+            List<AdminCatalogDtos.ManagedSubject> managedSubjects) {
         return new AdminCatalogDtos.ManagedCategory(value.getId(), value.getCode(), value.getName(), value.getDescription(),
                 value.isActive(), value.getOrderIndex(), reference(value.getProgramType()),
                 reference(value.getEducationLevel()), managedSubjects);
@@ -268,6 +331,13 @@ public class AdminCatalogService {
                 .findBySubjectIdOrderByOrderIndexAscNameAsc(value.getId()).stream().map(this::managedLevel).toList();
         return new AdminCatalogDtos.ManagedSubject(value.getId(), value.getCode(), value.getName(), value.getDescription(),
                 value.isActive(), value.getOrderIndex(), managedLevels);
+    }
+
+    private AdminCatalogDtos.ManagedSubject managedSubjectWithLevels(
+            CatalogSubject value,
+            List<CatalogLevel> managedLevels) {
+        return new AdminCatalogDtos.ManagedSubject(value.getId(), value.getCode(), value.getName(), value.getDescription(),
+                value.isActive(), value.getOrderIndex(), managedLevels.stream().map(this::managedLevel).toList());
     }
 
     private AdminCatalogDtos.ManagedLevel managedLevel(CatalogLevel value) {

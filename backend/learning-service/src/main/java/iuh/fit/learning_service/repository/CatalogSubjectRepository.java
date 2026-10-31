@@ -9,6 +9,7 @@ import java.util.Optional;
 public interface CatalogSubjectRepository extends JpaRepository<CatalogSubject, Long> {
     List<CatalogSubject> findByCategoryIdAndActiveTrueOrderByOrderIndexAscNameAsc(Long categoryId);
     List<CatalogSubject> findByCategoryIdOrderByOrderIndexAscNameAsc(Long categoryId);
+    List<CatalogSubject> findByCategoryIdInOrderByOrderIndexAscNameAsc(List<Long> categoryIds);
     Optional<CatalogSubject> findByIdAndActiveTrue(Long id);
     boolean existsByCategoryIdAndNameIgnoreCase(Long categoryId, String name);
     Optional<CatalogSubject> findByCategoryIdAndCodeIgnoreCase(Long categoryId, String code);

@@ -1762,6 +1762,18 @@ public class CommunityPostService {
 
     private void promotePendingRevision(CommunityPost post, CreatePostRequest request, long revision,
                                         CommunityModerationPolicy.Result result, String categories) {
+        promotePendingRevision(post, request, revision, result.reason(), result.promptVersion(), categories);
+    }
+
+    void approvePendingRevisionManually(CommunityPost post, CommunityPostPendingRevision pending, String reason) {
+        CreatePostRequest request = readPendingRequest(pending.getRequestJson());
+        promotePendingRevision(post, request, pending.getContentRevision(), reason, "MANUAL_M2",
+                pending.getModerationCategories());
+        publishPostUpdated(post);
+    }
+
+    private void promotePendingRevision(CommunityPost post, CreatePostRequest request, long revision,
+                                        String moderationReason, String promptVersion, String categories) {
         post.setTitle(request.getTitle().trim());
         post.setContent(request.getContent().trim());
         post.setEducationLevel(request.getEducationLevel());
@@ -1799,8 +1811,8 @@ public class CommunityPostService {
         post.setContentRevision(revision);
         post.setModerationStatus(CommunityModerationStatus.ALLOWED);
         post.setModerationCategories(categories);
-        post.setModerationReason(result.reason());
-        post.setModerationPromptVersion(result.promptVersion());
+        post.setModerationReason(moderationReason);
+        post.setModerationPromptVersion(promptVersion);
         post.setModeratedAt(LocalDateTime.now());
         postRepository.save(post);
     }

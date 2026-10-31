@@ -19,13 +19,13 @@ import {
   Users,
   XCircle
 } from "lucide-react";
-import { staffTutorsApi } from "../../../api/staffTutors";
-import { teachingRegistrationApi } from "../../../api/teachingRegistrations";
-import { classApi } from "../../../api/classes";
 import { contractsApi } from "../../../api/contractsApi";
-import { terminationsApi, TerminationView } from "../../../api/terminationsApi";
+import { terminationsApi } from "../../../api/terminationsApi";
+import { operationalReportsApi } from "../../../api/operationalReports";
 import { useAuth } from "../../../hooks/useAuth";
 import { fetchUserDirectory, getUserDisplayName, UserSummary } from "../../../utils/userDisplay";
+import { parsePaginatedResponse } from "../../../api/paginatedResponse";
+import { Pager } from "../OperationalUi";
 
 type ActivityItem = {
   id: string;
@@ -43,33 +43,7 @@ type DateFilterType = "ALL" | "TODAY" | "THIS_WEEK" | "THIS_MONTH" | "CUSTOM";
 type DomainFilterType = "ALL" | "TUTOR_PROFILES" | "TEACHING_REGISTRATION" | "CLASS_ROOMS" | "DISPUTES" | "TERMINATIONS";
 type OutcomeFilterType = "ALL" | "APPROVED" | "REJECTED" | "PENDING";
 
-const pageItems = (value: any) => (Array.isArray(value) ? value : Array.isArray(value?.content) ? value.content : []);
-const sameEmail = (a?: string | null, b?: string | null) => Boolean(a && b && a.trim().toLowerCase() === b.trim().toLowerCase());
 const fmt = (value?: string | null) => (value ? new Date(value).toLocaleString("vi-VN") : "--");
-
-function parseTerminationAudit(cases: TerminationView[], staffEmail?: string | null): ActivityItem[] {
-  return cases.flatMap((item) => {
-    let entries: any[] = [];
-    try {
-      entries = JSON.parse(item.request.auditJson || "[]");
-    } catch {
-      entries = [];
-    }
-    return entries
-      .filter((entry) => ["STAFF", "ADMIN"].includes(String(entry.role || "").toUpperCase()))
-      .filter((entry) => !staffEmail || sameEmail(entry.actor, staffEmail))
-      .map((entry, index) => ({
-        id: `termination-${item.request.id}-${index}`,
-        at: entry.at,
-        actor: entry.actor,
-        domain: "TERMINATIONS" as const,
-        type: "Thanh lý / hủy hợp đồng",
-        target: `Lớp #${item.request.classroomId}${item.request.wholeClass ? " (cả lớp)" : ""}`,
-        status: entry.action || item.request.status,
-        note: entry.reason
-      }));
-  });
-}
 
 export function StaffReportsPage() {
   const { user } = useAuth();
@@ -80,12 +54,12 @@ export function StaffReportsPage() {
   const [error, setError] = useState("");
   const [users, setUsers] = useState<UserSummary[]>([]);
 
-  // Raw datasets
-  const [tutorHistory, setTutorHistory] = useState<any[]>([]);
-  const [teachingHistory, setTeachingHistory] = useState<any[]>([]);
-  const [classes, setClasses] = useState<any[]>([]);
-  const [disputes, setDisputes] = useState<any[]>([]);
-  const [terminations, setTerminations] = useState<TerminationView[]>([]);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [activityTotal, setActivityTotal] = useState(0);
+  const [activityPages, setActivityPages] = useState(0);
+  const [sourceTotals, setSourceTotals] = useState({ tutors: 0, teaching: 0, classes: 0, disputes: 0, terminations: 0 });
+  const [openDisputesTotal, setOpenDisputesTotal] = useState(0);
+  const [pendingTerminationsTotal, setPendingTerminationsTotal] = useState(0);
 
   // Filters
   const [dateFilter, setDateFilter] = useState<DateFilterType>("ALL");
@@ -95,27 +69,60 @@ export function StaffReportsPage() {
   const [searchKeyword, setSearchKeyword] = useState<string>("");
   const [customStartDate, setCustomStartDate] = useState<string>("");
   const [customEndDate, setCustomEndDate] = useState<string>("");
+  const [activityPage, setActivityPage] = useState(0);
+  const [activityPageSize, setActivityPageSize] = useState(10);
+
+  const dateRange = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    if (dateFilter === "TODAY") return { from: startOfToday.toISOString(), to: new Date(startOfToday.getTime() + 86400000).toISOString() };
+    if (dateFilter === "THIS_WEEK") return { from: new Date(startOfToday.getTime() - 6 * 86400000).toISOString(), to: new Date(startOfToday.getTime() + 86400000).toISOString() };
+    if (dateFilter === "THIS_MONTH") return { from: new Date(startOfToday.getTime() - 29 * 86400000).toISOString(), to: new Date(startOfToday.getTime() + 86400000).toISOString() };
+    if (dateFilter === "CUSTOM") {
+      return {
+        from: customStartDate ? new Date(`${customStartDate}T00:00:00`).toISOString() : undefined,
+        to: customEndDate ? new Date(new Date(`${customEndDate}T00:00:00`).getTime() + 86400000).toISOString() : undefined
+      };
+    }
+    return {};
+  }, [customEndDate, customStartDate, dateFilter]);
 
   const load = async () => {
     setLoading(true);
     setError("");
     try {
-      const [userList, tutors, teaching, classRows, disputePage, terminationRows] = await Promise.all([
-        fetchUserDirectory(),
-        staffTutorsApi.history().catch(() => []),
-        teachingRegistrationApi.adminHistory().catch(() => []),
-        classApi.adminGetAllClasses({ reviewedByMe: !isAdmin }).catch(() => []),
-        contractsApi.listDisputes({ page: 0, size: 100 }).catch(() => ({ content: [] })),
-        terminationsApi.list().catch(() => [])
+      const [report, openDisputes, pendingTerminations] = await Promise.all([
+        operationalReportsApi.activities({
+          page: activityPage,
+          size: activityPageSize,
+          domain: domainFilter,
+          outcome: outcomeFilter,
+          staff: selectedStaffEmail,
+          search: searchKeyword.trim() || undefined,
+          from: dateRange.from,
+          to: dateRange.to
+        }),
+        contractsApi.listDisputes({ page: 0, size: 1, statusGroup: "PENDING" }),
+        terminationsApi.page({ page: 0, size: 1, statusGroup: "PENDING" })
       ]);
-
-      setUsers(Array.isArray(userList) ? userList : []);
-      setTutorHistory(Array.isArray(tutors) ? tutors : []);
-      setTeachingHistory(Array.isArray(teaching) ? teaching : []);
-      setClasses(Array.isArray(classRows) ? classRows : []);
-      setDisputes(pageItems(disputePage));
-      setTerminations(Array.isArray(terminationRows) ? terminationRows : []);
+      const openDisputesPage = parsePaginatedResponse(openDisputes, "open disputes");
+      const pendingTerminationsPage = parsePaginatedResponse(pendingTerminations, "pending terminations");
+      setActivities(report.content);
+      setActivityTotal(report.totalElements);
+      setActivityPages(report.totalPages);
+      setSourceTotals({
+        tutors: report.sourceTotals.tutors || 0,
+        teaching: report.sourceTotals.teaching || 0,
+        classes: report.sourceTotals.classes || 0,
+        disputes: report.sourceTotals.disputes || 0,
+        terminations: report.sourceTotals.terminations || 0
+      });
+      setOpenDisputesTotal(openDisputesPage.totalElements);
+      setPendingTerminationsTotal(pendingTerminationsPage.totalElements);
     } catch (err: any) {
+      setActivities([]);
+      setActivityTotal(0);
+      setActivityPages(0);
       setError(err?.message || "Không thể tải báo cáo nghiệp vụ.");
     } finally {
       setLoading(false);
@@ -123,166 +130,41 @@ export function StaffReportsPage() {
   };
 
   useEffect(() => {
-    load();
-  }, [isAdmin, staffEmail]);
+    fetchUserDirectory().then((rows) => setUsers(Array.isArray(rows) ? rows : [])).catch(() => setUsers([]));
+  }, []);
 
-  // Scoped datasets according to role
-  const scopedDisputes = useMemo(() => {
-    if (isAdmin) return disputes;
-    return disputes.filter((item) => sameEmail(item.classroomReviewerEmail, staffEmail));
-  }, [disputes, isAdmin, staffEmail]);
+  useEffect(() => {
+    const timeout = window.setTimeout(load, 250);
+    return () => window.clearTimeout(timeout);
+  }, [activityPage, activityPageSize, dateRange.from, dateRange.to, domainFilter, outcomeFilter, searchKeyword, selectedStaffEmail, isAdmin, staffEmail]);
 
-  const scopedTerminations = useMemo(() => {
-    if (isAdmin) return terminations;
-    return terminations.filter((item) => {
-      const audit = parseTerminationAudit([item], staffEmail);
-      return audit.length > 0 || classes.some((cls) => Number(cls.id) === Number(item.request.classroomId));
-    });
-  }, [classes, isAdmin, staffEmail, terminations]);
+  const filteredActivities = useMemo(() => activities.map((activity) => ({
+    ...activity,
+    actorName: activity.actor ? getUserDisplayName(activity.actor, users).fullName : null
+  })), [activities, users]);
 
-  // Build combined activities list with standardized names
-  const allActivities = useMemo<ActivityItem[]>(() => {
-    const actorDisplayName = (email?: string | null) => {
-      if (!email) return null;
-      const found = users.find((u) => u?.email && u.email.trim().toLowerCase() === email.trim().toLowerCase());
-      return found?.fullName || found?.name || null;
-    };
+  const visibleActivities = filteredActivities;
 
-    const scopedTutorHistory = isAdmin ? tutorHistory : tutorHistory.filter((item) => sameEmail(item.reviewedByEmail, staffEmail));
-    const scopedTeachingHistory = isAdmin ? teachingHistory : teachingHistory.filter((item) => sameEmail(item.reviewedByEmail, staffEmail));
-    const scopedClassHistory = isAdmin ? classes : classes.filter((item) => sameEmail(item.reviewedByEmail, staffEmail));
+  useEffect(() => {
+    setActivityPage(0);
+  }, [activityPageSize, customEndDate, customStartDate, dateFilter, domainFilter, outcomeFilter, searchKeyword, selectedStaffEmail]);
 
-    const tutorItems: ActivityItem[] = scopedTutorHistory.map((item) => ({
-      id: `tutor-${item.id}`,
-      at: item.reviewedAt,
-      actor: item.reviewedByEmail,
-      actorName: actorDisplayName(item.reviewedByEmail) || item.reviewedByName,
-      domain: "TUTOR_PROFILES",
-      type: "Duyệt hồ sơ & CCCD",
-      target: item.applicantFullName || item.fullName || item.email || `Tutor #${item.userId || item.id}`,
-      status: item.status,
-      note: item.rejectionReason || item.reviewNote
-    }));
-
-    const teachingItems: ActivityItem[] = scopedTeachingHistory.map((item) => ({
-      id: `teaching-${item.id}`,
-      at: item.reviewedAt,
-      actor: item.reviewedByEmail,
-      actorName: actorDisplayName(item.reviewedByEmail),
-      domain: "TEACHING_REGISTRATION",
-      type: "Duyệt quyền dạy",
-      target: item.proposedSubjectName ? `${item.proposedSubjectName} (Đề xuất)` : item.subject?.name || `Đăng ký #${item.id}`,
-      status: item.status,
-      note: item.reviewNote || item.rejectReason
-    }));
-
-    const classItems: ActivityItem[] = scopedClassHistory
-      .filter((item) => item.reviewedAt || item.reviewedByEmail)
-      .map((item) => ({
-        id: `class-${item.id}`,
-        at: item.reviewedAt,
-        actor: item.reviewedByEmail,
-        actorName: actorDisplayName(item.reviewedByEmail),
-        domain: "CLASS_ROOMS",
-        type: "Duyệt lớp học",
-        target: item.name || item.className || `Lớp #${item.id}`,
-        status: item.status,
-        note: item.rejectReason
-      }));
-
-    const disputeItems: ActivityItem[] = scopedDisputes
-      .filter((item) => item.resolvedByEmail || item.status !== "OPEN")
-      .map((item) => ({
-        id: `dispute-${item.id}`,
-        at: item.resolvedAt || item.createdAt,
-        actor: item.resolvedByEmail || item.classroomReviewerEmail,
-        actorName: actorDisplayName(item.resolvedByEmail || item.classroomReviewerEmail),
-        domain: "DISPUTES",
-        type: "Xử lý khiếu nại",
-        target: `${item.className || `Lớp #${item.classroomId || "--"}`} · Buổi #${item.sessionId}`,
-        status: item.status,
-        note: item.resolutionReason || item.reason
-      }));
-
-    const terminationItems = parseTerminationAudit(scopedTerminations, isAdmin ? null : staffEmail).map((t) => ({
-      ...t,
-      actorName: actorDisplayName(t.actor)
-    }));
-
-    return [...tutorItems, ...teachingItems, ...classItems, ...disputeItems, ...terminationItems].sort(
-      (a, b) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime()
-    );
-  }, [classes, isAdmin, scopedDisputes, scopedTerminations, staffEmail, teachingHistory, tutorHistory, users]);
-
-  // Filter activities by date, domain, outcome, staff, and search query
-  const filteredActivities = useMemo(() => {
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const weekStart = todayStart - 6 * 24 * 3600 * 1000;
-    const monthStart = todayStart - 29 * 24 * 3600 * 1000;
-
-    return allActivities.filter((act) => {
-      // 1. Date filter
-      if (dateFilter !== "ALL" && act.at) {
-        const itemTime = new Date(act.at).getTime();
-        if (dateFilter === "TODAY" && itemTime < todayStart) return false;
-        if (dateFilter === "THIS_WEEK" && itemTime < weekStart) return false;
-        if (dateFilter === "THIS_MONTH" && itemTime < monthStart) return false;
-        if (dateFilter === "CUSTOM") {
-          if (customStartDate && itemTime < new Date(customStartDate).getTime()) return false;
-          if (customEndDate && itemTime > new Date(customEndDate).getTime() + 24 * 3600 * 1000) return false;
-        }
-      }
-
-      // 2. Domain filter
-      if (domainFilter !== "ALL" && act.domain !== domainFilter) return false;
-
-      // 3. Outcome filter
-      if (outcomeFilter !== "ALL") {
-        const s = String(act.status).toUpperCase();
-        const isApproved = ["APPROVED", "APPROVE", "FORCE_APPROVE", "RECOMMENDED", "RESOLVED"].includes(s);
-        const isRejected = ["REJECTED", "REJECT", "FAILED", "FAILED_RETRYABLE"].includes(s);
-        if (outcomeFilter === "APPROVED" && !isApproved) return false;
-        if (outcomeFilter === "REJECTED" && !isRejected) return false;
-        if (outcomeFilter === "PENDING" && (isApproved || isRejected)) return false;
-      }
-
-      // 4. Staff filter
-      if (selectedStaffEmail !== "ALL") {
-        if (!sameEmail(act.actor, selectedStaffEmail)) return false;
-      }
-
-      // 5. Search keyword
-      if (searchKeyword.trim()) {
-        const q = searchKeyword.toLowerCase();
-        const matchActor = (act.actor || "").toLowerCase().includes(q) || (act.actorName || "").toLowerCase().includes(q);
-        const matchTarget = (act.target || "").toLowerCase().includes(q);
-        const matchType = (act.type || "").toLowerCase().includes(q);
-        const matchNote = (act.note || "").toLowerCase().includes(q);
-        return matchActor || matchTarget || matchType || matchNote;
-      }
-
-      return true;
-    });
-  }, [allActivities, customEndDate, customStartDate, dateFilter, domainFilter, outcomeFilter, searchKeyword, selectedStaffEmail]);
+  useEffect(() => {
+    if (activityPages > 0 && activityPage >= activityPages) setActivityPage(activityPages - 1);
+  }, [activityPage, activityPages]);
 
   // Overall metric stats from filtered list
   const stats = useMemo(() => {
-    const total = filteredActivities.length;
-    const approved = filteredActivities.filter((a) =>
-      ["APPROVED", "APPROVE", "FORCE_APPROVE", "RECOMMENDED", "RESOLVED"].includes(String(a.status).toUpperCase())
-    ).length;
-    const rejected = filteredActivities.filter((a) =>
-      ["REJECTED", "REJECT", "FAILED", "FAILED_RETRYABLE"].includes(String(a.status).toUpperCase())
-    ).length;
-    const approvalRate = total > 0 ? Math.round((approved / total) * 100) : 0;
-    const openDisputes = scopedDisputes.filter((d) =>
-      ["OPENING", "OPEN", "UNDER_REVIEW", "RESOLUTION_PENDING", "FAILED_RETRYABLE"].includes(d.status)
-    ).length;
-    const pendingTerminations = scopedTerminations.filter((t) => !["COMPLETED", "REJECTED"].includes(t.request.status)).length;
-
-    return { total, approved, rejected, approvalRate, openDisputes, pendingTerminations, classesCount: classes.length };
-  }, [classes.length, filteredActivities, scopedDisputes, scopedTerminations]);
+    return {
+      total: "—",
+      approved: "—",
+      rejected: "—",
+      approvalRate: "—",
+      openDisputes: openDisputesTotal,
+      pendingTerminations: pendingTerminationsTotal,
+      classesCount: sourceTotals.classes,
+    };
+  }, [openDisputesTotal, pendingTerminationsTotal, sourceTotals]);
 
   // Staff Performance Breakdown Table (for Admin or Cross-evaluation)
   const staffEvaluationList = useMemo(() => {
@@ -334,13 +216,14 @@ export function StaffReportsPage() {
   // List of distinct staff emails for filter dropdown
   const distinctStaffOptions = useMemo(() => {
     const set = new Map<string, string>();
-    allActivities.forEach((act) => {
-      if (act.actor) {
-        set.set(act.actor.toLowerCase(), act.actorName || act.actor);
+    users.forEach((candidate: any) => {
+      const roles = Array.isArray(candidate?.roles) ? candidate.roles.map((role: string) => role.toUpperCase()) : [];
+      if (candidate?.email && (roles.length === 0 || roles.includes("STAFF") || roles.includes("ADMIN"))) {
+        set.set(candidate.email.toLowerCase(), candidate.fullName || candidate.name || candidate.email);
       }
     });
     return Array.from(set.entries()).map(([email, name]) => ({ email, name }));
-  }, [allActivities]);
+  }, [users]);
 
   const handleExportCsv = () => {
     if (filteredActivities.length === 0) return;
@@ -386,7 +269,7 @@ export function StaffReportsPage() {
     const link = document.createElement("a");
     link.href = url;
     const dateStr = new Date().toISOString().slice(0, 10);
-    link.setAttribute("download", `bao-cao-van-hanh-educonnect-${dateStr}.csv`);
+    link.setAttribute("download", `bao-cao-van-hanh-trang-${activityPage + 1}-${dateStr}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -421,10 +304,10 @@ export function StaffReportsPage() {
             onClick={handleExportCsv}
             disabled={filteredActivities.length === 0}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-[#073554] hover:text-[#073554] transition-all disabled:opacity-50 shadow-2xs"
-            title="Xuất file CSV báo cáo cho kiểm toán/hội đồng"
+            title="Xuất các bản ghi đang hiển thị trên trang hiện tại"
           >
             <Download className="h-4 w-4 text-slate-500" />
-            Xuất file CSV
+            Xuất trang hiện tại
           </button>
           <button
             type="button"
@@ -439,9 +322,12 @@ export function StaffReportsPage() {
       </header>
 
       {error && (
-        <div className="mb-5 flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700 shadow-sm">
+        <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700 shadow-sm">
+          <div className="flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span>{error}</span>
+          </div>
+          <button type="button" onClick={load} className="shrink-0 underline underline-offset-2">Thử lại</button>
         </div>
       )}
 
@@ -450,7 +336,7 @@ export function StaffReportsPage() {
         <Metric icon={BarChart3} label="Tổng thao tác" value={loading ? "..." : stats.total} />
         <Metric icon={CheckCircle2} label="Đã duyệt / Đề xuất" value={loading ? "..." : stats.approved} tone="emerald" />
         <Metric icon={XCircle} label="Từ chối / Bác bỏ" value={loading ? "..." : stats.rejected} tone="rose" />
-        <Metric icon={TrendingUp} label="Tỷ lệ duyệt" value={loading ? "..." : `${stats.approvalRate}%`} tone="indigo" />
+        <Metric icon={TrendingUp} label="Tỷ lệ duyệt" value={loading ? "..." : stats.approvalRate} tone="indigo" />
         <Metric icon={ShieldAlert} label="Khiếu nại đang mở" value={loading ? "..." : stats.openDisputes} tone="amber" />
         <Metric icon={ShieldCheck} label="Thanh lý chờ duyệt" value={loading ? "..." : stats.pendingTerminations} tone="purple" />
       </div>
@@ -496,7 +382,7 @@ export function StaffReportsPage() {
           </div>
 
           <span className="text-xs font-black text-slate-400">
-            {filteredActivities.length} kết quả phù hợp
+            {activityTotal} kết quả phù hợp
           </span>
         </div>
 
@@ -592,7 +478,7 @@ export function StaffReportsPage() {
       </section>
 
       {/* Staff Evaluation Table (Shown for Admin or when Multiple Staff exist) */}
-      {isAdmin && staffEvaluationList.length > 0 && (
+      {false && isAdmin && staffEvaluationList.length > 0 && (
         <section className="mb-6 rounded-2xl border border-[#d7dde6] bg-white p-5 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
@@ -672,13 +558,13 @@ export function StaffReportsPage() {
               onClick={handleExportCsv}
               disabled={filteredActivities.length === 0}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-2xs hover:border-[#073554] hover:text-[#073554] disabled:opacity-50 transition-colors"
-              title="Xuất file CSV báo cáo"
+              title="Xuất các bản ghi đang hiển thị trên trang hiện tại"
             >
               <Download className="h-3.5 w-3.5" />
-              Xuất CSV
+              Xuất trang
             </button>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-black text-slate-600">
-              Hiển thị {filteredActivities.length} thao tác
+              Hiển thị {filteredActivities.length}/{activityTotal} thao tác
             </span>
           </div>
         </div>
@@ -707,7 +593,7 @@ export function StaffReportsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredActivities.slice(0, 100).map((item) => (
+                {visibleActivities.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                     <td className="whitespace-nowrap py-3.5 px-3 font-mono text-[11px] text-slate-500">
                       {fmt(item.at)}
@@ -741,6 +627,19 @@ export function StaffReportsPage() {
               </tbody>
             </table>
           </div>
+        )}
+        {!loading && !error && filteredActivities.length > 0 && (
+          <Pager
+            page={activityPage}
+            pages={Math.max(1, activityPages)}
+            total={activityTotal}
+            size={activityPageSize}
+            onChange={setActivityPage}
+            onSizeChange={(nextSize) => {
+              setActivityPageSize(nextSize);
+              setActivityPage(0);
+            }}
+          />
         )}
       </section>
     </div>

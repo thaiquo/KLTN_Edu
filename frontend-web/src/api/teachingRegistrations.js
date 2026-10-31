@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { paginatedRequest } from './paginatedResponse';
 
 export const teachingCatalogApi = {
   programTypes: () => apiRequest('/api/learning/teaching-catalog/program-types'),
@@ -22,14 +23,20 @@ export const teachingRegistrationApi = {
   createBatch: (payload) => apiRequest('/api/learning/tutor/subject-registrations/batch', {
     method: 'POST', body: JSON.stringify(payload)
   }),
-  adminPending: () => apiRequest('/api/learning/admin/tutor-subject-registrations'),
+  adminPending: ({ page = 0, size = 10, proposalsOnly = false } = {}) => {
+    const endpoint = `/api/learning/admin/tutor-subject-registrations?page=${page}&size=${size}&proposalsOnly=${proposalsOnly}`;
+    return paginatedRequest(apiRequest(endpoint), endpoint);
+  },
   approve: (id, note = '') => apiRequest(`/api/learning/admin/tutor-subject-registrations/${id}/approve`, {
     method: 'POST', body: JSON.stringify({ note })
   }),
   reject: (id, reason, note = '') => apiRequest(`/api/learning/admin/tutor-subject-registrations/${id}/reject`, {
     method: 'POST', body: JSON.stringify({ reason, note })
   }),
-  adminHistory: () => apiRequest('/api/learning/admin/tutor-subject-registrations/history')
+  adminHistory: ({ page = 0, size = 10 } = {}) => {
+    const endpoint = `/api/learning/admin/tutor-subject-registrations/history?page=${page}&size=${size}`;
+    return paginatedRequest(apiRequest(endpoint), endpoint);
+  }
 };
 
 export const catalogSuggestionApi = {
@@ -46,6 +53,14 @@ export const catalogSuggestionApi = {
 
 export const adminTeachingCatalogApi = {
   snapshot: () => apiRequest('/api/learning/admin/teaching-catalog'),
+  references: () => apiRequest('/api/learning/admin/teaching-catalog/references'),
+  categories: ({ keyword = '', programCode = 'ALL', includeInactive = false, page = 0, size = 10 } = {}) => {
+    const params = new URLSearchParams({ page: String(page), size: String(size), includeInactive: String(includeInactive) });
+    if (keyword) params.set('keyword', keyword);
+    if (programCode && programCode !== 'ALL') params.set('programCode', programCode);
+    const endpoint = `/api/learning/admin/teaching-catalog/categories?${params}`;
+    return paginatedRequest(apiRequest(endpoint), endpoint);
+  },
   createCategory: (payload) => apiRequest('/api/learning/admin/teaching-catalog/categories', {
     method: 'POST', body: JSON.stringify(payload)
   }),

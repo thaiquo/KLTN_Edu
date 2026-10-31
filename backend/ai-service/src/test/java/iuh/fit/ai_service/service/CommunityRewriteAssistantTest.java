@@ -52,4 +52,20 @@ class CommunityRewriteAssistantTest {
         assertFalse(result.canRewrite());
         assertNull(result.suggestedTitle());
     }
+
+    @Test void rejectedIntentNeverReachesProvider() {
+        var rejected = new CommunityRewriteAssistant.Request(
+                "STUDENT_FIND_TUTOR", "Nội dung bị từ chối", "Tìm dịch vụ không phù hợp",
+                "REJECTED", List.of("OTHER_UNSAFE"), "Mục đích không phù hợp");
+        assertThrows(IllegalArgumentException.class, () -> assistant.rewrite(rejected));
+        verifyNoInteractions(provider);
+    }
+
+    @Test void needsReviewIntentNeverReachesProvider() {
+        var needsReview = new CommunityRewriteAssistant.Request(
+                "STUDENT_FIND_TUTOR", "Nội dung chưa rõ", "Em muốn học mấy thứ 18+",
+                "NEEDS_REVIEW", List.of("OTHER_UNSAFE"), "Cần người kiểm duyệt");
+        assertThrows(IllegalArgumentException.class, () -> assistant.rewrite(needsReview));
+        verifyNoInteractions(provider);
+    }
 }

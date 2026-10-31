@@ -1,6 +1,7 @@
 package iuh.fit.contract_service.entity;
 
 import iuh.fit.contract_service.enums.DisputeStatus;
+import iuh.fit.contract_service.enums.DisputeEscalationStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -88,6 +89,35 @@ public class Dispute {
 
     @Column(name = "resolve_tx_hash", length = 66)
     private String resolveTxHash;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "escalation_status", nullable = false, length = 30)
+    @Builder.Default
+    private DisputeEscalationStatus escalationStatus = DisputeEscalationStatus.NONE;
+
+    @Column(name = "escalation_reason", columnDefinition = "TEXT")
+    private String escalationReason;
+
+    @Column(name = "escalated_by_user_id")
+    private Long escalatedByUserId;
+
+    @Column(name = "escalated_by_email")
+    private String escalatedByEmail;
+
+    @Column(name = "escalated_at")
+    private Instant escalatedAt;
+
+    @Column(name = "escalation_handled_by_user_id")
+    private Long escalationHandledByUserId;
+
+    @Column(name = "escalation_handled_by_email")
+    private String escalationHandledByEmail;
+
+    @Column(name = "escalation_handled_at")
+    private Instant escalationHandledAt;
+
+    @Column(name = "escalation_return_reason", columnDefinition = "TEXT")
+    private String escalationReturnReason;
 
     @Version
     @Column(name = "version", nullable = false)

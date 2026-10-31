@@ -4,6 +4,7 @@ const STATUS = {
   MODERATING: { label: 'Đang kiểm tra', tone: 'bg-amber-50 border-amber-200 text-amber-800', Icon: Clock3 },
   ALLOWED: { label: 'Đã duyệt', tone: 'bg-emerald-50 border-emerald-200 text-emerald-800', Icon: CheckCircle2 },
   NEEDS_EDIT: { label: 'Cần chỉnh sửa', tone: 'bg-orange-50 border-orange-200 text-orange-800', Icon: AlertCircle },
+  NEEDS_REVIEW: { label: 'Đang chờ kiểm duyệt', tone: 'bg-amber-50 border-amber-200 text-amber-800', Icon: Clock3 },
   REJECTED: { label: 'Không phù hợp', tone: 'bg-rose-50 border-rose-200 text-rose-800', Icon: AlertCircle },
   FAILED: { label: 'Lỗi kiểm tra', tone: 'bg-slate-50 border-slate-200 text-slate-700', Icon: RefreshCw }
 };
@@ -25,7 +26,7 @@ export function ModerationStatusBanner({ post, onRetry, onRewrite, retrying = fa
         </div>
       </div>
       <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-        {(status === 'NEEDS_EDIT' || status === 'REJECTED') && onRewrite && (
+        {status === 'NEEDS_EDIT' && onRewrite && (
           <button
             type="button"
             onClick={onRewrite}

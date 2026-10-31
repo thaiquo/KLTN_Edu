@@ -7,6 +7,7 @@ import iuh.fit.account_service.dto.staff.StaffTutorApplicationSummaryResponse;
 import iuh.fit.account_service.dto.staff.StaffTutorDocumentAccessResponse;
 import iuh.fit.account_service.dto.tutorapplication.TutorDocumentDownloadResponse;
 import iuh.fit.account_service.service.TutorApprovalService;
+import iuh.fit.account_service.enums.TutorApplicationStatus;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -16,8 +17,13 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.format.annotation.DateTimeFormat;
 
-import java.util.List;
+import java.time.OffsetDateTime;
 
 @RestController
 @RequestMapping("/api/staff/tutor-applications")
@@ -31,13 +37,30 @@ public class StaffTutorApplicationController {
     }
 
     @GetMapping("/pending")
-    public List<StaffTutorApplicationSummaryResponse> pendingApplications() {
-        return tutorApprovalService.listPendingApplications();
+    public Page<StaffTutorApplicationSummaryResponse> pendingApplications(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return tutorApprovalService.listPendingApplications(pageable(page, size, "submittedAt"));
     }
 
     @GetMapping("/history")
-    public List<StaffTutorApplicationSummaryResponse> historyApplications(Authentication authentication) {
-        return tutorApprovalService.listHistory(authentication.getName());
+    public Page<StaffTutorApplicationSummaryResponse> historyApplications(
+            Authentication authentication,
+            @RequestParam(required = false) TutorApplicationStatus status,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String reviewer,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        return tutorApprovalService.listHistory(
+                authentication.getName(), status, search, reviewer, from, to,
+                pageable(page, size, "reviewedAt"));
+    }
+
+    private PageRequest pageable(int page, int size, String field) {
+        return PageRequest.of(Math.max(0, page), Math.min(50, Math.max(1, size)),
+                Sort.by(Sort.Order.desc(field), Sort.Order.desc("id")));
     }
 
     @GetMapping("/{applicationId}")

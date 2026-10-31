@@ -6,4 +6,5 @@ import java.util.*;
 
 public interface TerminationItemRepository extends JpaRepository<TerminationItem, UUID> {
     List<TerminationItem> findByCaseIdOrderByAgreementId(UUID caseId);
+    List<TerminationItem> findByCaseIdIn(Collection<UUID> caseIds);
 }

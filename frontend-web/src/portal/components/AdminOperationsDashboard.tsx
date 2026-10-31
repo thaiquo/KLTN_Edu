@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   CheckCircle2,
   FileText,
   RefreshCw,
@@ -11,11 +12,9 @@ import {
   WalletCards
 } from "lucide-react";
 import { adminUsersApi } from "../../api/adminUsers";
-import { staffTutorsApi } from "../../api/staffTutors";
-import { teachingRegistrationApi } from "../../api/teachingRegistrations";
-import { classApi } from "../../api/classes";
 import { contractsApi } from "../../api/contractsApi";
-import { terminationsApi, TerminationView } from "../../api/terminationsApi";
+import { terminationsApi } from "../../api/terminationsApi";
+import { operationalReportsApi } from "../../api/operationalReports";
 import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
 
 type AuditItem = {
@@ -31,43 +30,21 @@ type AuditItem = {
 
 const pageItems = (value: any) => Array.isArray(value) ? value : (Array.isArray(value?.content) ? value.content : []);
 const fmt = (value?: string | null) => value ? new Date(value).toLocaleString("vi-VN") : "--";
-const byNewest = (a: AuditItem, b: AuditItem) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime();
-
-function terminationAudit(cases: TerminationView[]): AuditItem[] {
-  return cases.flatMap((item) => {
-    let entries: any[] = [];
-    try {
-      entries = JSON.parse(item.request.auditJson || "[]");
-    } catch {
-      entries = [];
-    }
-    return entries
-      .filter((entry) => ["STAFF", "ADMIN"].includes(String(entry.role || "").toUpperCase()))
-      .map((entry, index) => ({
-        id: `termination-${item.request.id}-${index}`,
-        at: entry.at,
-        actor: entry.actor,
-        type: "Thẩm định hợp đồng / thanh lý",
-        target: `Lớp #${item.request.classroomId}${item.request.wholeClass ? " (cả lớp)" : ""}`,
-        status: entry.action || item.request.status,
-        note: entry.reason
-      }));
-  });
-}
-
 export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: string) => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [users, setUsers] = useState<any[]>([]);
   const [finance, setFinance] = useState<any>(null);
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [settlements, setSettlements] = useState<any[]>([]);
-  const [disputes, setDisputes] = useState<any[]>([]);
-  const [terminations, setTerminations] = useState<TerminationView[]>([]);
-  const [tutorHistory, setTutorHistory] = useState<any[]>([]);
-  const [teachingHistory, setTeachingHistory] = useState<any[]>([]);
-  const [classes, setClasses] = useState<any[]>([]);
+  const [recentActivities, setRecentActivities] = useState<AuditItem[]>([]);
   const [selectedAudit, setSelectedAudit] = useState<AuditItem | null>(null);
+  const [summaryTotals, setSummaryTotals] = useState({
+    staff: 0,
+    activeStaff: 0,
+    openDisputes: 0,
+    pendingTerminations: 0,
+    failedTransactions: 0,
+    pendingSettlements: 0,
+  });
 
   const load = async (opts?: boolean | unknown) => {
     const isSilent = opts === true;
@@ -76,31 +53,30 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
     }
     setError("");
     try {
-      const [userRows, financialOverview, txPage, settlementPage, disputePage, terminationRows, tutorRows, teachingRows, classRows] = await Promise.all([
-        adminUsersApi.list().catch(() => []),
+      const [userRows, financialOverview, recentActivityPage, staffPage, activeStaffPage, openDisputesPage, pendingTerminationsPage, failedTransactionsPage, pendingSettlementsPage] = await Promise.all([
+        adminUsersApi.list({ page: 0, size: 50 }).catch(() => ({ content: [] })),
         contractsApi.getAdminFinancialOverview().catch(() => null),
-        contractsApi.listAllTransactions({ page: 0, size: 50 }).catch(() => ({ content: [] })),
-        contractsApi.listAdminSettlements({ page: 0, size: 100 }).catch(() => ({ content: [] })),
-        contractsApi.listDisputes({ page: 0, size: 100 }).catch(() => ({ content: [] })),
-        terminationsApi.list().catch(() => []),
-        staffTutorsApi.history().catch(() => []),
-        teachingRegistrationApi.adminHistory().catch(() => []),
-        classApi.adminGetAllClasses().catch(() => [])
+        operationalReportsApi.activities({ page: 0, size: 10 }),
+        adminUsersApi.list({ role: "STAFF", page: 0, size: 1 }).catch(() => ({ totalElements: 0 })),
+        adminUsersApi.list({ role: "STAFF", status: "ACTIVE", page: 0, size: 1 }).catch(() => ({ totalElements: 0 })),
+        contractsApi.listDisputes({ page: 0, size: 1, statusGroup: "PENDING" }).catch(() => ({ totalElements: 0 })),
+        terminationsApi.page({ page: 0, size: 1, statusGroup: "PENDING" }).catch(() => ({ totalElements: 0 })),
+        contractsApi.listAllTransactions({ page: 0, size: 1, statusGroup: "FAILED" }).catch(() => ({ totalElements: 0 })),
+        contractsApi.listAdminSettlements({ page: 0, size: 1, statusGroup: "PENDING" }).catch(() => ({ totalElements: 0 }))
       ]);
-      const classList = Array.isArray(classRows) ? classRows : [];
-      const disputeList = pageItems(disputePage);
-      const terminationList = Array.isArray(terminationRows) ? terminationRows : [];
-
-      setUsers(Array.isArray(userRows) ? userRows : []);
+      setUsers(pageItems(userRows));
       setFinance(financialOverview);
-      setTransactions(pageItems(txPage));
-      setSettlements(pageItems(settlementPage));
-      setDisputes(disputeList);
-      setTerminations(terminationList);
-      setTutorHistory(Array.isArray(tutorRows) ? tutorRows : []);
-      setTeachingHistory(Array.isArray(teachingRows) ? teachingRows : []);
-      setClasses(classList);
+      setRecentActivities(pageItems(recentActivityPage));
+      setSummaryTotals({
+        staff: Number(staffPage?.totalElements || 0),
+        activeStaff: Number(activeStaffPage?.totalElements || 0),
+        openDisputes: Number(openDisputesPage?.totalElements || 0),
+        pendingTerminations: Number(pendingTerminationsPage?.totalElements || 0),
+        failedTransactions: Number(failedTransactionsPage?.totalElements || 0),
+        pendingSettlements: Number(pendingSettlementsPage?.totalElements || 0),
+      });
     } catch (err: any) {
+      setRecentActivities([]);
       setError(err?.message || "Không thể tải bảng điều hành Admin.");
     } finally {
       if (!isSilent) {
@@ -141,67 +117,10 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
 
   const actorName = (email?: string | null) => email ? userNameByEmail.get(String(email).toLowerCase()) || null : null;
 
-  const audit = useMemo<AuditItem[]>(() => {
-    const tutor = tutorHistory.map((item) => ({
-      id: `tutor-${item.id}`,
-      at: item.reviewedAt,
-      actor: item.reviewedByEmail,
-      actorName: actorName(item.reviewedByEmail),
-      type: "Duyệt hồ sơ gia sư",
-      target: item.fullName || item.email || `Tutor #${item.userId}`,
-      status: item.status,
-      note: item.rejectionReason || item.reviewNote
-    }));
-    const teaching = teachingHistory.map((item) => ({
-      id: `teaching-${item.id}`,
-      at: item.reviewedAt,
-      actor: item.reviewedByEmail,
-      actorName: actorName(item.reviewedByEmail),
-      type: "Duyệt quyền dạy",
-      target: item.proposedSubjectName || item.subject?.name || `Đăng ký #${item.id}`,
-      status: item.status,
-      note: item.reviewNote || item.rejectReason
-    }));
-    const classRows = classes
-      .filter((item) => item.reviewedAt || item.reviewedByEmail)
-      .map((item) => ({
-        id: `class-${item.id}`,
-        at: item.reviewedAt,
-        actor: item.reviewedByEmail,
-        actorName: actorName(item.reviewedByEmail),
-        type: "Duyệt lớp học",
-        target: item.name || item.className || `Lớp #${item.id}`,
-        status: item.status,
-        note: item.rejectReason
-      }));
-    const disputeRows = disputes
-      .filter((item) => item.resolvedByEmail)
-      .map((item) => ({
-        id: `dispute-${item.id}`,
-        at: item.resolvedAt || item.updatedAt || item.createdAt,
-        actor: item.resolvedByEmail,
-        actorName: actorName(item.resolvedByEmail),
-        type: "Phân xử khiếu nại",
-        target: `${item.className || `Lớp #${item.classroomId || "--"}`} / Buổi #${item.sessionId}`,
-        status: item.status,
-        note: item.resolutionReason
-      }));
-    return [...tutor, ...teaching, ...classRows, ...disputeRows, ...terminationAudit(terminations).map((item) => ({
-      ...item,
-      actorName: actorName(item.actor)
-    }))]
-      .sort(byNewest);
-  }, [classes, disputes, teachingHistory, terminations, tutorHistory, users]);
-
-  const stats = useMemo(() => {
-    const staffCount = users.filter((u) => u.roles?.includes("STAFF")).length;
-    const activeStaff = users.filter((u) => u.roles?.includes("STAFF") && u.accountStatus === "ACTIVE").length;
-    const openDisputes = disputes.filter((d) => ["OPENING", "OPEN", "UNDER_REVIEW", "RESOLUTION_PENDING", "FAILED_RETRYABLE"].includes(d.status)).length;
-    const pendingTerminations = terminations.filter((t) => !["COMPLETED", "REJECTED"].includes(t.request.status)).length;
-    const failedTx = transactions.filter((tx) => ["FAILED", "FAILED_RETRYABLE"].includes(tx.status)).length;
-    const pendingSettlements = settlements.filter((s) => !["SETTLED", "REFUNDED"].includes(s.status)).length;
-    return { staffCount, activeStaff, openDisputes, pendingTerminations, failedTx, pendingSettlements };
-  }, [disputes, settlements, terminations, transactions, users]);
+  const audit = useMemo<AuditItem[]>(() => recentActivities.map((item) => ({
+    ...item,
+    actorName: actorName(item.actor)
+  })), [recentActivities, users]);
 
   const staffBoard = useMemo(() => {
     const map = new Map<string, { email: string; total: number; approved: number; rejected: number; disputes: number; terminations: number; last?: string | null }>();
@@ -227,7 +146,7 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
           <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Admin Command Center</p>
           <h1 className="mt-1 text-2xl font-black tracking-tight text-[#0f172a]">Giám sát vận hành, Staff và dòng tiền</h1>
           <p className="mt-1 text-xs font-semibold text-slate-500">
-            Admin có thể thao tác toàn quyền như Staff khi cần, đồng thời theo dõi toàn bộ lịch sử xử lý và các điểm cần can thiệp.
+            Admin có thể thao tác toàn quyền như Staff khi cần, đồng thời theo dõi các tín hiệu vận hành gần đây và điểm cần can thiệp.
           </p>
         </div>
         <button onClick={load} className="inline-flex w-fit items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600 hover:border-indigo-300">
@@ -242,12 +161,12 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
       )}
 
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Metric icon={Users} label="Staff hoạt động" value={loading ? "..." : `${stats.activeStaff}/${stats.staffCount}`} />
+        <Metric icon={Users} label="Staff hoạt động" value={loading ? "..." : `${summaryTotals.activeStaff}/${summaryTotals.staff}`} />
         <Metric icon={WalletCards} label="Escrow đang khóa" value={loading ? "..." : `$${Number(finance?.totalEscrowLockedUsdc || 0).toFixed(2)}`} tone="indigo" />
-        <Metric icon={ShieldAlert} label="Khiếu nại mở" value={loading ? "..." : stats.openDisputes} tone="amber" />
-        <Metric icon={ShieldCheck} label="Thanh lý chờ" value={loading ? "..." : stats.pendingTerminations} tone="rose" />
-        <Metric icon={Activity} label="Tx lỗi" value={loading ? "..." : stats.failedTx} tone="rose" />
-        <Metric icon={CheckCircle2} label="Settlement chờ" value={loading ? "..." : stats.pendingSettlements} tone="emerald" />
+        <Metric icon={ShieldAlert} label="Khiếu nại mở" value={loading ? "..." : summaryTotals.openDisputes} tone="amber" />
+        <Metric icon={ShieldCheck} label="Thanh lý chờ" value={loading ? "..." : summaryTotals.pendingTerminations} tone="rose" />
+        <Metric icon={Activity} label="Tx lỗi" value={loading ? "..." : summaryTotals.failedTransactions} tone="rose" />
+        <Metric icon={CheckCircle2} label="Settlement chờ" value={loading ? "..." : summaryTotals.pendingSettlements} tone="emerald" />
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
@@ -255,7 +174,7 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
           <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
               <h2 className="text-lg font-black">Bảng giám sát Staff</h2>
-              <p className="mt-1 text-xs font-semibold text-slate-500">Tổng hợp ai đã duyệt, phân xử, đề xuất thanh lý.</p>
+              <p className="mt-1 text-xs font-semibold text-slate-500">Tổng hợp từ 10 thao tác Staff/Admin mới nhất.</p>
             </div>
             <button type="button" onClick={() => onNavigate?.("user-management")} className="text-xs font-black text-indigo-600 hover:text-indigo-800">Quản lý Staff</button>
           </div>
@@ -313,15 +232,25 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
           <div>
             <h2 className="text-lg font-black">Lịch sử Staff xử lý gần đây</h2>
-            <p className="mt-1 text-xs font-semibold text-slate-500">Admin giám sát Staff/Admin đã duyệt hồ sơ, duyệt lớp, xử lý khiếu nại và thẩm định hợp đồng/thanh lý nào.</p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">10 thao tác mới nhất của Staff/Admin.</p>
           </div>
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-black text-slate-600">{audit.length} dòng</span>
         </div>
         {loading ? (
           <div className="h-36 animate-pulse bg-slate-100" />
+        ) : audit.length === 0 ? (
+          <div className="py-10 text-center text-sm font-bold text-slate-400">Chưa có thao tác gần đây.</div>
         ) : (
-          <AuditTable rows={audit.slice(0, 100)} onSelect={setSelectedAudit} />
+          <AuditTable rows={audit} onSelect={setSelectedAudit} />
         )}
+        <div className="mt-4 flex justify-end border-t border-slate-100 pt-3">
+          <button
+            type="button"
+            onClick={() => onNavigate?.("reports")}
+            className="inline-flex items-center gap-1.5 text-xs font-black text-indigo-600 hover:text-indigo-800"
+          >
+            Xem toàn bộ lịch sử <ArrowRight className="h-4 w-4" />
+          </button>
+        </div>
       </section>
 
       {selectedAudit && <AuditDetailModal item={selectedAudit} onClose={() => setSelectedAudit(null)} />}

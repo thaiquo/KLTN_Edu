@@ -200,8 +200,8 @@ class ContractSchemaMigrationTest {
                             student_wallet, tutor_wallet, platform_wallet, terms_json, terms_hash,
                             contract_version, total_price_vnd, vnd_per_usdc,
                             total_amount_usdc_units, price_per_session_usdc_units,
-                            total_sessions, status, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            total_sessions, status, legacy_excluded, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, ?, ?)
                         """,
                 id, classroomId, studentId, 3001L, "staff@educonnect.test",
                 "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",

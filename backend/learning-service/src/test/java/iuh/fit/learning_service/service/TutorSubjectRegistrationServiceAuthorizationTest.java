@@ -87,13 +87,16 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
         TutorSubjectRegistration proposal = pendingProposal(12L);
         TutorSubjectRegistration standard = pendingProposal(13L);
         standard.setSubject(new CatalogSubject());
-        when(registrations.findByStatusOrderBySubmittedAtAsc(TutorSubjectRegistrationStatus.PENDING))
-                .thenReturn(List.of(proposal, standard));
+        when(registrations.findAll(
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(standard)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(proposal, standard)));
 
-        assertThat(service.pending(false))
+        assertThat(service.pending(false, false, org.springframework.data.domain.PageRequest.of(0, 10)).getContent())
                 .extracting(response -> response.id())
                 .containsExactly(13L);
-        assertThat(service.pending(true))
+        assertThat(service.pending(true, false, org.springframework.data.domain.PageRequest.of(0, 10)).getContent())
                 .extracting(response -> response.id())
                 .containsExactly(12L, 13L);
     }

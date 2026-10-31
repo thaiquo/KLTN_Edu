@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   AlertCircle, BookOpen, CheckCircle2, ChevronDown, ChevronRight, FileUp,
   Layers3, Pencil, Plus, RefreshCw, RotateCcw, Search, XCircle
 } from "lucide-react";
 import { adminTeachingCatalogApi } from "../../../api/teachingRegistrations";
 import { useFeedback } from "../../../components/feedback/useFeedback";
+import { Pager } from "../OperationalUi";
 
 const LEVEL_TYPES = [
   ["GRADE", "Lớp phổ thông"],
@@ -34,8 +35,13 @@ export function TeachingCatalogManagement() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [appliedQuery, setAppliedQuery] = useState("");
   const [programCode, setProgramCode] = useState("ALL");
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [total, setTotal] = useState(0);
+  const [pages, setPages] = useState(1);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [editor, setEditor] = useState<Editor>(null);
   const [form, setForm] = useState<any>(emptyCategory);
@@ -44,8 +50,16 @@ export function TeachingCatalogManagement() {
     setLoading(true);
     setError("");
     try {
-      const data = await adminTeachingCatalogApi.snapshot();
-      setSnapshot(data || { programTypes: [], educationLevels: [], categories: [] });
+      const data = await adminTeachingCatalogApi.categories({
+        keyword: appliedQuery,
+        programCode,
+        includeInactive,
+        page,
+        size: pageSize
+      });
+      setSnapshot((current: any) => ({ ...current, categories: data?.content || [] }));
+      setTotal(Number(data?.totalElements || 0));
+      setPages(Math.max(1, Number(data?.totalPages || 1)));
     } catch (err: any) {
       setError(err?.message || "Không thể tải danh mục giảng dạy.");
     } finally {
@@ -53,18 +67,23 @@ export function TeachingCatalogManagement() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    adminTeachingCatalogApi.references()
+      .then((data: any) => setSnapshot((current: any) => ({ ...current, ...data })))
+      .catch((err: any) => setError(err?.message || "Không thể tải dữ liệu tham chiếu danh mục."));
+  }, []);
 
-  const categories = useMemo(() => {
-    const keyword = query.trim().toLocaleLowerCase("vi-VN");
-    return (snapshot.categories || []).filter((category: any) => {
-      if (programCode !== "ALL" && category.programType?.code !== programCode) return false;
-      if (!includeInactive && !category.active) return false;
-      if (!keyword) return true;
-      return [category.code, category.name, ...(category.subjects || []).flatMap((subject: any) => [subject.code, subject.name])]
-        .some((value) => String(value || "").toLocaleLowerCase("vi-VN").includes(keyword));
-    });
-  }, [snapshot, query, programCode, includeInactive]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setAppliedQuery(query.trim());
+      setPage(0);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => { load(); }, [appliedQuery, includeInactive, page, pageSize, programCode]);
+
+  const categories = snapshot.categories || [];
 
   function beginCreateCategory() {
     const firstProgram = snapshot.programTypes?.find((item: any) => item.active);
@@ -217,12 +236,12 @@ export function TeachingCatalogManagement() {
           <Search className="h-4 w-4 text-slate-400" />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Tìm nhóm môn, môn học hoặc mã..." className="w-full bg-transparent text-xs font-semibold outline-none" />
         </label>
-        <select value={programCode} onChange={(e) => setProgramCode(e.target.value)} className="border border-slate-200 px-3 py-2 text-xs font-bold outline-none">
+        <select value={programCode} onChange={(e) => { setProgramCode(e.target.value); setPage(0); }} className="border border-slate-200 px-3 py-2 text-xs font-bold outline-none">
           <option value="ALL">Tất cả chương trình</option>
           {(snapshot.programTypes || []).map((item: any) => <option key={item.id} value={item.code}>{item.name}</option>)}
         </select>
         <label className="flex items-center gap-2 px-2 text-xs font-bold text-slate-600">
-          <input type="checkbox" checked={includeInactive} onChange={(e) => setIncludeInactive(e.target.checked)} /> Hiện mục đã vô hiệu hóa
+          <input type="checkbox" checked={includeInactive} onChange={(e) => { setIncludeInactive(e.target.checked); setPage(0); }} /> Hiện mục đã vô hiệu hóa
         </label>
       </section>
 
@@ -239,6 +258,17 @@ export function TeachingCatalogManagement() {
               onToggleLevel={(level: any) => toggleActive("LEVEL", level)} />
           ))}
         </div>
+      )}
+
+      {!loading && !error && (total > 0 || pages > 1) && (
+        <Pager
+          page={page}
+          pages={pages}
+          total={total}
+          size={pageSize}
+          onChange={setPage}
+          onSizeChange={(nextSize) => { setPageSize(nextSize); setPage(0); }}
+        />
       )}
 
       {editor && <EditorModal editor={editor} form={form} setForm={setForm} snapshot={snapshot}

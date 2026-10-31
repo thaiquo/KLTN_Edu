@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { parsePaginatedResponse } from './paginatedResponse';
 
 function normalizeSuggestion(item) {
   if (!item || typeof item !== 'object') return item;
@@ -26,7 +27,11 @@ export const subjectSuggestionApi = {
     })
   })),
   mine: async (userId) => normalizeList(await apiRequest(`/api/learning/subject-requests/me?userId=${encodeURIComponent(userId)}`)),
-  adminPending: async () => normalizeList(await apiRequest('/api/learning/subject-requests/pending')),
+  adminPending: async ({ page = 0, size = 10 } = {}) => {
+    const endpoint = `/api/learning/subject-requests/pending?page=${page}&size=${size}`;
+    const response = parsePaginatedResponse(await apiRequest(endpoint), endpoint);
+    return { ...response, content: normalizeList(response.content) };
+  },
   approveAsNew: (id, reviewedByUserId) => apiRequest(`/api/learning/subject-requests/${id}/approve${reviewedByUserId ? `?reviewedByUserId=${encodeURIComponent(reviewedByUserId)}` : ''}`, {
     method: 'PATCH'
   }),

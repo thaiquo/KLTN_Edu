@@ -16,6 +16,7 @@ import java.sql.SQLException;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class LearningSchemaMigrationTest {
@@ -46,7 +47,7 @@ class LearningSchemaMigrationTest {
     }
 
     @Test
-    void v17AndV18CreatesGovernanceColumnsAndCommandInboxWithClassCancelled() {
+    void v17AndV18CreateGovernanceColumnsAndCommandInboxWithClassCancelled() {
         Integer columns = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM information_schema.columns
                  WHERE table_name = 'class_sessions'
@@ -86,6 +87,38 @@ class LearningSchemaMigrationTest {
                 () -> insertInbox(UUID.randomUUID(), UUID.randomUUID(), "HOLD", -1, "d".repeat(64)));
         assertThrows(DataIntegrityViolationException.class,
                 () -> insertInbox(UUID.randomUUID(), UUID.randomUUID(), "HOLD", 3, "short"));
+    }
+
+    @Test
+    void governanceConstraintRejectsExpiredNextSessionAndAcceptsValidSnapshots() {
+        OffsetDateTime finalizedAt = OffsetDateTime.parse("2026-10-30T14:29:53Z");
+        jdbc.update("INSERT INTO class_sessions (id, sequence_number, attendance_finalized_at) VALUES (101, 3, ?)",
+                finalizedAt);
+
+        assertThrows(DataIntegrityViolationException.class, () -> jdbc.update("""
+                UPDATE class_sessions
+                   SET governance_next_session_sequence = 4,
+                       governance_next_session_start_at = ?,
+                       governance_snapshot_captured_at = ?
+                 WHERE id = 101
+                """, OffsetDateTime.parse("2026-10-19T11:30:00Z"), finalizedAt.plusMinutes(1)));
+
+        jdbc.update("""
+                UPDATE class_sessions
+                   SET governance_next_session_sequence = 4,
+                       governance_next_session_start_at = ?,
+                       governance_snapshot_captured_at = ?
+                 WHERE id = 101
+                """, OffsetDateTime.parse("2026-11-02T11:30:00Z"), finalizedAt.plusMinutes(1));
+        assertEquals(4, jdbc.queryForObject(
+                "SELECT governance_next_session_sequence FROM class_sessions WHERE id = 101", Integer.class));
+
+        jdbc.update("INSERT INTO class_sessions (id, sequence_number, attendance_finalized_at) VALUES (102, 9, ?)",
+                finalizedAt);
+        jdbc.update("UPDATE class_sessions SET governance_snapshot_captured_at = ? WHERE id = 102",
+                finalizedAt.plusMinutes(1));
+        assertNull(jdbc.queryForObject(
+                "SELECT governance_next_session_sequence FROM class_sessions WHERE id = 102", Integer.class));
     }
 
     private static void insertInbox(UUID id, UUID commandId, String action, int cutoff, String hash) {

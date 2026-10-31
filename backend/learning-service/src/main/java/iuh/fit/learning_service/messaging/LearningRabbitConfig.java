@@ -38,6 +38,7 @@ public class LearningRabbitConfig {
     public static final String HOMEWORK_GRADED_ROUTING_KEY = "learning.homework.graded";
     public static final String COMMUNITY_POST_CONVERTED_ROUTING_KEY = "learning.community-post.converted";
     public static final String COMMUNITY_POST_INTERACTION_ROUTING_KEY = "learning.community-post.interaction";
+    public static final String COMMUNITY_POST_MODERATED_ROUTING_KEY = "learning.community-post.moderated";
 
     public static final String CONTRACT_ACTIVATED_QUEUE = "learning.contract-activated";
     public static final String CONTRACT_EXPIRED_QUEUE = "learning.contract-expired";

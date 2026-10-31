@@ -5,7 +5,7 @@
 
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, HelpCircle } from "lucide-react";
+import { Search, HelpCircle, Menu } from "lucide-react";
 import { NotificationBell } from "../../components/notifications/NotificationBell";
 import {
   getNotificationPortalPage,
@@ -24,6 +24,7 @@ interface HeaderProps {
   searchValue: string;
   onSearchChange: (value: string) => void;
   onNavigate?: (page: string) => void;
+  onMenuToggle?: () => void;
 }
 
 export function Header({
@@ -32,6 +33,7 @@ export function Header({
   searchValue,
   onSearchChange,
   onNavigate,
+  onMenuToggle,
 }: HeaderProps) {
   const navigate = useNavigate();
   // Avatars for different roles
@@ -74,6 +76,9 @@ export function Header({
     <header className="fixed top-0 right-0 left-0 h-16 bg-white border-b border-brand-border/40 z-30 flex items-center justify-between px-6 select-none font-sans">
       <div className="flex items-center gap-8">
         <div className="flex items-center gap-3">
+          <button type="button" onClick={onMenuToggle} title="Mở menu" className="grid h-9 w-9 place-items-center rounded-lg text-brand-text-variant hover:bg-brand-low lg:hidden">
+            <Menu className="h-5 w-5" />
+          </button>
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-primary to-brand-secondary flex items-center justify-center text-white shadow-md shadow-brand-primary/10">
             <span className="font-display font-black text-xl tracking-tight">E</span>
           </div>
@@ -120,6 +125,8 @@ export function Header({
             onNavigateTarget={handleNotificationNavigate}
           />
           <button
+            type="button"
+            onClick={() => onNavigate?.("help")}
             title="Help Desk"
             className="p-2 text-brand-text-variant hover:bg-brand-low rounded-full transition-colors"
           >

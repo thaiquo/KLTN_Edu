@@ -9,7 +9,11 @@ import iuh.fit.ai_service.service.embedding.EmbeddingService;
 import iuh.fit.ai_service.service.embedding.EmbeddingVector;
 import iuh.fit.ai_service.service.semantic.TutorSemanticDocumentBuilder.TutorSemanticDocumentInput;
 import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.DeleteResult;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.HealthResponse;
 import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.SyncResult;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.VectorStoreHealth;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -21,11 +25,13 @@ import java.util.Set;
 
 @Service
 public class TutorSemanticIndexService {
+    private static final Logger log = LoggerFactory.getLogger(TutorSemanticIndexService.class);
     private final TutorSemanticSourceClient sourceClient;
     private final TutorSemanticDocumentBuilder documentBuilder;
     private final EmbeddingService embeddingService;
     private final EmbeddingProperties embeddingProperties;
     private final SemanticVectorStore vectorStore;
+    private volatile Instant lastSuccessfulSyncAt;
 
     public TutorSemanticIndexService(
             TutorSemanticSourceClient sourceClient,
@@ -83,7 +89,25 @@ public class TutorSemanticIndexService {
                 errors.add(capability.pointId() + ": " + safeMessage(exception));
             }
         }
-        return new SyncResult(tutors.size(), capabilities.size(), indexed, skipped, failed, 0, errors);
+        SyncResult result = new SyncResult(tutors.size(), capabilities.size(), indexed, skipped, failed, 0, errors);
+        if (failed == 0) {
+            lastSuccessfulSyncAt = Instant.now();
+        }
+        return result;
+    }
+
+    public HealthResponse health() {
+        VectorStoreHealth storeHealth = vectorStore.health();
+        if (storeHealth.status() == TutorSemanticIndexDtos.ReadinessStatus.DEGRADED_EMPTY) {
+            log.warn("Semantic tutor index is empty; structured matching fallback remains available.");
+        }
+        return new HealthResponse(
+                storeHealth.collectionName(),
+                storeHealth.collectionExists(),
+                storeHealth.pointCount(),
+                lastSuccessfulSyncAt,
+                storeHealth.status()
+        );
     }
 
     public DeleteResult delete(Long tutorId, Long registrationId, Long subjectId, Long levelId) {

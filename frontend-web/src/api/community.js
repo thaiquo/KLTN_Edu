@@ -107,6 +107,26 @@ export const communityApi = {
     });
   },
 
+  reportPost: (postId, reason, details) => apiRequest(`/api/community/posts/${postId}/reports`, {
+    method: 'POST', body: JSON.stringify({ reason, details })
+  }),
+
+  /** @param {{ moderationStatus?: string, reportedOnly?: boolean, keyword?: string, page?: number, size?: number }} [options] */
+  getModerationQueue: ({ moderationStatus, reportedOnly = false, keyword, page = 0, size = 20 } = {}) => {
+    const params = new URLSearchParams({ reportedOnly: String(reportedOnly), page: String(page), size: String(size) });
+    if (moderationStatus) params.set('moderationStatus', moderationStatus);
+    if (keyword) params.set('keyword', keyword);
+    return apiRequest(`/api/community/moderation/queue?${params.toString()}`);
+  },
+
+  getModerationDetail: (postId, source) => apiRequest(
+    `/api/community/moderation/posts/${postId}${source ? `?source=${encodeURIComponent(source)}` : ''}`
+  ),
+
+  moderatePost: (postId, action, reason, expectedContentRevision, source) => apiRequest(`/api/community/moderation/posts/${postId}/actions`, {
+    method: 'POST', body: JSON.stringify({ action, reason, expectedContentRevision, source })
+  }),
+
   // Smart Class Conversion
   getClassSuggestion: (postId) => apiRequest(`/api/community/posts/${postId}/class-suggestion`),
 
