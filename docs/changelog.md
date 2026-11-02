@@ -7,6 +7,7 @@
 - Staff chỉ xem và theo dõi hồ sơ chấm dứt thuộc lớp được phân công; không còn bước thẩm định/kiến nghị và API từ chối thao tác `RECOMMEND`.
 - Admin trực tiếp quyết định `APPROVE`, `FORCE_APPROVE` hoặc `REJECT`. Trạng thái `RECOMMENDED` chỉ được giữ để đọc dữ liệu và audit lịch sử, không tạo mới.
 - Giao diện Staff, văn bản hợp đồng, hướng dẫn học thử, báo cáo và tài liệu nghiệp vụ đã thống nhất thuật ngữ; trạng thái lịch sử không còn bị tính nhầm là đã duyệt.
+- Tối ưu thao tác Admin: tách “tạo hồ sơ dừng chủ động” khỏi xử lý đề xuất có sẵn; thêm “Xử lý ngay” theo đúng lớp/hồ sơ, tự mở khu vực quyết định và hiển thị toàn bộ hợp đồng bị ảnh hưởng. Màn hình tổng vẫn cho Admin xem toàn hệ thống và tải đủ các trang hợp đồng thuộc quyền.
 - Kiểm chứng: Contract suite 315 test (307 pass, 8 Anvil skip), frontend typecheck/build và 4 test phân quyền portal đều đạt.
 
 ---

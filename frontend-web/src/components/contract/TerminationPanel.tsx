@@ -199,6 +199,7 @@ export function TerminationPanel({
 
   // Sync external selectedClassroomId prop
   const initializedCases = useRef(new Set<string>());
+  const autoFocusedCase = useRef<string | null>(null);
   useEffect(() => {
     initializedCases.current.clear();
     setSelectedClassFilter(selectedClassroomId != null ? String(selectedClassroomId) : 'ALL');
@@ -249,6 +250,39 @@ export function TerminationPanel({
   const isStaff = normalizedRole === 'staff';
   const isAdmin = normalizedRole === 'admin';
   const isManager = isAdmin || isStaff;
+
+  const clearClassFocus = useCallback(() => {
+    setSelectedClassFilter('ALL');
+    onClearClassFilter?.();
+  }, [onClearClassFilter]);
+
+  const focusAdminDecision = useCallback((caseId: string) => {
+    setShowAdminCreate(false);
+    setAction(null);
+    setReviewReason('');
+    setExpandedCaseIds((previous) => new Set(previous).add(caseId));
+    window.setTimeout(() => {
+      document.getElementById(`termination-decision-${caseId}`)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      });
+    }, 120);
+  }, []);
+
+  useEffect(() => {
+    if (!isAdmin || (selectedClassroomId == null && selectedAgreementId == null)) return;
+    const candidates = requests.filter(({ request }) => {
+      if (!['REQUESTED', 'RECOMMENDED'].includes(request.status)) return false;
+      if (selectedAgreementId && request.anchorAgreementId === selectedAgreementId) return true;
+      return selectedClassroomId != null && String(request.classroomId) === String(selectedClassroomId);
+    });
+    const target = selectedAgreementId
+      ? candidates[0]
+      : candidates.find(({ request }) => request.wholeClass) || candidates[0];
+    if (!target || autoFocusedCase.current === target.request.id) return;
+    autoFocusedCase.current = target.request.id;
+    focusAdminDecision(target.request.id);
+  }, [focusAdminDecision, isAdmin, requests, selectedAgreementId, selectedClassroomId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
@@ -313,8 +347,19 @@ export function TerminationPanel({
             page: isTutor ? agreementPage : 0,
             size: 50,
           });
+          const remainingPages = isManager && response.totalPages > 1
+            ? await Promise.all(
+                Array.from({ length: response.totalPages - 1 }, (_, index) =>
+                  contractsApi.listAgreements({ page: index + 1, size: 50 })
+                )
+              )
+            : [];
+          const visibleAgreements = [
+            ...(response.content ?? []),
+            ...remainingPages.flatMap((result) => result.content ?? []),
+          ];
           if (active) {
-            setAgreements(response.content ?? []);
+            setAgreements(visibleAgreements);
             setAgreementTotal(response.totalElements || 0);
             setAgreementPages(Math.max(1, response.totalPages || 1));
           }
@@ -700,7 +745,7 @@ export function TerminationPanel({
                 {isTutor && 'Theo dõi tình trạng học viên xin nghỉ đơn phương hoặc tiến trình đề xuất dừng lớp. Bảo vệ thù lao các buổi đã dạy.'}
                 {isStudent && 'Theo dõi tiến độ xét duyệt đơn, đính kèm file minh chứng hoặc gửi thêm lời nhắn giải thích để nhận hoàn tiền cọc.'}
                 {isStaff && 'Chỉ xem và theo dõi hồ sơ chấm dứt của lớp được phân công. Staff không gửi kiến nghị và không thực hiện bất kỳ thao tác xử lý nào; toàn bộ quyết định thuộc Admin.'}
-                {isAdmin && 'Cấp phê duyệt tối cao: Chốt quyết toán các buổi đã dạy cho gia sư và hoàn tiền cọc Escrow về ví học viên.'}
+                {isAdmin && 'Toàn quyền hệ thống: xem tất cả hợp đồng và hồ sơ của mọi lớp; trực tiếp xử lý đề xuất của Gia sư, yêu cầu của Học viên và quyết định quyết toán Escrow.'}
               </p>
             </div>
           </div>
@@ -744,7 +789,7 @@ export function TerminationPanel({
               className="px-3 py-1.5 rounded-xl border border-red-200 bg-red-50 text-xs font-black text-red-700 hover:bg-red-100 flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <ShieldCheck className="w-3.5 h-3.5" />
-              Quyền dừng của Admin
+              Tạo hồ sơ dừng chủ động
             </button>
           )}
           <button
@@ -856,9 +901,9 @@ export function TerminationPanel({
           <div className="flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
             <div>
-              <h3 className="font-black text-red-950">Tạm dừng hoặc hủy theo quyền quản trị</h3>
+              <h3 className="font-black text-red-950">Admin chủ động tạo hồ sơ dừng mới</h3>
               <p className="text-xs text-red-800 mt-1 leading-relaxed">
-                Lịch tương lai được giữ ngay khi Learning xác nhận. Hoàn USDC chỉ bắt đầu sau khi các buổi đã diễn ra và khiếu nại liên quan được xử lý xong.
+                Chỉ dùng khi Admin cần chủ động can thiệp mà chưa có đề xuất. Để xử lý hồ sơ Gia sư/Học viên đã gửi, dùng nút <strong>“Xử lý ngay”</strong> trên đúng hồ sơ bên dưới.
               </p>
             </div>
           </div>
@@ -886,7 +931,7 @@ export function TerminationPanel({
                 onChange={(event) => setAdminWholeClass(event.target.value === 'CLASS')}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs"
               >
-                <option value="CLASS">Toàn bộ lớp và mọi hợp đồng ACTIVE</option>
+                <option value="CLASS">Toàn bộ lớp và mọi hợp đồng ACTIVE trong lớp</option>
                 <option value="AGREEMENT">Một học viên/hợp đồng đã chọn</option>
               </select>
             </label>
@@ -1032,10 +1077,13 @@ export function TerminationPanel({
               <select
                 id="termination-class-select"
                 value={selectedClassFilter}
-                onChange={(e) => setSelectedClassFilter(e.target.value)}
+                onChange={(e) => {
+                  if (e.target.value === 'ALL') clearClassFocus();
+                  else setSelectedClassFilter(e.target.value);
+                }}
                 className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all max-w-[260px] truncate cursor-pointer"
               >
-                <option value="ALL">Tất cả các lớp ({requests.length})</option>
+                <option value="ALL">Tất cả lớp / toàn hệ thống</option>
                 {uniqueClassrooms.map((cls) => (
                   <option key={cls.id} value={String(cls.id)}>
                     {cls.name} ({cls.count} hồ sơ)
@@ -1143,10 +1191,10 @@ export function TerminationPanel({
               </div>
               <button
                 type="button"
-                onClick={() => setSelectedClassFilter('ALL')}
+                onClick={clearClassFocus}
                 className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 hover:text-blue-900 hover:underline cursor-pointer shrink-0"
               >
-                <X className="w-3.5 h-3.5" /> Xem tất cả các lớp ({requests.length})
+                <X className="w-3.5 h-3.5" /> Bỏ lọc lớp · Xem toàn hệ thống
               </button>
             </div>
           )}
@@ -1164,7 +1212,7 @@ export function TerminationPanel({
           <button
             type="button"
             onClick={() => {
-              setSelectedClassFilter('ALL');
+              clearClassFocus();
               setStatusFilter('ALL');
               setOriginFilter('ALL');
               setSearchQuery('');
@@ -1298,6 +1346,17 @@ export function TerminationPanel({
                   </div>
 
                   <div className="self-start sm:self-auto shrink-0 flex items-center gap-2 flex-wrap">
+                    {isAdmin && ['REQUESTED', 'RECOMMENDED'].includes(c.status) && (
+                      <button
+                        type="button"
+                        onClick={() => focusAdminDecision(c.id)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-xs font-black transition-colors cursor-pointer shadow-sm"
+                        title="Mở ngay khu vực quyết định của hồ sơ này"
+                      >
+                        <ClipboardCheck className="w-4 h-4" />
+                        Xử lý ngay{c.wholeClass ? ` · ${affectedAgreements.length} hợp đồng` : ''}
+                      </button>
+                    )}
                     <span
                       className={`px-3.5 py-1.5 rounded-2xl text-xs font-black uppercase tracking-wider border inline-flex items-center gap-2 shadow-2xs ${statusTone(
                         c.status
@@ -2094,7 +2153,14 @@ export function TerminationPanel({
 
                 {/* 4. MANAGEMENT ACTIONS AREA (STAFF & ADMIN ONLY) */}
                 {isManager && (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4.5 space-y-3">
+                  <div
+                    id={`termination-decision-${c.id}`}
+                    className={`rounded-2xl border p-4.5 space-y-3 scroll-mt-24 ${
+                      isAdmin && ['REQUESTED', 'RECOMMENDED'].includes(c.status)
+                        ? 'border-blue-300 bg-blue-50/60 ring-2 ring-blue-100'
+                        : 'border-slate-200 bg-slate-50/70'
+                    }`}
+                  >
                     <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
                       <span className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
                         <ClipboardCheck className="w-4 h-4 text-emerald-600" />
@@ -2126,7 +2192,8 @@ export function TerminationPanel({
                     {isAdmin && (
                       <div className="space-y-3">
                         <p className="text-xs text-slate-600 leading-relaxed">
-                          <strong>Nhiệm vụ của Admin:</strong> Phê duyệt quyết định chấm dứt cuối cùng để kích hoạt Smart Contract Escrow tự động hoàn cọc cho học viên và quyết toán thù lao cho gia sư.
+                          <strong>Quyết định của Admin:</strong> Hồ sơ này tác động {c.wholeClass ? `toàn bộ ${affectedAgreements.length} hợp đồng đang hiệu lực trong lớp` : 'một hợp đồng học viên'}.
+                          Khi phê duyệt, hệ thống quyết toán các buổi đã diễn ra và hoàn phần cọc chưa sử dụng qua Smart Contract Escrow.
                         </p>
 
                         {c.status === 'RECOMMENDED' && (
