@@ -2,6 +2,12 @@
 
 ---
 
+## 02/11/2026 — Tách hủy khẩn cấp khỏi màn hình duyệt đề xuất
+
+- Hồ sơ đề xuất của Gia sư/Học viên và cảnh báo vắng học chỉ còn hai quyết định rõ ràng: **Duyệt** hoặc **Từ chối**; bỏ nút `Hủy khẩn cấp theo quyền Admin` khỏi khu vực xét hồ sơ.
+- Hủy khẩn cấp tiếp tục tồn tại ở luồng riêng **Admin chủ động tạo hồ sơ dừng mới** và tạo hồ sơ nguồn `ADMIN_DIRECT`.
+- Contract API từ chối `FORCE_APPROVE` đối với hồ sơ đề xuất/cảnh báo, ngăn client cũ hoặc lời gọi API trực tiếp đi vòng giao diện.
+
 ## 02/11/2026 — Chặn quyết định Admin sai luồng khi HOLD chưa an toàn
 
 - Giữ thao tác Duyệt/Từ chối cho đề xuất chấm dứt thông thường ở `HOLD_PENDING`; khi duyệt, Contract Service phải đồng bộ Learning HOLD và có cutoff hợp lệ trước khi tạo `TerminationItem`.

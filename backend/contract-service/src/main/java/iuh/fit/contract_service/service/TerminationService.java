@@ -748,6 +748,10 @@ public class TerminationService {
             case "APPROVE", "FORCE_APPROVE" -> {
                 if (!user.hasActiveAuthority("ADMIN")) fail(HttpStatus.FORBIDDEN, "Only Admin can approve termination");
                 requireManualAdminDecisionAllowed(c);
+                if ("FORCE_APPROVE".equals(action) && !ORIGIN_ADMIN.equals(c.getOrigin())) {
+                    fail(HttpStatus.CONFLICT,
+                            "Hủy khẩn cấp chỉ dùng cho hồ sơ ADMIN_DIRECT do Admin chủ động tạo; hồ sơ đề xuất chỉ được duyệt hoặc từ chối");
+                }
                 requireStatus(c, "HOLD_PENDING", "REQUESTED", "RECOMMENDED");
                 if ("APPROVE".equals(action)) {
                     requireAutomaticWarningReady(c);
@@ -790,7 +794,7 @@ public class TerminationService {
         if (!ORIGIN_AUTO_ABSENCE.equals(c.getOrigin()) || c.getTutorRespondedAt() != null) return;
         if (c.getResponseDeadline() != null && !OffsetDateTime.now().isBefore(c.getResponseDeadline())) return;
         fail(HttpStatus.CONFLICT,
-                "Gia sư chưa giải trình và thời hạn phản hồi chưa hết. Admin có thể dùng quyết định khẩn cấp nếu cần dừng lớp ngay.");
+                "Gia sư chưa giải trình và thời hạn phản hồi chưa hết. Admin chỉ có thể duyệt hoặc từ chối hồ sơ sau khi đủ điều kiện xem xét.");
     }
 
     private static void requireManualAdminDecisionAllowed(TerminationCase c) {
