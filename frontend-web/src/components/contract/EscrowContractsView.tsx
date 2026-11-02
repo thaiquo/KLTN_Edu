@@ -1224,7 +1224,7 @@ export function EscrowContractsView({
                           }}
                           className="px-3 py-1 rounded-xl bg-amber-200 hover:bg-amber-300 text-amber-950 text-xs font-black shrink-0 transition-colors shadow-2xs cursor-pointer"
                         >
-                          Theo dõi tiến độ chấm dứt &rarr;
+                          {activeRole === 'admin' ? 'Xử lý đề xuất ngay →' : 'Theo dõi tiến độ chấm dứt →'}
                         </button>
                       </div>
                     )}
