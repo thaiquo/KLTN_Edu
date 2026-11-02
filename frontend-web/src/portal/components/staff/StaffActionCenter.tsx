@@ -384,12 +384,12 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         {/* 5. Terminations */}
         <ActionHubCard
           icon={ShieldCheck}
-          title="Hợp đồng & Thanh lý"
+          title="Hồ sơ dừng hợp đồng"
           count={pendingTerminations.length}
           countLabel="đơn cần thẩm định"
-          description="Chấm dứt hợp đồng sớm, kiểm tra minh chứng và gửi đề xuất lên Admin."
+          description="Xem hồ sơ được phân công, kiểm tra minh chứng và kiến nghị Admin quyết định."
           badgeTone="purple"
-          actionLabel="Thẩm định thanh lý"
+          actionLabel="Xem và thẩm định"
           onClick={() => onNavigate("contracts")}
           loading={loading}
         />

@@ -45,7 +45,7 @@ import { Pager } from '../../portal/components/OperationalUi';
 const labels: Record<string, string> = {
   HOLD_PENDING: 'Đang tạm dừng lịch học',
   RELEASE_PENDING: 'Đang khôi phục lịch học',
-  REQUESTED: 'Đang chờ Staff thẩm định',
+  REQUESTED: 'Chờ thẩm định hoặc quyết định của Admin',
   RECOMMENDED: 'Đã thẩm định (Chờ Admin duyệt)',
   APPROVED: 'Admin đã duyệt - đang quyết toán, chưa hoàn tiền xong',
   REJECTED: 'Đã từ chối (Khôi phục lớp học)',
@@ -365,6 +365,10 @@ export function TerminationPanel({
   }, [classroomMap]);
 
   const beginManagerAction = async (termination: TerminationView, type: string) => {
+    if (!isAdmin && !(isStaff && type === 'RECOMMEND')) {
+      setError('Chỉ Admin được quyết định phê duyệt hoặc từ chối chấm dứt. Staff chỉ được thẩm định và kiến nghị.');
+      return;
+    }
     let currentDisputes = disputes;
     try {
       currentDisputes = await fetchAllDisputes();
@@ -539,6 +543,11 @@ export function TerminationPanel({
   const handleManagerReview = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!action) return;
+    if (!isAdmin && !(isStaff && action.type === 'RECOMMEND')) {
+      setAction(null);
+      setError('Vai trò hiện tại không có quyền gửi quyết định này.');
+      return;
+    }
     setBusy(true);
     setError('');
     setSuccess('');
@@ -547,7 +556,7 @@ export function TerminationPanel({
       setAction(null);
       setReviewReason('');
       setComplaintBlockWarning('');
-      setSuccess(`Đã lưu quyết định. ${terminationProgressText(updated)}.`);
+      setSuccess(`${action.type === 'RECOMMEND' ? (isStaff ? 'Đã gửi kiến nghị lên Admin' : 'Đã ghi nhận thẩm định') : 'Đã lưu quyết định của Admin'}. ${terminationProgressText(updated)}.`);
       await load();
     } catch (e) {
       const text = message(e);
@@ -690,7 +699,7 @@ export function TerminationPanel({
               <p className="text-xs text-slate-500 font-semibold mt-0.5">
                 {isTutor && 'Theo dõi tình trạng học viên xin nghỉ đơn phương hoặc tiến trình đề xuất dừng lớp. Bảo vệ thù lao các buổi đã dạy.'}
                 {isStudent && 'Theo dõi tiến độ xét duyệt đơn, đính kèm file minh chứng hoặc gửi thêm lời nhắn giải thích để nhận hoàn tiền cọc.'}
-                {isStaff && 'Kiểm tra lý do, xác minh tài liệu minh chứng của học viên, thẩm định và đề xuất lên Admin phê duyệt.'}
+                {isStaff && 'Xem hồ sơ được phân công, kiểm tra lý do và minh chứng của học viên hoặc gia sư, rồi gửi kiến nghị cho Admin. Chỉ Admin quyết định hủy hoặc khôi phục.'}
                 {isAdmin && 'Cấp phê duyệt tối cao: Chốt quyết toán các buổi đã dạy cho gia sư và hoàn tiền cọc Escrow về ví học viên.'}
               </p>
             </div>
@@ -2094,7 +2103,7 @@ export function TerminationPanel({
                     <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
                       <span className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
                         <ClipboardCheck className="w-4 h-4 text-emerald-600" />
-                        Quyền hạn & Thao tác của người quản trị
+                        {isStaff ? 'Thẩm định hồ sơ và kiến nghị' : 'Quyết định chấm dứt và xử lý hồ sơ'}
                       </span>
                       <span className="text-[11px] font-bold text-slate-500">
                         Vai trò hiện tại: <strong className="text-slate-900 uppercase font-mono">{activeRole}</strong>
@@ -2105,8 +2114,8 @@ export function TerminationPanel({
                     {isStaff && (
                       <div className="space-y-3">
                         <p className="text-xs text-slate-600 leading-relaxed">
-                          <strong>Nhiệm vụ của Staff:</strong> Kiểm tra kỹ lý do, minh chứng và lời nhắn của học viên.
-                          Nhấn <strong>"Đề xuất chấm dứt"</strong> để chuyển hồ sơ lên Admin phê duyệt, hoặc <strong>"Từ chối"</strong> để bác bỏ và khôi phục lớp.
+                          <strong>Nhiệm vụ của Staff:</strong> Chỉ xem hồ sơ lớp được phân công, kiểm tra lý do, minh chứng và gửi kiến nghị cho Admin.
+                          Staff không được phê duyệt hủy, từ chối hủy, khôi phục lớp hoặc ra lệnh hoàn cọc.
                         </p>
                         <div className="flex flex-wrap items-center gap-2.5">
                           {c.status === 'REQUESTED' && (
@@ -2122,7 +2131,7 @@ export function TerminationPanel({
                           )}
                           {c.status === 'RECOMMENDED' && (
                             <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-200">
-                              ✓ Bạn đã gửi đề xuất chấm dứt. Đang chờ Admin phê duyệt.
+                              ✓ Hồ sơ đã được kiến nghị thẩm định. Đang chờ Admin quyết định.
                             </span>
                           )}
                         </div>
@@ -2237,7 +2246,9 @@ export function TerminationPanel({
                             required
                             maxLength={5000}
                             rows={3}
-                            placeholder="Nhập nhận xét thẩm định, căn cứ quyết định hoặc lý do từ chối..."
+                            placeholder={action.type === 'RECOMMEND'
+                              ? 'Nhập kết quả thẩm định và kiến nghị gửi Admin...'
+                              : 'Nhập căn cứ quyết định hoặc lý do từ chối...'}
                             value={reviewReason}
                             onChange={(e) => setReviewReason(e.target.value)}
                             disabled={busy}
@@ -2251,7 +2262,7 @@ export function TerminationPanel({
                             disabled={busy || !reviewReason.trim()}
                           >
                             {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                            Xác nhận & Lưu quyết định
+                            {action.type === 'RECOMMEND' ? 'Gửi kiến nghị cho Admin' : 'Xác nhận quyết định của Admin'}
                           </button>
                           <button
                             type="button"

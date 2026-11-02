@@ -91,7 +91,7 @@ export function Sidebar({
           { id: "dashboard", label: "Tổng quan", icon: LayoutDashboard },
           { id: "tutor-approval", label: "Duyệt hồ sơ gia sư", icon: CheckCircle2 },
           { id: "class-management", label: "Lớp / nội dung", icon: BookOpen },
-          { id: "contracts", label: "Hợp đồng & Thanh lý", icon: ShieldCheck },
+          { id: "contracts", label: "Hợp đồng & Thẩm định", icon: ShieldCheck },
           { id: "complaints", label: "Quản lý khiếu nại", icon: ShieldAlert },
           { id: "escalations", label: "Chuyển cấp Admin", icon: ShieldAlert },
           { id: "community-moderation", label: "Kiểm duyệt Community", icon: Globe },
