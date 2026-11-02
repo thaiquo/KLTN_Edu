@@ -6,6 +6,7 @@ import iuh.fit.learning_service.entity.ClassRoom;
 import iuh.fit.learning_service.entity.ClassSchedule;
 import iuh.fit.learning_service.entity.ClassSession;
 import iuh.fit.learning_service.entity.EnrollmentRequest;
+import iuh.fit.learning_service.entity.LearningTerminationStop;
 import iuh.fit.learning_service.enums.ClassRoomStatus;
 import iuh.fit.learning_service.enums.ClassSessionStatus;
 import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
@@ -15,6 +16,7 @@ import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.ClassSessionRepository;
 import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
+import iuh.fit.learning_service.repository.LearningTerminationStopRepository;
 import iuh.fit.learning_service.repository.TutorAuthorizationStateRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class EnrollmentRequestScheduleConflictTest {
@@ -53,6 +56,9 @@ class EnrollmentRequestScheduleConflictTest {
 
     @Mock
     private RollingSessionService rollingSessionService;
+
+    @Mock
+    private LearningTerminationStopRepository terminationStops;
 
     @Test
     void rejectsEnrollmentWhenScheduleConflictsWithActiveEnrolledClass() {
@@ -87,7 +93,7 @@ class EnrollmentRequestScheduleConflictTest {
     }
 
     @Test
-    void allowsEnrollmentWhenExistingClassHasTerminationCutoff() {
+    void rejectsEnrollmentWhileExistingClassHasPendingTerminationCutoff() {
         EnrollmentRequestService service = service();
 
         // Target classroom: Mon (day 2) 18:00 - 19:30
@@ -95,8 +101,9 @@ class EnrollmentRequestScheduleConflictTest {
         ClassSchedule targetSlot = createSchedule(targetClass, 2, "18:00", "19:30");
         targetClass.setSchedules(List.of(targetSlot));
 
-        // Existing enrolled class has terminationCutoffSession set (class was terminated)
+        // HOLD has a cutoff, but Admin can still reject the cancellation.
         ClassRoom existingClass = createClassRoom(20L, "Vật Lý 10 Cơ Bản", LocalDate.now(), LocalDate.now().plusMonths(2));
+        existingClass.setStatus(ClassRoomStatus.LOCKED);
         existingClass.setTerminationCutoffSession(5);
         ClassSchedule existingSlot = createSchedule(existingClass, 2, "18:00", "19:30");
         existingClass.setSchedules(List.of(existingSlot));
@@ -108,18 +115,71 @@ class EnrollmentRequestScheduleConflictTest {
 
         when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
         when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.ACCEPTED)).thenReturn(0L);
-        when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.PENDING)).thenReturn(0L);
         when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any())).thenReturn(false);
         when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(acceptedReq));
+
+        EnrollClassRequest request = validRequest();
+        assertThatThrownBy(() -> service.enrollClass(10L, 100L, "student@example.com", request))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Trùng lịch học");
+    }
+
+    @Test
+    void individualTerminationHoldStillReservesStudentSchedule() {
+        EnrollmentRequestService service = service();
+        ClassRoom targetClass = createClassRoom(10L, "Toán Lớp 10 Nâng Cao", LocalDate.now(), LocalDate.now().plusMonths(2));
+        targetClass.setSchedules(List.of(createSchedule(targetClass, 2, "18:00", "19:30")));
+
+        ClassRoom existingClass = createClassRoom(20L, "Vật Lý 10 Cơ Bản", LocalDate.now(), LocalDate.now().plusMonths(2));
+        existingClass.setSchedules(List.of(createSchedule(existingClass, 2, "18:00", "19:30")));
+        EnrollmentRequest enrollment = new EnrollmentRequest();
+        enrollment.setClassRoom(existingClass);
+        enrollment.setStudentId(100L);
+        enrollment.setStudentEmail("student@example.com");
+        enrollment.setStatus(EnrollmentRequestStatus.ENROLLED);
+        LearningTerminationStop hold = new LearningTerminationStop();
+        hold.setClassroomId(20L);
+        hold.setStudentId(100L);
+        hold.setCutoffSession(1);
+
+        when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
+        when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.ACCEPTED)).thenReturn(0L);
+        when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any())).thenReturn(false);
+        when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(enrollment));
+        lenient().when(terminationStops.findByClassroomIdAndStudentId(20L, 100L)).thenReturn(List.of(hold));
+
+        assertThatThrownBy(() -> service.enrollClass(10L, 100L, "student@example.com", validRequest()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Trùng lịch học");
+    }
+
+    @Test
+    void allowsEnrollmentAfterExistingClassIsCancelled() {
+        EnrollmentRequestService service = service();
+        ClassRoom targetClass = createClassRoom(10L, "Toán Lớp 10 Nâng Cao", LocalDate.now(), LocalDate.now().plusMonths(2));
+        targetClass.setSchedules(List.of(createSchedule(targetClass, 2, "18:00", "19:30")));
+
+        ClassRoom oldClass = createClassRoom(20L, "Vật Lý 10 Cơ Bản", LocalDate.now(), LocalDate.now().plusMonths(2));
+        oldClass.setStatus(ClassRoomStatus.CANCELLED);
+        oldClass.setTerminationCutoffSession(5);
+        oldClass.setSchedules(List.of(createSchedule(oldClass, 2, "18:00", "19:30")));
+        EnrollmentRequest oldEnrollment = new EnrollmentRequest();
+        oldEnrollment.setClassRoom(oldClass);
+        oldEnrollment.setStudentEmail("student@example.com");
+        oldEnrollment.setStatus(EnrollmentRequestStatus.CANCELLED);
+
+        when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
+        when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.ACCEPTED)).thenReturn(0L);
+        when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.PENDING)).thenReturn(0L);
+        when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any())).thenReturn(false);
+        when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(oldEnrollment));
         when(enrollmentRequestRepository.save(any())).thenAnswer(i -> {
             EnrollmentRequest r = i.getArgument(0);
             ReflectionTestUtils.setField(r, "id", 1L);
             return r;
         });
 
-        EnrollClassRequest request = validRequest();
-        var response = service.enrollClass(10L, 100L, "student@example.com", request);
-        assertThat(response).isNotNull();
+        assertThat(service.enrollClass(10L, 100L, "student@example.com", validRequest())).isNotNull();
     }
 
     @Test
@@ -303,7 +363,7 @@ class EnrollmentRequestScheduleConflictTest {
                 tutorAuthorizationStateRepository,
                 eventPublisher,
                 rollingSessionService,
-                org.mockito.Mockito.mock(iuh.fit.learning_service.repository.LearningTerminationStopRepository.class));
+                terminationStops);
     }
 
     private EnrollClassRequest validRequest() {
