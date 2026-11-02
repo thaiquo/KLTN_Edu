@@ -244,6 +244,18 @@ class TerminationServiceTest {
         assertThat(c.getStatus()).isEqualTo("APPROVED");
         verify(items).save(any(TerminationItem.class));
     }
+    @Test void adminCanApproveDirectlyFromHoldPending() {
+        var c = request("HOLD_PENDING", false);
+        a.setTerminationCutoffSession(1);
+        service.act(c.getId(), "APPROVE", "Verified directly by Admin", user(1, "admin@test.vn", "ADMIN"));
+        assertThat(c.getStatus()).isEqualTo("APPROVED");
+        verify(items).save(any(TerminationItem.class));
+    }
+    @Test void adminCanRejectDirectlyFromHoldPending() {
+        var c = request("HOLD_PENDING", false);
+        service.act(c.getId(), "REJECT", "Rejected directly by Admin", user(1, "admin@test.vn", "ADMIN"));
+        assertThat(c.getStatus()).isEqualTo("REJECTED");
+    }
     @Test void adminCanCreateAuditedWholeClassHoldWithoutPartySignature() {
         var view = service.adminRequest(a.getId(), true, "Vi phạm nghiêm trọng cần xác minh",
                 false, user(1, "admin@test.vn", "ADMIN"));

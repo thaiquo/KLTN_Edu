@@ -275,7 +275,7 @@ export function TerminationPanel({
   useEffect(() => {
     if (!isAdmin || (selectedCaseId == null && selectedClassroomId == null && selectedAgreementId == null)) return;
     const candidates = requests.filter(({ request }) => {
-      if (!['REQUESTED', 'RECOMMENDED'].includes(request.status)) return false;
+      if (!['HOLD_PENDING', 'REQUESTED', 'RECOMMENDED'].includes(request.status)) return false;
       if (selectedCaseId) return request.id === selectedCaseId;
       if (selectedAgreementId && request.anchorAgreementId === selectedAgreementId) return true;
       return selectedClassroomId != null && String(request.classroomId) === String(selectedClassroomId);
@@ -1351,7 +1351,7 @@ export function TerminationPanel({
                   </div>
 
                   <div className="self-start sm:self-auto shrink-0 flex items-center gap-2 flex-wrap">
-                    {isAdmin && ['REQUESTED', 'RECOMMENDED'].includes(c.status) && (
+                    {isAdmin && ['HOLD_PENDING', 'REQUESTED', 'RECOMMENDED'].includes(c.status) && (
                       <button
                         type="button"
                         onClick={() => focusAdminDecision(c.id)}
@@ -2161,7 +2161,7 @@ export function TerminationPanel({
                   <div
                     id={`termination-decision-${c.id}`}
                     className={`rounded-2xl border p-4.5 space-y-3 scroll-mt-24 ${
-                      isAdmin && ['REQUESTED', 'RECOMMENDED'].includes(c.status)
+                      isAdmin && ['HOLD_PENDING', 'REQUESTED', 'RECOMMENDED'].includes(c.status)
                         ? 'border-blue-300 bg-blue-50/60 ring-2 ring-blue-100'
                         : 'border-slate-200 bg-slate-50/70'
                     }`}
@@ -2215,15 +2215,22 @@ export function TerminationPanel({
                           </div>
                         )}
 
-                        {c.status === 'REQUESTED' && (
+                        {['HOLD_PENDING', 'REQUESTED'].includes(c.status) && (
                           <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-medium text-amber-900 flex items-center gap-2">
                             <Info className="w-4 h-4 text-amber-600 shrink-0" />
                             <span>Hồ sơ đang chờ Admin xem xét. Admin có thể trực tiếp phê duyệt quyết toán hoặc từ chối yêu cầu.</span>
                           </div>
                         )}
 
+                        {c.lastError && (
+                          <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200 text-xs font-semibold text-amber-900 flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span>Ghi chú hệ thống: {c.lastError}</span>
+                          </div>
+                        )}
+
                         <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                          {['REQUESTED', 'RECOMMENDED'].includes(c.status) && (
+                          {['HOLD_PENDING', 'REQUESTED', 'RECOMMENDED'].includes(c.status) && (
                             <>
                               <button
                                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-95 text-white text-xs font-black transition-all shadow-md inline-flex items-center gap-2 cursor-pointer"
