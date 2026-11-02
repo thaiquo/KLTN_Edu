@@ -132,7 +132,7 @@ public class TutorAvailabilityController {
 
     private void validateExistingClassesRemainCovered(String tutorEmail, List<ValidatedSlot> availability) {
         for (ClassRoom classRoom : classRoomRepository.findByTutorEmailWithDetails(tutorEmail)) {
-            if (classRoom.getTerminationCutoffSession() != null) continue;
+            // A pending cancellation can be rejected; it still reserves this slot.
             if (!blocksTutorSchedule(classRoom.getStatus())) continue;
             for (ClassSchedule schedule : classRoom.getSchedules()) {
                 LocalTime classStart = LocalTime.parse(schedule.getStartTime());

@@ -1,5 +1,8 @@
 package iuh.fit.learning_service.controller;
 
+import iuh.fit.learning_service.entity.ClassRoom;
+import iuh.fit.learning_service.entity.ClassSchedule;
+import iuh.fit.learning_service.enums.ClassRoomStatus;
 import iuh.fit.learning_service.exception.BadRequestException;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.TutorAvailabilityRepository;
@@ -67,6 +70,32 @@ class TutorAvailabilityControllerTest {
 
         verify(repository, never()).deleteByTutorEmailIgnoreCase("tutor@example.com");
         verify(repository, never()).saveAllAndFlush(anyList());
+    }
+
+    @Test
+    void pendingClassCancellationStillRequiresTutorAvailabilityCoverage() {
+        when(authentication.getName()).thenReturn("tutor@example.com");
+        ClassRoom classRoom = new ClassRoom();
+        classRoom.setName("Lớp đang chờ Admin duyệt hủy");
+        classRoom.setStatus(ClassRoomStatus.LOCKED);
+        classRoom.setTerminationCutoffSession(1);
+        ClassSchedule schedule = new ClassSchedule();
+        schedule.setDayOfWeek(2);
+        schedule.setStartTime("18:00");
+        schedule.setEndTime("19:30");
+        classRoom.setSchedules(List.of(schedule));
+        when(classRoomRepository.findByTutorEmailWithDetails("tutor@example.com"))
+                .thenReturn(List.of(classRoom));
+
+        var request = new TutorAvailabilityController.SaveAvailabilityRequest(List.of(
+                slot(3, "07:00", "09:00"),
+                slot(4, "10:00", "12:00"),
+                slot(6, "13:00", "15:00")
+        ));
+
+        assertThrows(BadRequestException.class,
+                () -> controller.saveMyAvailability(authentication, request));
+        verify(repository, never()).deleteByTutorEmailIgnoreCase("tutor@example.com");
     }
 
     private TutorAvailabilityController.AvailabilitySlotDto slot(int day, String start, String end) {

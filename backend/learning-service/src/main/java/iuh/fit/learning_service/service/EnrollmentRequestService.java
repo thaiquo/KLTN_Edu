@@ -566,12 +566,12 @@ public class EnrollmentRequestService {
         }
 
         List<EnrollmentRequest> activeRequests = enrollmentRequestRepository.findByStudentEmailWithDetails(studentEmail);
+        // A termination HOLD can be rejected; keep the student's reservation
+        // until the enrollment or classroom reaches its final cancelled state.
         List<ClassRoom> activeClasses = activeRequests.stream()
                 .filter(r -> r.getStatus() == EnrollmentRequestStatus.ACCEPTED || r.getStatus() == EnrollmentRequestStatus.ENROLLED)
-                .filter(r -> participationCutoff(r) == null)
                 .map(EnrollmentRequest::getClassRoom)
-                .filter(c -> c != null && c.getStatus() != ClassRoomStatus.CLOSED && c.getStatus() != ClassRoomStatus.CANCELLED
-                        && c.getTerminationCutoffSession() == null)
+                .filter(c -> c != null && c.getStatus() != ClassRoomStatus.CLOSED && c.getStatus() != ClassRoomStatus.CANCELLED)
                 .distinct()
                 .toList();
 

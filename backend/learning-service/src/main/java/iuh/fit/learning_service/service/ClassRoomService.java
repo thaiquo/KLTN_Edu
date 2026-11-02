@@ -1134,7 +1134,8 @@ public class ClassRoomService {
         // Check overlap with existing active/pending/private/published classes of tutor
         List<ClassRoom> existingClasses = classRoomRepository.findByTutorEmailWithDetails(tutorEmail);
         for (ClassRoom existing : existingClasses) {
-            if (existing.getTerminationCutoffSession() != null) continue;
+            // A HOLD can still be rejected by Admin. Reserve the slot until
+            // Learning has actually closed the classroom.
             if (existing.getStatus() == ClassRoomStatus.ACTIVE ||
                 existing.getStatus() == ClassRoomStatus.PENDING_APPROVAL ||
                 existing.getStatus() == ClassRoomStatus.PRIVATE ||

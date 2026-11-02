@@ -532,6 +532,28 @@ class ClassRoomServiceTest {
     }
 
     @Test
+    void pendingClassCancellationStillReservesTutorSchedule() {
+        ClassRoom existing = existingClass(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), 5, "18:00", "20:00");
+        existing.setStatus(ClassRoomStatus.LOCKED);
+        existing.setTerminationCutoffSession(1);
+        arrangeCreateClass(List.of(TeachingMode.ONLINE), List.of(existing));
+
+        assertThrows(BadRequestException.class,
+                () -> service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "19:00", "21:00", LocalDate.of(2026, 10, 15))));
+    }
+
+    @Test
+    void cancelledClassReleasesTutorSchedule() {
+        ClassRoom existing = existingClass(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), 5, "18:00", "20:00");
+        existing.setStatus(ClassRoomStatus.CANCELLED);
+        existing.setTerminationCutoffSession(1);
+        arrangeCreateClass(List.of(TeachingMode.ONLINE), List.of(existing));
+
+        assertThat(service.createClass("tutor@example.com",
+                createRequest(LearningMode.ONLINE, "19:00", "21:00", LocalDate.of(2026, 10, 15)))).isNotNull();
+    }
+
+    @Test
     void overlappingDateRangeDifferentDayDoesNotConflict() {
         ClassRoom existing = existingClass(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), 4, "18:00", "20:00");
         arrangeCreateClass(List.of(TeachingMode.ONLINE), List.of(existing));

@@ -15,6 +15,16 @@ Do not require or search for any thesis DOCX/Word file, thesis chapter, or exter
 
 ## Agent Workflow
 
+### Canonical Working Branch
+
+- The user-confirmed long-lived working branch is `feature/quocthai`.
+- At the start of repository work, fetch `origin` and work on `feature/quocthai`. If it does not exist locally, track `origin/feature/quocthai`; if it does not exist remotely yet, create it from the latest `origin/main`.
+- Before starting a new change, synchronize `feature/quocthai` with the latest `origin/main` when it can be done safely. Preserve unrelated local changes.
+- Do not create or switch to another task/feature branch unless the user explicitly requests it. Old branches remain historical references and must not be reused for new work.
+- Do not commit directly to protected `main`. Commit and push normal work to `feature/quocthai`, then merge through a Pull Request after required checks/review pass. After a merge, resynchronize `feature/quocthai` from `origin/main` before continuing.
+- Never force-push `feature/quocthai` or `main` unless the user explicitly authorizes that exact operation.
+- A later explicit user instruction may override this branch convention for that task.
+
 When asked to implement, fix, refactor, or extend functionality, do not start by scanning the entire repository.
 
 ### Step 1 - Read Agent Rules
