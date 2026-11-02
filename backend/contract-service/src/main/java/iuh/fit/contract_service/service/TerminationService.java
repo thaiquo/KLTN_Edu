@@ -707,7 +707,7 @@ public class TerminationService {
             }
             case "REJECT" -> {
                 if (!user.hasActiveAuthority("ADMIN")) fail(HttpStatus.FORBIDDEN, "Only Admin can reject termination and restore learning");
-                requireStatus(c, "REQUESTED", "RECOMMENDED");
+                requireStatus(c, "HOLD_PENDING", "REQUESTED", "RECOMMENDED");
                 requireNoPendingDisputes(c);
                 if (ORIGIN_AUTO_ABSENCE.equals(c.getOrigin())) {
                     if (c.getTutorRespondedAt() == null) {
@@ -742,7 +742,7 @@ public class TerminationService {
             }
             case "APPROVE", "FORCE_APPROVE" -> {
                 if (!user.hasActiveAuthority("ADMIN")) fail(HttpStatus.FORBIDDEN, "Only Admin can approve termination");
-                requireStatus(c, "REQUESTED", "RECOMMENDED");
+                requireStatus(c, "HOLD_PENDING", "REQUESTED", "RECOMMENDED");
                 if ("APPROVE".equals(action)) {
                     requireAutomaticWarningReady(c);
                     requireNoPendingDisputes(c);
