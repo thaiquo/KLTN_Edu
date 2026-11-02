@@ -2,6 +2,12 @@
 
 ---
 
+## 02/11/2026 — Mở đúng hồ sơ đề xuất hủy lớp cho Admin
+
+- Nút `Xử lý đề xuất ngay` trên từng lớp truyền đúng mã hồ sơ chấm dứt (`caseId`), mở thẳng hồ sơ đã có và cuộn tới khu vực quyết định của Admin.
+- Admin không phải tạo hồ sơ mới, chọn lại lớp hoặc chọn lại hợp đồng khi xử lý đề xuất Gia sư đã gửi. Nếu duyệt đề xuất hủy toàn lớp, luồng backend hiện có xử lý toàn bộ hợp đồng `ACTIVE` thuộc lớp đó.
+- Biểu mẫu can thiệp theo thẩm quyền Admin được giữ thành luồng riêng, chỉ dùng khi chưa có đề xuất của Gia sư/Học viên; thao tác mở đề xuất không tự động phê duyệt để tránh quyết định hoàn tiền ngoài ý muốn.
+
 ## 02/11/2026 — Chuẩn hóa Staff chỉ theo dõi hồ sơ chấm dứt hợp đồng
 
 - Staff chỉ xem và theo dõi hồ sơ chấm dứt thuộc lớp được phân công; không còn bước thẩm định/kiến nghị và API từ chối thao tác `RECOMMEND`.

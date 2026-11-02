@@ -127,6 +127,7 @@ interface TerminationPanelProps {
   onNavigate?: (page: string) => void;
   selectedClassroomId?: number | string | null;
   selectedAgreementId?: string | null;
+  selectedCaseId?: string | null;
   onClearClassFilter?: () => void;
 }
 
@@ -148,6 +149,7 @@ export function TerminationPanel({
   onNavigate,
   selectedClassroomId,
   selectedAgreementId,
+  selectedCaseId,
   onClearClassFilter,
 }: TerminationPanelProps) {
   const { user } = useAuth();
@@ -202,11 +204,12 @@ export function TerminationPanel({
   const autoFocusedCase = useRef<string | null>(null);
   useEffect(() => {
     initializedCases.current.clear();
+    autoFocusedCase.current = null;
     setSelectedClassFilter(selectedClassroomId != null ? String(selectedClassroomId) : 'ALL');
     setStatusFilter('ALL');
     setOriginFilter('ALL');
     setSearchQuery('');
-  }, [selectedClassroomId, selectedAgreementId]);
+  }, [selectedClassroomId, selectedAgreementId, selectedCaseId]);
 
   // Auto-expand pending or targeted cases, collapse completed/rejected cases by default
   useEffect(() => {
@@ -270,19 +273,20 @@ export function TerminationPanel({
   }, []);
 
   useEffect(() => {
-    if (!isAdmin || (selectedClassroomId == null && selectedAgreementId == null)) return;
+    if (!isAdmin || (selectedCaseId == null && selectedClassroomId == null && selectedAgreementId == null)) return;
     const candidates = requests.filter(({ request }) => {
       if (!['REQUESTED', 'RECOMMENDED'].includes(request.status)) return false;
+      if (selectedCaseId) return request.id === selectedCaseId;
       if (selectedAgreementId && request.anchorAgreementId === selectedAgreementId) return true;
       return selectedClassroomId != null && String(request.classroomId) === String(selectedClassroomId);
     });
-    const target = selectedAgreementId
+    const target = selectedCaseId || selectedAgreementId
       ? candidates[0]
       : candidates.find(({ request }) => request.wholeClass) || candidates[0];
     if (!target || autoFocusedCase.current === target.request.id) return;
     autoFocusedCase.current = target.request.id;
     focusAdminDecision(target.request.id);
-  }, [focusAdminDecision, isAdmin, requests, selectedAgreementId, selectedClassroomId]);
+  }, [focusAdminDecision, isAdmin, requests, selectedAgreementId, selectedCaseId, selectedClassroomId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(searchQuery.trim()), 350);
@@ -495,6 +499,7 @@ export function TerminationPanel({
   const filteredRequests = useMemo(() => {
     if (isManager) {
       return requests.filter(({ request: c }) => {
+        if (selectedCaseId) return c.id === selectedCaseId;
         if (!selectedAgreementId) return true;
         const selected = agreementMap.get(selectedAgreementId);
         return c.anchorAgreementId === selectedAgreementId
@@ -549,7 +554,7 @@ export function TerminationPanel({
         if (isPendingA !== isPendingB) return isPendingB - isPendingA;
         return new Date(b.request.createdAt).getTime() - new Date(a.request.createdAt).getTime();
       });
-  }, [requests, selectedClassFilter, statusFilter, originFilter, searchQuery, agreementMap, selectedAgreementId, isManager]);
+  }, [requests, selectedClassFilter, statusFilter, originFilter, searchQuery, agreementMap, selectedAgreementId, selectedCaseId, isManager]);
 
   const activeAdminAgreements = useMemo(
     () => agreements.filter((agreement) => agreement.status === 'ACTIVE' && !agreement.legacyUnreconciled),
@@ -786,10 +791,10 @@ export function TerminationPanel({
             <button
               type="button"
               onClick={() => setShowAdminCreate((value) => !value)}
-              className="px-3 py-1.5 rounded-xl border border-red-200 bg-red-50 text-xs font-black text-red-700 hover:bg-red-100 flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-1.5 transition-colors cursor-pointer"
             >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Tạo hồ sơ dừng chủ động
+              <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
+              Can thiệp riêng khi chưa có đề xuất
             </button>
           )}
           <button
@@ -2195,6 +2200,13 @@ export function TerminationPanel({
                           <strong>Quyết định của Admin:</strong> Hồ sơ này tác động {c.wholeClass ? `toàn bộ ${affectedAgreements.length} hợp đồng đang hiệu lực trong lớp` : 'một hợp đồng học viên'}.
                           Khi phê duyệt, hệ thống quyết toán các buổi đã diễn ra và hoàn phần cọc chưa sử dụng qua Smart Contract Escrow.
                         </p>
+
+                        {c.wholeClass && c.origin !== 'ADMIN_DIRECT' && (
+                          <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>Đang xử lý trực tiếp đề xuất Gia sư đã gửi. Không tạo hồ sơ mới, không chọn lại lớp hoặc hợp đồng; quyết định duyệt sẽ áp dụng cho toàn bộ hợp đồng ACTIVE của lớp này.</span>
+                          </div>
+                        )}
 
                         {c.status === 'RECOMMENDED' && (
                           <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-900 flex items-center gap-2">
