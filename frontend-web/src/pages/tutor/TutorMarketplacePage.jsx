@@ -605,7 +605,6 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiR
   const hasMatchPercentage = isAiResult && Number.isFinite(matchPercentage);
   const matchingReasons = Array.isArray(tutor.matchingReasons) ? tutor.matchingReasons.filter(Boolean) : [];
   const mismatchReasons = Array.isArray(tutor.mismatchReasons) ? tutor.mismatchReasons.filter(Boolean) : [];
-  const scoreCriteria = Array.isArray(tutor.scoreBreakdown?.criteria) ? tutor.scoreBreakdown.criteria.filter(Boolean) : [];
   const canChat = canShowChatAction(tutor.userId);
   const startingChat = Number(startingTutorUserId) === Number(tutor.userId);
   const canFollow = authenticated
@@ -720,22 +719,6 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiR
               ))}
             </ul>
           </section>
-        )}
-        {isAiResult && scoreCriteria.length > 0 && (
-          <details className="rounded-[8px] border border-slate-200 bg-white p-3">
-            <summary className="cursor-pointer text-[10px] font-black uppercase tracking-wider text-slate-500">Vì sao {Math.round(matchPercentage)}%?</summary>
-            <div className="mt-3 space-y-2">
-              {scoreCriteria.slice(0, 5).map((criterion) => (
-                <div key={criterion.criterion || criterion.label} className="grid gap-1 text-xs font-bold leading-5 text-slate-600">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-slate-900">{criterion.label}</span>
-                    <span>{Math.round(Number(criterion.contribution || 0))}/{criterion.weight}</span>
-                  </div>
-                  <p>{criterion.evidence || criterion.policy}</p>
-                </div>
-              ))}
-            </div>
-          </details>
         )}
       </div>
       <div className="mt-5 grid gap-3 border-t border-slate-100 pt-4">

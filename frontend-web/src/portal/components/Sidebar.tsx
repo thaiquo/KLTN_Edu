@@ -21,6 +21,7 @@ import {
   Newspaper
 } from "lucide-react";
 import { UserRole } from "../types";
+import { canAccessPortalPage } from "../portalAccess";
 
 interface SidebarProps {
   activeRole: UserRole;
@@ -29,6 +30,8 @@ interface SidebarProps {
   onStartSession: () => void;
   onLogout: () => void;
   restrictedTutor?: boolean;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
 export function Sidebar({
@@ -37,6 +40,8 @@ export function Sidebar({
   onNavigate,
   onLogout,
   restrictedTutor = false,
+  mobileOpen = false,
+  onMobileClose,
 }: SidebarProps) {
   const isStaff = activeRole === "staff";
 
@@ -73,6 +78,8 @@ export function Sidebar({
           { id: "tutor-approval", label: "Duyệt hồ sơ gia sư", icon: CheckCircle2 },
           { id: "contracts", label: "Hợp đồng Escrow", icon: ShieldCheck },
           { id: "complaints", label: "Phân xử Khiếu nại", icon: ShieldAlert },
+          { id: "escalations", label: "Chuyển cấp Khiếu nại", icon: ShieldAlert },
+          { id: "community-moderation", label: "Kiểm duyệt Community", icon: Globe },
           { id: "user-management", label: "Quản lý người dùng", icon: Users },
           { id: "class-management", label: "Quản lý lớp học", icon: BookOpen },
           { id: "subject-catalog", label: "Quản lý môn học", icon: Layers3 },
@@ -86,6 +93,8 @@ export function Sidebar({
           { id: "class-management", label: "Lớp / nội dung", icon: BookOpen },
           { id: "contracts", label: "Hợp đồng & Thanh lý", icon: ShieldCheck },
           { id: "complaints", label: "Quản lý khiếu nại", icon: ShieldAlert },
+          { id: "escalations", label: "Chuyển cấp Admin", icon: ShieldAlert },
+          { id: "community-moderation", label: "Kiểm duyệt Community", icon: Globe },
           { id: "reports", label: "Báo cáo nghiệp vụ", icon: BarChart3 },
         ];
       default:
@@ -93,12 +102,18 @@ export function Sidebar({
     }
   };
 
-  const navItems = getNavItems();
+  const navItems = getNavItems().filter((item) => canAccessPortalPage(activeRole, item.id));
   const lockedTutorItems = new Set(["subjects", "my-classes", "homework", "contracts", "wallet", "requests", "messages", "schedule", "complaints"]);
 
-  return (
-    <aside className={`fixed left-0 top-16 bottom-0 z-20 flex w-72 select-none flex-col border-r pt-3 font-sans ${
-      isStaff ? "border-[#0d466f] bg-[#073554] text-white" : "border-brand-border/30 bg-brand-low/40"
+  const navigate = (page: string) => {
+    onNavigate(page);
+    onMobileClose?.();
+  };
+
+  return (<>
+    {mobileOpen && <button type="button" aria-label="Đóng menu" onClick={onMobileClose} className="fixed inset-0 top-16 z-30 bg-slate-950/40 lg:hidden" />}
+    <aside className={`fixed left-0 top-16 bottom-0 z-40 flex w-72 select-none flex-col border-r pt-3 font-sans transition-transform duration-200 lg:z-20 lg:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"} ${
+      isStaff ? "border-[#0d466f] bg-[#073554] text-white" : "border-brand-border/30 bg-white lg:bg-brand-low/40"
     }`}>
       <nav className="custom-scrollbar flex-1 space-y-1 overflow-y-auto px-3">
         {navItems.map((item) => {
@@ -131,7 +146,7 @@ export function Sidebar({
               type="button"
               onClick={() => {
                 if (disabled) return;
-                onNavigate(item.id);
+                navigate(item.id);
               }}
               disabled={disabled}
               aria-disabled={disabled}
@@ -165,7 +180,7 @@ export function Sidebar({
         {(activeRole === "tutor" || activeRole === "staff") && (
           <button
             type="button"
-            onClick={() => onNavigate("settings")}
+            onClick={() => navigate("settings")}
             className={`flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left font-display text-xs font-bold tracking-wider transition-all ${
               isStaff ? "text-white/70 hover:bg-white/8 hover:text-white" : "text-brand-text-variant/80 hover:bg-brand-container/30 hover:text-brand-text"
             }`}
@@ -177,7 +192,7 @@ export function Sidebar({
 
         <button
           type="button"
-          onClick={() => onNavigate("help")}
+          onClick={() => navigate("help")}
           className={`flex w-full items-center gap-3 rounded-xl px-4 py-2 text-left font-display text-xs font-bold tracking-wider transition-all ${
             isStaff ? "text-white/60 hover:bg-white/8 hover:text-white" : "text-brand-text-variant/80 hover:bg-brand-container/30 hover:text-brand-text"
           }`}
@@ -197,5 +212,6 @@ export function Sidebar({
         </button>
       </div>
     </aside>
+  </>
   );
 }

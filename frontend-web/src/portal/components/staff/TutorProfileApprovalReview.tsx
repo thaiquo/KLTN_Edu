@@ -21,6 +21,7 @@ import {
 import { staffTutorApi } from "../../../api/staffTutors";
 import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
 import { fetchUserDirectory, getUserDisplayName, UserSummary } from "../../../utils/userDisplay";
+import { Pager } from "../OperationalUi";
 
 const TEACHING_MODE_LABELS: Record<string, string> = {
   ONLINE: "Trực tuyến",
@@ -46,6 +47,9 @@ export function TutorProfileApprovalReview({
   const [detail, setDetail] = useState<any>(null);
   const [users, setUsers] = useState<UserSummary[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [pendingPage, setPendingPage] = useState(0);
+  const [pendingPages, setPendingPages] = useState(1);
+  const [pendingTotal, setPendingTotal] = useState(0);
 
   // Rejection modal
   const [rejectingId, setRejectingId] = useState<number | null>(null);
@@ -59,6 +63,10 @@ export function TutorProfileApprovalReview({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyFilterStatus, setHistoryFilterStatus] = useState<string>("ALL");
   const [historySearch, setHistorySearch] = useState<string>("");
+  const [historyQuery, setHistoryQuery] = useState<string>("");
+  const [historyPage, setHistoryPage] = useState(0);
+  const [historyPages, setHistoryPages] = useState(1);
+  const [historyTotal, setHistoryTotal] = useState(0);
 
   // Document preview state
   const [previewDoc, setPreviewDoc] = useState<{ url: string; title: string; contentType: string } | null>(null);
@@ -69,10 +77,12 @@ export function TutorProfileApprovalReview({
       setLoading(true);
     }
     try {
-      const data = await staffTutorApi.pending();
-      const list = Array.isArray(data) ? data : [];
+      const data = await staffTutorApi.pending({ page: pendingPage, size: 10 });
+      const list = Array.isArray(data?.content) ? data.content : [];
       setItems(list);
-      if (onPendingCountChange) onPendingCountChange(list.length);
+      setPendingPages(Math.max(1, Number(data?.totalPages || 1)));
+      setPendingTotal(Number(data?.totalElements || 0));
+      if (onPendingCountChange) onPendingCountChange(Number(data?.totalElements || 0));
     } catch (err: any) {
       onError(err?.message || "Không thể tải danh sách hồ sơ gia sư chờ duyệt.");
     } finally {
@@ -88,8 +98,10 @@ export function TutorProfileApprovalReview({
       setHistoryLoading(true);
     }
     try {
-      const data = await staffTutorApi.history();
-      setHistoryItems(Array.isArray(data) ? data : []);
+      const data = await staffTutorApi.history({ page: historyPage, size: 10, status: historyFilterStatus, search: historyQuery });
+      setHistoryItems(Array.isArray(data?.content) ? data.content : []);
+      setHistoryPages(Math.max(1, Number(data?.totalPages || 1)));
+      setHistoryTotal(Number(data?.totalElements || 0));
     } catch (err: any) {
       console.error("Failed to load tutor application review history:", err);
     } finally {
@@ -108,7 +120,12 @@ export function TutorProfileApprovalReview({
     loadPending(false);
     loadHistory(false);
     fetchUserDirectory().then((list) => setUsers(Array.isArray(list) ? list : []));
-  }, []);
+  }, [pendingPage, historyPage, historyFilterStatus, historyQuery]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { setHistoryPage(0); setHistoryQuery(historySearch.trim()); }, 350);
+    return () => window.clearTimeout(timer);
+  }, [historySearch]);
 
   const openDetail = async (applicationId: number) => {
     setSelectedId(applicationId);
@@ -291,6 +308,7 @@ export function TutorProfileApprovalReview({
             </table>
           </div>
         )}
+        {!loading && pendingTotal > 0 && <Pager page={pendingPage} pages={pendingPages} total={pendingTotal} size={10} onChange={setPendingPage} />}
       </section>
 
       {/* History Section */}
@@ -320,21 +338,21 @@ export function TutorProfileApprovalReview({
             <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50 p-0.5 text-xs font-bold">
               <button
                 type="button"
-                onClick={() => setHistoryFilterStatus("ALL")}
+                onClick={() => { setHistoryFilterStatus("ALL"); setHistoryPage(0); }}
                 className={`px-3 py-1 rounded-md transition-colors ${historyFilterStatus === "ALL" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"}`}
               >
                 Tất cả
               </button>
               <button
                 type="button"
-                onClick={() => setHistoryFilterStatus("APPROVED")}
+                onClick={() => { setHistoryFilterStatus("APPROVED"); setHistoryPage(0); }}
                 className={`px-3 py-1 rounded-md transition-colors ${historyFilterStatus === "APPROVED" ? "bg-emerald-600 text-white" : "text-slate-500 hover:text-slate-800"}`}
               >
                 Đã duyệt
               </button>
               <button
                 type="button"
-                onClick={() => setHistoryFilterStatus("REJECTED")}
+                onClick={() => { setHistoryFilterStatus("REJECTED"); setHistoryPage(0); }}
                 className={`px-3 py-1 rounded-md transition-colors ${historyFilterStatus === "REJECTED" ? "bg-red-600 text-white" : "text-slate-500 hover:text-slate-800"}`}
               >
                 Bị từ chối
@@ -372,18 +390,7 @@ export function TutorProfileApprovalReview({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                {historyItems
-                  .filter((item) => {
-                    if (historyFilterStatus !== "ALL" && item.status !== historyFilterStatus) return false;
-                    if (historySearch.trim()) {
-                      const q = historySearch.toLowerCase();
-                      const matchName = item.applicantFullName?.toLowerCase().includes(q) || item.fullName?.toLowerCase().includes(q);
-                      const matchEmail = item.applicantEmail?.toLowerCase().includes(q) || item.email?.toLowerCase().includes(q);
-                      return matchName || matchEmail;
-                    }
-                    return true;
-                  })
-                  .map((item) => (
+                {historyItems.map((item) => (
                     <tr key={item.applicationId || item.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-3.5 px-3">
                         <div className="flex items-center gap-3">
@@ -460,6 +467,7 @@ export function TutorProfileApprovalReview({
             </table>
           </div>
         )}
+        {!historyLoading && historyTotal > 0 && <Pager page={historyPage} pages={historyPages} total={historyTotal} size={10} onChange={setHistoryPage} />}
       </section>
 
       {/* Modal Detail & Identity Documents Review */}

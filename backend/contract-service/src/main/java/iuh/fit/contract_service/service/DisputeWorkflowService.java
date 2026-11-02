@@ -7,16 +7,19 @@ import iuh.fit.contract_service.command.BlockchainTransactionIntentResult;
 import iuh.fit.contract_service.entity.ContractAgreement;
 import iuh.fit.contract_service.entity.Dispute;
 import iuh.fit.contract_service.entity.DisputeEvidence;
+import iuh.fit.contract_service.entity.DisputeHistory;
 import iuh.fit.contract_service.entity.OutboxEvent;
 import iuh.fit.contract_service.entity.ProcessedEvent;
 import iuh.fit.contract_service.entity.SessionSettlement;
 import iuh.fit.contract_service.enums.BlockchainTransactionAction;
 import iuh.fit.contract_service.enums.DisputeStatus;
+import iuh.fit.contract_service.enums.DisputeEscalationStatus;
 import iuh.fit.contract_service.enums.SettlementOutcome;
 import iuh.fit.contract_service.enums.SettlementStatus;
 import iuh.fit.contract_service.repository.ContractAgreementRepository;
 import iuh.fit.contract_service.repository.DisputeEvidenceRepository;
 import iuh.fit.contract_service.repository.DisputeRepository;
+import iuh.fit.contract_service.repository.DisputeHistoryRepository;
 import iuh.fit.contract_service.repository.OutboxEventRepository;
 import iuh.fit.contract_service.repository.SessionSettlementRepository;
 import org.slf4j.Logger;
@@ -51,6 +54,7 @@ public class DisputeWorkflowService {
     private final OutboxEventRepository outboxEventRepository;
     private final ObjectMapper objectMapper;
     private final NotificationDispatcher notificationDispatcher;
+    private final DisputeHistoryRepository disputeHistoryRepository;
 
     public DisputeWorkflowService(
             DisputeRepository disputeRepository,
@@ -60,7 +64,8 @@ public class DisputeWorkflowService {
             BlockchainTransactionCommandService commandService,
             OutboxEventRepository outboxEventRepository,
             ObjectMapper objectMapper,
-            NotificationDispatcher notificationDispatcher) {
+            NotificationDispatcher notificationDispatcher,
+            DisputeHistoryRepository disputeHistoryRepository) {
         this.disputeRepository = disputeRepository;
         this.disputeEvidenceRepository = disputeEvidenceRepository;
         this.sessionSettlementRepository = sessionSettlementRepository;
@@ -69,6 +74,7 @@ public class DisputeWorkflowService {
         this.outboxEventRepository = outboxEventRepository;
         this.objectMapper = objectMapper;
         this.notificationDispatcher = notificationDispatcher;
+        this.disputeHistoryRepository = disputeHistoryRepository;
     }
 
     @Transactional
@@ -266,7 +272,7 @@ public class DisputeWorkflowService {
             String evidenceObjectKey,
             String evidenceContentType,
             String evidenceSha256) {
-        Dispute dispute = disputeRepository.findById(disputeId)
+        Dispute dispute = disputeRepository.findByIdForUpdate(disputeId)
                 .orElseThrow(() -> new IllegalArgumentException("Dispute not found: " + disputeId));
         if (dispute.getStatus() != DisputeStatus.OPEN) {
             throw new IllegalStateException("Only open disputes accept tutor evidence");
@@ -349,6 +355,12 @@ public class DisputeWorkflowService {
             if (reviewerEmail == null || !reviewerEmail.equalsIgnoreCase(resolverEmail)) {
                 throw new SecurityException("STAFF " + resolverEmail + " is not authorized to resolve dispute for classroom approved by: " + reviewerEmail);
             }
+            DisputeEscalationStatus escalation = dispute.getEscalationStatus() == null
+                    ? DisputeEscalationStatus.NONE : dispute.getEscalationStatus();
+            if (escalation == DisputeEscalationStatus.PENDING_ADMIN
+                    || escalation == DisputeEscalationStatus.ACCEPTED_BY_ADMIN) {
+                throw new SecurityException("Staff cannot resolve a dispute while Admin escalation is active");
+            }
         } else {
             throw new SecurityException("Invalid role for dispute resolution: " + resolverRole);
         }
@@ -395,8 +407,26 @@ public class DisputeWorkflowService {
         dispute.setResolvedByUserId(resolverUserId);
         dispute.setResolvedByEmail(resolverEmail);
         dispute.setResolvedByRole(resolverRole.toUpperCase(Locale.ROOT));
+        DisputeEscalationStatus escalationBefore = dispute.getEscalationStatus() == null
+                ? DisputeEscalationStatus.NONE : dispute.getEscalationStatus();
+        if ("ADMIN".equalsIgnoreCase(resolverRole) && escalationBefore != DisputeEscalationStatus.NONE) {
+            dispute.setEscalationStatus(DisputeEscalationStatus.CLOSED);
+            dispute.setEscalationHandledByUserId(resolverUserId);
+            dispute.setEscalationHandledByEmail(resolverEmail);
+            dispute.setEscalationHandledAt(Instant.now());
+        }
         dispute.markResolutionPending();
         disputeRepository.saveAndFlush(dispute);
+        if (escalationBefore != DisputeEscalationStatus.NONE) {
+            String auditKey = "RESOLUTION_INITIATED:" + disputeId + ":" + idempotencyKey;
+            disputeHistoryRepository.findByIdempotencyKey(auditKey).orElseGet(() -> disputeHistoryRepository.save(
+                    DisputeHistory.builder().id(UUID.randomUUID()).dispute(dispute)
+                            .actorUserId(resolverUserId).actorEmail(resolverEmail)
+                            .actorRole(resolverRole.toUpperCase(Locale.ROOT)).action("RESOLUTION_INITIATED")
+                            .fromState(escalationBefore.name())
+                            .toState(dispute.getEscalationStatus().name()).reason(normalizedResolutionReason)
+                            .idempotencyKey(auditKey).build()));
+        }
 
         log.info("Initiated dispute resolution for dispute {} by {} ({}) with approved={}",
                 disputeId, resolverEmail, resolverRole, complaintApproved);
@@ -489,6 +519,16 @@ public class DisputeWorkflowService {
                 dispute.getResolvedByRole(),
                 event.getTransactionHash());
         disputeRepository.saveAndFlush(dispute);
+        if (dispute.getEscalationStatus() != null && dispute.getEscalationStatus() != DisputeEscalationStatus.NONE) {
+            String auditKey = "RESOLUTION_CONFIRMED:" + dispute.getId() + ":" + event.getId();
+            disputeHistoryRepository.findByIdempotencyKey(auditKey).orElseGet(() -> disputeHistoryRepository.save(
+                    DisputeHistory.builder().id(UUID.randomUUID()).dispute(dispute)
+                            .actorUserId(dispute.getResolvedByUserId()).actorEmail(dispute.getResolvedByEmail())
+                            .actorRole(dispute.getResolvedByRole() != null ? dispute.getResolvedByRole() : "SYSTEM")
+                            .action("RESOLUTION_CONFIRMED").fromState(DisputeStatus.RESOLUTION_PENDING.name())
+                            .toState(dispute.getStatus().name()).reason(dispute.getResolutionReason())
+                            .idempotencyKey(auditKey).build()));
+        }
 
         SessionSettlement settlement = dispute.getSettlement();
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);

@@ -1,8 +1,8 @@
 # Kế hoạch quản trị Gia sư vắng liên tiếp, thời hạn giải trình và probation
 
-> Trạng thái: **SPEC REVIEWED — CHƯA IMPLEMENT**  
-> Ngày rà soát source: **2026-10-27**  
-> Phạm vi: `contract-service`, `learning-service`, `frontend-web`, notification/outbox, Contract V22 và Learning V17.  
+> Trạng thái: **SPEC REVIEWED — CHƯA IMPLEMENT**
+> Ngày rà soát source: **2026-10-27**
+> Phạm vi: `contract-service`, `learning-service`, `frontend-web`, notification/outbox, Contract V22 và Learning V17.
 > Nguồn tham chiếu: `docs/BUSINESS_RULES.md`, `docs/BLOCKCHAIN.md`, source hiện tại và `Plan/PLAN_ESCROW_COOLING_OFF_TRIAL.md`.
 
 ## 0. Kết luận sau khi đối chiếu source

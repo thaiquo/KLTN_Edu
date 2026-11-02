@@ -14,8 +14,13 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import java.text.Normalizer;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.LinkedHashSet;
@@ -73,22 +78,65 @@ public class TutorSubjectRegistrationService {
     }
 
     @Transactional(readOnly = true)
-    public List<TeachingCatalogDtos.RegistrationResponse> pending(boolean includeProposals) {
-        return registrations.findByStatusOrderBySubmittedAtAsc(TutorSubjectRegistrationStatus.PENDING).stream()
-                .filter(registration -> includeProposals || registration.getSubject() != null)
-                .map(this::response)
-                .toList();
+    public Page<TeachingCatalogDtos.RegistrationResponse> pending(
+            boolean includeProposals,
+            boolean proposalsOnly,
+            Pageable pageable) {
+        return registrations.findAll(registrationSpec(
+                        List.of(TutorSubjectRegistrationStatus.PENDING), includeProposals, proposalsOnly,
+                        null, null, null, null), pageable)
+                .map(this::response);
     }
 
     @Transactional(readOnly = true)
-    public List<TeachingCatalogDtos.RegistrationResponse> history(boolean includeProposals) {
-        return registrations.findByStatusInOrderByReviewedAtDesc(List.of(
-                TutorSubjectRegistrationStatus.APPROVED,
-                TutorSubjectRegistrationStatus.REJECTED
-        )).stream()
-                .filter(registration -> includeProposals || registration.getProposedSubjectName() == null)
-                .map(this::response)
-                .toList();
+    public Page<TeachingCatalogDtos.RegistrationResponse> history(boolean includeProposals,
+                                                                  String reviewerEmail,
+                                                                  TutorSubjectRegistrationStatus status,
+                                                                  String search,
+                                                                  OffsetDateTime from,
+                                                                  OffsetDateTime to,
+                                                                  Pageable pageable) {
+        List<TutorSubjectRegistrationStatus> statuses = status == TutorSubjectRegistrationStatus.APPROVED
+                || status == TutorSubjectRegistrationStatus.REJECTED
+                ? List.of(status)
+                : List.of(TutorSubjectRegistrationStatus.APPROVED, TutorSubjectRegistrationStatus.REJECTED);
+        return registrations.findAll(registrationSpec(
+                statuses, includeProposals, false, reviewerEmail, search, from, to), pageable)
+                .map(this::response);
+    }
+
+    private Specification<TutorSubjectRegistration> registrationSpec(
+            List<TutorSubjectRegistrationStatus> statuses,
+            boolean includeProposals,
+            boolean proposalsOnly,
+            String reviewerEmail,
+            String search,
+            OffsetDateTime from,
+            OffsetDateTime to) {
+        return (root, query, cb) -> {
+            List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
+            predicates.add(root.get("status").in(statuses));
+            if (proposalsOnly) predicates.add(cb.isNull(root.get("subject")));
+            else if (!includeProposals) predicates.add(cb.isNotNull(root.get("subject")));
+            if (reviewerEmail != null && !reviewerEmail.isBlank()) {
+                predicates.add(cb.equal(cb.lower(root.get("reviewedByEmail")), reviewerEmail.trim().toLowerCase()));
+            }
+            if (from != null) predicates.add(cb.greaterThanOrEqualTo(
+                    root.get("reviewedAt"), from.atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime()));
+            if (to != null) predicates.add(cb.lessThan(
+                    root.get("reviewedAt"), to.atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime()));
+            if (search != null && !search.isBlank()) {
+                String pattern = "%" + search.trim().toLowerCase(Locale.ROOT) + "%";
+                var subject = root.join("subject", jakarta.persistence.criteria.JoinType.LEFT);
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("tutorEmail")), pattern),
+                        cb.like(cb.lower(root.get("proposedSubjectName")), pattern),
+                        cb.like(cb.lower(subject.get("name")), pattern),
+                        cb.like(cb.lower(root.get("reviewNote")), pattern),
+                        cb.like(cb.lower(root.get("rejectReason")), pattern)));
+            }
+            return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
+        };
     }
 
     @Transactional

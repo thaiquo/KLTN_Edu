@@ -23,6 +23,7 @@ import {
   Reply,
   X,
   ShieldCheck,
+  Flag,
   User as UserIcon
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -61,6 +62,9 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
   const [isLikesModalOpen, setIsLikesModalOpen] = useState(false);
   const [isCommentsModalOpen, setIsCommentsModalOpen] = useState(false);
   const [replyingTo, setReplyingTo] = useState(null);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState('NỘI DUNG KHÔNG PHÙ HỢP');
+  const [reportDetails, setReportDetails] = useState('');
 
   useEffect(() => {
     setPost(initialPost);
@@ -335,6 +339,18 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
     }
   };
 
+  const handleReportPost = async (event) => {
+    event.preventDefault();
+    if (!reportReason.trim()) return;
+    try {
+      await communityApi.reportPost(post.id, reportReason.trim(), reportDetails.trim());
+      feedback.success('Đã gửi báo cáo để Staff kiểm tra.');
+      setReportOpen(false); setReportDetails('');
+    } catch (err) {
+      feedback.error(err.message || 'Không thể gửi báo cáo bài viết.');
+    }
+  };
+
   const handleClassConverted = (result) => {
     setPost(prev => ({
       ...prev,
@@ -393,6 +409,7 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
   const badgeInfo = getPostTypeBadge(post.postType);
 
   return (
+    <>
     <article 
       id={`post-${post.id}`}
       className={`bg-white rounded-3xl border transition-all duration-300 overflow-hidden mb-6 ${
@@ -476,6 +493,12 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
                   className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+              {authenticated && !isAuthor && (userRole === 'STUDENT' || userRole === 'TUTOR') && (
+                <button type="button" onClick={() => setReportOpen(true)} title="Báo cáo bài viết"
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-amber-700 hover:bg-amber-50 transition cursor-pointer">
+                  <Flag className="w-4 h-4" />
                 </button>
               )}
             </div>
@@ -924,7 +947,20 @@ export function PostCard({ post: initialPost, currentUserId, userRole, authentic
         shareUrl={post.publicShareId ? buildCommunityPostShareUrl(post.publicShareId) : `${window.location.origin}/community?postId=${post.id}`}
         authenticated={authenticated}
       />
-    </article>
+      </article>
+      {reportOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4" onClick={() => setReportOpen(false)}>
+          <form onSubmit={handleReportPost} onClick={(event) => event.stopPropagation()} className="w-full max-w-md space-y-4 rounded-lg bg-white p-5 shadow-xl">
+            <div className="flex items-center justify-between"><h3 className="font-bold text-slate-900">Báo cáo bài viết</h3><button type="button" onClick={() => setReportOpen(false)}><X className="h-5 w-5" /></button></div>
+            <select value={reportReason} onChange={(event) => setReportReason(event.target.value)} className="w-full rounded-md border border-slate-300 p-2 text-sm">
+              <option>NỘI DUNG KHÔNG PHÙ HỢP</option><option>THÔNG TIN SAI LỆCH</option><option>QUẢNG CÁO / SPAM</option><option>QUẤY RỐI</option><option>KHÁC</option>
+            </select>
+            <textarea value={reportDetails} onChange={(event) => setReportDetails(event.target.value)} maxLength={2000} rows={4} placeholder="Mô tả thêm (không bắt buộc)" className="w-full rounded-md border border-slate-300 p-2 text-sm" />
+            <div className="flex justify-end gap-2"><button type="button" onClick={() => setReportOpen(false)} className="rounded-md border px-4 py-2 text-sm">Hủy</button><button className="rounded-md bg-amber-600 px-4 py-2 text-sm font-bold text-white">Gửi báo cáo</button></div>
+          </form>
+        </div>
+      )}
+    </>
   );
 }
 

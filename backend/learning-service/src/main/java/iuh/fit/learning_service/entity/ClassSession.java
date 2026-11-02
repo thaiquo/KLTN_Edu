@@ -2,6 +2,7 @@ package iuh.fit.learning_service.entity;
 
 import iuh.fit.learning_service.enums.ClassSessionStatus;
 import jakarta.persistence.*;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -9,6 +10,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 @Getter
 @Setter
@@ -84,10 +86,13 @@ public class ClassSession {
 
     private java.time.OffsetDateTime attendanceFinalizedAt;
 
+    @Setter(AccessLevel.NONE)
     private Integer governanceNextSessionSequence;
 
+    @Setter(AccessLevel.NONE)
     private java.time.OffsetDateTime governanceNextSessionStartAt;
 
+    @Setter(AccessLevel.NONE)
     private java.time.OffsetDateTime governanceSnapshotCapturedAt;
 
     @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -106,5 +111,34 @@ public class ClassSession {
     @PreUpdate
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
+    }
+
+    public void captureGovernanceSnapshot(
+            java.time.OffsetDateTime capturedAt,
+            Integer nextSessionSequence,
+            java.time.OffsetDateTime nextSessionStartAt
+    ) {
+        Objects.requireNonNull(capturedAt, "Governance snapshot capture time is required");
+        if (governanceSnapshotCapturedAt != null) {
+            throw new IllegalStateException("Governance snapshot has already been captured");
+        }
+        if (attendanceFinalizedAt == null) {
+            throw new IllegalStateException("Attendance must be finalized before capturing governance snapshot");
+        }
+        if ((nextSessionSequence == null) != (nextSessionStartAt == null)) {
+            throw new IllegalArgumentException("Next-session sequence and start time must be supplied together");
+        }
+        if (nextSessionSequence != null) {
+            if (sequenceNumber == null || nextSessionSequence <= sequenceNumber) {
+                throw new IllegalArgumentException("Governance next-session sequence must follow the current session");
+            }
+            if (!nextSessionStartAt.isAfter(attendanceFinalizedAt)) {
+                throw new IllegalArgumentException("Governance next-session start must be after attendance finalization");
+            }
+        }
+
+        governanceNextSessionSequence = nextSessionSequence;
+        governanceNextSessionStartAt = nextSessionStartAt;
+        governanceSnapshotCapturedAt = capturedAt;
     }
 }

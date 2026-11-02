@@ -434,14 +434,14 @@ class AnvilTrialCoolingOffIntegrationTest {
                 chain_id, escrow_contract_address, token_address, token_symbol, token_decimals,
                 terms_json, terms_hash, contract_version, total_price_vnd, vnd_per_usdc,
                 total_amount_usdc_units, price_per_session_usdc_units, total_sessions,
-                status, onchain_agreement_id, created_at, updated_at
+                status, onchain_agreement_id, legacy_excluded, created_at, updated_at
             ) VALUES (
                 ?, ?, ?, 1002, 'student@test.vn', 'tutor@test.vn',
                 ?, ?, ?, 'staff@test.vn',
                 ?, ?, ?, 'USDC', 6,
                 '{}', ?, 1, 1000000.00, 25000.00,
                 ?, ?, ?,
-                'PREPARING_BLOCKCHAIN', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                'PREPARING_BLOCKCHAIN', ?, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             """,
                 id, classroomId, studentId,

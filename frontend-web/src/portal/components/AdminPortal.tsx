@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Users,
   ShieldCheck,
@@ -35,12 +35,13 @@ import { adminUsersApi } from "../../api/adminUsers";
 import { staffTutorApi } from "../../api/staffTutors";
 import { useFeedback } from "../../components/feedback/useFeedback";
 import { useAuth } from "../../hooks/useAuth";
+import { Pager } from "./OperationalUi";
 
 export function AdminPortal() {
   const { user } = useAuth();
   const feedback = useFeedback();
   const [users, setUsers] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   // Create staff modal state
@@ -57,6 +58,13 @@ export function AdminPortal() {
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [searched, setSearched] = useState(false);
+  const [stats, setStats] = useState({ total: 0, tutors: 0, students: 0, admins: 0, suspended: 0 });
+  const requestId = useRef(0);
 
   // Detail modal state
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
@@ -71,16 +79,24 @@ export function AdminPortal() {
   const [rejectReason, setRejectReason] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
 
-  const loadUsers = async () => {
+  const loadUsers = async (targetPage = page, targetSize = pageSize) => {
+    const currentRequest = ++requestId.current;
     setLoading(true);
     setError("");
     try {
       const data = await adminUsersApi.list({
         search: searchQuery,
         role: roleFilter,
-        status: statusFilter
+        status: statusFilter,
+        page: targetPage,
+        size: targetSize
       });
-      setUsers(Array.isArray(data) ? data : []);
+      if (currentRequest !== requestId.current) return;
+      setUsers(Array.isArray(data?.content) ? data.content : []);
+      setPages(Math.max(1, Number(data?.totalPages || 1)));
+      setTotal(Number(data?.totalElements || 0));
+      setPage(targetPage);
+      setSearched(true);
     } catch (err: any) {
       setError(err?.message || "Không thể tải danh sách người dùng.");
     } finally {
@@ -89,22 +105,20 @@ export function AdminPortal() {
   };
 
   useEffect(() => {
-    loadUsers();
-  }, [roleFilter, statusFilter]);
+    adminUsersApi.stats().then((data: any) => setStats({
+      total: Number(data?.total || 0), tutors: Number(data?.tutors || 0), students: Number(data?.students || 0),
+      admins: Number(data?.operators || 0), suspended: Number(data?.suspended || 0)
+    })).catch(() => undefined);
+  }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    loadUsers();
+    if (!searchQuery.trim() && roleFilter === "ALL" && statusFilter === "ALL") {
+      setError("Nhập từ khóa hoặc chọn ít nhất một bộ lọc để tra cứu người dùng.");
+      return;
+    }
+    loadUsers(0);
   };
-
-  const stats = useMemo(() => {
-    const total = users.length;
-    const tutors = users.filter((u) => u.roles?.includes("TUTOR")).length;
-    const students = users.filter((u) => u.roles?.includes("STUDENT")).length;
-    const admins = users.filter((u) => u.roles?.includes("ADMIN") || u.roles?.includes("STAFF")).length;
-    const suspended = users.filter((u) => u.accountStatus === "LOCKED" || u.accountStatus === "DISABLED").length;
-    return { total, tutors, students, admins, suspended };
-  }, [users]);
 
   const openDetail = async (userId: number) => {
     setSelectedUserId(userId);
@@ -290,7 +304,8 @@ export function AdminPortal() {
             + CẤP TÀI KHOẢN STAFF
           </button>
           <button
-            onClick={loadUsers}
+            onClick={() => searched && loadUsers(page)}
+            disabled={!searched || loading}
             className="px-4 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl font-bold text-xs flex items-center gap-2 transition-all shadow-2xs cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5" />
@@ -371,15 +386,16 @@ export function AdminPortal() {
       <section className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
         {/* Search & Filters toolbar */}
         <div className="p-5 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4">
-          <form onSubmit={handleSearchSubmit} className="relative w-full md:w-96">
+          <form id="user-search-form" onSubmit={handleSearchSubmit} className="relative w-full md:w-[28rem]">
             <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               placeholder="Tìm theo họ tên, email, SĐT..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:border-brand-primary focus:outline-hidden"
+              className="w-full pl-10 pr-24 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:border-brand-primary focus:outline-hidden"
             />
+            <button type="submit" className="absolute right-1.5 top-1.5 rounded-lg bg-brand-primary px-3 py-1.5 text-xs font-black text-white">Tìm</button>
           </form>
 
           <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
@@ -387,7 +403,7 @@ export function AdminPortal() {
               <span className="text-xs font-bold text-slate-400">Vai trò:</span>
               <select
                 value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
+                onChange={(e) => { setRoleFilter(e.target.value); setSearched(false); setUsers([]); setTotal(0); }}
                 className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white"
               >
                 <option value="ALL">Tất cả vai trò</option>
@@ -402,7 +418,7 @@ export function AdminPortal() {
               <span className="text-xs font-bold text-slate-400">Trạng thái:</span>
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => { setStatusFilter(e.target.value); setSearched(false); setUsers([]); setTotal(0); }}
                 className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-white"
               >
                 <option value="ALL">Tất cả trạng thái</option>
@@ -414,7 +430,13 @@ export function AdminPortal() {
         </div>
 
         {/* User table */}
-        {loading ? (
+        {!searched ? (
+          <div className="p-12 text-center">
+            <Search className="mx-auto h-9 w-9 text-brand-primary/50" />
+            <p className="mt-3 text-sm font-black text-slate-700">Tra cứu người dùng</p>
+            <p className="mt-1 text-xs font-semibold text-slate-400">Nhập từ khóa hoặc chọn bộ lọc rồi bấm Tìm. Hệ thống không tải toàn bộ tài khoản trước khi tra cứu.</p>
+          </div>
+        ) : loading ? (
           <div className="p-8 space-y-4">
             <div className="h-12 animate-pulse rounded-xl bg-slate-100" />
             <div className="h-12 animate-pulse rounded-xl bg-slate-100" />
@@ -425,6 +447,7 @@ export function AdminPortal() {
             Không tìm thấy người dùng nào phù hợp với bộ lọc.
           </div>
         ) : (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-left text-xs font-semibold text-slate-600">
               <thead>
@@ -567,6 +590,8 @@ export function AdminPortal() {
               </tbody>
             </table>
           </div>
+          <Pager page={page} pages={pages} total={total} size={pageSize} onChange={next => loadUsers(next)} onSizeChange={next => { setPageSize(next); loadUsers(0, next); }} />
+          </>
         )}
       </section>
 

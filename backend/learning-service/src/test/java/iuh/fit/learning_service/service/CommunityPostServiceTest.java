@@ -128,7 +128,8 @@ class CommunityPostServiceTest {
         post.setStatus(PostStatus.OPEN);
         when(postRepository.findById(91L)).thenReturn(Optional.of(post));
         for (CommunityModerationStatus state : List.of(CommunityModerationStatus.MODERATING,
-                CommunityModerationStatus.NEEDS_EDIT, CommunityModerationStatus.REJECTED,
+                CommunityModerationStatus.NEEDS_EDIT, CommunityModerationStatus.NEEDS_REVIEW,
+                CommunityModerationStatus.REJECTED,
                 CommunityModerationStatus.FAILED)) {
             post.setModerationStatus(state);
             assertThrows(ResourceNotFoundException.class, () -> postService.getPostDetail(91L, null));
@@ -148,6 +149,67 @@ class CommunityPostServiceTest {
             assertThat(postService.getPostDetail(92L, null).getId()).isEqualTo(92L);
         }
         verify(postRepository, times(2)).incrementViewCount(92L);
+    }
+
+    @Test
+    void authorCanRetrieveOwnNeedsReviewPost() {
+        CommunityPost post = new CommunityPost();
+        post.setId(93L);
+        post.setAuthorId(202L);
+        post.setAuthorRole("STUDENT");
+        post.setAuthorName("Student");
+        post.setPostType(PostType.STUDENT_FIND_TUTOR);
+        post.setTitle("Ambiguous post");
+        post.setContent("Needs human review");
+        post.setStatus(PostStatus.OPEN);
+        post.setModerationStatus(CommunityModerationStatus.NEEDS_REVIEW);
+        when(postRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(post), PageRequest.of(0, 10), 1));
+        when(tutorFollowRepository.findFollowedTutorUserIdsByStudentUserId(202L)).thenReturn(List.of());
+        when(pendingRevisionRepository.findById(93L)).thenReturn(Optional.empty());
+
+        var result = postService.getMyPosts(null, PageRequest.of(0, 10), studentPrincipal);
+
+        assertThat(result.getContent()).singleElement().satisfies(item -> {
+            assertThat(item.getId()).isEqualTo(93L);
+            assertThat(item.getModerationStatus()).isEqualTo(CommunityModerationStatus.NEEDS_REVIEW);
+        });
+    }
+
+    @Test
+    void manualApprovalPromotesPendingRevisionIntoExistingPost() {
+        CommunityPost post = new CommunityPost();
+        post.setId(94L);
+        post.setAuthorId(202L);
+        post.setAuthorRole("STUDENT");
+        post.setAuthorName("Student");
+        post.setPostType(PostType.STUDENT_FIND_TUTOR);
+        post.setTitle("Original title");
+        post.setContent("Original content");
+        post.setStatus(PostStatus.OPEN);
+        post.setModerationStatus(CommunityModerationStatus.ALLOWED);
+        post.setContentRevision(3L);
+        CommunityPostPendingRevision revision = new CommunityPostPendingRevision();
+        revision.setPostId(94L);
+        revision.setContentRevision(4L);
+        revision.setModerationStatus(CommunityModerationStatus.NEEDS_REVIEW);
+        revision.setRequestJson("""
+                {"postType":"STUDENT_FIND_TUTOR","title":"Approved edit","content":"Approved content",
+                 "learningMode":"ONLINE"}
+                """);
+
+        postService.approvePendingRevisionManually(post, revision, "Human reviewer approved");
+
+        assertThat(post.getId()).isEqualTo(94L);
+        assertThat(post.getTitle()).isEqualTo("Approved edit");
+        assertThat(post.getContent()).isEqualTo("Approved content");
+        assertThat(post.getContentRevision()).isEqualTo(4L);
+        assertThat(post.getStatus()).isEqualTo(PostStatus.OPEN);
+        assertThat(post.getModerationStatus()).isEqualTo(CommunityModerationStatus.ALLOWED);
+        assertThat(post.getModerationReason()).isEqualTo("Human reviewer approved");
+        assertThat(post.getModerationPromptVersion()).isEqualTo("MANUAL_M2");
+        verify(postRepository).save(same(post));
+        verify(realtimeEventHub).publishToAll(eq("COMMUNITY_POST_UPDATED"), eq(94L), anyMap());
     }
 
     @Test
@@ -1250,7 +1312,8 @@ class CommunityPostServiceTest {
         CommunityModerationRequested event = new CommunityModerationRequested(604L, 1L, "student@edu.vn", false,
                 new CommunityModerationClient.Request("STUDENT_FIND_TUTOR", post.getTitle(), post.getContent()));
         List<CommunityModerationStatus> outcomes = List.of(CommunityModerationStatus.ALLOWED,
-                CommunityModerationStatus.NEEDS_EDIT, CommunityModerationStatus.REJECTED, CommunityModerationStatus.FAILED);
+                CommunityModerationStatus.NEEDS_EDIT, CommunityModerationStatus.NEEDS_REVIEW,
+                CommunityModerationStatus.REJECTED, CommunityModerationStatus.FAILED);
         for (CommunityModerationStatus outcome : outcomes) {
             post.setModerationStatus(CommunityModerationStatus.MODERATING);
             when(moderationPolicy.map(any())).thenReturn(outcome);
@@ -1262,7 +1325,7 @@ class CommunityPostServiceTest {
                                     ? CommunityModerationPolicy.Risk.LOW : CommunityModerationPolicy.Risk.MEDIUM);
             assertThat(postService.applyModerationResult(event, result)).isTrue();
         }
-        verify(realtimeEventHub, times(4)).publishToUser(eq("student@edu.vn"),
+        verify(realtimeEventHub, times(5)).publishToUser(eq("student@edu.vn"),
                 eq("COMMUNITY_POST_MODERATION_COMPLETED"), eq(604L), anyMap());
         verify(realtimeEventHub, never()).publishToAll(eq("COMMUNITY_POST_MODERATION_COMPLETED"), anyLong(), anyMap());
     }

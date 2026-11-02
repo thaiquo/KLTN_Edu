@@ -59,6 +59,20 @@ class HybridTutorMatchingServiceTest {
     }
 
     @Test
+    void emptySemanticResultFallsBackToStructuredRanking() {
+        List<TutorCandidate> candidates = evaluationCandidates();
+        FakeSemanticSearchService semantic = new FakeSemanticSearchService(applicable(List.of()));
+
+        TutorMatchingResponse structured = v1Service(candidates).match(semanticRequest());
+        TutorMatchingResponse hybrid = hybridService(candidates, semantic).match(semanticRequest());
+
+        assertThat(hybrid.results()).extracting("tutorId")
+                .containsExactlyElementsOf(structured.results().stream().map(result -> result.tutorId()).toList());
+        assertThat(hybrid.results()).extracting("matchPercentage")
+                .containsExactlyElementsOf(structured.results().stream().map(result -> result.matchPercentage()).toList());
+    }
+
+    @Test
     void semanticCandidateCannotIntroduceIneligibleTutor() {
         List<TutorCandidate> candidates = evaluationCandidates();
         FakeSemanticSearchService semantic = new FakeSemanticSearchService(applicable(List.of(
@@ -109,10 +123,17 @@ class HybridTutorMatchingServiceTest {
         assertThat(v1.results()).extracting("tutorId").containsExactly(1L, 2L, 3L, 4L);
         assertThat(hybrid.results()).extracting("tutorId").containsExactly(3L, 1L, 2L, 4L);
         assertThat(hybrid.results().getFirst().scoreBreakdown().semantic().used()).isTrue();
-        assertThat(hybrid.results().getFirst().scoreBreakdown().criteria()).anySatisfy(criterion -> {
-            assertThat(criterion.criterion()).isEqualTo("specialty");
-            assertThat(criterion.policy()).contains("Ngữ nghĩa");
-        });
+        assertThat(hybrid.results()).allSatisfy(result ->
+                assertThat(result.scoreBreakdown().semantic().rankBoost())
+                        .isBetween(BigDecimal.ZERO.setScale(4), BigDecimal.valueOf(3).setScale(4))
+        );
+        var structuredTutorThree = v1.results().stream()
+                .filter(result -> result.tutorId().equals(3L))
+                .findFirst()
+                .orElseThrow();
+        assertThat(hybrid.results().getFirst().scoreBreakdown().criteria())
+                .usingRecursiveComparison()
+                .isEqualTo(structuredTutorThree.scoreBreakdown().criteria());
         assertThat(hybrid.results().getLast().tutorId()).isEqualTo(4L);
         assertThat(hybrid.results()).allSatisfy(result -> assertThat(result.matchPercentage()).isBetween(0, 100));
         assertThat(hybrid.results()).allSatisfy(result -> assertThat(result.scoreBreakdown().criteria())

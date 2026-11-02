@@ -39,6 +39,8 @@ import iuh.fit.ai_service.service.semantic.ClassSemanticVectorStore;
 import iuh.fit.ai_service.service.semantic.SemanticVectorStore;
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchService;
 import iuh.fit.ai_service.service.semantic.TutorSemanticIndexService;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.HealthResponse;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.ReadinessStatus;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import jakarta.servlet.http.Cookie;
@@ -65,6 +67,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -478,6 +481,29 @@ class TutorMatchingSecurityTest {
                 .andExpect(status().isOk());
 
         verify(semanticVectorStore).initializeCollection();
+    }
+
+    @Test
+    void studentCannotReadSemanticHealth() throws Exception {
+        mockMvc.perform(get("/api/ai/semantic/health")
+                        .cookie(accessToken("student@gmail.com", "STUDENT", List.of("STUDENT"))))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(tutorSemanticIndexService);
+    }
+
+    @Test
+    void staffCanReadSemanticHealthWithoutVectorContents() throws Exception {
+        when(tutorSemanticIndexService.health()).thenReturn(new HealthResponse(
+                "tutor_capabilities_v1", true, 107, Instant.parse("2026-10-30T00:00:00Z"), ReadinessStatus.READY));
+
+        mockMvc.perform(get("/api/ai/semantic/health")
+                        .cookie(accessToken("staff@gmail.com", "STAFF", List.of("STAFF"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.collectionName").value("tutor_capabilities_v1"))
+                .andExpect(jsonPath("$.pointCount").value(107))
+                .andExpect(jsonPath("$.status").value("READY"))
+                .andExpect(jsonPath("$.vectors").doesNotExist());
     }
 
     @Test

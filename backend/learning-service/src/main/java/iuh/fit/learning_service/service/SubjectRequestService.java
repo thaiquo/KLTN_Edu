@@ -88,6 +88,12 @@ public class SubjectRequestService {
         return requestRepository.findByStatusOrderByCreatedAtAsc(SubjectRequestStatus.PENDING).stream().map(this::toResponse).toList();
     }
 
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<SubjectRequestDtos.Response> pending(
+            org.springframework.data.domain.Pageable pageable) {
+        return requestRepository.findByStatus(SubjectRequestStatus.PENDING, pageable).map(this::toResponse);
+    }
+
     @Transactional
     public SubjectRequestDtos.Response approve(Long id, Long reviewerUserId) {
         SubjectRequest request = getPending(id);

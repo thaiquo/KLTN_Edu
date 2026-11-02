@@ -191,6 +191,7 @@ export function TutorCommunityManagement({
         const moderationStatus = detail.payload?.moderationStatus;
         if (moderationStatus === 'ALLOWED') feedback.success('Bài viết đã được đăng.');
         else if (moderationStatus === 'NEEDS_EDIT') feedback.warning(detail.payload?.reason || 'Bài viết cần được chỉnh sửa.');
+        else if (moderationStatus === 'NEEDS_REVIEW') feedback.warning('Bài viết đang chờ Staff/Admin kiểm duyệt trước khi hiển thị công khai.');
         else if (moderationStatus === 'REJECTED') feedback.error(detail.payload?.reason || 'Không thể đăng bài vì nội dung chưa phù hợp.');
         else if (moderationStatus === 'FAILED') feedback.error('Hiện chưa thể kiểm tra nội dung. Vui lòng thử lại.');
         loadMyPosts(true);

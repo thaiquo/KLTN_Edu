@@ -58,6 +58,10 @@ import { StaffReportsPage } from "./components/staff/StaffReportsPage";
 import { CommunityFeedPage } from "../pages/community/CommunityFeedPage";
 import { TutorCommunityManagement } from "./components/TutorCommunityManagement";
 import { StudentCommunityManagement } from "./components/StudentCommunityManagement";
+import { HelpDeskPage } from "./components/HelpDeskPage";
+import { DisputeEscalationPage } from "./components/staff/DisputeEscalationPage";
+import { CommunityModerationPage } from "./components/staff/CommunityModerationPage";
+import { canAccessPortalPage, resolvePortalPage } from "./portalAccess";
 
 // High Resolution course and avatar placeholders
 const studentAvatar =
@@ -164,13 +168,11 @@ interface AppProps {
 export default function App({ user, onLogout }: AppProps) {
   const feedback = useFeedback();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   // Global States holding data consistently across tabs
   const [activeRole] = useState<UserRole>(user.currentRole || user.role || "student");
   const requestedTab = searchParams.get("tab");
-  const [currentPage, setCurrentPage] = useState<string>(() => {
-    if (requestedTab) return requestedTab;
-    return activeRole === "staff" ? "tutor-approval" : "dashboard";
-  });
+  const [currentPage, setCurrentPage] = useState<string>(() => resolvePortalPage(activeRole, requestedTab));
   const [searchValue, setSearchValue] = useState("");
 
   // Custom mock database tables binded in React
@@ -197,14 +199,27 @@ export default function App({ user, onLogout }: AppProps) {
   const fullTutorAccess = activeRole === "tutor" && !restrictedTutor;
 
   useEffect(() => {
-    if (requestedTab && requestedTab !== currentPage) {
-      if (!restrictedTutor || !FULL_TUTOR_PAGE_IDS.has(requestedTab)) {
-        setCurrentPage(requestedTab);
-      }
+    const authorizedPage = resolvePortalPage(activeRole, requestedTab);
+    if (requestedTab !== authorizedPage) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set("tab", authorizedPage);
+      nextParams.delete("subtab");
+      setSearchParams(nextParams, { replace: true });
     }
-  }, [requestedTab, restrictedTutor]);
+    if (authorizedPage !== currentPage
+        && (!restrictedTutor || !FULL_TUTOR_PAGE_IDS.has(authorizedPage))) {
+      setCurrentPage(authorizedPage);
+    }
+  }, [activeRole, currentPage, requestedTab, restrictedTutor, searchParams, setSearchParams]);
 
   const handleNavigate = React.useCallback((page: string, subtab?: string) => {
+    if (!canAccessPortalPage(activeRole, page === "settings-password" ? "settings" : page)) {
+      const fallbackPage = resolvePortalPage(activeRole, null);
+      setCurrentPage(fallbackPage);
+      setSearchParams({ tab: fallbackPage }, { replace: true });
+      return;
+    }
+
     if (page === "settings-password") {
       setSettingsTab("password");
       setCurrentPage("settings");
@@ -228,7 +243,7 @@ export default function App({ user, onLogout }: AppProps) {
       nextParams.subtab = subtab;
     }
     setSearchParams(nextParams);
-  }, [restrictedTutor, setSearchParams]);
+  }, [activeRole, restrictedTutor, setSearchParams]);
 
   useEffect(() => {
     if (restrictedTutor && FULL_TUTOR_PAGE_IDS.has(currentPage) && currentPage !== "dashboard") {
@@ -328,6 +343,14 @@ export default function App({ user, onLogout }: AppProps) {
       case "complaints":
         return <DisputeManagementPanel activeRole={activeRole} userEmail={user.email} />;
 
+      case "escalations":
+        return (activeRole === "staff" || activeRole === "admin")
+          ? <DisputeEscalationPage activeRole={activeRole} /> : null;
+
+      case "community-moderation":
+        return (activeRole === "staff" || activeRole === "admin")
+          ? <CommunityModerationPage /> : null;
+
       case "reports":
         return <StaffReportsPage />;
 
@@ -356,28 +379,7 @@ export default function App({ user, onLogout }: AppProps) {
         return <TutorAvailabilityScheduler onNavigate={handleNavigate} />;
 
       case "help":
-        return (
-          <div className="bg-white border border-brand-border/30 rounded-3xl p-8 max-w-3xl mx-auto my-8">
-            <h3 className="font-display font-black text-lg text-brand-text uppercase tracking-wider mb-4 border-b border-brand-border/10 pb-2">
-              EduConnect Help Desk
-            </h3>
-            <div className="space-y-6">
-              <div>
-                <h4 className="font-bold text-sm text-brand-text mb-1">How can I switch my active account workspace rules?</h4>
-                <p className="text-xs text-brand-text-variant leading-relaxed">
-                  Use the persistent role selection header (STUDENT / TUTOR / ADMIN) on the top right to instantly swap client settings.
-                </p>
-              </div>
-
-              <div>
-                <h4 className="font-bold text-sm text-brand-text mb-1">How do I verify certifications or degrees?</h4>
-                <p className="text-xs text-brand-text-variant leading-relaxed">
-                  Navigate to User Settings &gt; Become Tutor, append certificates (AWS, IELTS) and upload pdf sheets. Administrators will instantly approve them in administrative view.
-                </p>
-              </div>
-            </div>
-          </div>
-        );
+        return <HelpDeskPage activeRole={activeRole} />;
 
       default:
         return null;
@@ -393,10 +395,11 @@ export default function App({ user, onLogout }: AppProps) {
         searchValue={searchValue}
         onSearchChange={setSearchValue}
         onNavigate={handleNavigate}
+        onMenuToggle={() => setSidebarOpen((open) => !open)}
       />
 
       {/* Main Structural Frame Component */}
-      <div className="pt-24 pl-80 pr-8 min-h-screen">
+      <div className="min-h-screen px-4 pt-24 sm:px-6 lg:pl-80 lg:pr-8">
         <Sidebar
           activeRole={activeRole}
           currentPage={currentPage}
@@ -404,6 +407,8 @@ export default function App({ user, onLogout }: AppProps) {
           onStartSession={handleStartSession}
           onLogout={onLogout}
           restrictedTutor={restrictedTutor}
+          mobileOpen={sidebarOpen}
+          onMobileClose={() => setSidebarOpen(false)}
         />
 
         {/* Core Main View Container */}

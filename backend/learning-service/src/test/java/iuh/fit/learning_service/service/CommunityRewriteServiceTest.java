@@ -53,7 +53,7 @@ class CommunityRewriteServiceTest {
         verify(pending, never()).save(any());
     }
 
-    @Test void pendingRejectedRevisionIsAuthoritativeAndPublishedContentIsUntouched() {
+    @Test void pendingRejectedRevisionIsBlockedWithoutCallingAi() {
         CommunityPost post = post(2L, 20L, CommunityModerationStatus.ALLOWED, PostType.TUTOR_POLL);
         post.setTitle("Bản công khai");
         CommunityPostPendingRevision revision = new CommunityPostPendingRevision();
@@ -66,17 +66,9 @@ class CommunityRewriteServiceTest {
                 + "\"poll\":{\"question\":\"Lịch nào?\",\"options\":[]}}");
         when(posts.findById(2L)).thenReturn(Optional.of(post));
         when(pending.findById(2L)).thenReturn(Optional.of(revision));
-        when(client.rewrite(any())).thenReturn(new CommunityRewriteClient.Result(
-                true, "Bản chờ an toàn", "Nội dung chờ an toàn", "Đã sửa"));
-
-        var result = service.rewrite(2L, new AiRewritePostRequest(4L), author);
-
-        assertThat(result.getPendingEdit()).isTrue();
-        assertThat(post.getTitle()).isEqualTo("Bản công khai");
-        var request = org.mockito.ArgumentCaptor.forClass(CommunityRewriteClient.Request.class);
-        verify(client).rewrite(request.capture());
-        assertThat(request.getValue().title()).isEqualTo("Bản chờ");
-        assertThat(request.getValue().content()).isEqualTo("Nội dung chờ");
+        assertThrows(ForbiddenException.class,
+                () -> service.rewrite(2L, new AiRewritePostRequest(4L), author));
+        verifyNoInteractions(client);
     }
 
     @Test void rejectsWrongOwnerAndIneligibleStatuses() {
@@ -85,9 +77,13 @@ class CommunityRewriteServiceTest {
         assertThrows(ForbiddenException.class, () -> service.rewrite(3L, new AiRewritePostRequest(1L),
                 new LearningUserPrincipal("other@edu.vn", 99L, "STUDENT")));
 
+        when(pending.findById(3L)).thenReturn(Optional.empty());
+        assertThrows(ForbiddenException.class,
+                () -> service.rewrite(3L, new AiRewritePostRequest(1L), author));
+
         for (CommunityModerationStatus status : List.of(CommunityModerationStatus.ALLOWED,
                 CommunityModerationStatus.MODERATING, CommunityModerationStatus.FAILED,
-                CommunityModerationStatus.NOT_CHECKED)) {
+                CommunityModerationStatus.NOT_CHECKED, CommunityModerationStatus.NEEDS_REVIEW)) {
             post.setModerationStatus(status);
             when(pending.findById(3L)).thenReturn(Optional.empty());
             assertThrows(ConflictException.class,
@@ -97,7 +93,7 @@ class CommunityRewriteServiceTest {
     }
 
     @Test void rejectsStaleRequestAndResult() {
-        CommunityPost post = post(4L, 20L, CommunityModerationStatus.REJECTED, PostType.STUDENT_FIND_TUTOR);
+        CommunityPost post = post(4L, 20L, CommunityModerationStatus.NEEDS_EDIT, PostType.STUDENT_FIND_TUTOR);
         when(posts.findById(4L)).thenReturn(Optional.of(post));
         when(pending.findById(4L)).thenReturn(Optional.empty());
         assertThrows(ConflictException.class, () -> service.rewrite(4L, new AiRewritePostRequest(0L), author));

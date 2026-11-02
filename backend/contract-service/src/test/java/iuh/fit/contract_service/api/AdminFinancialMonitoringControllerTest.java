@@ -31,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.doThrow;
 
 @ExtendWith(MockitoExtension.class)
 class AdminFinancialMonitoringControllerTest {
@@ -97,18 +98,18 @@ class AdminFinancialMonitoringControllerTest {
     void getAdminFinancialOverview_rejectsUnauthorizedUser() {
         ContractUserPrincipal student = new ContractUserPrincipal(1L, "student@test.com", "STUDENT", List.of("STUDENT"));
         when(currentUserContext.requireCurrentUser()).thenReturn(student);
-        when(accessControl.canViewTransactionsAsStaffOrAdmin(student)).thenReturn(false);
+        doThrow(new ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "Only admin"))
+                .when(accessControl).requireCanViewPlatformFinancials(student);
 
         assertThatThrownBy(() -> controller.getAdminFinancialOverview())
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("Only admin or staff");
+                .hasMessageContaining("Only admin");
     }
 
     @Test
     void getAdminFinancialOverview_calculatesActiveAndSettledAmountsCorrectly() {
         ContractUserPrincipal admin = new ContractUserPrincipal(99L, "admin@test.com", "ADMIN", List.of("ADMIN"));
         when(currentUserContext.requireCurrentUser()).thenReturn(admin);
-        when(accessControl.canViewTransactionsAsStaffOrAdmin(admin)).thenReturn(true);
 
         UUID agreementId = UUID.randomUUID();
         ContractAgreement agreement = new ContractAgreement();
@@ -181,7 +182,6 @@ class AdminFinancialMonitoringControllerTest {
     void listAdminSettlements_returnsPagedSettlements() {
         ContractUserPrincipal admin = new ContractUserPrincipal(99L, "admin@test.com", "ADMIN", List.of("ADMIN"));
         when(currentUserContext.requireCurrentUser()).thenReturn(admin);
-        when(accessControl.canViewTransactionsAsStaffOrAdmin(admin)).thenReturn(true);
 
         ContractAgreement agreement = new ContractAgreement();
         agreement.setId(UUID.randomUUID());
@@ -197,9 +197,12 @@ class AdminFinancialMonitoringControllerTest {
         s1.recordDistribution(BigInteger.valueOf(510_000), BigInteger.valueOf(90_000), BigInteger.ZERO);
         s1.markSettled("0xfinalize");
 
-        when(settlementRepository.findAll()).thenReturn(List.of(s1));
+        when(settlementRepository.findAll(
+                org.mockito.ArgumentMatchers.any(org.springframework.data.jpa.domain.Specification.class),
+                org.mockito.ArgumentMatchers.any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(new org.springframework.data.domain.PageImpl<>(List.of(s1), PageRequest.of(0, 10), 1));
 
-        var response = controller.listAdminSettlements("ALL", PageRequest.of(0, 10));
+        var response = controller.listAdminSettlements("ALL", null, null, PageRequest.of(0, 10));
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getTotalElements()).isEqualTo(1);

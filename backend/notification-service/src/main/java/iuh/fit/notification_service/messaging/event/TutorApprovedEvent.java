@@ -9,6 +9,7 @@ public record TutorApprovedEvent(
         Long applicationId,
         Long tutorProfileId,
         Long userId,
+        Set<String> teachingModes,
         Set<SubjectItem> subjects,
         LocalDateTime occurredAt
 ) {

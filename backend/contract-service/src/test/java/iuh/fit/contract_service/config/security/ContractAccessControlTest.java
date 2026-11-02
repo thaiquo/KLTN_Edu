@@ -134,6 +134,41 @@ class ContractAccessControlTest {
     }
 
     @Test
+    void onlyAdminCanViewPlatformWideFinancialData() {
+        ContractUserPrincipal admin = user(10L, "admin@example.com", "ADMIN", "ADMIN");
+        ContractUserPrincipal staff = user(9L, "staff@example.com", "STAFF", "STAFF");
+        ContractUserPrincipal student = user(1L, "student@example.com", "STUDENT", "STUDENT");
+        ContractUserPrincipal tutor = user(2L, "tutor@example.com", "TUTOR", "TUTOR");
+
+        accessControl.requireCanViewPlatformFinancials(admin);
+        assertThat(accessControl.canViewAllTransactions(admin)).isTrue();
+
+        assertThatThrownBy(() -> accessControl.requireCanViewPlatformFinancials(staff))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("403");
+        assertThatThrownBy(() -> accessControl.requireCanViewPlatformFinancials(student))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("403");
+        assertThatThrownBy(() -> accessControl.requireCanViewPlatformFinancials(tutor))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("403");
+    }
+
+    @Test
+    void staffCannotFallBackToPersonalTransactionListing() {
+        ContractUserPrincipal staff = user(9L, "staff@example.com", "STAFF", "STAFF");
+        ContractUserPrincipal student = user(1L, "student@example.com", "STUDENT", "STUDENT");
+        ContractUserPrincipal tutor = user(2L, "tutor@example.com", "TUTOR", "TUTOR");
+
+        accessControl.requireCanViewOwnTransactions(student);
+        accessControl.requireCanViewOwnTransactions(tutor);
+
+        assertThatThrownBy(() -> accessControl.requireCanViewOwnTransactions(staff))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("403");
+    }
+
+    @Test
     void onlyStudentCanOpenDisputeForOwnAgreement() {
         ContractAgreement agreement = agreement(1L, "student@example.com", 2L, "tutor@example.com", "staff@example.com");
         ContractUserPrincipal student = user(1L, "student@example.com", "STUDENT", "STUDENT");
@@ -165,6 +200,25 @@ class ContractAccessControlTest {
         assertThat(accessControl.canViewDispute(tutorComplaint, student)).isFalse();
         assertThat(accessControl.filterDisputes(List.of(studentComplaint, tutorComplaint), student))
                 .containsExactly(studentComplaint);
+    }
+
+    @Test
+    void adminAndAssignedStaffCanViewDisputeDetailButUnassignedStaffCannot() {
+        ContractAgreement agreement = agreement(
+                1L,
+                "student@example.com",
+                2L,
+                "tutor@example.com",
+                "staff@example.com"
+        );
+        Dispute dispute = dispute(agreement, "STUDENT", 1L);
+        ContractUserPrincipal admin = user(10L, "admin@example.com", "ADMIN", "ADMIN");
+        ContractUserPrincipal assignedStaff = user(9L, "staff@example.com", "STAFF", "STAFF");
+        ContractUserPrincipal unassignedStaff = user(8L, "other-staff@example.com", "STAFF", "STAFF");
+
+        assertThat(accessControl.canViewDispute(dispute, admin)).isTrue();
+        assertThat(accessControl.canViewDispute(dispute, assignedStaff)).isTrue();
+        assertThat(accessControl.canViewDispute(dispute, unassignedStaff)).isFalse();
     }
 
     private ContractUserPrincipal user(Long userId, String email, String activeRole, String... roles) {

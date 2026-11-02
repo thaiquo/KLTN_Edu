@@ -11,6 +11,8 @@ import iuh.fit.ai_service.service.embedding.EmbeddingProperties;
 import iuh.fit.ai_service.service.embedding.EmbeddingService;
 import iuh.fit.ai_service.service.embedding.EmbeddingVector;
 import iuh.fit.ai_service.service.semantic.ClassSemanticIndexDtos.ClassSyncResult;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.ReadinessStatus;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.VectorStoreHealth;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
 
@@ -69,6 +71,20 @@ class ClassSemanticIndexServiceTest {
         assertThat(payload.keySet())
                 .contains("classId", "registrationId", "subjectId", "levelId", "teachingMode", "status")
                 .doesNotContain("meetingLink", "joinKey", "tutorEmail", "reviewedByEmail", "payment");
+    }
+
+    @Test
+    void healthReportsReadyPointCountAfterSuccessfulSync() {
+        FakeClassVectorStore store = new FakeClassVectorStore();
+        ClassSemanticIndexService service = service(store, List.of(publicClass("On thi Toan 12")));
+
+        service.sync(null);
+        var health = service.health();
+
+        assertThat(health.collectionExists()).isTrue();
+        assertThat(health.pointCount()).isEqualTo(1);
+        assertThat(health.status()).isEqualTo(ReadinessStatus.READY);
+        assertThat(health.lastSuccessfulSyncAt()).isNotNull();
     }
 
     private ClassSemanticIndexService service(FakeClassVectorStore store, List<PublicClassSource> sources) {
@@ -190,6 +206,16 @@ class ClassSemanticIndexServiceTest {
         @Override
         public List<ClassSemanticSearchHit> search(EmbeddingVector queryVector, ClassSemanticSearchFilter filter, int limit) {
             return List.of();
+        }
+
+        @Override
+        public VectorStoreHealth health() {
+            return new VectorStoreHealth(
+                    "public_classes_v1",
+                    true,
+                    payloads.size(),
+                    payloads.isEmpty() ? ReadinessStatus.DEGRADED_EMPTY : ReadinessStatus.READY
+            );
         }
     }
 }

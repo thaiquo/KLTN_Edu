@@ -12,8 +12,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.format.annotation.DateTimeFormat;
 
 import java.util.*;
+import java.time.OffsetDateTime;
 
 @RestController @RequestMapping("/api/contracts/terminations") @RequiredArgsConstructor
 public class TerminationController {
@@ -27,6 +29,30 @@ public class TerminationController {
     public record Action(String action, String reason) {}
 
     @GetMapping public List<TerminationService.View> list() { return service.list(users.requireCurrentUser()); }
+
+    @GetMapping("/page")
+    public org.springframework.data.domain.Page<TerminationService.View> page(
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String statusGroup,
+            @RequestParam(required = false) String origin,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String actor,
+            @RequestParam(defaultValue = "false") boolean reportOnly,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime to,
+            @RequestParam(required = false) Long classroomId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        var pageable = org.springframework.data.domain.PageRequest.of(
+                Math.max(0, page),
+                Math.min(50, Math.max(1, size)),
+                org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Order.desc(reportOnly ? "updatedAt" : "createdAt"),
+                        org.springframework.data.domain.Sort.Order.desc("id")));
+        return service.page(
+                users.requireCurrentUser(), status, statusGroup, origin, keyword, actor,
+                reportOnly, from, to, classroomId, pageable);
+    }
 
     @GetMapping("/refunds") public List<TerminationService.View> listRefunds() {
         return service.listRefunds(users.requireCurrentUser());

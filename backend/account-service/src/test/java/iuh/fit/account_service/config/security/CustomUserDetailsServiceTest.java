@@ -61,6 +61,38 @@ class CustomUserDetailsServiceTest {
     }
 
     @Test
+    void adminActiveRoleDoesNotInjectStaffAuthority() {
+        User user = user(AccountStatus.ACTIVE, true);
+        when(userRepository.findByEmailIgnoreCase("test@gmail.com")).thenReturn(Optional.of(user));
+        when(userRoleRepository.findByUserId(1L)).thenReturn(List.of(
+                role(user, Role.ADMIN),
+                role(user, Role.STAFF)
+        ));
+
+        var details = service.loadUserByUsernameAndActiveRole("test@gmail.com", "ADMIN");
+
+        assertThat(details.getAuthorities())
+                .extracting(Object::toString)
+                .containsExactly("ROLE_ADMIN");
+    }
+
+    @Test
+    void staffActiveRoleDoesNotInheritAdminAuthority() {
+        User user = user(AccountStatus.ACTIVE, true);
+        when(userRepository.findByEmailIgnoreCase("test@gmail.com")).thenReturn(Optional.of(user));
+        when(userRoleRepository.findByUserId(1L)).thenReturn(List.of(
+                role(user, Role.ADMIN),
+                role(user, Role.STAFF)
+        ));
+
+        var details = service.loadUserByUsernameAndActiveRole("test@gmail.com", "STAFF");
+
+        assertThat(details.getAuthorities())
+                .extracting(Object::toString)
+                .containsExactly("ROLE_STAFF");
+    }
+
+    @Test
     void disabledUserIsNotEnabledForJwtReuse() {
         User user = user(AccountStatus.DISABLED, true);
         when(userRepository.findByEmailIgnoreCase("test@gmail.com")).thenReturn(Optional.of(user));

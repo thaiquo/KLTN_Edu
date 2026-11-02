@@ -175,11 +175,12 @@ class BlockchainTransactionCommandServiceIntegrationTest {
         jdbcTemplate.update("""
                         INSERT INTO contract_agreement (
                             id, classroom_id, student_id, tutor_id, classroom_reviewer_email,
-                            student_wallet, tutor_wallet, platform_wallet, terms_json, terms_hash,
+                            student_wallet, tutor_wallet, platform_wallet, token_symbol, token_decimals,
+                            terms_json, terms_hash,
                             contract_version, total_price_vnd, vnd_per_usdc,
                             total_amount_usdc_units, price_per_session_usdc_units,
-                            total_sessions, status, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            total_sessions, status, version, legacy_excluded, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'USDC', 6, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, FALSE, ?, ?)
                         """,
                 id, Math.abs(id.getMostSignificantBits()), Math.abs(id.getLeastSignificantBits()), 3001L,
                 "staff@educonnect.test",
@@ -188,6 +189,6 @@ class BlockchainTransactionCommandServiceIntegrationTest {
                 FROM, "{}", CALLDATA_HASH, 1,
                 BigDecimal.valueOf(1_000_000), BigDecimal.valueOf(25_000),
                 BigDecimal.valueOf(40_000_000), BigDecimal.valueOf(4_000_000),
-                10, "PENDING_REGISTRATION", OffsetDateTime.now(), OffsetDateTime.now());
+                10, "PREPARING_BLOCKCHAIN", OffsetDateTime.now(), OffsetDateTime.now());
     }
 }

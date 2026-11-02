@@ -11,6 +11,13 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
 
 @RestController
 @RequestMapping("/api/admin/classes")
@@ -23,17 +30,32 @@ public class AdminClassRoomController {
     }
 
     @GetMapping
-    public List<ClassRoomDtos.ClassRoomResponse> getAllClasses(
+    public Page<ClassRoomDtos.ClassRoomResponse> getAllClasses(
             @RequestParam(required = false) ClassRoomStatus status,
             @RequestParam(required = false) String tutorEmail,
             @RequestParam(required = false) Long subjectId,
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "false") boolean reviewedByMe,
+            @RequestParam(defaultValue = "false") boolean approved,
+            @RequestParam(defaultValue = "false") boolean reportOnly,
+            @RequestParam(required = false) String reviewer,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime to,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
             Authentication authentication
     ) {
         boolean admin = hasRole(authentication, "ROLE_ADMIN");
-        String reviewerEmail = reviewedByMe && !admin ? authentication.getName() : null;
-        return service.getAllClassesForAdmin(status, tutorEmail, subjectId, keyword, reviewerEmail);
+        String reviewerEmail = admin
+                ? reviewer
+                : (reviewedByMe || reportOnly ? authentication.getName() : null);
+        String primarySort = reportOnly ? "reviewedAt" : "createdAt";
+        return service.getAllClassesForAdmin(
+                status, tutorEmail, subjectId, keyword, reviewerEmail, approved, reportOnly,
+                from == null ? null : from.atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime(),
+                to == null ? null : to.atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime(),
+                PageRequest.of(Math.max(0, page), Math.min(50, Math.max(1, size)),
+                        Sort.by(Sort.Order.desc(primarySort), Sort.Order.desc("id"))));
     }
 
     @GetMapping("/stats")

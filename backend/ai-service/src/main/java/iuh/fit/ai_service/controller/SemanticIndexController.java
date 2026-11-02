@@ -2,6 +2,7 @@ package iuh.fit.ai_service.controller;
 
 import iuh.fit.ai_service.service.semantic.SemanticVectorStore;
 import iuh.fit.ai_service.service.semantic.ClassSemanticIndexDtos.ClassDeleteResult;
+import iuh.fit.ai_service.service.semantic.ClassSemanticIndexDtos.ClassHealthResponse;
 import iuh.fit.ai_service.service.semantic.ClassSemanticIndexDtos.ClassSyncRequest;
 import iuh.fit.ai_service.service.semantic.ClassSemanticIndexDtos.ClassSyncResult;
 import iuh.fit.ai_service.service.semantic.ClassSemanticIndexService;
@@ -10,10 +11,12 @@ import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSea
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSearchResult;
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchService;
 import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.DeleteResult;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.HealthResponse;
 import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.SyncRequest;
 import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.SyncResult;
 import iuh.fit.ai_service.service.semantic.TutorSemanticIndexService;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -53,6 +56,11 @@ public class SemanticIndexController {
         return indexService.sync(request == null ? null : request.maxCapabilities());
     }
 
+    @GetMapping("/health")
+    public HealthResponse health() {
+        return indexService.health();
+    }
+
     @DeleteMapping("/index/capability")
     public DeleteResult deleteCapability(
             @RequestParam Long tutorId,
@@ -76,6 +84,11 @@ public class SemanticIndexController {
     @PostMapping("/classes/index/sync")
     public ClassSyncResult syncClasses(@RequestBody(required = false) ClassSyncRequest request) {
         return classIndexService.sync(request == null ? null : request.maxClasses());
+    }
+
+    @GetMapping("/classes/health")
+    public ClassHealthResponse classHealth() {
+        return classIndexService.health();
     }
 
     @DeleteMapping("/classes/index")

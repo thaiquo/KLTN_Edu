@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -68,6 +69,24 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getMessage()).isEqualTo("Email already exists");
+    }
+
+    @Test
+    void mapsMethodAuthorizationDenialTo403() {
+        MockHttpServletRequest request = new MockHttpServletRequest(
+                "GET",
+                "/api/staff/tutor-applications/pending"
+        );
+
+        var response = handler.handleAccessDenied(
+                new AccessDeniedException("Access Denied"),
+                request
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getMessage()).isEqualTo("Forbidden");
+        assertThat(response.getBody().getPath()).isEqualTo("/api/staff/tutor-applications/pending");
     }
 
     @Test

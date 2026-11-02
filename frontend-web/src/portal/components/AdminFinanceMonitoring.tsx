@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import {
   WalletCards,
   ArrowUpRight,
@@ -43,18 +43,20 @@ export function AdminFinanceMonitoring() {
   const [settlements, setSettlements] = useState<AdminSettlementDetail[]>([]);
   const [settlementTotal, setSettlementTotal] = useState(0);
   const [settlementPage, setSettlementPage] = useState(0);
-  const [settlementPageSize] = useState(15);
+  const [settlementPageSize] = useState(10);
   const [settlementStatusFilter, setSettlementStatusFilter] = useState<string>("ALL");
   const [settlementSearch, setSettlementSearch] = useState("");
+  const [settlementQuery, setSettlementQuery] = useState("");
   const [settlementLoading, setSettlementLoading] = useState(false);
 
   // Transactions Tab State
   const [transactions, setTransactions] = useState<BlockchainTxDto[]>([]);
   const [txTotal, setTxTotal] = useState(0);
   const [txPage, setTxPage] = useState(0);
-  const [txPageSize] = useState(15);
+  const [txPageSize] = useState(10);
   const [txLoading, setTxLoading] = useState(false);
   const [txSearch, setTxSearch] = useState("");
+  const [txQuery, setTxQuery] = useState("");
 
   const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -77,6 +79,7 @@ export function AdminFinanceMonitoring() {
       setSettlementLoading(true);
       const res = await contractsApi.listAdminSettlements({
         status: settlementStatusFilter !== "ALL" ? settlementStatusFilter : undefined,
+        keyword: settlementQuery || undefined,
         page: settlementPage,
         size: settlementPageSize
       });
@@ -93,6 +96,7 @@ export function AdminFinanceMonitoring() {
     try {
       setTxLoading(true);
       const res = await contractsApi.listAllTransactions({
+        keyword: txQuery || undefined,
         page: txPage,
         size: txPageSize
       });
@@ -125,32 +129,11 @@ export function AdminFinanceMonitoring() {
     } else {
       fetchTransactions();
     }
-  }, [activeTab, settlementPage, settlementStatusFilter, txPage]);
+  }, [activeTab, settlementPage, settlementStatusFilter, settlementQuery, txPage, txQuery]);
 
   // Filtered settlements by local search
-  const filteredSettlements = useMemo(() => {
-    if (!settlementSearch.trim()) return settlements;
-    const term = settlementSearch.toLowerCase().trim();
-    return settlements.filter(s =>
-      (s.className && s.className.toLowerCase().includes(term)) ||
-      (s.studentName && s.studentName.toLowerCase().includes(term)) ||
-      (s.tutorName && s.tutorName.toLowerCase().includes(term)) ||
-      (s.agreementId && s.agreementId.toLowerCase().includes(term)) ||
-      (s.proposeTxHash && s.proposeTxHash.toLowerCase().includes(term)) ||
-      (s.finalizeTxHash && s.finalizeTxHash.toLowerCase().includes(term))
-    );
-  }, [settlements, settlementSearch]);
-
-  // Filtered transactions by local search
-  const filteredTransactions = useMemo(() => {
-    if (!txSearch.trim()) return transactions;
-    const term = txSearch.toLowerCase().trim();
-    return transactions.filter(t =>
-      (t.action && t.action.toLowerCase().includes(term)) ||
-      (t.transactionHash && t.transactionHash.toLowerCase().includes(term)) ||
-      (t.status && t.status.toLowerCase().includes(term))
-    );
-  }, [transactions, txSearch]);
+  const filteredSettlements = settlements;
+  const filteredTransactions = transactions;
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -535,16 +518,17 @@ export function AdminFinanceMonitoring() {
                 ))}
               </div>
 
-              <div className="relative w-full sm:w-72">
+              <form onSubmit={event => { event.preventDefault(); setSettlementPage(0); setSettlementQuery(settlementSearch.trim()); }} className="relative w-full sm:w-80">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Tìm theo lớp, học viên, tx..."
                   value={settlementSearch}
                   onChange={e => setSettlementSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  className="w-full pl-9 pr-16 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                 />
-              </div>
+                <button className="absolute right-1.5 top-1.5 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-black text-white">Tìm</button>
+              </form>
             </div>
 
             {/* Table */}
@@ -697,16 +681,17 @@ export function AdminFinanceMonitoring() {
               <span className="text-xs text-slate-500">
                 Nhật ký tất cả các giao dịch được hệ thống gửi lên mạng Ethereum Sepolia Testnet.
               </span>
-              <div className="relative w-72">
+              <form onSubmit={event => { event.preventDefault(); setTxPage(0); setTxQuery(txSearch.trim()); }} className="relative w-80">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Tìm tx hash, action..."
                   value={txSearch}
                   onChange={e => setTxSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  className="w-full pl-9 pr-16 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                 />
-              </div>
+                <button className="absolute right-1.5 top-1.5 rounded-lg bg-indigo-600 px-2.5 py-1 text-[11px] font-black text-white">Tìm</button>
+              </form>
             </div>
 
             {/* Table */}

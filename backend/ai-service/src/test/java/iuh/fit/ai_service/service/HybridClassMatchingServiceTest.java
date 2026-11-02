@@ -10,6 +10,7 @@ import iuh.fit.ai_service.dto.ClassMatchingDtos.RegistrationBrief;
 import iuh.fit.ai_service.dto.ClassRequirementGroundingDtos.GroundedClassRequirement;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.Budget;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.PreferredSchedule;
+import iuh.fit.ai_service.dto.RequirementAnalysisDtos.TimeOfDayHint;
 import iuh.fit.ai_service.dto.RequirementGroundingDtos.CatalogItem;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TeachingMode;
 import iuh.fit.ai_service.service.semantic.ClassSemanticSearchDtos.ClassSemanticSearchRequest;
@@ -90,6 +91,46 @@ class HybridClassMatchingServiceTest {
         assertThat(hybrid.results().get(1).scoreBreakdown().semantic().rankBoost()).isLessThanOrEqualTo(BigDecimal.valueOf(3).setScale(4));
     }
 
+    @Test
+    void dayOnlyScheduleRemainsEligibleWithoutExactTimes() {
+        ClassMatchingResponse response = service(classes(), null, false).match(
+                request(List.of(new PreferredSchedule(2, null, null, null)), List.of("Ham so")));
+
+        assertThat(response.eligibleCandidates()).isEqualTo(3);
+        assertThat(response.results()).hasSize(3);
+    }
+
+    @Test
+    void timeOfDayHintRejectsClassesOutsideRequestedWindow() {
+        ClassMatchingResponse response = service(classes(), null, false).match(
+                request(List.of(new PreferredSchedule(2, null, null, TimeOfDayHint.MORNING)), List.of("Ham so")));
+
+        assertThat(response.eligibleCandidates()).isZero();
+        assertThat(response.results()).isEmpty();
+    }
+
+    @Test
+    void explanationsUsePublishedContentEvidenceAndExposeUnsupportedTopics() {
+        ClassMatchingResponse supported = service(classes(), null, false).match(request(List.of(), List.of("Ham so")));
+        ClassMatchingResponse unsupported = service(classes(), null, false).match(request(List.of(), List.of("Hinh hoc")));
+
+        assertThat(supported.results().getFirst().matchingReasons())
+                .anyMatch(reason -> reason.contains("Ham so"));
+        assertThat(unsupported.results().getFirst().mismatchReasons())
+                .anyMatch(reason -> reason.contains("Hinh hoc"));
+    }
+
+    @Test
+    void classAboveExplicitMaximumIsNotExplainedAsInsideBudget() {
+        Budget maximum = new Budget(null, BigDecimal.valueOf(200_000), null, "VND", "SESSION", false);
+        ClassMatchingResponse response = service(classes(), null, false).match(request(maximum));
+
+        assertThat(response.results()).allSatisfy(result -> {
+            assertThat(result.matchingReasons()).noneMatch(reason -> reason.contains("nằm trong ngân sách"));
+            assertThat(result.mismatchReasons()).anyMatch(reason -> reason.contains("Học phí chưa khớp"));
+        });
+    }
+
     private ClassMatchingService service(List<PublicClassSource> classes, ClassSemanticSearchService semantic, boolean hybridEnabled) {
         LearningPublicClassClient client = new LearningPublicClassClient(RestClient.builder(), "http://localhost:8082") {
             @Override
@@ -108,14 +149,33 @@ class HybridClassMatchingServiceTest {
     }
 
     private ClassMatchingRequest request() {
+        return request(
+                List.of(new PreferredSchedule(2, "18:00", "21:00", null)),
+                List.of("Ham so")
+        );
+    }
+
+    private ClassMatchingRequest request(List<PreferredSchedule> schedules, List<String> weakTopics) {
+        return request(
+                new Budget(BigDecimal.valueOf(200_000), BigDecimal.valueOf(260_000), BigDecimal.valueOf(240_000), "VND", "SESSION", true),
+                schedules,
+                weakTopics
+        );
+    }
+
+    private ClassMatchingRequest request(Budget budget) {
+        return request(budget, List.of(), List.of("Ham so"));
+    }
+
+    private ClassMatchingRequest request(Budget budget, List<PreferredSchedule> schedules, List<String> weakTopics) {
         return new ClassMatchingRequest(new GroundedClassRequirement(
                 new CatalogItem(SUBJECT_ID, "MATH", "Toan", null),
                 new CatalogItem(LEVEL_ID, "GRADE_12", "Lop 12", null),
                 TeachingMode.ONLINE,
-                new Budget(BigDecimal.valueOf(200_000), BigDecimal.valueOf(260_000), BigDecimal.valueOf(240_000), "VND", "SESSION", true),
-                List.of(new PreferredSchedule(2, "18:00", "21:00", null)),
+                budget,
+                schedules,
                 "On thi tot nghiep va can nam chac ham so",
-                List.of("Ham so"),
+                weakTopics,
                 List.of("Lop nho"),
                 null
         ), 10);

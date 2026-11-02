@@ -33,7 +33,6 @@ import {
   MessageSquare,
   Sparkles,
   Building2,
-  Check,
   UserCheck,
   History,
   UserCog,
@@ -43,10 +42,11 @@ import {
 } from 'lucide-react';
 import { EtherscanLink } from '../common/EtherscanLink';
 import { DEFAULT_CHAIN_ID } from '../../web3/web3Config';
-import { contractsApi, DisputeDto } from '../../api/contractsApi';
+import { contractsApi, DisputeDto, EligibleDisputeSession } from '../../api/contractsApi';
 import { fetchUserDirectory, getUserDisplayName, UserSummary } from '../../utils/userDisplay';
 import { Loader2 } from 'lucide-react';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
+import { Pager } from '../../portal/components/OperationalUi';
 
 export interface DisputeItem {
   id: string | number;
@@ -75,7 +75,7 @@ interface DisputeManagementPanelProps {
   userEmail?: string;
 }
 
-interface EligibleDisputeSession {
+interface EligibleDisputeSessionOption {
   key: string;
   agreementId: string;
   classroomId: number;
@@ -183,7 +183,11 @@ export function DisputeManagementPanel({
   const [historyStatus, setHistoryStatus] = useState('ALL');
   const [historyOrigin, setHistoryOrigin] = useState('ALL');
   const [historyPage, setHistoryPage] = useState(0);
+  const [historyPageSize, setHistoryPageSize] = useState(10);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyTotalPages, setHistoryTotalPages] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const tutorPriorityInitialized = useRef(false);
 
   useEffect(() => {
@@ -196,30 +200,43 @@ export function DisputeManagementPanel({
   const [adminOverrideMode, setAdminOverrideMode] = useState(false);
 
   // Reviewer filters
-  const [staffReviewerFilter, setStaffReviewerFilter] = useState<'ALL' | 'MINE' | 'OTHERS'>('ALL');
   const [adminReviewerFilter, setAdminReviewerFilter] = useState<string>('ALL');
 
   useEffect(() => {
     setAdminOverrideMode(false);
   }, [selectedDisputeForDetail?.id]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+      setHistoryPage(0);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
   const fetchDisputes = useCallback(async (isSilent = false) => {
     if (!isSilent) setDataLoading(true);
     setDataError('');
     try {
-      const first = await contractsApi.listDisputes({ page: 0, size: 100 });
-      const items = [...(first?.content ?? [])];
-      for (let page = 1; page < (first?.totalPages ?? 1); page++) {
-        const next = await contractsApi.listDisputes({ page, size: 100 });
-        items.push(...(next.content ?? []));
-      }
-      setDisputes(items);
+      const exactStatuses = new Set(['OPENING', 'OPEN', 'UNDER_REVIEW', 'RESOLUTION_PENDING', 'APPROVED', 'REJECTED', 'FAILED_RETRYABLE']);
+      const result = await contractsApi.listDisputes({
+        page: historyPage,
+        size: historyPageSize,
+        status: exactStatuses.has(historyStatus) ? historyStatus : undefined,
+        statusGroup: ['PENDING', 'RESOLVED', 'NEEDS_RESPONSE'].includes(historyStatus) ? historyStatus : undefined,
+        origin: historyOrigin !== 'ALL' ? historyOrigin : undefined,
+        reviewer: activeRole === 'admin' && adminReviewerFilter !== 'ALL' ? adminReviewerFilter : undefined,
+        keyword: debouncedSearchQuery || undefined,
+      });
+      setDisputes(result?.content ?? []);
+      setHistoryTotal(Number(result?.totalElements ?? 0));
+      setHistoryTotalPages(Math.max(1, Number(result?.totalPages ?? 1)));
     } catch (err: any) {
       setDataError(err?.message || 'Không thể tải danh sách khiếu nại.');
     } finally {
       if (!isSilent) setDataLoading(false);
     }
-  }, []);
+  }, [activeRole, adminReviewerFilter, debouncedSearchQuery, historyOrigin, historyPage, historyPageSize, historyStatus]);
 
   useEffect(() => {
     fetchDisputes();
@@ -258,8 +275,11 @@ export function DisputeManagementPanel({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [agreementIdInput, setAgreementIdInput] = useState<string>('');
   const [sessionIdInput, setSessionIdInput] = useState<string>('1');
-  const [eligibleSessions, setEligibleSessions] = useState<EligibleDisputeSession[]>([]);
+  const [eligibleSessions, setEligibleSessions] = useState<EligibleDisputeSessionOption[]>([]);
   const [eligibleSessionsLoading, setEligibleSessionsLoading] = useState(false);
+  const [eligibleSessionPage, setEligibleSessionPage] = useState(0);
+  const [eligibleSessionPages, setEligibleSessionPages] = useState(1);
+  const [eligibleSessionTotal, setEligibleSessionTotal] = useState(0);
   const [reasonInput, setReasonInput] = useState<string>('');
   const [evidenceTextInput, setEvidenceTextInput] = useState<string>('');
   const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
@@ -285,32 +305,20 @@ export function DisputeManagementPanel({
     if (activeRole !== 'student') return;
     if (!isSilent) setEligibleSessionsLoading(true);
     try {
-      const agreementPage = await contractsApi.listAgreements({ page: 0, size: 100 });
-      const agreements = agreementPage?.content ?? [];
-      const settlementLists = await Promise.all(
-        agreements.map(async (agreement) => ({
-          agreement,
-          settlements: await contractsApi.getSettlements(agreement.id).catch(() => []),
-        }))
-      );
-      const currentTime = Date.now();
-      const options = settlementLists.flatMap(({ agreement, settlements }) =>
-        settlements
-          .filter((settlement) => settlement.status === 'PROPOSED'
-            && settlement.outcome === 'BOTH_PRESENT'
-            && !!settlement.disputeDeadline
-            && new Date(settlement.disputeDeadline).getTime() >= currentTime)
-          .map((settlement) => ({
-            key: `${agreement.id}:${settlement.sessionId}`,
-            agreementId: agreement.id,
-            classroomId: agreement.classroomId,
-            className: agreement.className || `Lớp học #${agreement.classroomId}`,
-            studentName: agreement.studentName,
-            sessionId: settlement.sessionId,
-            disputeDeadline: settlement.disputeDeadline as string,
-          }))
-      );
+      const response = await contractsApi.listEligibleDisputeSessions({
+        page: requestedSessionId != null ? 0 : eligibleSessionPage,
+        size: 10,
+        sessionId: requestedSessionId ?? undefined,
+        classroomId: requestedClassroomId ?? undefined,
+      });
+      const options = (response.content || []).map((session: EligibleDisputeSession) => ({
+        ...session,
+        key: `${session.agreementId}:${session.sessionId}`,
+        className: session.className || `Lớp học #${session.classroomId}`,
+      }));
       setEligibleSessions(options);
+      setEligibleSessionTotal(response.totalElements || 0);
+      setEligibleSessionPages(Math.max(1, response.totalPages || 1));
       const requestedOption = requestedSessionId == null
         ? null
         : options.find((option) => option.sessionId === requestedSessionId
@@ -337,7 +345,7 @@ export function DisputeManagementPanel({
     } finally {
       if (!isSilent) setEligibleSessionsLoading(false);
     }
-  }, [activeRole, requestedSessionId, requestedClassroomId]);
+  }, [activeRole, eligibleSessionPage, requestedSessionId, requestedClassroomId]);
 
   useEffect(() => {
     fetchEligibleDisputeSessions();
@@ -566,7 +574,7 @@ export function DisputeManagementPanel({
   }, [disputes, userEmail]);
 
   const kpis = useMemo(() => {
-    const total = disputes.length;
+    const total = historyTotal;
     const pending = disputes.filter((d) => d.status === 'OPEN' || d.status === 'OPENING' || d.status === 'FAILED_RETRYABLE' || d.status === 'RESOLUTION_PENDING').length;
     const approved = disputes.filter((d) => d.status === 'APPROVED').length;
     const rejected = disputes.filter((d) => d.status === 'REJECTED').length;
@@ -591,7 +599,7 @@ export function DisputeManagementPanel({
       sessionCount,
       studentCount,
     };
-  }, [disputes]);
+  }, [disputes, historyTotal]);
 
   useEffect(() => {
     if (activeRole !== 'tutor' || tutorPriorityInitialized.current || kpis.tutorNeedsActionCount <= 0) return;
@@ -620,13 +628,6 @@ export function DisputeManagementPanel({
         historyOrigin === 'ALL' || dispute.complainantRole === historyOrigin;
 
       if (!matchesStatus || !matchesOrigin) return false;
-
-      // Staff role reviewer filter
-      if (activeRole === 'staff') {
-        const reviewer = (dispute.classroomReviewerEmail || '').trim().toLowerCase();
-        if (staffReviewerFilter === 'MINE' && reviewer !== normUserEmail) return false;
-        if (staffReviewerFilter === 'OTHERS' && reviewer === normUserEmail) return false;
-      }
 
       // Admin role reviewer filter
       if (activeRole === 'admin') {
@@ -672,7 +673,7 @@ export function DisputeManagementPanel({
         matchTutor
       );
     });
-  }, [adminReviewerFilter, activeRole, disputes, historyOrigin, historyStatus, searchQuery, staffReviewerFilter, userEmail]);
+  }, [adminReviewerFilter, activeRole, disputes, historyOrigin, historyStatus, searchQuery, userEmail]);
 
   // Grouped by Classroom
   const classroomGroups = useMemo<ClassroomGroup[]>(() => {
@@ -770,9 +771,9 @@ export function DisputeManagementPanel({
     return expandedClassrooms[groupKey] !== false; // Default expanded
   };
 
-  const historyPages = Math.max(1, Math.ceil(filteredDisputes.length / 10));
+  const historyPages = historyTotalPages;
   const currentHistoryPage = Math.min(historyPage, historyPages - 1);
-  const visibleFlatHistory = filteredDisputes.slice(currentHistoryPage * 10, (currentHistoryPage + 1) * 10);
+  const visibleFlatHistory = filteredDisputes;
   const selectedSessionDisputes = useMemo(() => {
     if (!selectedDisputeForDetail) return [];
     const selectedGroupKey = String(selectedDisputeForDetail.classroomId ?? selectedDisputeForDetail.agreementId);
@@ -925,17 +926,17 @@ export function DisputeManagementPanel({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs space-y-1">
           <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-            Tổng số khiếu nại
+            Tổng kết quả phù hợp
           </span>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-black text-slate-900 block">{kpis.total}</span>
-            <span className="text-xs text-slate-400 font-semibold">đơn ({classroomGroups.length} lớp học)</span>
+            <span className="text-xs text-slate-400 font-semibold">đơn</span>
           </div>
         </div>
 
         <div className="bg-amber-50/70 p-4 rounded-2xl border border-amber-200/80 shadow-2xs space-y-1">
           <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider block">
-            Đang chờ xem xét & phân xử
+            Đang chờ trên trang
           </span>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-black text-amber-900 block">{kpis.pending}</span>
@@ -945,7 +946,7 @@ export function DisputeManagementPanel({
 
         <div className="bg-emerald-50/70 p-4 rounded-2xl border border-emerald-200/80 shadow-2xs space-y-1">
           <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">
-            Chấp thuận (Hoàn tiền học viên)
+            Chấp thuận trên trang
           </span>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-black text-emerald-900 block">{kpis.approved}</span>
@@ -955,7 +956,7 @@ export function DisputeManagementPanel({
 
         <div className="bg-rose-50/70 p-4 rounded-2xl border border-rose-200/80 shadow-2xs space-y-1">
           <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider block">
-            Bác bỏ (Giải ngân gia sư)
+            Bác bỏ trên trang
           </span>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-black text-rose-900 block">{kpis.rejected}</span>
@@ -1155,49 +1156,13 @@ export function DisputeManagementPanel({
           )}
         </div>
 
-        {/* Staff Role Reviewer Responsibility Filter */}
+        {/* Staff scope is enforced by the backend before pagination. */}
         {activeRole === 'staff' && (
-          <div className="flex items-center gap-2 pt-3 border-t border-slate-200/80 flex-wrap">
-            <span className="text-xs font-bold text-slate-500 flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-2 pt-3 border-t border-slate-200/80 text-xs text-slate-600">
+            <span className="inline-flex items-center gap-1.5 font-bold">
               <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
-              Thẩm quyền phụ trách lớp:
+              Chỉ hiển thị khiếu nại thuộc lớp bạn được phân công phụ trách.
             </span>
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl flex-wrap">
-              <button
-                type="button"
-                onClick={() => { setStaffReviewerFilter('ALL'); setHistoryPage(0); }}
-                className={`px-3 py-1 rounded-xl text-xs font-extrabold transition-all ${
-                  staffReviewerFilter === 'ALL'
-                    ? 'bg-white text-slate-900 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Tất cả khiếu nại ({disputes.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => { setStaffReviewerFilter('MINE'); setHistoryPage(0); }}
-                className={`px-3 py-1 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 ${
-                  staffReviewerFilter === 'MINE'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-emerald-700 hover:text-emerald-900'
-                }`}
-              >
-                <Check className="w-3.5 h-3.5" />
-                <span>Lớp tôi duyệt/phụ trách ({staffKpis.mine})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => { setStaffReviewerFilter('OTHERS'); setHistoryPage(0); }}
-                className={`px-3 py-1 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 ${
-                  staffReviewerFilter === 'OTHERS'
-                    ? 'bg-slate-700 text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <span>Lớp Staff khác phụ trách ({staffKpis.others})</span>
-              </button>
-            </div>
           </div>
         )}
 
@@ -1285,7 +1250,7 @@ export function DisputeManagementPanel({
               </div>
               <div>
                 <h4 className="font-display font-black text-slate-900 text-sm sm:text-base">
-                  Buổi học đang trong thời hạn khiếu nại 24h ({eligibleSessions.length} buổi)
+                  Buổi học đang trong thời hạn khiếu nại 24h ({eligibleSessionTotal} buổi)
                 </h4>
                 <p className="text-xs text-slate-600">
                   Bạn có thể xem xét và gửi khiếu nại bảo vệ quyền lợi học phí trước khi hệ thống hoàn tất giải ngân on-chain.
@@ -1328,6 +1293,15 @@ export function DisputeManagementPanel({
               </div>
             ))}
           </div>
+          {eligibleSessionPages > 1 && (
+            <Pager
+              page={eligibleSessionPage}
+              pages={eligibleSessionPages}
+              total={eligibleSessionTotal}
+              size={10}
+              onChange={setEligibleSessionPage}
+            />
+          )}
         </div>
       )}
 
@@ -1792,31 +1766,21 @@ export function DisputeManagementPanel({
             );
           })}
 
-          {/* Flat pagination */}
-          {historyPages > 1 && (
-            <div className="flex items-center justify-between p-4 bg-white rounded-2xl border border-slate-200">
-              <span className="text-xs text-slate-500">Trang {currentHistoryPage + 1} / {historyPages}</span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={currentHistoryPage === 0}
-                  onClick={() => setHistoryPage(currentHistoryPage - 1)}
-                  className="px-3 py-1 rounded-lg border text-xs font-bold disabled:opacity-40"
-                >
-                  Trước
-                </button>
-                <button
-                  type="button"
-                  disabled={currentHistoryPage + 1 >= historyPages}
-                  onClick={() => setHistoryPage(currentHistoryPage + 1)}
-                  className="px-3 py-1 rounded-lg border text-xs font-bold disabled:opacity-40"
-                >
-                  Sau
-                </button>
-              </div>
-            </div>
-          )}
         </div>
+      )}
+
+      {!dataLoading && !dataError && (historyTotal > 0 || historyPages > 1) && (
+        <Pager
+          page={currentHistoryPage}
+          pages={historyPages}
+          total={historyTotal}
+          size={historyPageSize}
+          onChange={setHistoryPage}
+          onSizeChange={(nextSize) => {
+            setHistoryPageSize(nextSize);
+            setHistoryPage(0);
+          }}
+        />
       )}
 
       {/* DISPUTE DETAIL MODAL (SIDE-BY-SIDE FULL COMPARISON & RESOLUTION) */}

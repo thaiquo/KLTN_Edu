@@ -1,4 +1,5 @@
 import { apiRequest } from './client';
+import { paginatedRequest } from './paginatedResponse';
 
 export const classApi = {
   // Tutor endpoints
@@ -38,8 +39,12 @@ export const classApi = {
     if (filterParams.subjectId) params.set('subjectId', String(filterParams.subjectId));
     if (filterParams.keyword) params.set('keyword', filterParams.keyword);
     if (filterParams.reviewedByMe) params.set('reviewedByMe', 'true');
+    if (filterParams.approved) params.set('approved', 'true');
+    if (filterParams.page != null) params.set('page', String(filterParams.page));
+    if (filterParams.size != null) params.set('size', String(filterParams.size));
     const queryString = params.toString();
-    return apiRequest(`/api/learning/admin/classes${queryString ? `?${queryString}` : ''}`);
+    const endpoint = `/api/learning/admin/classes${queryString ? `?${queryString}` : ''}`;
+    return paginatedRequest(apiRequest(endpoint), endpoint);
   },
   adminGetClassStats: () => apiRequest('/api/learning/admin/classes/stats'),
   adminGetClassById: (id) => apiRequest(`/api/learning/admin/classes/${id}`),

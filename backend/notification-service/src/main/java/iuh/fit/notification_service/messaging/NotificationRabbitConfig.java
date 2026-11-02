@@ -35,6 +35,7 @@ public class NotificationRabbitConfig {
     public static final String HOMEWORK_GRADED_QUEUE = "notification.homework-graded";
     public static final String COMMUNITY_POST_CONVERTED_QUEUE = "notification.community-post-converted";
     public static final String COMMUNITY_POST_INTERACTION_QUEUE = "notification.community-post-interaction";
+    public static final String COMMUNITY_POST_MODERATED_QUEUE = "notification.community-post-moderated";
 
     public static final String TUTOR_APPLICATION_SUBMITTED_ROUTING_KEY = "account.tutor-application.submitted";
     public static final String TUTOR_APPROVED_ROUTING_KEY = "account.tutor.approved";
@@ -54,6 +55,7 @@ public class NotificationRabbitConfig {
     public static final String HOMEWORK_GRADED_ROUTING_KEY = "learning.homework.graded";
     public static final String COMMUNITY_POST_CONVERTED_ROUTING_KEY = "learning.community-post.converted";
     public static final String COMMUNITY_POST_INTERACTION_ROUTING_KEY = "learning.community-post.interaction";
+    public static final String COMMUNITY_POST_MODERATED_ROUTING_KEY = "learning.community-post.moderated";
 
     @Bean
     DirectExchange eduEventsExchange() {
@@ -148,6 +150,11 @@ public class NotificationRabbitConfig {
     @Bean
     Queue notificationCommunityPostInteractionQueue() {
         return new Queue(COMMUNITY_POST_INTERACTION_QUEUE, true);
+    }
+
+    @Bean
+    Queue notificationCommunityPostModeratedQueue() {
+        return new Queue(COMMUNITY_POST_MODERATED_QUEUE, true);
     }
 
     @Bean
@@ -248,6 +255,16 @@ public class NotificationRabbitConfig {
         return BindingBuilder.bind(notificationCommunityPostInteractionQueue)
                 .to(eduEventsExchange)
                 .with(COMMUNITY_POST_INTERACTION_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding notificationCommunityPostModeratedBinding(
+            Queue notificationCommunityPostModeratedQueue,
+            DirectExchange eduEventsExchange
+    ) {
+        return BindingBuilder.bind(notificationCommunityPostModeratedQueue)
+                .to(eduEventsExchange)
+                .with(COMMUNITY_POST_MODERATED_ROUTING_KEY);
     }
 
     @Bean

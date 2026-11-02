@@ -11,6 +11,7 @@ import iuh.fit.learning_service.messaging.event.TeachingRegistrationReviewedEven
 import iuh.fit.learning_service.messaging.event.TeachingRegistrationSubmittedEvent;
 import iuh.fit.learning_service.messaging.event.CommunityPostConvertedEvent;
 import iuh.fit.learning_service.messaging.event.CommunityPostInteractionEvent;
+import iuh.fit.learning_service.messaging.event.CommunityPostModeratedEvent;
 import iuh.fit.learning_service.service.StaffNotificationRecipientLookup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -254,6 +255,80 @@ public class LearningEventPublisher {
                         postTitle,
                         commentPreview,
                         targetRole,
+                        "COMMUNITY_POST",
+                        String.valueOf(postId))
+        );
+    }
+
+    public void publishCommunityPostModerated(
+            Long postId,
+            Long contentRevision,
+            Long recipientUserId,
+            String targetRole,
+            String postTitle,
+            String decision,
+            String reason,
+            Long reviewerUserId
+    ) {
+        if (postId == null || contentRevision == null || recipientUserId == null || decision == null) {
+            log.warn("Skipping community moderation decision notification postId={} recipientUserId={} decision={}",
+                    postId, recipientUserId, decision);
+            return;
+        }
+        String normalizedDecision = decision.trim().toUpperCase();
+        String eventId = "community-post-moderated:" + postId + ":" + contentRevision + ":" + normalizedDecision;
+        publishAfterCommit(
+                LearningRabbitConfig.EXCHANGE,
+                LearningRabbitConfig.COMMUNITY_POST_MODERATED_ROUTING_KEY,
+                new CommunityPostModeratedEvent(
+                        eventId,
+                        "COMMUNITY_POST_REVIEWED",
+                        LocalDateTime.now(),
+                        "learning-service",
+                        postId,
+                        recipientUserId,
+                        targetRole,
+                        postTitle,
+                        normalizedDecision,
+                        reason,
+                        reviewerUserId,
+                        "COMMUNITY_POST",
+                        String.valueOf(postId))
+        );
+    }
+
+    public void publishCommunityPostRevisionModerated(
+            Long postId,
+            Long contentRevision,
+            Long recipientUserId,
+            String targetRole,
+            String postTitle,
+            String decision,
+            String reason,
+            Long reviewerUserId
+    ) {
+        if (postId == null || contentRevision == null || recipientUserId == null || decision == null) {
+            log.warn("Skipping community revision moderation notification postId={} recipientUserId={} decision={}",
+                    postId, recipientUserId, decision);
+            return;
+        }
+        String normalizedDecision = decision.trim().toUpperCase();
+        String eventId = "community-post-revision-moderated:" + postId + ":" + contentRevision + ":" + normalizedDecision;
+        publishAfterCommit(
+                LearningRabbitConfig.EXCHANGE,
+                LearningRabbitConfig.COMMUNITY_POST_MODERATED_ROUTING_KEY,
+                new CommunityPostModeratedEvent(
+                        eventId,
+                        "COMMUNITY_POST_REVISION_REVIEWED",
+                        LocalDateTime.now(),
+                        "learning-service",
+                        postId,
+                        recipientUserId,
+                        targetRole,
+                        postTitle,
+                        normalizedDecision,
+                        reason,
+                        reviewerUserId,
                         "COMMUNITY_POST",
                         String.valueOf(postId))
         );

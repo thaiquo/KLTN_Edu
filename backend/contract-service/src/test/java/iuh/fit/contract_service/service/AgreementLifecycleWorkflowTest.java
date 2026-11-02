@@ -26,7 +26,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest
+@SpringBootTest(properties = "contract.expiration.initial-delay-ms=3600000")
 class AgreementLifecycleWorkflowTest {
     private static final long CHAIN_ID = 31_337L;
     private static final String ESCROW = "0x1234567890123456789012345678901234567890";
@@ -144,7 +144,7 @@ class AgreementLifecycleWorkflowTest {
                     escrow_contract_address, token_address, token_symbol, token_decimals,
                     terms_json, terms_hash, contract_version, total_price_vnd,
                     vnd_per_usdc, total_amount_usdc_units, price_per_session_usdc_units,
-                    total_sessions, payment_deadline, status, version, created_at, updated_at
+                    total_sessions, payment_deadline, status, version, legacy_excluded, created_at, updated_at
                 ) VALUES (
                     ?, ?, 1001, 101, 102,
                     'staff@educonnect.com', 'student@educonnect.com', 'tutor@educonnect.com',
@@ -154,7 +154,7 @@ class AgreementLifecycleWorkflowTest {
                     ?, ?, '0x4444444444444444444444444444444444444444', 'USDC', 6,
                     '{}', ?, 1, 1000000.00,
                     25000.00, 40000000, 40000000,
-                    1, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    1, ?, ?, 0, FALSE, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 )
                 """,
                 id,

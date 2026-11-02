@@ -9,6 +9,8 @@ import iuh.fit.ai_service.service.embedding.EmbeddingProperties;
 import iuh.fit.ai_service.service.embedding.EmbeddingService;
 import iuh.fit.ai_service.service.embedding.EmbeddingVector;
 import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.SyncResult;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.ReadinessStatus;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.VectorStoreHealth;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -80,6 +82,33 @@ class TutorSemanticIndexServiceTest {
                 .doesNotContain("email", "phone", "exactAddress", "kyc", "contract", "payment");
     }
 
+    @Test
+    void healthReportsReadyAndLastSuccessfulSync() {
+        FakeVectorStore store = new FakeVectorStore();
+        store.health = new VectorStoreHealth("tutor_capabilities_v1", true, 107, ReadinessStatus.READY);
+        TutorSemanticIndexService service = service(store, "Spring Security và JWT");
+
+        service.sync(null);
+        var health = service.health();
+
+        assertThat(health.collectionName()).isEqualTo("tutor_capabilities_v1");
+        assertThat(health.pointCount()).isEqualTo(107);
+        assertThat(health.status()).isEqualTo(ReadinessStatus.READY);
+        assertThat(health.lastSuccessfulSyncAt()).isNotNull();
+    }
+
+    @Test
+    void healthDistinguishesEmptyAndUnavailableIndex() {
+        FakeVectorStore store = new FakeVectorStore();
+        TutorSemanticIndexService service = service(store, "Spring Security và JWT");
+
+        store.health = new VectorStoreHealth("tutor_capabilities_v1", true, 0, ReadinessStatus.DEGRADED_EMPTY);
+        assertThat(service.health().status()).isEqualTo(ReadinessStatus.DEGRADED_EMPTY);
+
+        store.health = VectorStoreHealth.unavailable("tutor_capabilities_v1");
+        assertThat(service.health().status()).isEqualTo(ReadinessStatus.UNAVAILABLE);
+    }
+
     private TutorSemanticIndexService service(FakeVectorStore store, String description) {
         return new TutorSemanticIndexService(
                 () -> List.of(candidate(description)),
@@ -136,6 +165,7 @@ class TutorSemanticIndexServiceTest {
         private final Map<String, SemanticPayload> payloads = new LinkedHashMap<>();
         private int upserts;
         private String deletedPointId;
+        private VectorStoreHealth health = new VectorStoreHealth("test", true, 0, ReadinessStatus.DEGRADED_EMPTY);
 
         @Override
         public void initializeCollection() {
@@ -161,6 +191,11 @@ class TutorSemanticIndexServiceTest {
         @Override
         public List<SemanticSearchHit> search(EmbeddingVector queryVector, SemanticSearchFilter filter, int limit) {
             return List.of();
+        }
+
+        @Override
+        public VectorStoreHealth health() {
+            return health;
         }
     }
 }

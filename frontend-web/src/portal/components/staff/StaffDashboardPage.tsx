@@ -41,7 +41,7 @@ export function StaffDashboardPage() {
     setHistoryLoading(true);
     try {
       const data = await teachingRegistrationApi.adminHistory();
-      const rows = Array.isArray(data) ? data : [];
+      const rows = data.content;
       setHistoryItems(isAdmin ? rows : rows.filter((item) => sameEmail(item.reviewedByEmail, staffEmail)));
     } catch (err: any) {
       setError(err?.message || "Không thể tải lịch sử duyệt.");

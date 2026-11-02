@@ -352,11 +352,12 @@ class OperatorTransactionPipelineIntegrationTest {
         jdbcTemplate.update("""
                         INSERT INTO contract_agreement (
                             id, classroom_id, student_id, tutor_id, classroom_reviewer_email,
-                            student_wallet, tutor_wallet, platform_wallet, terms_json, terms_hash,
+                            student_wallet, tutor_wallet, platform_wallet, token_symbol, token_decimals,
+                            terms_json, terms_hash,
                             contract_version, total_price_vnd, vnd_per_usdc,
                             total_amount_usdc_units, price_per_session_usdc_units,
-                            total_sessions, status, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            total_sessions, status, version, legacy_excluded, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'USDC', 6, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, FALSE, ?, ?)
                         """,
                 agreementId, Math.abs(agreementId.getMostSignificantBits()),
                 Math.abs(agreementId.getLeastSignificantBits()), 3001L,

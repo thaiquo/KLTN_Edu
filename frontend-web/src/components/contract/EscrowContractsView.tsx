@@ -33,6 +33,7 @@ import { EscrowPaymentModal, AgreementPaymentDetails } from './EscrowPaymentModa
 import { DisputeManagementPanel } from './DisputeManagementPanel';
 import { ContractAuditTimeline } from './ContractAuditTimeline';
 import { ContractDocumentModal } from './ContractDocumentModal';
+import { Pager } from '../../portal/components/OperationalUi';
 import { TerminationPanel } from './TerminationPanel';
 import { TerminationRequestModal } from './TerminationRequestModal';
 import { terminationsApi, TerminationView } from '../../api/terminationsApi';
@@ -147,12 +148,17 @@ export function EscrowContractsView({
   const [operationalFilter, setOperationalFilter] = useState<'ALL' | 'OPERATIONAL' | 'LEGACY'>('OPERATIONAL');
   const [selectedClassId, setSelectedClassId] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [page, setPage] = useState(0);
+  const [pages, setPages] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [viewMode, setViewMode] = useState<'BY_CLASS' | 'FLAT_CARDS'>('BY_CLASS');
   const [expandedClassKeys, setExpandedClassKeys] = useState<Set<string>>(new Set());
 
   // Real data state
   const [agreements, setAgreements] = useState<AgreementSummary[]>([]);
   const [terminationsList, setTerminationsList] = useState<TerminationView[]>([]);
+  const [pendingTerminationsTotal, setPendingTerminationsTotal] = useState(0);
   const [terminationSettlements, setTerminationSettlements] = useState<Record<string, SettlementDto[]>>({});
   const [classroomCache, setClassroomCache] = useState<Record<number, any>>({});
   const [requestsCache, setRequestsCache] = useState<Record<string, any>>({});
@@ -164,28 +170,46 @@ export function EscrowContractsView({
     const isSilent = opts === true;
     if (!isSilent) setLoading(true);
     setError('');
+    const operator = activeRole === 'admin' || activeRole === 'staff';
+    if (operator && !searchQuery && statusFilter === 'ALL') {
+      setAgreements([]); setTotalElements(0); setPages(1); setLoading(false); return;
+    }
     try {
       const isTutor = activeRole === 'tutor';
-      const [agreementsData, tutorClasses, terminationsData] = await Promise.all([
+      const [agreementsData, tutorClasses, terminationsData, pendingTerminationsData] = await Promise.all([
         contractsApi.listAgreements({
-          status: undefined,
-          page: 0,
-          size: 100,
+          status: !['ALL', 'TERMINATION_PENDING', 'PENDING_SIGNATURE', 'HISTORY'].includes(statusFilter) ? statusFilter : undefined,
+          keyword: searchQuery || undefined,
+          terminationPending: statusFilter === 'TERMINATION_PENDING' || undefined,
+          page,
+          size: pageSize,
         }),
         isTutor ? classApi.getMyClasses().catch(() => []) : Promise.resolve([]),
-        (activeRole === 'student' ? terminationsApi.listRefunds() : terminationsApi.list()).catch(() => []),
+        (activeRole === 'student'
+          ? terminationsApi.listRefunds().then((content) => ({ content, totalElements: content.length }))
+          : terminationsApi.page({ page: 0, size: 50 })
+        ).catch(() => ({ content: [], totalElements: 0 })),
+        (activeRole === 'student'
+          ? Promise.resolve({ totalElements: 0 })
+          : terminationsApi.page({ page: 0, size: 1, statusGroup: 'ACTIVE' })
+        ).catch(() => ({ totalElements: 0 })),
       ]);
 
       const content: AgreementSummary[] = agreementsData?.content ?? (Array.isArray(agreementsData) ? agreementsData : []);
       setAgreements(content);
-      setTerminationsList(terminationsData || []);
+      const terminationContent = terminationsData?.content || [];
+      setTerminationsList(terminationContent);
+      setPendingTerminationsTotal(activeRole === 'student'
+        ? terminationContent.filter((termination) => !['COMPLETED', 'REJECTED'].includes(termination.request.status)).length
+        : Number(pendingTerminationsData?.totalElements || 0));
       setTotalElements(agreementsData?.totalElements ?? content.length);
+      setPages(Math.max(1, Number(agreementsData?.totalPages || 1)));
 
       // A termination cannot refund unused escrow until every session before its
       // cutoff is settled. Load those records so the contract card can say which
       // exact on-chain condition is still pending rather than a vague "waiting".
       const activeAgreementIds = new Set<string>();
-      (terminationsData || []).forEach((termination) => {
+      terminationContent.forEach((termination) => {
         if (['COMPLETED', 'REJECTED'].includes(termination.request.status)) return;
         if (termination.request.anchorAgreementId) activeAgreementIds.add(termination.request.anchorAgreementId);
         termination.items?.forEach((item) => activeAgreementIds.add(item.agreementId));
@@ -277,7 +301,7 @@ export function EscrowContractsView({
     } finally {
       if (!isSilent) setLoading(false);
     }
-  }, [activeRole]);
+  }, [activeRole, page, pageSize, searchQuery, statusFilter]);
 
   useRealtimeRefresh([
     'AGREEMENT_UPDATED',
@@ -385,9 +409,7 @@ export function EscrowContractsView({
   }, [agreements, classroomCache, requestsCache, user, activeRole]);
 
   // Count of pending termination requests
-  const pendingTerminationsCount = useMemo(() => {
-    return terminationsList.filter((t) => !['COMPLETED', 'REJECTED'].includes(t.request.status)).length;
-  }, [terminationsList]);
+  const pendingTerminationsCount = pendingTerminationsTotal;
 
   // Active termination map by agreement ID
   const activeTerminationMap = useMemo(() => {
@@ -447,7 +469,7 @@ export function EscrowContractsView({
 
       // Filter by status tab
       if (statusFilter === 'TERMINATION_PENDING') {
-        if (!activeTerminationMap.has(a.id)) return false;
+        if (!a.terminationPending && !activeTerminationMap.has(a.id)) return false;
       } else if (statusFilter === 'PENDING_SIGNATURE') {
         if (a.status !== 'PENDING_TUTOR_ACCEPTANCE' && a.status !== 'PENDING_STUDENT_ACCEPTANCE') {
           return false;
@@ -468,8 +490,8 @@ export function EscrowContractsView({
         return false;
       }
       // Filter by search query
-      if (searchTerm.trim()) {
-        const query = searchTerm.toLowerCase();
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
         const classNameMatch = a.className?.toLowerCase().includes(query);
         const studentNameMatch = a.studentName?.toLowerCase().includes(query);
         const studentEmailMatch = a.studentEmail?.toLowerCase().includes(query);
@@ -490,7 +512,7 @@ export function EscrowContractsView({
       }
       return true;
     });
-  }, [enrichedAgreements, selectedClassId, searchTerm, statusFilter, operationalFilter, activeRole, user]);
+  }, [enrichedAgreements, selectedClassId, searchQuery, statusFilter, operationalFilter, activeRole, user]);
 
   const statusCounts = useMemo(() => {
     const baseAgreements = enrichedAgreements.filter((a) => {
@@ -509,8 +531,8 @@ export function EscrowContractsView({
         return false;
       }
 
-      if (searchTerm.trim()) {
-        const query = searchTerm.toLowerCase();
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
         const classNameMatch = a.className?.toLowerCase().includes(query);
         const studentNameMatch = a.studentName?.toLowerCase().includes(query);
         const studentEmailMatch = a.studentEmail?.toLowerCase().includes(query);
@@ -540,11 +562,11 @@ export function EscrowContractsView({
       ACTIVE: baseAgreements.filter((a) => a.status === 'ACTIVE').length,
       WAITING_PAYMENT: baseAgreements.filter((a) => a.status === 'WAITING_PAYMENT').length,
       PENDING_SIGNATURE: baseAgreements.filter((a) => a.status === 'PENDING_TUTOR_ACCEPTANCE' || a.status === 'PENDING_STUDENT_ACCEPTANCE').length,
-      TERMINATION_PENDING: baseAgreements.filter((a) => activeTerminationMap.has(a.id)).length,
+      TERMINATION_PENDING: baseAgreements.filter((a) => a.terminationPending || activeTerminationMap.has(a.id)).length,
       COMPLETED: baseAgreements.filter((a) => a.status === 'COMPLETED').length,
       HISTORY: baseAgreements.filter((a) => a.status === 'CANCELLED' || a.status === 'EXPIRED').length,
     } as Record<string, number>;
-  }, [enrichedAgreements, selectedClassId, searchTerm, operationalFilter, activeRole, user, activeTerminationMap]);
+  }, [enrichedAgreements, selectedClassId, searchQuery, operationalFilter, activeRole, user, activeTerminationMap]);
 
   // Group filtered agreements by classroom
   const classroomGroups = useMemo(() => {
@@ -602,7 +624,7 @@ export function EscrowContractsView({
       if (['PENDING_TUTOR_ACCEPTANCE', 'PENDING_STUDENT_ACCEPTANCE'].includes(a.status)) group.pendingSignatureCount += 1;
       if (a.status === 'WAITING_PAYMENT') group.waitingPaymentCount += 1;
 
-      if (activeTerminationMap.has(a.id)) {
+      if (a.terminationPending || activeTerminationMap.has(a.id)) {
         group.hasTerminationPending = true;
       }
     });
@@ -875,23 +897,23 @@ export function EscrowContractsView({
       {activeTab === 'AGREEMENTS' && (
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-1">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Tổng số hợp đồng</span>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Hợp đồng trên trang</span>
             <span className="text-xl font-black text-slate-900 block">{kpis.totalCount}</span>
           </div>
           <div className="bg-emerald-50/50 p-4 rounded-2xl border border-emerald-200/70 shadow-2xs space-y-1">
-            <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">Đủ điều kiện giải ngân</span>
+            <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">Đủ điều kiện trên trang</span>
             <span className="text-xl font-black text-emerald-900 block">{kpis.activeCount}</span>
           </div>
           <div className="bg-amber-50/60 p-4 rounded-2xl border border-amber-200 shadow-2xs space-y-1">
-            <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider block">Chờ ký / nạp cọc</span>
+            <span className="text-[11px] font-bold text-amber-700 uppercase tracking-wider block">Chờ ký / nạp cọc trên trang</span>
             <span className="text-xl font-black text-amber-900 block">{kpis.pendingActionCount}</span>
           </div>
           <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-200/70 shadow-2xs space-y-1">
-            <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider block">Tổng giá trị ký quỹ</span>
+            <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider block">Ký quỹ trên trang</span>
             <span className="text-xl font-black text-blue-900 block">${kpis.totalUsdc.toFixed(2)} USDC</span>
           </div>
           <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-200/70 shadow-2xs space-y-1">
-            <span className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider block">Đã quyết toán</span>
+            <span className="text-[11px] font-bold text-indigo-700 uppercase tracking-wider block">Quyết toán trên trang</span>
             <span className="text-xl font-black text-indigo-900 block">${kpis.settledUsdc.toFixed(2)} USDC</span>
           </div>
         </div>
@@ -916,16 +938,17 @@ export function EscrowContractsView({
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
             <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
               {/* Search input */}
-              <div className="relative flex-1">
+              <form onSubmit={event => { event.preventDefault(); setPage(0); setSearchQuery(searchTerm.trim()); }} className="relative flex-1">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Tìm theo tên lớp, tên học viên, gia sư, email hoặc mã hợp đồng..."
-                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:border-blue-500 transition-all"
+                  className="w-full pl-10 pr-20 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:border-blue-500 transition-all"
                 />
-              </div>
+                <button className="absolute right-1.5 top-1.5 rounded-lg bg-blue-700 px-3 py-1 text-[11px] font-black text-white">Tìm</button>
+              </form>
 
               {/* Classroom filter dropdown */}
               {distinctClasses.length > 0 && (
@@ -949,7 +972,7 @@ export function EscrowContractsView({
               )}
 
               <button
-                onClick={fetchAgreements}
+                onClick={() => fetchAgreements()}
                 disabled={loading}
                 className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 border border-slate-200 flex items-center gap-1.5 shrink-0 transition-colors"
                 title="Làm mới"
@@ -1003,7 +1026,7 @@ export function EscrowContractsView({
                 return (
                   <button
                     key={tab.value}
-                    onClick={() => setStatusFilter(tab.value)}
+                    onClick={() => { setStatusFilter(tab.value); setPage(0); }}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                       statusFilter === tab.value
                         ? isTerminationTab
@@ -1236,7 +1259,9 @@ export function EscrowContractsView({
                                   item.studentWallet !== "0x0000000000000000000000000000000000000000" &&
                                   address.toLowerCase() !== item.studentWallet.toLowerCase();
 
-                                const activeTermination = activeTerminationMap.get(item.id);
+                                const activeTermination = activeTerminationMap.get(item.id) || (item.terminationPending
+                                  ? { status: 'REQUESTED', wholeClass: false, reason: 'Yêu cầu thanh lý đang được xử lý' }
+                                  : undefined);
 
                                 return (
                                   <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
@@ -1478,7 +1503,9 @@ export function EscrowContractsView({
                 const displayStudentEmail = item.studentEmail || "Chưa cập nhật email";
                 const displayTutorEmail = item.tutorEmail || "Chưa cập nhật email";
 
-                const activeTermination = activeTerminationMap.get(item.id);
+                const activeTermination = activeTerminationMap.get(item.id) || (item.terminationPending
+                  ? { status: 'REQUESTED', wholeClass: false, reason: 'Yêu cầu thanh lý đang được xử lý' }
+                  : undefined);
                 const terminationSessions = terminationSettlements[item.id] || [];
                 const openTerminationSessions = terminationSessions.filter((session) => isSettlementOpen(session.status));
                 const proposedTerminationSessions = openTerminationSessions
@@ -1919,6 +1946,19 @@ export function EscrowContractsView({
                 );
               })}
             </div>
+          )}
+          {(agreements.length > 0 || pages > 1) && (
+            <Pager
+              page={page}
+              pages={pages}
+              total={totalElements}
+              size={pageSize}
+              onChange={setPage}
+              onSizeChange={(nextSize) => {
+                setPageSize(nextSize);
+                setPage(0);
+              }}
+            />
           )}
         </div>
       )}

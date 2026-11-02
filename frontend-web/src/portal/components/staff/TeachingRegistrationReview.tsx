@@ -13,6 +13,7 @@ import { staffTutorsApi } from "../../../api/staffTutors";
 import { subjectSuggestionApi } from "../../../api/subjectSuggestions";
 import { teachingRegistrationApi } from "../../../api/teachingRegistrations";
 import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
+import { Pager } from "../OperationalUi";
 
 const PREVIEW_SIZE_LIMIT = 15 * 1024 * 1024;
 
@@ -38,6 +39,13 @@ export function TeachingRegistrationReview({
   const [selected, setSelected] = useState<{ kind: ReviewKind; item: any }>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [legacyPage, setLegacyPage] = useState(0);
+  const [legacyPages, setLegacyPages] = useState(1);
+  const [legacyTotal, setLegacyTotal] = useState(0);
 
   async function load(opts?: boolean | unknown) {
     const isSilent = opts === true;
@@ -46,19 +54,25 @@ export function TeachingRegistrationReview({
     }
     try {
       const [items, pendingSubjectRequests] = await Promise.all([
-        teachingRegistrationApi.adminPending(),
-        isAdmin ? subjectSuggestionApi.adminPending() : Promise.resolve([]),
+        teachingRegistrationApi.adminPending({ page, size: pageSize, proposalsOnly: isAdmin && activeTab === "subjectRequest" }),
+        isAdmin && activeTab === "subjectRequest"
+          ? subjectSuggestionApi.adminPending({ page: legacyPage, size: pageSize })
+          : Promise.resolve({ content: [], totalElements: 0, totalPages: 1 }),
       ]);
-      const list = Array.isArray(items) ? items : [];
-      const requestList = Array.isArray(pendingSubjectRequests) ? pendingSubjectRequests : [];
+      const list = Array.isArray(items?.content) ? items.content : [];
+      setPages(Math.max(1, Number(items?.totalPages || 1)));
+      setTotal(Number(items?.totalElements || 0));
+      const requestList = Array.isArray(pendingSubjectRequests?.content) ? pendingSubjectRequests.content : [];
+      setLegacyPages(Math.max(1, Number(pendingSubjectRequests?.totalPages || 1)));
+      setLegacyTotal(Number(pendingSubjectRequests?.totalElements || 0));
 
-      const standard = list.filter((item: any) => item.subject !== null);
-      const proposed = isAdmin ? list.filter((item: any) => item.subject === null) : [];
+      const standard = activeTab === "registration" ? list : [];
+      const proposed = isAdmin && activeTab === "subjectRequest" ? list : [];
 
       setRegistrations(standard);
       setSuggestions(proposed);
       setSubjectRequests(requestList);
-      onPendingCountChange?.(standard.length + proposed.length + requestList.length);
+      onPendingCountChange?.(Number(items?.totalElements || 0) + Number(pendingSubjectRequests?.totalElements || 0));
     } catch (error: any) {
       onError(error?.message || "Không thể tải hàng chờ duyệt quyền dạy.");
     } finally {
@@ -77,7 +91,7 @@ export function TeachingRegistrationReview({
 
   useEffect(() => {
     load(false);
-  }, [isAdmin]);
+  }, [activeTab, isAdmin, page, pageSize, legacyPage]);
 
   async function approveRegistration(item: any, note: string) {
     setBusy(true);
@@ -181,9 +195,9 @@ export function TeachingRegistrationReview({
       </header>
 
       <div className="flex gap-2 border-b border-[#e4e8ee] px-5 pt-4">
-        <QueueTab active={activeTab === "registration"} onClick={() => setActiveTab("registration")} label="Hồ sơ quyền dạy" count={registrations.length} />
+        <QueueTab active={activeTab === "registration"} onClick={() => { setActiveTab("registration"); setPage(0); }} label="Hồ sơ quyền dạy" count={activeTab === "registration" ? total : registrations.length} />
         {isAdmin && (
-          <QueueTab active={activeTab === "subjectRequest"} onClick={() => setActiveTab("subjectRequest")} label="Đề xuất môn mới" count={suggestions.length + subjectRequests.length} warning />
+          <QueueTab active={activeTab === "subjectRequest"} onClick={() => { setActiveTab("subjectRequest"); setPage(0); setLegacyPage(0); }} label="Đề xuất môn mới" count={(activeTab === "subjectRequest" ? total : suggestions.length) + legacyTotal} warning />
         )}
       </div>
 
@@ -198,6 +212,11 @@ export function TeachingRegistrationReview({
               {suggestions.length > 0 && <RegistrationQueue items={suggestions} onSelect={(item) => setSelected({ kind: "registration", item })} />}
               {subjectRequests.length > 0 && <SubjectRequestQueue items={subjectRequests} onSelect={(item) => setSelected({ kind: "subjectRequest", item })} />}
             </div>
+      )}
+
+      {!loading && total > 0 && <Pager page={page} pages={pages} total={total} size={pageSize} onChange={setPage} onSizeChange={next => { setPageSize(next); setPage(0); }} />}
+      {!loading && activeTab === "subjectRequest" && legacyTotal > 0 && (
+        <Pager page={legacyPage} pages={legacyPages} total={legacyTotal} size={pageSize} onChange={setLegacyPage} />
       )}
 
       {selected?.kind === "registration" && (

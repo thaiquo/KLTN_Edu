@@ -9,7 +9,11 @@ import iuh.fit.ai_service.service.embedding.EmbeddingService;
 import iuh.fit.ai_service.service.embedding.EmbeddingVector;
 import iuh.fit.ai_service.service.semantic.ClassSemanticDocumentBuilder.ClassSemanticDocumentInput;
 import iuh.fit.ai_service.service.semantic.ClassSemanticIndexDtos.ClassDeleteResult;
+import iuh.fit.ai_service.service.semantic.ClassSemanticIndexDtos.ClassHealthResponse;
 import iuh.fit.ai_service.service.semantic.ClassSemanticIndexDtos.ClassSyncResult;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.VectorStoreHealth;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -21,11 +25,14 @@ import java.util.Set;
 
 @Service
 public class ClassSemanticIndexService {
+    private static final Logger log = LoggerFactory.getLogger(ClassSemanticIndexService.class);
+
     private final LearningPublicClassClient sourceClient;
     private final ClassSemanticDocumentBuilder documentBuilder;
     private final EmbeddingService embeddingService;
     private final EmbeddingProperties embeddingProperties;
     private final ClassSemanticVectorStore vectorStore;
+    private volatile Instant lastSuccessfulSyncAt;
 
     public ClassSemanticIndexService(
             LearningPublicClassClient sourceClient,
@@ -83,7 +90,24 @@ public class ClassSemanticIndexService {
             }
         }
         int staleRemoved = removeStale(documents);
+        if (failed == 0) {
+            lastSuccessfulSyncAt = Instant.now();
+        }
         return new ClassSyncResult(sourceClasses.size(), documents.size(), indexed, skipped, failed, staleRemoved, errors);
+    }
+
+    public ClassHealthResponse health() {
+        VectorStoreHealth storeHealth = vectorStore.health();
+        if (storeHealth.status() == TutorSemanticIndexDtos.ReadinessStatus.DEGRADED_EMPTY) {
+            log.warn("Semantic class index is empty; structured class matching fallback remains available.");
+        }
+        return new ClassHealthResponse(
+                storeHealth.collectionName(),
+                storeHealth.collectionExists(),
+                storeHealth.pointCount(),
+                lastSuccessfulSyncAt,
+                storeHealth.status()
+        );
     }
 
     public ClassDeleteResult delete(Long classId) {

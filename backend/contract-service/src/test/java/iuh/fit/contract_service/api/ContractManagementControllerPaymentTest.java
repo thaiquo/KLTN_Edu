@@ -125,10 +125,11 @@ class ContractManagementControllerPaymentTest {
     void listsEmptyAgreementsForAuthenticatedStudentWithoutMutatingAccessControlResult() {
         var user = new ContractUserPrincipal(1L, "student@example.com", "STUDENT", List.of("STUDENT"));
         when(currentUserContext.requireCurrentUser()).thenReturn(user);
-        when(agreementRepository.findAll()).thenReturn(List.of());
-        when(accessControl.filterAgreements(List.of(), user))
-                .thenReturn(new ContractAccessControl().filterAgreements(List.of(), user));
-        var response = controller.listAgreements(null, org.springframework.data.domain.PageRequest.of(0, 50));
+        when(agreementRepository.findAll(
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+        var response = controller.listAgreements(null, null, null, org.springframework.data.domain.PageRequest.of(0, 50));
         assertThat(response.getBody().getTotalElements()).isZero();
     }
 
@@ -136,11 +137,82 @@ class ContractManagementControllerPaymentTest {
     void listsEmptyDisputesForAuthenticatedTutorWithoutMutatingAccessControlResult() {
         var user = new ContractUserPrincipal(2L, "tutor@example.com", "TUTOR", List.of("TUTOR"));
         when(currentUserContext.requireCurrentUser()).thenReturn(user);
-        when(disputeRepository.findAllWithSettlementAndAgreement()).thenReturn(List.of());
-        when(accessControl.filterDisputes(List.of(), user))
-                .thenReturn(new ContractAccessControl().filterDisputes(List.of(), user));
-        var response = controller.listDisputes(null, org.springframework.data.domain.PageRequest.of(0, 50));
+        when(disputeRepository.findAll(
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+        var response = controller.listDisputes(null, null, null, null, null, null,
+                false, null, null, org.springframework.data.domain.PageRequest.of(0, 50));
         assertThat(response.getBody().getTotalElements()).isZero();
+    }
+
+    @Test
+    void staffIsRejectedBeforePlatformFinancialOverviewQueriesRun() {
+        var staff = new ContractUserPrincipal(9L, "staff@example.com", "STAFF", List.of("STAFF"));
+        when(currentUserContext.requireCurrentUser()).thenReturn(staff);
+        doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Only admin"))
+                .when(accessControl).requireCanViewPlatformFinancials(staff);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(controller::getAdminFinancialOverview)
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(error -> assertThat(((ResponseStatusException) error).getStatusCode())
+                        .isEqualTo(HttpStatus.FORBIDDEN));
+
+        verify(agreementRepository, never()).findAll();
+    }
+
+    @Test
+    void staffIsRejectedBeforeAdministrativeSettlementQueriesRun() {
+        var staff = new ContractUserPrincipal(9L, "staff@example.com", "STAFF", List.of("STAFF"));
+        when(currentUserContext.requireCurrentUser()).thenReturn(staff);
+        doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Only admin"))
+                .when(accessControl).requireCanViewPlatformFinancials(staff);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.listAdminSettlements(
+                        null, null, null, org.springframework.data.domain.PageRequest.of(0, 30)))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(error -> assertThat(((ResponseStatusException) error).getStatusCode())
+                        .isEqualTo(HttpStatus.FORBIDDEN));
+
+        verify(settlementRepository, never()).findAll();
+    }
+
+    @Test
+    void staffIsRejectedBeforeGlobalTransactionQueriesRun() {
+        var staff = new ContractUserPrincipal(9L, "staff@example.com", "STAFF", List.of("STAFF"));
+        when(currentUserContext.requireCurrentUser()).thenReturn(staff);
+        when(accessControl.canViewAllTransactions(staff)).thenReturn(false);
+        doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "Only admin"))
+                .when(accessControl).requireCanViewOwnTransactions(staff);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.listAllTransactions(
+                        null, null, org.springframework.data.domain.PageRequest.of(0, 30)))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(error -> assertThat(((ResponseStatusException) error).getStatusCode())
+                        .isEqualTo(HttpStatus.FORBIDDEN));
+
+        verify(transactionRepository, never()).findAll();
+        verify(agreementRepository, never()).findAll();
+    }
+
+    @Test
+    void adminCanListGlobalTransactionsWithoutPersonalScopeFiltering() {
+        var admin = new ContractUserPrincipal(10L, "admin@example.com", "ADMIN", List.of("ADMIN"));
+        when(currentUserContext.requireCurrentUser()).thenReturn(admin);
+        when(accessControl.canViewAllTransactions(admin)).thenReturn(true);
+        when(transactionRepository.findAll(
+                any(org.springframework.data.jpa.domain.Specification.class),
+                any(org.springframework.data.domain.Pageable.class)))
+                .thenReturn(org.springframework.data.domain.Page.empty());
+
+        var response = controller.listAllTransactions(
+                null, null, org.springframework.data.domain.PageRequest.of(0, 30));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getTotalElements()).isZero();
+        verify(accessControl, never()).requireCanViewOwnTransactions(admin);
+        verify(agreementRepository, never()).findAll();
     }
 
     @Test

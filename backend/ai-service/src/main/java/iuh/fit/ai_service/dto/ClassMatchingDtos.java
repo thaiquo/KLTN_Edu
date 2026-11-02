@@ -63,6 +63,7 @@ public final class ClassMatchingDtos {
             int matchPercentage,
             ClassScoreBreakdown scoreBreakdown,
             List<String> matchingReasons,
+            List<String> mismatchReasons,
             List<String> missingData
     ) {
     }

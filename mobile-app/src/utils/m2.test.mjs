@@ -28,5 +28,14 @@ test('AI clarification patches analyzed hints then match payload uses grounded I
   assert.equal(payload.subjectId, 5); assert.equal(payload.levelId, 9);
   assert.equal(payload.provinceCode, null); assert.equal(payload.budgetMin, 250000);
   assert.deepEqual(payload.weakTopics, ['Hình học', 'Hàm số']);
-  assert.deepEqual(payload.preferredSchedules, [{ dayOfWeek: 2, startTime: '19:00', endTime: '20:00' }]);
+  assert.deepEqual(payload.preferredSchedules, [{ dayOfWeek: 2, startTime: '19:00', endTime: '20:00', timeOfDayHint: null }]);
+});
+
+test('AI match payload preserves day-only and time-of-day schedule hints', () => {
+  const payload = buildTutorMatchPayload({ subject: { id: 5 }, level: { id: 9 }, teachingMode: 'ONLINE',
+    preferredSchedules: [{ dayOfWeek: 2, timeOfDayHint: 'EVENING' }] }, {});
+
+  assert.deepEqual(payload.preferredSchedules, [{
+    dayOfWeek: 2, startTime: null, endTime: null, timeOfDayHint: 'EVENING',
+  }]);
 });

@@ -38,8 +38,16 @@ public class SubjectRequestController {
 
     @GetMapping("/pending")
     @PreAuthorize("hasRole('ADMIN')")
-    public List<SubjectRequestDtos.Response> pending() {
-        return subjectRequestService.pending();
+    public org.springframework.data.domain.Page<SubjectRequestDtos.Response> pending(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        var pageable = org.springframework.data.domain.PageRequest.of(
+                Math.max(0, page),
+                Math.min(50, Math.max(1, size)),
+                org.springframework.data.domain.Sort.by(
+                        org.springframework.data.domain.Sort.Order.asc("createdAt"),
+                        org.springframework.data.domain.Sort.Order.asc("id")));
+        return subjectRequestService.pending(pageable);
     }
 
     @PatchMapping("/{requestId}/approve")

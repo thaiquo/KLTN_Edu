@@ -51,5 +51,7 @@ public final class AdminCatalogDtos {
     public record CatalogSnapshot(List<ReferenceOption> programTypes,
                                   List<ReferenceOption> educationLevels,
                                   List<ManagedCategory> categories) {}
+    public record CatalogReferences(List<ReferenceOption> programTypes,
+                                    List<ReferenceOption> educationLevels) {}
     public record ImportResponse(Long jobId, int totalRows, int successRows, int failedRows, List<String> errors) {}
 }

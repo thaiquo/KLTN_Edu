@@ -9,6 +9,7 @@ import { classApi } from "../../../api/classes";
 import { adminUsersApi } from "../../../api/adminUsers";
 import { useFeedback } from "../../../components/feedback/useFeedback";
 import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
+import { ErrorState, Pager } from "../OperationalUi";
 
 interface ClassItem {
   id: number;
@@ -19,6 +20,7 @@ interface ClassItem {
   tutorFullName?: string;
   registration?: {
     id: number;
+    subjectId: number;
     subjectName: string;
     tuitionMin: number;
     tuitionMax: number;
@@ -66,6 +68,12 @@ export function ClassApprovalReview() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [total, setTotal] = useState(0);
+  const [pages, setPages] = useState(1);
+  const [stats, setStats] = useState({ total: 0, pending: 0, active: 0, rejected: 0 });
   const [selectedClass, setSelectedClass] = useState<ClassItem | null>(null);
   const [rejectingClass, setRejectingClass] = useState<ClassItem | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -82,15 +90,35 @@ export function ClassApprovalReview() {
     if (!isSilent) {
       setLoading(true);
     }
+    setError("");
     try {
-      const [data, userRows] = await Promise.all([
-        classApi.adminGetAllClasses(),
-        adminUsersApi.list().catch(() => [])
+      const serverStatus = statusFilter === "ALL" || statusFilter === "ACTIVE" ? undefined : statusFilter;
+      const [data, userRows, classStats] = await Promise.all([
+        classApi.adminGetAllClasses({
+          status: serverStatus,
+          approved: statusFilter === "ACTIVE",
+          tutorEmail: selectedTutor === "ALL" ? undefined : selectedTutor,
+          subjectId: selectedSubject === "ALL" ? undefined : Number(selectedSubject),
+          keyword: searchKeyword.trim(),
+          page,
+          size: pageSize
+        }),
+        adminUsersApi.list({ page: 0, size: 50 }),
+        classApi.adminGetClassStats()
       ]);
-      setClasses(data || []);
-      setUsers(Array.isArray(userRows) ? userRows : []);
+      setClasses(data.content);
+      setUsers(userRows.content);
+      setTotal(data.totalElements);
+      setPages(Math.max(1, data.totalPages));
+      setStats({
+        total: Number(classStats?.totalClasses || 0),
+        pending: Number(classStats?.pendingCount || 0),
+        active: Number(classStats?.activeCount || 0) + Number(classStats?.privateCount || 0) + Number(classStats?.publishedCount || 0),
+        rejected: Number(classStats?.rejectedCount || 0)
+      });
     } catch (err: any) {
       console.error("Failed to load classes for admin", err);
+      setError(err?.message || "Không thể tải danh sách lớp học.");
     } finally {
       if (!isSilent) {
         setLoading(false);
@@ -102,7 +130,11 @@ export function ClassApprovalReview() {
 
   useEffect(() => {
     loadClasses(false);
-  }, []);
+  }, [page, pageSize, searchKeyword, selectedTutor, statusFilter]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [pageSize, searchKeyword, selectedSubject, selectedTutor, statusFilter]);
 
   // Distinct lists for filters
   const distinctTutors = useMemo(() => {
@@ -117,41 +149,20 @@ export function ClassApprovalReview() {
   }, [classes]);
 
   const distinctSubjects = useMemo(() => {
-    const subs = Array.from(new Set(classes.map(c => c.registration?.subjectName).filter(Boolean))) as string[];
-    return subs.sort();
+    const subjects = new Map<number, string>();
+    classes.forEach((item) => {
+      if (item.registration?.subjectId && item.registration.subjectName) {
+        subjects.set(item.registration.subjectId, item.registration.subjectName);
+      }
+    });
+    return Array.from(subjects, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, "vi"));
   }, [classes]);
 
   // Filtered list
   const filteredClasses = useMemo(() => {
     return classes.filter(c => {
-      if (statusFilter === "ACTIVE") {
-        if (c.status !== "ACTIVE" && c.status !== "PRIVATE" && c.status !== "PUBLISHED") return false;
-      } else if (statusFilter !== "ALL" && c.status !== statusFilter) {
-        return false;
-      }
-      if (selectedTutor !== "ALL" && c.tutorEmail.toLowerCase() !== selectedTutor.toLowerCase()) return false;
-      if (selectedSubject !== "ALL" && c.registration?.subjectName !== selectedSubject) return false;
-      if (searchKeyword.trim()) {
-        const q = searchKeyword.toLowerCase();
-        const matchName = c.name.toLowerCase().includes(q);
-        const matchTutorName = getTutorDisplayName(c).toLowerCase().includes(q);
-        const matchEmail = c.tutorEmail.toLowerCase().includes(q);
-        const matchSub = c.registration?.subjectName?.toLowerCase().includes(q);
-        const matchLevel = c.level?.name?.toLowerCase().includes(q);
-        return matchName || matchTutorName || matchEmail || matchSub || matchLevel;
-      }
       return true;
     });
-  }, [classes, statusFilter, selectedTutor, selectedSubject, searchKeyword]);
-
-  // Statistics
-  const stats = useMemo(() => {
-    return {
-      total: classes.length,
-      pending: classes.filter(c => c.status === "PENDING_APPROVAL").length,
-      active: classes.filter(c => c.status === "ACTIVE" || c.status === "PRIVATE" || c.status === "PUBLISHED").length,
-      rejected: classes.filter(c => c.status === "REJECTED").length
-    };
   }, [classes]);
 
   // Actions
@@ -344,10 +355,10 @@ export function ClassApprovalReview() {
           >
             <option value="ALL">-- Tất cả Môn học ({distinctSubjects.length}) --</option>
             {distinctSubjects.map(sub => {
-              const count = classes.filter(c => c.registration?.subjectName === sub).length;
+              const count = classes.filter(c => c.registration?.subjectId === sub.id).length;
               return (
-                <option key={sub} value={sub}>
-                  {sub} ({count} lớp)
+                <option key={sub.id} value={sub.id}>
+                  {sub.name} ({count} lớp)
                 </option>
               );
             })}
@@ -374,7 +385,9 @@ export function ClassApprovalReview() {
 
       {/* Table List */}
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-        {loading ? (
+        {error ? (
+          <ErrorState message={error} onRetry={() => loadClasses(false)} />
+        ) : loading ? (
           <div className="p-12 text-center">
             <div className="animate-spin w-8 h-8 border-4 border-brand-primary border-t-transparent rounded-full mx-auto mb-4" />
             <p className="text-xs font-bold text-slate-500">Đang tải danh sách lớp học...</p>
@@ -495,6 +508,19 @@ export function ClassApprovalReview() {
               </tbody>
             </table>
           </div>
+        )}
+        {!loading && !error && total > 0 && (
+          <Pager
+            page={page}
+            pages={pages}
+            total={total}
+            size={pageSize}
+            onChange={setPage}
+            onSizeChange={(nextSize) => {
+              setPageSize(nextSize);
+              setPage(0);
+            }}
+          />
         )}
       </div>
 

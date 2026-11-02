@@ -47,6 +47,8 @@ interface UrgentItem {
   targetSubtab?: string;
 }
 
+const pageItems = (value: any) => Array.isArray(value?.content) ? value.content : Array.isArray(value) ? value : [];
+
 export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
   const { user } = useAuth();
   const staffEmail = user?.email || "";
@@ -63,10 +65,6 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
   const [disputes, setDisputes] = useState<DisputeDto[]>([]);
   const [terminations, setTerminations] = useState<TerminationView[]>([]);
 
-  // History lists for today's stats
-  const [tutorHistory, setTutorHistory] = useState<any[]>([]);
-  const [teachingHistory, setTeachingHistory] = useState<any[]>([]);
-
   const loadAll = async (opts?: boolean | unknown) => {
     const isSilent = opts === true;
     if (!isSilent) {
@@ -80,28 +78,22 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         teachingPendingList,
         classList,
         disputePage,
-        terminationList,
-        tutorHistList,
-        teachingHistList
+        terminationPage
       ] = await Promise.all([
         fetchUserDirectory(),
-        staffTutorApi.pending().catch(() => []),
-        teachingRegistrationApi.adminPending().catch(() => []),
-        classApi.adminGetAllClasses().catch(() => []),
-        contractsApi.listDisputes({ page: 0, size: 50 }).catch(() => ({ content: [] })),
-        terminationsApi.list().catch(() => []),
-        staffTutorApi.history().catch(() => []),
-        teachingRegistrationApi.adminHistory().catch(() => [])
+        staffTutorApi.pending({ page: 0, size: 10 }).catch(() => ({ content: [] })),
+        teachingRegistrationApi.adminPending({ page: 0, size: 10 }).catch(() => ({ content: [] })),
+        classApi.adminGetAllClasses({ page: 0, size: 10, status: "PENDING_APPROVAL" }).catch(() => ({ content: [] })),
+        contractsApi.listDisputes({ statusGroup: "PENDING", page: 0, size: 10 }).catch(() => ({ content: [] })),
+        terminationsApi.page({ page: 0, size: 10 }).catch(() => ({ content: [] }))
       ]);
 
       setUsers(Array.isArray(userList) ? userList : []);
-      setPendingTutors(Array.isArray(tutorPendingList) ? tutorPendingList : []);
-      setPendingTeaching(Array.isArray(teachingPendingList) ? teachingPendingList : []);
-      setClasses(Array.isArray(classList) ? classList : []);
+      setPendingTutors(pageItems(tutorPendingList));
+      setPendingTeaching(pageItems(teachingPendingList));
+      setClasses(pageItems(classList));
       setDisputes(Array.isArray(disputePage?.content) ? disputePage.content : Array.isArray(disputePage) ? disputePage : []);
-      setTerminations(Array.isArray(terminationList) ? terminationList : []);
-      setTutorHistory(Array.isArray(tutorHistList) ? tutorHistList : []);
-      setTeachingHistory(Array.isArray(teachingHistList) ? teachingHistList : []);
+      setTerminations(pageItems(terminationPage));
     } catch (err: any) {
       setError(err?.message || "Không thể tải dữ liệu Trung tâm tác nghiệp.");
     } finally {
@@ -156,21 +148,8 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
     return terminations.filter((t) => t.request.status === "REQUESTED" || t.request.status === "HOLD_PENDING");
   }, [terminations]);
 
-  // Today's review count
-  const myReviewedToday = useMemo(() => {
-    const today = new Date().toDateString();
-    let count = 0;
-    tutorHistory.forEach((item) => {
-      if (item.reviewedAt && (isAdmin || sameEmail(item.reviewedByEmail, staffEmail)) && new Date(item.reviewedAt).toDateString() === today) count++;
-    });
-    teachingHistory.forEach((item) => {
-      if (item.reviewedAt && (isAdmin || sameEmail(item.reviewedByEmail, staffEmail)) && new Date(item.reviewedAt).toDateString() === today) count++;
-    });
-    classes.forEach((cls) => {
-      if (cls.reviewedAt && (isAdmin || sameEmail(cls.reviewedByEmail, staffEmail)) && new Date(cls.reviewedAt).toDateString() === today) count++;
-    });
-    return count;
-  }, [classes, isAdmin, staffEmail, teachingHistory, tutorHistory]);
+  // Cross-service daily totals belong to the dedicated report, not capped queue pages.
+  const myReviewedToday: number | null = null;
 
   // Build urgent prioritized queue
   const urgentQueue = useMemo<UrgentItem[]>(() => {
@@ -524,8 +503,8 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-center">
                 <p className="text-[10px] font-black uppercase text-slate-400">Đã xử lý hôm nay</p>
-                <p className="mt-1 text-2xl font-black text-[#073554]">{myReviewedToday}</p>
-                <p className="text-[10px] text-slate-500 font-semibold mt-0.5">thao tác đã ghi nhận</p>
+                <p className="mt-1 text-2xl font-black text-[#073554]">{myReviewedToday ?? "—"}</p>
+                <p className="text-[10px] text-slate-500 font-semibold mt-0.5">xem báo cáo chi tiết</p>
               </div>
 
               <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-center">

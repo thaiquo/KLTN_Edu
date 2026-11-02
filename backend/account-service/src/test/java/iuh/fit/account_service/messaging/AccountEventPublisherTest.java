@@ -1,10 +1,12 @@
 package iuh.fit.account_service.messaging;
 
 import iuh.fit.account_service.messaging.event.TutorApplicationSubmittedEvent;
+import iuh.fit.account_service.messaging.event.TutorRejectedEvent;
 import iuh.fit.account_service.service.StaffNotificationRecipientResolver;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -59,5 +61,29 @@ class AccountEventPublisherTest {
                 LocalDateTime.now()));
 
         verifyNoInteractions(rabbitTemplate);
+    }
+
+    @Test
+    void reviewEventIsPublishedOnlyAfterTransactionCommit() {
+        RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+        StaffNotificationRecipientResolver resolver = mock(StaffNotificationRecipientResolver.class);
+        AccountEventPublisher publisher = new AccountEventPublisher(rabbitTemplate, resolver);
+        var event = new TutorRejectedEvent("rejected-1", 10L, 20L, "Thiếu minh chứng", LocalDateTime.now());
+
+        TransactionSynchronizationManager.initSynchronization();
+        TransactionSynchronizationManager.setActualTransactionActive(true);
+        try {
+            publisher.publishTutorRejected(event);
+            verifyNoInteractions(rabbitTemplate);
+
+            TransactionSynchronizationManager.getSynchronizations().forEach(synchronization -> synchronization.afterCommit());
+            verify(rabbitTemplate).convertAndSend(
+                    AccountRabbitConfig.EXCHANGE,
+                    AccountRabbitConfig.TUTOR_REJECTED_ROUTING_KEY,
+                    event);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+            TransactionSynchronizationManager.setActualTransactionActive(false);
+        }
     }
 }
