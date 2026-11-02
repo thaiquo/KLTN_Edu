@@ -42,8 +42,7 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
             try {
                 Claims claims = Jwts.parser().verifyWith(secretKey).build()
                         .parseSignedClaims(request.getHeader("X-Service-Token")).getPayload();
-                String expectedScope = request.getRequestURI().startsWith("/api/learning/internal/contracts/")
-                        ? "contract-snapshot" : "learning-enrollment";
+                String expectedScope = expectedServiceScope(request.getRequestURI());
                 if (!"contract-service".equals(claims.getSubject())
                         || !expectedScope.equals(claims.get("serviceScope", String.class))
                         || claims.getExpiration() == null
@@ -133,6 +132,16 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private String expectedServiceScope(String requestUri) {
+        if (requestUri.startsWith("/api/learning/internal/contracts/")) {
+            return "contract-snapshot";
+        }
+        if ("/api/learning/internal/termination".equals(requestUri)) {
+            return "learning-termination";
+        }
+        return "learning-enrollment";
     }
 
     private List<String> extractTokens(HttpServletRequest request) {

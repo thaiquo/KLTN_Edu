@@ -85,6 +85,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      # Public Reown client identifier. Keep it versioned with the web release so
+      # a stale repository variable cannot silently break wallet initialization.
+      VITE_PROJECT_ID_WALLETCONNECT: 8cb9e1ffa64671cc0e67dec78579cc61
     steps:
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -102,6 +106,13 @@ jobs:
           test -n "$VITE_ESCROW_CONTRACT_ADDRESS"
           test -n "$VITE_USDC_CONTRACT_ADDRESS"
           test -n "$VITE_SEPOLIA_RPC_URL"
+          test -n "$VITE_PROJECT_ID_WALLETCONNECT"
+          curl --fail --silent --show-error \
+            --connect-timeout 5 \
+            --max-time 15 \
+            --header "Origin: $PRODUCTION_ORIGIN" \
+            "https://api.web3modal.org/appkit/v1/config?projectId=$VITE_PROJECT_ID_WALLETCONNECT&st=appkit&sv=react-ethers-1.8.23" \
+            >/dev/null
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
@@ -128,7 +139,7 @@ jobs:
             VITE_ESCROW_CONTRACT_ADDRESS=${{ vars.VITE_ESCROW_CONTRACT_ADDRESS }}
             VITE_USDC_CONTRACT_ADDRESS=${{ vars.VITE_USDC_CONTRACT_ADDRESS }}
             VITE_SEPOLIA_RPC_URL=${{ vars.VITE_SEPOLIA_RPC_URL }}
-            VITE_PROJECT_ID_WALLETCONNECT=${{ vars.VITE_PROJECT_ID_WALLETCONNECT }}
+            VITE_PROJECT_ID_WALLETCONNECT=${{ env.VITE_PROJECT_ID_WALLETCONNECT }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 

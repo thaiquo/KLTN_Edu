@@ -71,6 +71,15 @@ public class TerminationController {
         return service.act(id, body.action(), body.reason(), users.requireCurrentUser());
     }
 
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, Object>> responseStatus(ResponseStatusException error) {
+        String message = error.getReason() == null || error.getReason().isBlank()
+                ? "Không thể xử lý hồ sơ chấm dứt"
+                : error.getReason();
+        return ResponseEntity.status(error.getStatusCode())
+                .body(Map.of("status", error.getStatusCode().value(), "message", message));
+    }
+
     @PostMapping(value = "/{id}/evidence", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<TerminationService.View> uploadEvidence(
             @PathVariable UUID id,
