@@ -446,7 +446,7 @@ export function TerminationPanel({
       currentDisputes = [];
     }
     const pending = getPendingDisputes(termination, currentDisputes);
-    if (pending.length && type !== 'FORCE_APPROVE') {
+    if (pending.length) {
       const sessions = [...new Set(pending.map((d) => `#${d.sessionId}`))].join(', ');
       setComplaintBlockWarning(`Chưa thể xử lý yêu cầu này: cần giải quyết khiếu nại ở buổi ${sessions} trước. Khiếu nại chỉ giữ quyết toán các buổi đó; yêu cầu hủy lớp vẫn giữ nguyên trạng thái dừng lịch tương lai.`);
       setAction(null);
@@ -1307,6 +1307,7 @@ export function TerminationPanel({
             const automaticAbsenceWarning = isAutomaticAbsenceCase(c);
             const systemManagedTermination = isSystemManagedTermination(c);
             const adminDecisionAvailable = canAdminManuallyDecide(c);
+            const isPartyTerminationRequest = !c.origin || c.origin === 'PARTY_REQUEST';
             const absenceHoldSyncPending = c.status === 'HOLD_PENDING'
               && (automaticAbsenceWarning || c.absenceGovernanceVersion != null);
             const authoritativeNow = serverNow ? new Date(serverNow).getTime() : Number.NEGATIVE_INFINITY;
@@ -2192,7 +2193,7 @@ export function TerminationPanel({
                     <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
                       <span className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
                         <ClipboardCheck className="w-4 h-4 text-emerald-600" />
-                        {isStaff ? 'Theo dõi hồ sơ (chỉ đọc)' : 'Quyết định chấm dứt và xử lý hồ sơ'}
+                        {isStaff ? 'Theo dõi hồ sơ (chỉ đọc)' : 'Duyệt hoặc từ chối hồ sơ'}
                       </span>
                       <span className="text-[11px] font-bold text-slate-500">
                         Vai trò hiện tại: <strong className="text-slate-900 uppercase font-mono">{activeRole}</strong>
@@ -2224,7 +2225,7 @@ export function TerminationPanel({
                           Khi phê duyệt, hệ thống quyết toán các buổi đã diễn ra và hoàn phần cọc chưa sử dụng qua Smart Contract Escrow.
                         </p>
 
-                        {c.wholeClass && (!c.origin || c.origin === 'PARTY_REQUEST') && (
+                        {c.wholeClass && isPartyTerminationRequest && (
                           <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center gap-2">
                             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                             <span>Đang xử lý trực tiếp đề xuất Gia sư đã gửi. Không tạo hồ sơ mới, không chọn lại lớp hoặc hợp đồng; quyết định duyệt sẽ áp dụng cho toàn bộ hợp đồng ACTIVE của lớp này.</span>
@@ -2278,17 +2279,10 @@ export function TerminationPanel({
                                 }}
                                 disabled={busy || !warningReadyForNormalReview}
                               >
-                                <Check size={16} /> {c.wholeClass ? 'Duyệt hủy cả lớp và xử lý hoàn cọc' : 'Duyệt chấm dứt hợp đồng học viên'}
+                                <Check size={16} /> {c.wholeClass
+                                  ? (isPartyTerminationRequest ? 'Duyệt đề xuất hủy lớp' : 'Duyệt chấm dứt lớp')
+                                  : (isPartyTerminationRequest ? 'Duyệt yêu cầu chấm dứt' : 'Duyệt chấm dứt hợp đồng')}
                               </button>
-                              {isAdmin && (
-                                <button
-                                  className="px-4 py-2.5 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-black transition-all shadow-md inline-flex items-center gap-2 cursor-pointer"
-                                  onClick={() => beginManagerAction({ request: c, items, evidence }, 'FORCE_APPROVE')}
-                                  disabled={busy}
-                                >
-                                  <AlertTriangle size={16} /> {automaticAbsenceWarning ? 'Hủy lớp ngay (Không chờ giải trình)' : 'Hủy khẩn cấp theo quyền Admin'}
-                                </button>
-                              )}
                               <button
                                 className="px-4 py-2.5 rounded-xl bg-white hover:bg-red-50 text-red-700 border border-red-200 text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
                                 onClick={() => {
@@ -2296,7 +2290,9 @@ export function TerminationPanel({
                                 }}
                                 disabled={busy || (automaticAbsenceWarning && decisionDeadlinePassed)}
                               >
-                                <X size={15} /> {c.wholeClass ? (automaticAbsenceWarning ? 'Cho phép dạy tiếp (Kèm thử thách)' : 'Cho lớp tiếp tục (Từ chối hủy)') : 'Từ chối chấm dứt · Khôi phục phần học'}
+                                <X size={15} /> {c.wholeClass
+                                  ? (isPartyTerminationRequest ? 'Từ chối đề xuất hủy lớp' : 'Từ chối chấm dứt lớp')
+                                  : (isPartyTerminationRequest ? 'Từ chối yêu cầu chấm dứt' : 'Từ chối chấm dứt hợp đồng')}
                               </button>
                             </>
                           )}
@@ -2324,7 +2320,7 @@ export function TerminationPanel({
                           </button>
                         </div>
 
-                        {['APPROVE', 'FORCE_APPROVE'].includes(action.type) && (
+                        {action.type === 'APPROVE' && (
                           <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 leading-relaxed font-semibold">
                             ⚠️ <strong>Cảnh báo quan trọng:</strong> Hành động này sẽ dừng vĩnh viễn các buổi học tương lai của
                             {c.wholeClass ? ' TOÀN BỘ LỚP HỌC' : ' HỌC VIÊN NÀY'}. Hệ thống sẽ thực hiện quyết toán tiền các buổi đã dạy cho gia sư và hoàn trả toàn bộ số tiền cọc chưa dùng qua Smart Contract Escrow. Quyết định này không thể thu hồi.

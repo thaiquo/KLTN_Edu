@@ -355,22 +355,24 @@ class TerminationServiceTest {
         assertThat(created.getResponseDeadline()).isNull();
         verifyNoInteractions(learning);
     }
-    @Test void adminCanForceApproveAutomaticWarningWithAuditReason() {
-        var c = request("REQUESTED", true);
-        c.setOrigin("AUTO_TUTOR_ABSENCE");
-        c.setResponseDeadline(OffsetDateTime.now().plusHours(5));
-        a.setTerminationCutoffSession(1);
+    @Test void adminCannotForceApproveExistingProposalOrAutomaticWarning() {
+        for (String origin : List.of("PARTY_REQUEST", "AUTO_TUTOR_ABSENCE")) {
+            var c = request("REQUESTED", true);
+            c.setOrigin(origin);
+            c.setResponseDeadline(OffsetDateTime.now().plusHours(5));
+            a.setTerminationCutoffSession(1);
 
-        service.act(c.getId(), "FORCE_APPROVE", "Rủi ro nghiêm trọng, dừng ngay",
-                user(1, "admin@test.vn", "ADMIN"));
+            assertThatThrownBy(() -> service.act(c.getId(), "FORCE_APPROVE", "Rủi ro nghiêm trọng, dừng ngay",
+                    user(1, "admin@test.vn", "ADMIN")))
+                    .hasMessageContaining("hồ sơ ADMIN_DIRECT do Admin chủ động tạo");
 
-        assertThat(c.getStatus()).isEqualTo("APPROVED");
-        verify(items).save(any(TerminationItem.class));
+            assertThat(c.getStatus()).isEqualTo("REQUESTED");
+        }
+        verify(items, never()).save(any(TerminationItem.class));
     }
-    @Test void emergencyAdminDecisionBypassesDisputePreconditionAndLeavesSettlementToWorker() {
+    @Test void emergencyAdminDirectDecisionBypassesDisputePreconditionAndLeavesSettlementToWorker() {
         var c = request("REQUESTED", true);
-        c.setOrigin("AUTO_TUTOR_ABSENCE");
-        c.setResponseDeadline(OffsetDateTime.now().plusHours(5));
+        c.setOrigin("ADMIN_DIRECT");
         a.setTerminationCutoffSession(1);
 
         service.act(c.getId(), "FORCE_APPROVE", "Immediate safety decision",
