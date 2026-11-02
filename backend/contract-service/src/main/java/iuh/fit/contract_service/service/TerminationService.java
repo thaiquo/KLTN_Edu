@@ -154,6 +154,10 @@ public class TerminationService {
     private static final String ORIGIN_ADMIN = "ADMIN_DIRECT";
     static final String ORIGIN_SYSTEM_LATE_FUNDING = "SYSTEM_LATE_FUNDING";
     public static final String ORIGIN_AUTO_TUTOR_ABSENCE_RELAPSE = "AUTO_TUTOR_ABSENCE_RELAPSE";
+    private static final Set<String> SYSTEM_MANAGED_TERMINATION_ORIGINS = Set.of(
+            "TRIAL_OPT_OUT",
+            ORIGIN_SYSTEM_LATE_FUNDING,
+            ORIGIN_AUTO_TUTOR_ABSENCE_RELAPSE);
 
     public record ItemView(UUID agreementId, String status, String lastError, String transactionHash,
                            String refundedUnits, String studentName, int tokenDecimals, Long chainId,
@@ -707,6 +711,7 @@ public class TerminationService {
             }
             case "REJECT" -> {
                 if (!user.hasActiveAuthority("ADMIN")) fail(HttpStatus.FORBIDDEN, "Only Admin can reject termination and restore learning");
+                requireManualAdminDecisionAllowed(c);
                 requireStatus(c, "HOLD_PENDING", "REQUESTED", "RECOMMENDED");
                 requireNoPendingDisputes(c);
                 if (ORIGIN_AUTO_ABSENCE.equals(c.getOrigin())) {
@@ -742,6 +747,7 @@ public class TerminationService {
             }
             case "APPROVE", "FORCE_APPROVE" -> {
                 if (!user.hasActiveAuthority("ADMIN")) fail(HttpStatus.FORBIDDEN, "Only Admin can approve termination");
+                requireManualAdminDecisionAllowed(c);
                 requireStatus(c, "HOLD_PENDING", "REQUESTED", "RECOMMENDED");
                 if ("APPROVE".equals(action)) {
                     requireAutomaticWarningReady(c);
@@ -785,6 +791,19 @@ public class TerminationService {
         if (c.getResponseDeadline() != null && !OffsetDateTime.now().isBefore(c.getResponseDeadline())) return;
         fail(HttpStatus.CONFLICT,
                 "Gia sư chưa giải trình và thời hạn phản hồi chưa hết. Admin có thể dùng quyết định khẩn cấp nếu cần dừng lớp ngay.");
+    }
+
+    private static void requireManualAdminDecisionAllowed(TerminationCase c) {
+        if (SYSTEM_MANAGED_TERMINATION_ORIGINS.contains(c.getOrigin())) {
+            fail(HttpStatus.CONFLICT,
+                    "Hồ sơ này thuộc quy trình học thử/khôi phục tự động; Admin không thể phê duyệt hoặc từ chối thủ công");
+        }
+        if ("HOLD_PENDING".equals(c.getStatus())
+                && (ORIGIN_AUTO_ABSENCE.equals(c.getOrigin())
+                || c.getAbsenceGovernanceVersion() != null)) {
+            fail(HttpStatus.CONFLICT,
+                    "HOLD cảnh báo vắng học chưa đồng bộ xong; hãy chờ hồ sơ chuyển sang REQUESTED trước khi Admin quyết định");
+        }
     }
 
     private void requireNoPendingDisputes(TerminationCase termination) {

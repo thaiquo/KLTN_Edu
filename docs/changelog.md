@@ -2,6 +2,13 @@
 
 ---
 
+## 02/11/2026 — Chặn quyết định Admin sai luồng khi HOLD chưa an toàn
+
+- Giữ thao tác Duyệt/Từ chối cho đề xuất chấm dứt thông thường ở `HOLD_PENDING`; khi duyệt, Contract Service phải đồng bộ Learning HOLD và có cutoff hợp lệ trước khi tạo `TerminationItem`.
+- Chặn cả frontend lẫn backend không cho Admin phê duyệt/từ chối thủ công các hồ sơ tự động `TRIAL_OPT_OUT`, `SYSTEM_LATE_FUNDING`, `AUTO_TUTOR_ABSENCE_RELAPSE`; cảnh báo vắng học phải đồng bộ HOLD xong và chuyển sang `REQUESTED` trước khi Admin quyết định.
+- Giao diện phân biệt “đề xuất Gia sư” với “hồ sơ dừng do hệ thống”, hiển thị trạng thái đồng bộ thay vì nút tài chính không hợp lệ.
+- Kiểm chứng: 54/54 `TerminationServiceTest`, toàn bộ contract-service 320 test (312 pass, 8 Anvil skip), frontend typecheck/build và 4 test phân quyền portal đều đạt.
+
 ## 02/11/2026 — Mở đúng hồ sơ đề xuất hủy lớp cho Admin
 
 - Nút `Xử lý đề xuất ngay` trên từng lớp truyền đúng mã hồ sơ chấm dứt (`caseId`), mở thẳng hồ sơ đã có và cuộn tới khu vực quyết định của Admin.
