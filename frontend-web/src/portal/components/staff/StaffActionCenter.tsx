@@ -208,7 +208,7 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         requesterEmail: requester.email,
         createdAt: t.request.createdAt,
         urgency: "HIGH",
-        urgencyLabel: "Cần thẩm định đề xuất",
+        urgencyLabel: "Chờ Admin xử lý",
         urgencyTone: "rose",
         targetPage: "contracts"
       });
@@ -386,10 +386,10 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
           icon={ShieldCheck}
           title="Hồ sơ dừng hợp đồng"
           count={pendingTerminations.length}
-          countLabel="đơn cần thẩm định"
-          description="Xem hồ sơ được phân công, kiểm tra minh chứng và kiến nghị Admin quyết định."
+          countLabel="hồ sơ đang theo dõi"
+          description="Theo dõi hồ sơ chấm dứt của lớp được phân công; Admin trực tiếp xử lý và quyết định."
           badgeTone="purple"
-          actionLabel="Xem và thẩm định"
+          actionLabel="Xem hồ sơ"
           onClick={() => onNavigate("contracts")}
           loading={loading}
         />
@@ -528,7 +528,7 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
                 <strong className="text-slate-900">{activeDisputes.length}</strong>
               </div>
               <div className="flex items-center justify-between">
-                <span>Thanh lý cần thẩm định:</span>
+                <span>Thanh lý đang theo dõi:</span>
                 <strong className="text-slate-900">{pendingTerminations.length}</strong>
               </div>
             </div>
@@ -547,7 +547,7 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
           <section className="rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/60 to-white p-5 shadow-sm space-y-3 text-xs">
             <h4 className="font-black text-indigo-950 flex items-center gap-2">
               <Scale className="h-4 w-4 text-indigo-600" />
-              Quy chuẩn thẩm định cho Staff
+              Quy chuẩn vận hành cho Staff
             </h4>
             <ul className="space-y-2 text-indigo-900/80 font-medium leading-relaxed list-disc list-inside">
               <li>
@@ -560,7 +560,7 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
                 <strong>Khiếu nại:</strong> Đợi gia sư giải trình trong 24 giờ. Sau 24h hoặc khi gia sư đã trả lời, Staff có quyền phân xử on-chain.
               </li>
               <li>
-                <strong>Thanh lý hợp đồng:</strong> Staff thẩm định và gửi khuyến nghị; Admin sẽ là người phê duyệt quyết toán cuối cùng.
+                <strong>Thanh lý hợp đồng:</strong> Staff chỉ theo dõi hồ sơ của lớp được phân công; Admin trực tiếp xem xét, quyết định và xử lý quyết toán.
               </li>
             </ul>
           </section>

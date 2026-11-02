@@ -157,7 +157,7 @@ Mọi thao tác chấm dứt hợp đồng đơn phương (Student) hoặc đề
   - Nếu chữ ký giả mạo, hoặc ví MetaMask không khớp ví hợp đồng, yêu cầu lập tức bị từ chối ở tầng backend.
 - **Hold vận hành và thực thi On-chain**:
   - Khi tiếp nhận chữ ký, hệ thống giữ cutoff tại Learning và Contract nhưng chưa gửi giao dịch blockchain. Hold/release có trạng thái retry bền khi liên service tạm gián đoạn.
-  - Sau Staff đề xuất (`RECOMMEND`) hoặc Admin phê duyệt trực tiếp (`APPROVE`), hệ thống giữ nguyên cutoff đã chụp.
+  - Admin phê duyệt trực tiếp (`APPROVE`) hoặc từ chối (`REJECT`) từ hồ sơ `REQUESTED`; hệ thống giữ nguyên cutoff đã chụp trong lúc chờ quyết định. `RECOMMENDED` chỉ còn được đọc để tương thích dữ liệu lịch sử, không còn là bước nghiệp vụ mới.
   - **Quy tắc thời hạn quyết toán & Hoàn cọc:** Cửa sổ 24 giờ là thời hạn khiếu nại của từng buổi học đã dạy trước cutoff, không phải thời hạn chờ bắt buộc sau khi Admin duyệt. Worker kiểm tra các buổi học liên quan: ngay sau khi tất cả các buổi học trước cutoff hoàn tất quyết toán (sau 24h khiếu nại hoặc phán quyết xong), worker lập tức gọi `cancelAgreementAndRefundUnused(bytes32 agreementId, bytes32 resolutionHash)` qua Arbitrator để hoàn cọc còn dư (`remainingDeposit`) về ví học viên.
   - **Bằng chứng giao dịch thực tế trên Sepolia:**
     - Transaction hash: [`0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b`](https://sepolia.etherscan.io/tx/0x11c562e5ef55a84923cc3535dc7c30400d5252790c62ccf8411be005f4f06d6b).

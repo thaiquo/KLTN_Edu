@@ -163,7 +163,7 @@ Termination API prefix: `/api/contracts/terminations`.
 | `GET` | `/api/contracts/terminations/refunds` | Role-scoped refund/financial progress; Student sees only own relevant agreement items. |
 | `POST` | `/api/contracts/terminations` | Student agreement termination or Tutor whole-class cancellation with EIP-712 verification. |
 | `POST` | `/api/contracts/terminations/admin` | Admin operational stop/cancel request. |
-| `POST` | `/api/contracts/terminations/{id}/actions` | Respond/recommend/approve/reject/force action according to role and state. |
+| `POST` | `/api/contracts/terminations/{id}/actions` | Party response or Admin-only approve/reject/force decision according to state. Legacy `RECOMMEND` is rejected; Staff access is read-only. |
 | `POST multipart` | `/api/contracts/terminations/{id}/evidence` | Upload termination evidence. |
 | `GET` | `/api/contracts/terminations/{id}/evidence/{evidenceId}/content` | Download authorized evidence. |
 

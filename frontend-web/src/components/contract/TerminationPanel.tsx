@@ -45,8 +45,8 @@ import { Pager } from '../../portal/components/OperationalUi';
 const labels: Record<string, string> = {
   HOLD_PENDING: 'Đang tạm dừng lịch học',
   RELEASE_PENDING: 'Đang khôi phục lịch học',
-  REQUESTED: 'Chờ thẩm định hoặc quyết định của Admin',
-  RECOMMENDED: 'Đã thẩm định (Chờ Admin duyệt)',
+  REQUESTED: 'Chờ Admin xem xét và quyết định',
+  RECOMMENDED: 'Trạng thái lịch sử (Chờ Admin quyết định)',
   APPROVED: 'Admin đã duyệt - đang quyết toán, chưa hoàn tiền xong',
   REJECTED: 'Đã từ chối (Khôi phục lớp học)',
   COMPLETED: 'Hoàn tất chấm dứt & hoàn tiền',
@@ -57,7 +57,7 @@ const labels: Record<string, string> = {
   TRANSACTION_FAILED: 'Giao dịch cần kiểm tra lại',
   WAITING_REFUND_EVENT: 'Chờ hoàn tiền Escrow Smart Contract',
   RESPOND: 'Phản hồi/giải trình từ bên hợp đồng',
-  RECOMMEND: 'Staff/Admin thẩm định chấm dứt',
+  RECOMMEND: 'Bước kiến nghị cũ (đã ngừng sử dụng)',
   APPROVE: 'Admin phê duyệt chấm dứt',
   FORCE_APPROVE: 'Admin quyết định hủy khẩn cấp',
   REJECT: 'Từ chối đề xuất',
@@ -365,8 +365,8 @@ export function TerminationPanel({
   }, [classroomMap]);
 
   const beginManagerAction = async (termination: TerminationView, type: string) => {
-    if (!isAdmin && !(isStaff && type === 'RECOMMEND')) {
-      setError('Chỉ Admin được quyết định phê duyệt hoặc từ chối chấm dứt. Staff chỉ được thẩm định và kiến nghị.');
+    if (!isAdmin) {
+      setError('Staff chỉ được xem và theo dõi hồ sơ chấm dứt. Chỉ Admin được xử lý và ra quyết định.');
       return;
     }
     let currentDisputes = disputes;
@@ -539,11 +539,11 @@ export function TerminationPanel({
     }
   };
 
-  // Handle Staff/Admin action review
+  // Only Admin may submit a termination decision. Staff access is read-only.
   const handleManagerReview = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!action) return;
-    if (!isAdmin && !(isStaff && action.type === 'RECOMMEND')) {
+    if (!isAdmin) {
       setAction(null);
       setError('Vai trò hiện tại không có quyền gửi quyết định này.');
       return;
@@ -556,7 +556,7 @@ export function TerminationPanel({
       setAction(null);
       setReviewReason('');
       setComplaintBlockWarning('');
-      setSuccess(`${action.type === 'RECOMMEND' ? (isStaff ? 'Đã gửi kiến nghị lên Admin' : 'Đã ghi nhận thẩm định') : 'Đã lưu quyết định của Admin'}. ${terminationProgressText(updated)}.`);
+      setSuccess(`Đã lưu quyết định của Admin. ${terminationProgressText(updated)}.`);
       await load();
     } catch (e) {
       const text = message(e);
@@ -676,7 +676,7 @@ export function TerminationPanel({
                 <h2 className="text-xl font-display font-black text-slate-900">
                   {isTutor && 'Bảng Theo Dõi Chấm Dứt & Quyết Toán (Gia Sư)'}
                   {isStudent && 'Hồ Sơ Chấm Dứt Hợp Đồng Của Tôi'}
-                  {isStaff && 'Bàn Làm Việc Thẩm Định Hồ Sơ Chấm Dứt (Staff)'}
+                  {isStaff && 'Theo Dõi Hồ Sơ Chấm Dứt (Staff)'}
                   {isAdmin && 'Bảng Quản Trị Phê Duyệt & Quyết Toán Escrow (Admin)'}
                 </h2>
                 <span
@@ -692,14 +692,14 @@ export function TerminationPanel({
                 >
                   {isTutor && 'GIA SƯ • THEO DÕI'}
                   {isStudent && 'HỌC VIÊN • NỘP MINH CHỨNG'}
-                  {isStaff && 'STAFF • THẨM ĐỊNH'}
+                  {isStaff && 'STAFF • CHỈ THEO DÕI'}
                   {isAdmin && 'ADMIN • PHÊ DUYỆT'}
                 </span>
               </div>
               <p className="text-xs text-slate-500 font-semibold mt-0.5">
                 {isTutor && 'Theo dõi tình trạng học viên xin nghỉ đơn phương hoặc tiến trình đề xuất dừng lớp. Bảo vệ thù lao các buổi đã dạy.'}
                 {isStudent && 'Theo dõi tiến độ xét duyệt đơn, đính kèm file minh chứng hoặc gửi thêm lời nhắn giải thích để nhận hoàn tiền cọc.'}
-                {isStaff && 'Xem hồ sơ được phân công, kiểm tra lý do và minh chứng của học viên hoặc gia sư, rồi gửi kiến nghị cho Admin. Chỉ Admin quyết định hủy hoặc khôi phục.'}
+                {isStaff && 'Chỉ xem và theo dõi hồ sơ chấm dứt của lớp được phân công. Staff không gửi kiến nghị và không thực hiện bất kỳ thao tác xử lý nào; toàn bộ quyết định thuộc Admin.'}
                 {isAdmin && 'Cấp phê duyệt tối cao: Chốt quyết toán các buổi đã dạy cho gia sư và hoàn tiền cọc Escrow về ví học viên.'}
               </p>
             </div>
@@ -795,7 +795,7 @@ export function TerminationPanel({
           }`}
         >
           <span className={`text-[10px] font-black uppercase tracking-wider block ${statusFilter === 'PENDING' ? 'text-amber-100' : 'text-amber-700'}`}>
-            Chờ thẩm định
+            Chờ Admin xử lý
           </span>
           <span className={`text-2xl font-display font-black ${statusFilter === 'PENDING' ? 'text-white' : 'text-amber-900'}`}>
             {stats.pending}
@@ -811,7 +811,7 @@ export function TerminationPanel({
           }`}
         >
           <span className={`text-[10px] font-black uppercase tracking-wider block ${statusFilter === 'RECOMMENDED' ? 'text-indigo-100' : 'text-indigo-700'}`}>
-            Đã đề xuất
+            Trạng thái cũ
           </span>
           <span className={`text-2xl font-display font-black ${statusFilter === 'RECOMMENDED' ? 'text-white' : 'text-indigo-900'}`}>
             {stats.recommended}
@@ -928,10 +928,10 @@ export function TerminationPanel({
           <div className="flex items-center justify-between">
             <span className="font-extrabold text-blue-950 flex items-center gap-2 text-sm">
               <ShieldCheck className="w-4 h-4 text-blue-600" />
-              Quy trình 5 bước chấm dứt hợp đồng & quyết toán Escrow Smart Contract
+              Quy trình 4 bước chấm dứt hợp đồng & quyết toán Escrow Smart Contract
             </span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-2.5 pt-1">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 pt-1">
             <div className="p-3 rounded-2xl bg-white border border-blue-100 space-y-1">
               <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-mono font-black text-[10px]">1</span>
               <p className="font-bold text-slate-900">Ký số EIP-712</p>
@@ -944,18 +944,13 @@ export function TerminationPanel({
             </div>
             <div className="p-3 rounded-2xl bg-white border border-blue-100 space-y-1">
               <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-mono font-black text-[10px]">3</span>
-              <p className="font-bold text-slate-900">Thẩm định (Staff)</p>
-              <p className="text-[11px] text-slate-500 leading-snug">Staff kiểm tra lý do, kiểm tra minh chứng do học viên nộp và đối chiếu tiến độ lớp.</p>
+              <p className="font-bold text-slate-900">Admin xem xét & quyết định</p>
+              <p className="text-[11px] text-slate-500 leading-snug">Admin trực tiếp xem hồ sơ, lý do, minh chứng và quyết định chấp thuận hoặc từ chối chấm dứt.</p>
             </div>
             <div className="p-3 rounded-2xl bg-white border border-blue-100 space-y-1">
-              <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center font-mono font-black text-[10px]">4</span>
-              <p className="font-bold text-slate-900">Đề xuất chấm dứt</p>
-              <p className="text-[11px] text-slate-500 leading-snug">Staff thẩm định và gửi đề xuất lên Admin. Admin quyết định hủy hoặc khôi phục lớp.</p>
-            </div>
-            <div className="p-3 rounded-2xl bg-white border border-blue-100 space-y-1">
-              <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-mono font-black text-[10px]">5</span>
-              <p className="font-bold text-slate-900">Admin Duyệt & Quyết toán</p>
-              <p className="text-[11px] text-slate-500 leading-snug">Admin APPROVE: Quyết toán tiền buổi đã dạy cho gia sư, hoàn số dư cọc còn lại cho học viên.</p>
+              <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center font-mono font-black text-[10px]">4</span>
+              <p className="font-bold text-slate-900">Quyết toán & hoàn cọc</p>
+              <p className="text-[11px] text-slate-500 leading-snug">Sau khi Admin duyệt, hệ thống quyết toán tiền buổi đã dạy và hoàn số dư cọc còn lại theo trạng thái on-chain.</p>
             </div>
           </div>
         </div>
@@ -1432,7 +1427,7 @@ export function TerminationPanel({
                         : c.status === 'REJECTED'
                         ? 'Hồ sơ không được chấp thuận. Lớp hoặc lịch của học viên tiếp tục theo trạng thái đã khôi phục.'
                         : c.wholeClass
-                        ? 'Đề xuất dừng lớp của bạn đang được Staff & Admin thẩm định. Hệ thống bảo lưu các buổi bạn đã giảng dạy để quyết toán thù lao.'
+                        ? 'Đề xuất dừng lớp của bạn đang chờ Admin xem xét. Hệ thống bảo lưu các buổi bạn đã giảng dạy để quyết toán thù lao.'
                         : `Lịch học tương lai của học viên ${studentName} đã được tạm dừng. Gia sư chỉ cần theo dõi tiến trình xử lý tại đây; toàn bộ thù lao các buổi bạn đã dạy sẽ được đảm bảo quyết toán đầy đủ khi hồ sơ được duyệt.`}
                     </p>
                   </div>
@@ -1475,7 +1470,7 @@ export function TerminationPanel({
                         ? 'Yêu cầu hủy lớp đã bị từ chối. Lịch học tương lai được khôi phục.'
                         : c.status === 'APPROVED'
                         ? `Admin đã duyệt. Lớp đang LOCKED, các buổi tương lai đã dừng; ${affectedAgreements.length} hợp đồng được quyết toán riêng trên Escrow trước khi lớp được hủy hoàn toàn.`
-                        : 'Lớp chưa bị hủy. Hệ thống chỉ đang giữ các buổi tương lai để Admin/Staff xem xét; điểm danh và lịch sử buổi đã diễn ra vẫn được bảo toàn để quyết toán.'}
+                        : 'Lớp chưa bị hủy. Hệ thống chỉ đang giữ các buổi tương lai để Admin xem xét; điểm danh và lịch sử buổi đã diễn ra vẫn được bảo toàn để quyết toán.'}
                     </p>
                   ) : (
                     <p className="mt-1.5 text-sky-900">
@@ -1670,13 +1665,13 @@ export function TerminationPanel({
                           </div>
                         )}
                         <label className="text-xs font-bold text-slate-700 block">
-                          2. Lời nhắn / Giải thích thêm cho Staff & Admin (Tùy chọn):
+                          2. Lời nhắn / Giải thích thêm cho Admin (Tùy chọn):
                         </label>
                         <textarea
                           className="w-full rounded-xl border border-slate-300 p-3 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
                           maxLength={5000}
                           rows={3}
-                          placeholder="Nhập chi tiết lời giải thích hoàn cảnh, lý do hoặc thông tin thêm để Staff & Admin xem xét duyệt nhanh hơn..."
+                          placeholder="Nhập chi tiết hoàn cảnh, lý do hoặc thông tin bổ sung để Admin xem xét..."
                           value={stagedNotesMap[c.id] || ''}
                           onChange={(e) => setStagedNotesMap((prev) => ({ ...prev, [c.id]: e.target.value }))}
                           disabled={submittingCaseId === c.id}
@@ -2073,7 +2068,7 @@ export function TerminationPanel({
                                         : isTutorActor
                                         ? 'Gia sư'
                                         : isStaffActor
-                                        ? 'Staff kiểm duyệt'
+                                        ? 'Staff (lịch sử cũ)'
                                         : isAdminActor
                                         ? 'Admin quản trị'
                                         : entry.role}
@@ -2103,7 +2098,7 @@ export function TerminationPanel({
                     <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 pb-2">
                       <span className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
                         <ClipboardCheck className="w-4 h-4 text-emerald-600" />
-                        {isStaff ? 'Thẩm định hồ sơ và kiến nghị' : 'Quyết định chấm dứt và xử lý hồ sơ'}
+                        {isStaff ? 'Theo dõi hồ sơ (chỉ đọc)' : 'Quyết định chấm dứt và xử lý hồ sơ'}
                       </span>
                       <span className="text-[11px] font-bold text-slate-500">
                         Vai trò hiện tại: <strong className="text-slate-900 uppercase font-mono">{activeRole}</strong>
@@ -2114,24 +2109,13 @@ export function TerminationPanel({
                     {isStaff && (
                       <div className="space-y-3">
                         <p className="text-xs text-slate-600 leading-relaxed">
-                          <strong>Nhiệm vụ của Staff:</strong> Chỉ xem hồ sơ lớp được phân công, kiểm tra lý do, minh chứng và gửi kiến nghị cho Admin.
-                          Staff không được phê duyệt hủy, từ chối hủy, khôi phục lớp hoặc ra lệnh hoàn cọc.
+                          <strong>Phạm vi của Staff:</strong> Chỉ xem và theo dõi hồ sơ của lớp được phân công.
+                          Staff không gửi kiến nghị, không phê duyệt, không từ chối, không khôi phục lớp và không ra lệnh hoàn cọc.
                         </p>
                         <div className="flex flex-wrap items-center gap-2.5">
-                          {c.status === 'REQUESTED' && (
-                            <button
-                              className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:opacity-90 text-white text-xs font-black transition-all shadow-xs inline-flex items-center gap-1.5 cursor-pointer"
-                              onClick={() => {
-                                beginManagerAction({ request: c, items, evidence }, 'RECOMMEND');
-                              }}
-                              disabled={busy || !warningReadyForNormalReview}
-                            >
-                              <ClipboardCheck size={16} /> Đề xuất chấm dứt lên Admin
-                            </button>
-                          )}
                           {c.status === 'RECOMMENDED' && (
                             <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-200">
-                              ✓ Hồ sơ đã được kiến nghị thẩm định. Đang chờ Admin quyết định.
+                              Hồ sơ thuộc trạng thái lịch sử; đang chờ Admin quyết định trực tiếp.
                             </span>
                           )}
                         </div>
@@ -2148,29 +2132,18 @@ export function TerminationPanel({
                         {c.status === 'RECOMMENDED' && (
                           <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-bold text-indigo-900 flex items-center gap-2">
                             <ClipboardCheck className="w-4 h-4 text-indigo-600 shrink-0" />
-                            <span>Staff/Admin đã thẩm định hồ sơ này và gửi đề xuất chấm dứt lên bước phê duyệt cuối.</span>
+                            <span>Đây là trạng thái lịch sử từ quy trình cũ. Admin cần trực tiếp quyết định chấp thuận hoặc từ chối.</span>
                           </div>
                         )}
 
                         {c.status === 'REQUESTED' && (
                           <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-medium text-amber-900 flex items-center gap-2">
                             <Info className="w-4 h-4 text-amber-600 shrink-0" />
-                            <span>Hồ sơ đang ở trạng thái chờ thẩm định. Admin có thể trực tiếp phê duyệt quyết toán hoặc từ chối yêu cầu.</span>
+                            <span>Hồ sơ đang chờ Admin xem xét. Admin có thể trực tiếp phê duyệt quyết toán hoặc từ chối yêu cầu.</span>
                           </div>
                         )}
 
                         <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                          {c.status === 'REQUESTED' && (
-                            <button
-                              className="px-4 py-2.5 rounded-xl bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-bold transition-all inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                              onClick={() => {
-                                beginManagerAction({ request: c, items, evidence }, 'RECOMMEND');
-                              }}
-                              disabled={busy || !warningReadyForNormalReview}
-                            >
-                              <ClipboardCheck size={15} /> Thẩm định thay Staff · Gửi đề xuất
-                            </button>
-                          )}
                           {['REQUESTED', 'RECOMMENDED'].includes(c.status) && (
                             <>
                               <button
@@ -2240,15 +2213,13 @@ export function TerminationPanel({
                         )}
 
                         <label className="block space-y-1 text-xs font-bold text-slate-700">
-                          <span>Biên bản thẩm định / Ghi chú lý do: *</span>
+                          <span>Căn cứ quyết định / Ghi chú lý do: *</span>
                           <textarea
                             className="w-full rounded-xl border border-slate-300 p-3 text-xs focus:ring-2 focus:ring-blue-500 focus:outline-none transition-all"
                             required
                             maxLength={5000}
                             rows={3}
-                            placeholder={action.type === 'RECOMMEND'
-                              ? 'Nhập kết quả thẩm định và kiến nghị gửi Admin...'
-                              : 'Nhập căn cứ quyết định hoặc lý do từ chối...'}
+                            placeholder="Nhập căn cứ quyết định hoặc lý do từ chối..."
                             value={reviewReason}
                             onChange={(e) => setReviewReason(e.target.value)}
                             disabled={busy}
@@ -2262,7 +2233,7 @@ export function TerminationPanel({
                             disabled={busy || !reviewReason.trim()}
                           >
                             {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                            {action.type === 'RECOMMEND' ? 'Gửi kiến nghị cho Admin' : 'Xác nhận quyết định của Admin'}
+                            Xác nhận quyết định của Admin
                           </button>
                           <button
                             type="button"

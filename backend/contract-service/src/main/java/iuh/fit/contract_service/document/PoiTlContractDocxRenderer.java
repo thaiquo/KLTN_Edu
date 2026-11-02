@@ -74,7 +74,7 @@ public class PoiTlContractDocxRenderer implements ContractDocxRenderer {
                 addParagraph(document, "Học viên được quyền yêu cầu dừng sau khi buổi trải nghiệm hoàn tất và trước thời hạn "
                         + model.get("trialDeadline") + ". Hệ thống dùng thời điểm server tiếp nhận yêu cầu; tại hoặc sau thời hạn này quyền dừng theo chính sách trải nghiệm đóng lại.");
                 addParagraph(document, "Lịch xác định buổi trải nghiệm, buổi kế tiếp và thời hạn là bất biến kể từ khi quy trình ký hợp đồng bắt đầu. Việc tiếp tục học không yêu cầu ký lại hợp đồng.");
-                addParagraph(document, "Nếu Học viên không gửi yêu cầu trước thời hạn, chỉ quyền dừng học thử tự động đóng lại. Agreement tiếp tục theo điều khoản đã ký; mọi yêu cầu chấm dứt sau đó phải đi theo quy trình chấm dứt thông thường, có thẩm định và phê duyệt theo Điều 9 của Hợp đồng.");
+                addParagraph(document, "Nếu Học viên không gửi yêu cầu trước thời hạn, chỉ quyền dừng học thử tự động đóng lại. Agreement tiếp tục theo điều khoản đã ký; mọi yêu cầu chấm dứt sau đó phải đi theo quy trình chấm dứt thông thường và do Admin trực tiếp xem xét, quyết định theo Điều 9 của Hợp đồng.");
                 addParagraph(document, "Ký quỹ phải được xác nhận trước khi buổi trải nghiệm bắt đầu. Khi dừng đúng hạn, buổi đã học vẫn được quyết toán theo kết quả điểm danh; chỉ phần ký quỹ chưa sử dụng được hoàn sau khi các quyết toán bắt buộc và sự kiện blockchain được đối soát.");
             }
             document.write(output);

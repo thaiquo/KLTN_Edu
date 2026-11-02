@@ -460,7 +460,7 @@ export function TerminationRequestModal({
             </div>
 
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-3.5 text-xs leading-relaxed text-blue-900">
-              Gửi yêu cầu chỉ tạo tạm dừng vận hành. Hệ thống chưa hoàn tiền và chưa gửi giao dịch blockchain trước khi Admin phê duyệt; Staff phụ trách có thể thẩm định và kiến nghị, nhưng không quyết định thay Admin. Số tiền thực tế còn phụ thuộc các buổi đã bắt đầu, settlement và khiếu nại liên quan.
+              Gửi yêu cầu chỉ tạo tạm dừng vận hành. Hệ thống chưa hoàn tiền và chưa gửi giao dịch blockchain trước khi Admin trực tiếp xem xét, quyết định; Staff phụ trách chỉ được theo dõi hồ sơ. Số tiền thực tế còn phụ thuộc các buổi đã bắt đầu, settlement và khiếu nại liên quan.
             </div>
 
             <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-300 bg-white p-4 text-sm text-slate-700 transition-colors hover:border-amber-400 hover:bg-amber-50/40">

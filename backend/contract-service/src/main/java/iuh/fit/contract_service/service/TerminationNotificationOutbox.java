@@ -59,7 +59,7 @@ public class TerminationNotificationOutbox {
             var rows = jdbc.queryForList("SELECT c.id,a.id AS agreement_id,a.classroom_reviewer_email FROM termination_case c JOIN contract_agreement a ON a.id=c.anchor_agreement_id WHERE c.origin='AUTO_TUTOR_ABSENCE' AND c.status='REQUESTED' AND c.tutor_responded_at IS NULL AND c.response_deadline <= CURRENT_TIMESTAMP AND NOT EXISTS (SELECT 1 FROM termination_notification_outbox o WHERE o.event_id=CONCAT('termination:deadline:',CAST(c.id AS VARCHAR))) LIMIT 50");
             for (var row : rows) enqueue("termination:deadline:" + row.get("id"), new Intent(null,
                     (String) row.get("classroom_reviewer_email"), "Hồ sơ hủy lớp đã hết hạn giải trình",
-                    "Gia sư chưa phản hồi khi hết hạn. Staff có thể kiến nghị và Admin có thể quyết định; lớp tiếp tục tạm dừng.",
+                    "Gia sư chưa phản hồi khi hết hạn. Admin có thể xem hồ sơ và quyết định; lớp tiếp tục tạm dừng.",
                     "TERMINATION_DEADLINE_EXPIRED", "AGREEMENT", row.get("agreement_id").toString()));
         });
     }

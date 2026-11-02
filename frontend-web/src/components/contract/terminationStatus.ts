@@ -2,8 +2,8 @@ import type { TerminationItem, TerminationView } from '../../api/terminationsApi
 
 export const terminationCaseLabel = (status: string): string => ({
   HOLD_PENDING: 'Đang tạm dừng lịch học',
-  REQUESTED: 'Đã tiếp nhận, chờ thẩm định',
-  RECOMMENDED: 'Staff đã thẩm định, chờ Admin quyết định',
+  REQUESTED: 'Đã tiếp nhận, chờ Admin xem xét',
+  RECOMMENDED: 'Trạng thái lịch sử, chờ Admin quyết định',
   APPROVED: 'Admin đã duyệt, đang xử lý quyết toán và hoàn cọc',
   RELEASE_PENDING: 'Đang khôi phục lịch học',
   REJECTED: 'Đã từ chối, lịch học được khôi phục',
@@ -27,7 +27,7 @@ export const terminationProgressText = (termination: TerminationView): string =>
   const { request, items } = termination;
   if (request.status === 'REQUESTED') return request.origin === 'SYSTEM_REVIEW'
     ? 'Đề nghị xem xét · Chưa có quyết định dừng lớp'
-    : 'Đã dừng lịch tương lai thuộc phạm vi yêu cầu · Chờ thẩm định';
+    : 'Đã dừng lịch tương lai thuộc phạm vi yêu cầu · Chờ Admin xem xét';
   if (request.status !== 'APPROVED') return terminationCaseLabel(request.status);
   const outstanding = items.filter(item => item.status !== 'COMPLETED');
   if (outstanding.length === 0) return 'Đã duyệt, đang cập nhật trạng thái lớp';

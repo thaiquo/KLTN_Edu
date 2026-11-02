@@ -592,7 +592,7 @@ export function ContractDocumentModal({
               title={canUseTrialOptOut
                 ? "Dừng trong thời hạn trải nghiệm theo chính sách tự động"
                 : trialHasContinued
-                  ? "Thời hạn dừng học thử đã kết thúc; gửi yêu cầu chấm dứt thông thường để Staff/Admin xét duyệt"
+                  ? "Thời hạn dừng học thử đã kết thúc; gửi yêu cầu chấm dứt thông thường để Admin xem xét"
                   : "Học viên gửi yêu cầu kết thúc hợp đồng đơn phương với chữ ký số xác thực MetaMask"}
             >
               <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
@@ -823,7 +823,7 @@ export function ContractDocumentModal({
                   <p>10.2. Quyền dừng học thử: Sau khi buổi trải nghiệm hoàn thành, Học viên (Bên B) có quyền dừng hợp đồng trước thời điểm buổi học kế tiếp (Buổi {document.trialPolicy.nextSessionSequence || 2}) bắt đầu{document.trialPolicy.initialTrialDeadline ? ` (Hạn chót dự kiến: ${formatDate(document.trialPolicy.initialTrialDeadline, true)})` : ""}.</p>
                   <p>10.3. Yêu cầu dừng trong giai đoạn trải nghiệm được gửi qua hệ thống kèm chữ ký số EIP-712 từ đúng ví của Học viên trước deadline và được tự động chấp thuận theo chính sách mà không cần xét duyệt đơn phương.</p>
                   <p>10.4. Quyết toán và hoàn cọc: Buổi trải nghiệm được quyết toán theo kết quả điểm danh (85% Gia sư nếu đủ mặt, hoàn trả nếu Gia sư vắng mặt); toàn bộ học phí ký quỹ của các buổi học chưa học sẽ được Smart Contract Escrow hoàn trả về ví Học viên sau khi các buổi trước cutoff hoàn tất đối soát.</p>
-                  <p>10.5. Tự động tiếp tục: Nếu Học viên không gửi yêu cầu dừng trước hạn chót (serverReceivedAt &lt; trialDeadline), quyền dừng học thử tự động đóng lại và hợp đồng tiếp tục cho toàn bộ khóa học mà không cần ký lại hay nạp quỹ bổ sung. Sau thời điểm này, Học viên chỉ có thể sử dụng quy trình yêu cầu chấm dứt thông thường tại Điều 9 và phải chờ Staff/Admin xét duyệt.</p>
+                  <p>10.5. Tự động tiếp tục: Nếu Học viên không gửi yêu cầu dừng trước hạn chót (serverReceivedAt &lt; trialDeadline), quyền dừng học thử tự động đóng lại và hợp đồng tiếp tục cho toàn bộ khóa học mà không cần ký lại hay nạp quỹ bổ sung. Sau thời điểm này, Học viên chỉ có thể sử dụng quy trình yêu cầu chấm dứt thông thường tại Điều 9 và phải chờ Admin xem xét, quyết định.</p>
                 </Clause>
               )}
             </div>
@@ -884,7 +884,7 @@ export function ContractDocumentModal({
                   <p className="mt-1 text-xs leading-relaxed">
                     {activeTermination.request.status === 'HOLD_PENDING'
                       ? 'Hệ thống đã nhận hồ sơ và đang đồng bộ tạm dừng lịch với Learning. Quá trình này sẽ tự động thử lại nếu dịch vụ tạm gián đoạn.'
-                      : 'Các buổi tương lai sau cutoff đang được tạm dừng. Chưa có giao dịch hoàn tiền cho đến khi Staff xác minh và Admin phê duyệt.'}
+                      : 'Các buổi tương lai sau cutoff đang được tạm dừng. Chưa có giao dịch hoàn tiền cho đến khi Admin trực tiếp xem xét và phê duyệt.'}
                   </p>
                   {activeTermination.request.lastError && <p className="mt-2 text-xs font-semibold text-red-700">{activeTermination.request.lastError}</p>}
                 </div>

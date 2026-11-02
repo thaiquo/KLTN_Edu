@@ -773,7 +773,7 @@ export function TutorClassManagement() {
                         if (activeCase.request.status === "RECOMMENDED") {
                           return (
                             <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-800 border border-indigo-300 flex items-center gap-1 shadow-2xs">
-                              <Clock className="w-3 h-3 text-indigo-600 shrink-0" /> Staff đã đề xuất · Chờ Admin duyệt
+                              <Clock className="w-3 h-3 text-indigo-600 shrink-0" /> Trạng thái xử lý cũ · Chờ Admin duyệt
                             </span>
                           );
                         }
@@ -1120,7 +1120,7 @@ export function TutorClassManagement() {
                             ? 'Hệ thống đang đồng bộ tạm dừng lịch với Learning và sẽ tự động thử lại nếu dịch vụ tạm gián đoạn.'
                             : currentPendingTerm.request.status === 'APPROVED'
                             ? 'Admin đã duyệt. Lớp đang LOCKED, không nhận thêm học viên và các buổi sau cutoff đã dừng. Mỗi hợp đồng được settlement/refund riêng; lớp chỉ chuyển CANCELLED sau item cuối cùng.'
-                            : 'Lịch tương lai của lớp đang được tạm dừng theo cutoff. Chưa có giao dịch hoàn tiền; sau khi Staff xác minh và Admin phê duyệt, Escrow V1 sẽ xử lý từng hợp đồng và hoàn số dư chưa sử dụng về ví tương ứng.'}
+                            : 'Lịch tương lai của lớp đang được tạm dừng theo cutoff. Chưa có giao dịch hoàn tiền; sau khi Admin trực tiếp xem xét và phê duyệt, Escrow V1 sẽ xử lý từng hợp đồng và hoàn số dư chưa sử dụng về ví tương ứng.'}
                         </div>
                       </div>
                     );

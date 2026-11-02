@@ -58,7 +58,6 @@ class TerminationFlowIntegrationTest {
                 : user(a.getStudentId(), a.getStudentEmail(), "STUDENT");
         var wallet = wholeClass ? a.getTutorWallet() : a.getStudentWallet();
         var request = service.request(a.getId(), wholeClass, "Cannot continue", "0xsig-" + a.getId(), wallet, System.currentTimeMillis() / 1000L, requester);
-        service.act(request.request().getId(), "RECOMMEND", "Evidence reviewed", user(4, "staff@test.vn", "STAFF"));
         service.act(request.request().getId(), "APPROVE", "Approved", user(1, "admin@test.vn", "ADMIN"));
         return request.request().getId();
     }

@@ -2,6 +2,15 @@
 
 ---
 
+## 02/11/2026 — Chuẩn hóa Staff chỉ theo dõi hồ sơ chấm dứt hợp đồng
+
+- Staff chỉ xem và theo dõi hồ sơ chấm dứt thuộc lớp được phân công; không còn bước thẩm định/kiến nghị và API từ chối thao tác `RECOMMEND`.
+- Admin trực tiếp quyết định `APPROVE`, `FORCE_APPROVE` hoặc `REJECT`. Trạng thái `RECOMMENDED` chỉ được giữ để đọc dữ liệu và audit lịch sử, không tạo mới.
+- Giao diện Staff, văn bản hợp đồng, hướng dẫn học thử, báo cáo và tài liệu nghiệp vụ đã thống nhất thuật ngữ; trạng thái lịch sử không còn bị tính nhầm là đã duyệt.
+- Kiểm chứng: Contract suite 315 test (307 pass, 8 Anvil skip), frontend typecheck/build và 4 test phân quyền portal đều đạt.
+
+---
+
 ## 25/10/2026 — Hoàn Thiện Tự Động Hóa CI/CD Toàn Trình (Full Auto-CD), Kích Hoạt Bảo Vệ Nhánh Main, Phân Định Rõ Ràng Khóa Bảo Mật
 
 - **Tự động hóa triển khai Production (Full Auto-CD via GitHub Actions)**:

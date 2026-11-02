@@ -5,7 +5,7 @@
 Rà soát Contract, phần hold/release của Learning, tra người nhận tại Account,
 Bell và giao diện hủy lớp. Đây không phải xác nhận toàn bộ EduConnect hoàn thiện 100%.
 
-- Chỉ Admin quyết định duyệt, hủy khẩn cấp, từ chối/khôi phục lớp. Staff chỉ kiến nghị trong phạm vi được giao.
+- Chỉ Admin xem xét và quyết định duyệt, hủy khẩn cấp, từ chối/khôi phục lớp. Staff chỉ xem và theo dõi hồ sơ trong phạm vi được giao.
 - Sửa frontend chặn nhầm FORCE_APPROVE khi còn dispute; tiền vẫn chờ settlement đã xác nhận.
 - Giữ hồ sơ HOLD_PENDING khi Learning tạm ngắt lúc tạo lệnh khẩn cấp; UI báo cần Admin duyệt tiếp sau đồng bộ.
 - Giữ trạng thái thu gọn thẻ khi polling, sửa ranh giới đúng 6 giờ trong phép tính deadline.
