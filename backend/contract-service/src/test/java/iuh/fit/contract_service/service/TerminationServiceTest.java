@@ -246,15 +246,62 @@ class TerminationServiceTest {
     }
     @Test void adminCanApproveDirectlyFromHoldPending() {
         var c = request("HOLD_PENDING", false);
-        a.setTerminationCutoffSession(1);
         service.act(c.getId(), "APPROVE", "Verified directly by Admin", user(1, "admin@test.vn", "ADMIN"));
         assertThat(c.getStatus()).isEqualTo("APPROVED");
+        assertThat(a.getTerminationCutoffSession()).isEqualTo(1);
+        verify(learning).send(1L, 2L, a.getId(), false, "HOLD");
         verify(items).save(any(TerminationItem.class));
+    }
+    @Test void adminCannotApproveHoldPendingWhenLearningHoldStillFails() {
+        var c = request("HOLD_PENDING", false);
+        when(learning.send(1L, 2L, a.getId(), false, "HOLD"))
+                .thenThrow(new IllegalStateException("Learning unavailable"));
+
+        assertThatThrownBy(() -> service.act(c.getId(), "APPROVE", "Approve after hold",
+                user(1, "admin@test.vn", "ADMIN")))
+                .hasMessageContaining("Learning hold is not ready");
+
+        assertThat(c.getStatus()).isEqualTo("HOLD_PENDING");
+        assertThat(a.getTerminationCutoffSession()).isNull();
+        verify(items, never()).save(any());
     }
     @Test void adminCanRejectDirectlyFromHoldPending() {
         var c = request("HOLD_PENDING", false);
         service.act(c.getId(), "REJECT", "Rejected directly by Admin", user(1, "admin@test.vn", "ADMIN"));
         assertThat(c.getStatus()).isEqualTo("REJECTED");
+        verify(learning).send(1L, 2L, a.getId(), false, "RELEASE");
+    }
+    @Test void adminCannotManuallyDecideSystemManagedCases() {
+        for (String origin : List.of("TRIAL_OPT_OUT", TerminationService.ORIGIN_SYSTEM_LATE_FUNDING,
+                TerminationService.ORIGIN_AUTO_TUTOR_ABSENCE_RELAPSE)) {
+            for (String status : List.of("HOLD_PENDING", "REQUESTED", "RECOMMENDED")) {
+                for (String action : List.of("APPROVE", "FORCE_APPROVE", "REJECT")) {
+                    var c = request(status, false);
+                    c.setOrigin(origin);
+
+                    assertThatThrownBy(() -> service.act(c.getId(), action, "Manual override",
+                            user(1, "admin@test.vn", "ADMIN")))
+                            .hasMessageContaining("quy trình học thử/khôi phục tự động");
+                    assertThat(c.getStatus()).isEqualTo(status);
+                }
+            }
+        }
+        verifyNoInteractions(learning);
+        verify(items, never()).save(any());
+    }
+    @Test void adminCannotDecideAutomaticAbsenceWhileHoldIsPending() {
+        for (String action : List.of("APPROVE", "FORCE_APPROVE", "REJECT")) {
+            var c = request("HOLD_PENDING", true);
+            c.setOrigin("AUTO_TUTOR_ABSENCE");
+            c.setAbsenceGovernanceVersion((short) 1);
+
+            assertThatThrownBy(() -> service.act(c.getId(), action, "Decide too early",
+                    user(1, "admin@test.vn", "ADMIN")))
+                    .hasMessageContaining("HOLD cảnh báo vắng học chưa đồng bộ xong");
+            assertThat(c.getStatus()).isEqualTo("HOLD_PENDING");
+        }
+        verifyNoInteractions(learning);
+        verify(items, never()).save(any());
     }
     @Test void adminCanCreateAuditedWholeClassHoldWithoutPartySignature() {
         var view = service.adminRequest(a.getId(), true, "Vi phạm nghiêm trọng cần xác minh",

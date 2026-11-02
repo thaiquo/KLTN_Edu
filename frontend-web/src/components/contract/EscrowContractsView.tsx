@@ -1118,6 +1118,16 @@ export function EscrowContractsView({
             <div className="space-y-5">
               {classroomGroups.map((group) => {
                 const isExpanded = expandedClassKeys.has(group.key);
+                const activeClassTermination = terminationsList.find(({ request }) =>
+                  request.wholeClass
+                  && String(request.classroomId) === String(group.classroomId)
+                  && !['COMPLETED', 'REJECTED'].includes(request.status)
+                ) || terminationsList.find(({ request }) =>
+                  String(request.classroomId) === String(group.classroomId)
+                  && !['COMPLETED', 'REJECTED'].includes(request.status)
+                );
+                const isTutorTerminationProposal = !activeClassTermination?.request.origin
+                  || activeClassTermination.request.origin === 'PARTY_REQUEST';
                 return (
                   <div
                     key={group.key}
@@ -1144,7 +1154,8 @@ export function EscrowContractsView({
                             )}
                             {group.hasTerminationPending && (
                               <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black animate-pulse flex items-center gap-1 shadow-2xs">
-                                <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" /> Đang có đề xuất dừng / hủy lớp
+                                <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                {isTutorTerminationProposal ? 'Đang có đề xuất dừng / hủy lớp' : 'Đang có hồ sơ dừng lớp'}
                               </span>
                             )}
                           </div>
@@ -1218,28 +1229,24 @@ export function EscrowContractsView({
                         <div className="flex items-center gap-2 font-medium">
                           <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 animate-pulse" />
                           <span>
-                            Lớp học này đang có hồ sơ đề xuất dừng & hủy lớp. Các buổi học tương lai được bảo lưu và tiền cọc chưa dùng sẽ được hoàn theo phê duyệt của Admin.
+                            {isTutorTerminationProposal
+                              ? 'Lớp học này đang có đề xuất dừng và hủy lớp. Các buổi tương lai đang được giữ để Admin xem xét; tiền chỉ được ghi nhận hoàn sau quyết toán và xác nhận blockchain.'
+                              : 'Lớp học này đang có hồ sơ dừng do hệ thống quản trị. Mở hồ sơ để theo dõi trạng thái đồng bộ lịch, quyết toán và hoàn cọc.'}
                           </span>
                         </div>
                         <button
                           type="button"
                           onClick={() => {
-                            const selectedCase = terminationsList.find(({ request }) =>
-                              request.wholeClass
-                              && String(request.classroomId) === String(group.classroomId)
-                              && !['COMPLETED', 'REJECTED'].includes(request.status)
-                            ) || terminationsList.find(({ request }) =>
-                              String(request.classroomId) === String(group.classroomId)
-                              && !['COMPLETED', 'REJECTED'].includes(request.status)
-                            );
                             setSelectedTerminationClassroomId(group.classroomId);
                             setSelectedTerminationAgreementId(null);
-                            setSelectedTerminationCaseId(selectedCase?.request.id || null);
+                            setSelectedTerminationCaseId(activeClassTermination?.request.id || null);
                             setActiveTab('TERMINATIONS');
                           }}
                           className="px-3 py-1 rounded-xl bg-amber-200 hover:bg-amber-300 text-amber-950 text-xs font-black shrink-0 transition-colors shadow-2xs cursor-pointer"
                         >
-                          {activeRole === 'admin' ? 'Xử lý đề xuất ngay →' : 'Theo dõi tiến độ chấm dứt →'}
+                          {activeRole === 'admin' && isTutorTerminationProposal
+                            ? 'Xử lý đề xuất ngay →'
+                            : 'Theo dõi hồ sơ chấm dứt →'}
                         </button>
                       </div>
                     )}

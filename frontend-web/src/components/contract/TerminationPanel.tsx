@@ -132,6 +132,25 @@ interface TerminationPanelProps {
 }
 
 const UNRESOLVED_DISPUTE_STATUSES = new Set(['OPENING', 'OPEN', 'UNDER_REVIEW', 'RESOLUTION_PENDING', 'FAILED_RETRYABLE']);
+const SYSTEM_MANAGED_TERMINATION_ORIGINS = new Set([
+  'TRIAL_OPT_OUT',
+  'SYSTEM_LATE_FUNDING',
+  'AUTO_TUTOR_ABSENCE_RELAPSE',
+]);
+
+const isAutomaticAbsenceCase = (request: TerminationView['request']) =>
+  request.origin === 'AUTO_TUTOR_ABSENCE' || request.origin === 'AUTO_TUTOR_ABSENCE_RELAPSE';
+
+const isSystemManagedTermination = (request: TerminationView['request']) =>
+  SYSTEM_MANAGED_TERMINATION_ORIGINS.has(request.origin || '');
+
+const canAdminManuallyDecide = (request: TerminationView['request']) => {
+  if (isSystemManagedTermination(request)) return false;
+  if (request.status === 'HOLD_PENDING' && (isAutomaticAbsenceCase(request) || request.absenceGovernanceVersion != null)) {
+    return false;
+  }
+  return ['HOLD_PENDING', 'REQUESTED', 'RECOMMENDED'].includes(request.status);
+};
 
 const fetchAllDisputes = async (): Promise<DisputeDto[]> => {
   const first = await contractsApi.listDisputes({ page: 0, size: 50 });
@@ -1285,7 +1304,11 @@ export function TerminationPanel({
             const studentSettledUsdc = Math.max(0, studentEscrowPool - studentRefundUsdc);
             const auditEntries = parseAudit(c.auditJson);
             const ownEvidenceCount = evidence.filter((ev) => ev.submittedByRole.toLowerCase() === normalizedRole).length;
-            const automaticAbsenceWarning = c.origin === 'AUTO_TUTOR_ABSENCE' || c.origin === 'AUTO_TUTOR_ABSENCE_RELAPSE';
+            const automaticAbsenceWarning = isAutomaticAbsenceCase(c);
+            const systemManagedTermination = isSystemManagedTermination(c);
+            const adminDecisionAvailable = canAdminManuallyDecide(c);
+            const absenceHoldSyncPending = c.status === 'HOLD_PENDING'
+              && (automaticAbsenceWarning || c.absenceGovernanceVersion != null);
             const authoritativeNow = serverNow ? new Date(serverNow).getTime() : Number.NEGATIVE_INFINITY;
             const responseDeadlinePassed = !!c.responseDeadline && new Date(c.responseDeadline).getTime() <= authoritativeNow;
             const decisionDeadlinePassed = !!c.decisionDeadline && new Date(c.decisionDeadline).getTime() <= authoritativeNow;
@@ -1351,7 +1374,7 @@ export function TerminationPanel({
                   </div>
 
                   <div className="self-start sm:self-auto shrink-0 flex items-center gap-2 flex-wrap">
-                    {isAdmin && ['HOLD_PENDING', 'REQUESTED', 'RECOMMENDED'].includes(c.status) && (
+                    {isAdmin && adminDecisionAvailable && (
                       <button
                         type="button"
                         onClick={() => focusAdminDecision(c.id)}
@@ -2161,7 +2184,7 @@ export function TerminationPanel({
                   <div
                     id={`termination-decision-${c.id}`}
                     className={`rounded-2xl border p-4.5 space-y-3 scroll-mt-24 ${
-                      isAdmin && ['HOLD_PENDING', 'REQUESTED', 'RECOMMENDED'].includes(c.status)
+                      isAdmin && adminDecisionAvailable
                         ? 'border-blue-300 bg-blue-50/60 ring-2 ring-blue-100'
                         : 'border-slate-200 bg-slate-50/70'
                     }`}
@@ -2201,7 +2224,7 @@ export function TerminationPanel({
                           Khi phê duyệt, hệ thống quyết toán các buổi đã diễn ra và hoàn phần cọc chưa sử dụng qua Smart Contract Escrow.
                         </p>
 
-                        {c.wholeClass && c.origin !== 'ADMIN_DIRECT' && (
+                        {c.wholeClass && (!c.origin || c.origin === 'PARTY_REQUEST') && (
                           <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-900 flex items-center gap-2">
                             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                             <span>Đang xử lý trực tiếp đề xuất Gia sư đã gửi. Không tạo hồ sơ mới, không chọn lại lớp hoặc hợp đồng; quyết định duyệt sẽ áp dụng cho toàn bộ hợp đồng ACTIVE của lớp này.</span>
@@ -2215,10 +2238,26 @@ export function TerminationPanel({
                           </div>
                         )}
 
-                        {['HOLD_PENDING', 'REQUESTED'].includes(c.status) && (
+                        {systemManagedTermination && ['HOLD_PENDING', 'REQUESTED', 'RECOMMENDED'].includes(c.status) && (
+                          <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-xs font-semibold text-blue-900 flex items-center gap-2">
+                            <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                            <span>Hồ sơ này thuộc quy trình tự động của học thử, late-funding hoặc tái phạm vắng học. Hệ thống tự đồng bộ lịch và chuyển sang quyết toán; Admin chỉ theo dõi, không phê duyệt hoặc từ chối thủ công.</span>
+                          </div>
+                        )}
+
+                        {!systemManagedTermination && absenceHoldSyncPending && (
+                          <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-900 flex items-center gap-2">
+                            <Loader2 className="w-4 h-4 text-amber-600 shrink-0 animate-spin" />
+                            <span>Đang đồng bộ tạm giữ lịch học với Learning Service. Admin chỉ ra quyết định sau khi hồ sơ chuyển sang trạng thái chờ xem xét.</span>
+                          </div>
+                        )}
+
+                        {!systemManagedTermination && !absenceHoldSyncPending && ['HOLD_PENDING', 'REQUESTED'].includes(c.status) && (
                           <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-medium text-amber-900 flex items-center gap-2">
                             <Info className="w-4 h-4 text-amber-600 shrink-0" />
-                            <span>Hồ sơ đang chờ Admin xem xét. Admin có thể trực tiếp phê duyệt quyết toán hoặc từ chối yêu cầu.</span>
+                            <span>{c.status === 'HOLD_PENDING'
+                              ? 'Hồ sơ đang chờ đồng bộ tạm giữ lịch. Admin có thể quyết định, nhưng backend chỉ tạo thanh lý sau khi xác nhận HOLD và cutoff hợp lệ.'
+                              : 'Hồ sơ đang chờ Admin xem xét. Admin có thể trực tiếp phê duyệt quyết toán hoặc từ chối yêu cầu.'}</span>
                           </div>
                         )}
 
@@ -2230,7 +2269,7 @@ export function TerminationPanel({
                         )}
 
                         <div className="flex flex-wrap items-center gap-2.5 pt-1">
-                          {['HOLD_PENDING', 'REQUESTED', 'RECOMMENDED'].includes(c.status) && (
+                          {adminDecisionAvailable && (
                             <>
                               <button
                                 className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-95 text-white text-xs font-black transition-all shadow-md inline-flex items-center gap-2 cursor-pointer"
