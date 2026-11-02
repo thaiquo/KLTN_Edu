@@ -195,16 +195,26 @@ class TerminationServiceTest {
                 .hasMessageContaining("409");
         verify(cases, never()).saveAndFlush(any());
     }
-    @Test void assignedStaffCannotApproveFinancialTermination() {
-        var c = request("RECOMMENDED", false);
-        assertThatThrownBy(() -> service.act(c.getId(), "APPROVE", "Verified", user(4, "staff@test.vn", "STAFF")))
-                .hasMessageContaining("403");
+    @Test void assignedStaffCannotApproveOrForceApproveFinancialTermination() {
+        for (String action : List.of("APPROVE", "FORCE_APPROVE")) {
+            var c = request("RECOMMENDED", true);
+            assertThatThrownBy(() -> service.act(c.getId(), action, "Verified", user(4, "staff@test.vn", "STAFF")))
+                    .hasMessageContaining("403");
+            assertThat(c.getStatus()).isEqualTo("RECOMMENDED");
+        }
         verify(items, never()).save(any());
     }
     @Test void unassignedStaffCannotReview() {
         var c = request("REQUESTED", false);
         assertThatThrownBy(() -> service.act(c.getId(), "RECOMMEND", "Verified", user(4, "other@test.vn", "STAFF")))
                 .hasMessageContaining("404");
+    }
+    @Test void assignedStaffCanRecommendButCannotFinalizeWholeClassTermination() {
+        var c = request("REQUESTED", true);
+        service.act(c.getId(), "RECOMMEND", "Reviewed evidence", user(4, "staff@test.vn", "STAFF"));
+        assertThat(c.getStatus()).isEqualTo("RECOMMENDED");
+        assertThat(c.getAuditJson()).contains("staff@test.vn").contains("RECOMMEND");
+        verify(items, never()).save(any());
     }
     @Test void assignedStaffCannotRejectAnyTerminationOrigin() {
         for (String origin : List.of("PARTY_REQUEST", "ADMIN_DIRECT", "AUTO_TUTOR_ABSENCE", "SYSTEM_REVIEW")) {

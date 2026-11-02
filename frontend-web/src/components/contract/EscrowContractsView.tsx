@@ -100,7 +100,7 @@ const FILTER_TABS = [
   { value: 'ACTIVE', label: 'Đang học' },
   { value: 'WAITING_PAYMENT', label: 'Chờ nạp cọc' },
   { value: 'PENDING_SIGNATURE', label: 'Chờ ký' },
-  { value: 'TERMINATION_PENDING', label: 'Chấm dứt' },
+  { value: 'TERMINATION_PENDING', label: 'Có hồ sơ dừng' },
   { value: 'COMPLETED', label: 'Hoàn tất' },
   { value: 'HISTORY', label: 'Lịch sử' },
 ];
@@ -883,7 +883,7 @@ export function EscrowContractsView({
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <XCircle size={14} /> Chấm Dứt Hợp Đồng
+            <FileText size={14} /> Hồ Sơ Chấm Dứt
             {pendingTerminationsCount > 0 && (
               <span className="ml-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white shadow-xs animate-pulse">
                 {pendingTerminationsCount} chờ xử lý
@@ -1406,10 +1406,14 @@ export function EscrowContractsView({
                                               setActiveTab('TERMINATIONS');
                                             }}
                                             className="px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-bold border border-amber-300 transition-colors inline-flex items-center gap-1 cursor-pointer"
-                                            title="Theo dõi tiến độ chấm dứt hợp đồng"
+                                            title={activeRole === 'staff'
+                                              ? 'Xem và thẩm định hồ sơ; chỉ Admin quyết định chấm dứt'
+                                              : activeRole === 'admin'
+                                              ? 'Mở hồ sơ để xem xét và ra quyết định'
+                                              : 'Theo dõi tiến độ chấm dứt hợp đồng'}
                                           >
                                             <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
-                                            <span>Chấm dứt</span>
+                                            <span>{activeRole === 'staff' ? 'Xem hồ sơ' : activeRole === 'admin' ? 'Xử lý hồ sơ' : 'Theo dõi'}</span>
                                           </button>
                                         )}
 
