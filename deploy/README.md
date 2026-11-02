@@ -13,7 +13,10 @@ Before the first release, configure these GitHub repository variables:
 - `VITE_ESCROW_CONTRACT_ADDRESS`
 - `VITE_USDC_CONTRACT_ADDRESS`
 - `VITE_SEPOLIA_RPC_URL`
-- `VITE_PROJECT_ID_WALLETCONNECT`
+
+The public Reown/WalletConnect Project ID is versioned in the Web publish job,
+not stored as a secret repository variable. When rotating it, update the job and
+the Web fallback together, then verify the production origin in the Reown dashboard.
 
 The workflows publish immutable images tagged with the full Git commit SHA.
 After the one-time VPS/GitHub setup, the publish workflow deploys a successful

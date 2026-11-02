@@ -2,6 +2,14 @@
 
 ---
 
+## 02/11/2026 — Sửa đồng bộ HOLD 401 và cấu hình ví Web production
+
+- Sửa bộ lọc JWT nội bộ của Learning Service để endpoint chấm dứt hợp đồng dùng đúng scope `learning-termination`, thống nhất với token do Contract Service phát và với kiểm tra tại controller. Lỗi cũ khiến Learning trả HTTP 401, hồ sơ giữ ở `HOLD_PENDING` và Admin nhận HTTP 409 trước bước quyết toán.
+- Giữ chốt an toàn tài chính: khi HOLD chưa đồng bộ thành công, hệ thống chưa tạo khoản thanh lý/hoàn cọc và chưa gửi giao dịch blockchain; thao tác lặp lại không tạo hoàn tiền trùng.
+- Chuẩn hóa phản hồi lỗi hồ sơ chấm dứt để giao diện hiển thị lý do nghiệp vụ cụ thể thay vì chỉ hiện `Conflict`.
+- Web publish pin project ID Reown/WalletConnect đã được kiểm tra với production Origin và dừng CI nếu AppKit trả lỗi; tránh tiếp tục phát hành bundle chứa project ID bị HTTP 403.
+- Kiểm chứng: Learning 317/317 pass; Contract 321 test (313 pass, 8 Anvil skip); frontend typecheck, production build và 11 utility/access test đều pass. Production chỉ được xem là đã sửa sau khi merge và workflow deploy hoàn tất.
+
 ## 02/11/2026 — Tách hủy khẩn cấp khỏi màn hình duyệt đề xuất
 
 - Hồ sơ đề xuất của Gia sư/Học viên và cảnh báo vắng học chỉ còn hai quyết định rõ ràng: **Duyệt** hoặc **Từ chối**; bỏ nút `Hủy khẩn cấp theo quyền Admin` khỏi khu vực xét hồ sơ.

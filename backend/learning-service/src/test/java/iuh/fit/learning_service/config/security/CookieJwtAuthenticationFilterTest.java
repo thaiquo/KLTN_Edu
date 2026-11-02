@@ -218,6 +218,34 @@ class CookieJwtAuthenticationFilterTest {
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
+    @Test
+    void terminationEndpointAcceptsDedicatedServiceScope() throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/learning/internal/termination");
+        request.addHeader("X-Service-Token", serviceToken("learning-termination"));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getName()).isEqualTo("contract-service");
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities())
+                .extracting("authority")
+                .containsExactly("ROLE_INTERNAL_CONTRACT");
+    }
+
+    @Test
+    void terminationEndpointRejectsEnrollmentServiceScope() throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/learning/internal/termination");
+        request.addHeader("X-Service-Token", serviceToken("learning-enrollment"));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
     private String tutorToken(Date expiration) {
         return tutorToken(expiration, "APPROVED");
     }
@@ -232,6 +260,17 @@ class CookieJwtAuthenticationFilterTest {
                 .claim("tutorStatus", tutorStatus)
                 .issuedAt(new Date())
                 .expiration(expiration)
+                .signWith(secretKey)
+                .compact();
+    }
+
+    private String serviceToken(String scope) {
+        SecretKey secretKey = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
+        return Jwts.builder()
+                .subject("contract-service")
+                .claim("serviceScope", scope)
+                .issuedAt(new Date())
+                .expiration(Date.from(Instant.now().plusSeconds(60)))
                 .signWith(secretKey)
                 .compact();
     }
