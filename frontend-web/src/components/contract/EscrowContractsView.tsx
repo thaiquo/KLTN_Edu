@@ -127,6 +127,10 @@ export function EscrowContractsView({
     return params.get('classroomId') || params.get('classId') || null;
   });
   const [selectedTerminationAgreementId, setSelectedTerminationAgreementId] = useState<string | null>(null);
+  const [selectedTerminationCaseId, setSelectedTerminationCaseId] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('caseId');
+  });
   const location = useLocation();
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -134,6 +138,7 @@ export function EscrowContractsView({
       setActiveTab('TERMINATIONS');
       setSelectedTerminationClassroomId(params.get('classroomId'));
       setSelectedTerminationAgreementId(params.get('agreementId'));
+      setSelectedTerminationCaseId(params.get('caseId'));
     }
   }, [location.search]);
   const [selectedAgreementForPayment, setSelectedAgreementForPayment] = useState<AgreementPaymentDetails | null>(null);
@@ -413,11 +418,11 @@ export function EscrowContractsView({
 
   // Active termination map by agreement ID
   const activeTerminationMap = useMemo(() => {
-    const map = new Map<string, { status: string; wholeClass: boolean; reason: string; itemStatus?: string; transactionHash?: string | null }>();
+    const map = new Map<string, { caseId: string; status: string; wholeClass: boolean; reason: string; itemStatus?: string; transactionHash?: string | null }>();
     terminationsList.forEach((t) => {
       const isPending = !['COMPLETED', 'REJECTED'].includes(t.request.status);
       if (!isPending) return;
-      const info = { status: t.request.status, wholeClass: t.request.wholeClass, reason: t.request.reason };
+      const info = { caseId: t.request.id, status: t.request.status, wholeClass: t.request.wholeClass, reason: t.request.reason };
       const itemAgreementIds = new Set(t.items?.map((i) => i.agreementId) || []);
 
       if (t.request.anchorAgreementId) {
@@ -875,6 +880,7 @@ export function EscrowContractsView({
             onClick={() => {
               setSelectedTerminationClassroomId(null);
               setSelectedTerminationAgreementId(null);
+              setSelectedTerminationCaseId(null);
               setActiveTab('TERMINATIONS');
             }}
             className={`px-4 py-2 rounded-xl text-xs font-display font-black transition-all flex items-center gap-1.5 ${
@@ -1218,8 +1224,17 @@ export function EscrowContractsView({
                         <button
                           type="button"
                           onClick={() => {
+                            const selectedCase = terminationsList.find(({ request }) =>
+                              request.wholeClass
+                              && String(request.classroomId) === String(group.classroomId)
+                              && !['COMPLETED', 'REJECTED'].includes(request.status)
+                            ) || terminationsList.find(({ request }) =>
+                              String(request.classroomId) === String(group.classroomId)
+                              && !['COMPLETED', 'REJECTED'].includes(request.status)
+                            );
                             setSelectedTerminationClassroomId(group.classroomId);
                             setSelectedTerminationAgreementId(null);
+                            setSelectedTerminationCaseId(selectedCase?.request.id || null);
                             setActiveTab('TERMINATIONS');
                           }}
                           className="px-3 py-1 rounded-xl bg-amber-200 hover:bg-amber-300 text-amber-950 text-xs font-black shrink-0 transition-colors shadow-2xs cursor-pointer"
@@ -1260,7 +1275,7 @@ export function EscrowContractsView({
                                   address.toLowerCase() !== item.studentWallet.toLowerCase();
 
                                 const activeTermination = activeTerminationMap.get(item.id) || (item.terminationPending
-                                  ? { status: 'REQUESTED', wholeClass: false, reason: 'Yêu cầu thanh lý đang được xử lý' }
+                                  ? { caseId: '', status: 'REQUESTED', wholeClass: false, reason: 'Yêu cầu thanh lý đang được xử lý', itemStatus: undefined, transactionHash: null }
                                   : undefined);
 
                                 return (
@@ -1403,6 +1418,7 @@ export function EscrowContractsView({
                                             onClick={() => {
                                               setSelectedTerminationClassroomId(item.classroomId);
                                               setSelectedTerminationAgreementId(item.id);
+                                              setSelectedTerminationCaseId(activeTermination.caseId || null);
                                               setActiveTab('TERMINATIONS');
                                             }}
                                             className="px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-bold border border-amber-300 transition-colors inline-flex items-center gap-1 cursor-pointer"
@@ -1508,7 +1524,7 @@ export function EscrowContractsView({
                 const displayTutorEmail = item.tutorEmail || "Chưa cập nhật email";
 
                 const activeTermination = activeTerminationMap.get(item.id) || (item.terminationPending
-                  ? { status: 'REQUESTED', wholeClass: false, reason: 'Yêu cầu thanh lý đang được xử lý' }
+                  ? { caseId: '', status: 'REQUESTED', wholeClass: false, reason: 'Yêu cầu thanh lý đang được xử lý', itemStatus: undefined, transactionHash: null }
                   : undefined);
                 const terminationSessions = terminationSettlements[item.id] || [];
                 const openTerminationSessions = terminationSessions.filter((session) => isSettlementOpen(session.status));
@@ -1614,6 +1630,7 @@ export function EscrowContractsView({
                             onClick={() => {
                               setSelectedTerminationClassroomId(item.classroomId);
                               setSelectedTerminationAgreementId(item.id);
+                              setSelectedTerminationCaseId(activeTermination.caseId || null);
                               setActiveTab('TERMINATIONS');
                             }}
                             className="shrink-0 px-3 py-1.5 rounded-xl bg-amber-200/90 hover:bg-amber-300 text-amber-950 text-xs font-black transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
@@ -1984,9 +2001,11 @@ export function EscrowContractsView({
             onNavigate={onNavigate}
             selectedClassroomId={selectedTerminationClassroomId}
             selectedAgreementId={selectedTerminationAgreementId}
+            selectedCaseId={selectedTerminationCaseId}
             onClearClassFilter={() => {
               setSelectedTerminationClassroomId(null);
               setSelectedTerminationAgreementId(null);
+              setSelectedTerminationCaseId(null);
             }}
           />
         </div>
@@ -2064,6 +2083,7 @@ export function EscrowContractsView({
             setTerminationTargetAgreement(null);
             setSelectedTerminationClassroomId(classroomId);
             setSelectedTerminationAgreementId(null);
+            setSelectedTerminationCaseId(null);
             setActiveTab('TERMINATIONS');
             void fetchAgreements();
           }}
