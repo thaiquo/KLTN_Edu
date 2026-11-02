@@ -8,7 +8,7 @@ Additional whole-system audit: the internal Notification send endpoint previousl
 | --- | --- |
 | Student | Yêu cầu chấm dứt hợp đồng cá nhân, ký ví; xem tiến độ và số tiền của chính mình. Không hủy toàn lớp. |
 | Tutor | Đề xuất hủy cả lớp; nhận cảnh cáo, gửi giải trình, minh chứng và lịch bù. Phản hồi không tự khôi phục lớp. |
-| Staff | Hồ sơ thuộc lớp được phân công; thẩm định và kiến nghị. Không quyết định hủy/khôi phục. |
+| Staff | Chỉ xem và theo dõi hồ sơ thuộc lớp được phân công; không có thao tác xử lý. |
 | Admin | Dừng toàn lớp hoặc riêng hợp đồng, phê duyệt/từ chối, quyết định khẩn cấp. Hoàn tiền chờ quyết toán và xác nhận blockchain. |
 
 Quy tắc deadline cảnh cáo dùng lịch buổi tiếp theo và thời gian tối thiểu để gia sư

@@ -202,7 +202,7 @@ export function StaffReportsPage() {
       const entry = map.get(key)!;
       entry.total++;
       const s = String(act.status).toUpperCase();
-      if (["APPROVED", "APPROVE", "FORCE_APPROVE", "RECOMMENDED", "RESOLVED"].includes(s)) entry.approved++;
+      if (["APPROVED", "APPROVE", "FORCE_APPROVE", "RESOLVED"].includes(s)) entry.approved++;
       if (["REJECTED", "REJECT", "FAILED", "FAILED_RETRYABLE"].includes(s)) entry.rejected++;
       if (act.domain === "TUTOR_PROFILES" || act.domain === "TEACHING_REGISTRATION") entry.tutorCount++;
       if (act.domain === "CLASS_ROOMS") entry.classCount++;
@@ -707,7 +707,7 @@ function DatePill({ label, active, onClick }: { label: string; active: boolean; 
 
 function StatusPill({ value }: { value: string }) {
   const text = String(value || "--").toUpperCase();
-  const ok = ["APPROVED", "APPROVE", "FORCE_APPROVE", "RECOMMENDED", "RESOLVED"].includes(text);
+  const ok = ["APPROVED", "APPROVE", "FORCE_APPROVE", "RESOLVED"].includes(text);
   const bad = ["REJECTED", "REJECT", "FAILED", "FAILED_RETRYABLE"].includes(text);
   return (
     <span

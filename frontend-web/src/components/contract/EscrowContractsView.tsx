@@ -71,7 +71,7 @@ const TERMINATION_LABELS: Record<string, string> = {
   HOLD_PENDING: 'Đang đồng bộ tạm dừng',
   RELEASE_PENDING: 'Đang khôi phục lịch học',
   REQUESTED: 'Chờ xem xét',
-  RECOMMENDED: 'Đề xuất chấm dứt',
+  RECOMMENDED: 'Trạng thái xử lý cũ',
   APPROVED: 'Admin đã duyệt, đang xử lý hoàn cọc',
   REJECTED: 'Không chấp thuận',
   COMPLETED: 'Hoàn tất',
@@ -1407,7 +1407,7 @@ export function EscrowContractsView({
                                             }}
                                             className="px-2.5 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-bold border border-amber-300 transition-colors inline-flex items-center gap-1 cursor-pointer"
                                             title={activeRole === 'staff'
-                                              ? 'Xem và thẩm định hồ sơ; chỉ Admin quyết định chấm dứt'
+                                              ? 'Chỉ xem và theo dõi hồ sơ; Admin trực tiếp xử lý chấm dứt'
                                               : activeRole === 'admin'
                                               ? 'Mở hồ sơ để xem xét và ra quyết định'
                                               : 'Theo dõi tiến độ chấm dứt hợp đồng'}
@@ -1458,7 +1458,7 @@ export function EscrowContractsView({
                                                 }}
                                                 className="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[11px] font-bold border border-rose-200 transition-colors inline-flex items-center gap-1 cursor-pointer"
                                                 title={trial?.trialStatus === 'CONTINUED'
-                                                  ? 'Thời hạn dừng học thử đã kết thúc; yêu cầu này thuộc quy trình chấm dứt thông thường và cần Staff/Admin xét duyệt'
+                                                  ? 'Thời hạn dừng học thử đã kết thúc; yêu cầu này thuộc quy trình chấm dứt thông thường và cần Admin xem xét'
                                                   : 'Học viên gửi yêu cầu dừng hợp đồng đơn phương với chữ ký MetaMask'}
                                               >
                                                 <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
@@ -1890,7 +1890,7 @@ export function EscrowContractsView({
                                 }}
                                 className="flex items-center gap-1.5 px-3 py-2 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs font-bold rounded-xl transition-all whitespace-nowrap cursor-pointer shadow-2xs"
                                 title={trial?.trialStatus === 'CONTINUED'
-                                  ? 'Thời hạn dừng học thử đã kết thúc; yêu cầu này thuộc quy trình chấm dứt thông thường và cần Staff/Admin xét duyệt'
+                                  ? 'Thời hạn dừng học thử đã kết thúc; yêu cầu này thuộc quy trình chấm dứt thông thường và cần Admin xem xét'
                                   : 'Học viên gửi yêu cầu dừng hợp đồng đơn phương với chữ ký MetaMask'}
                               >
                                 <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />

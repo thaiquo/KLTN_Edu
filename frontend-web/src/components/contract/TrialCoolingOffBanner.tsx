@@ -284,7 +284,7 @@ export function TrialCoolingOffBanner({
         <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
         <span>
           Đã hết thời hạn dừng học thử tự động • Khóa học đang tiếp tục theo hợp đồng đã ký.
-          Nếu phát sinh sự cố, Học viên vẫn có thể gửi <strong>yêu cầu chấm dứt thông thường</strong> để Staff/Admin xét duyệt; đây không còn là luồng dừng học thử tự động.
+          Nếu phát sinh sự cố, Học viên vẫn có thể gửi <strong>yêu cầu chấm dứt thông thường</strong> để Admin xem xét và quyết định; đây không còn là luồng dừng học thử tự động.
         </span>
       </div>
     );

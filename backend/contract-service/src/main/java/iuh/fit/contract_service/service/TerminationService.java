@@ -412,7 +412,7 @@ public class TerminationService {
         boolean systemRequest = user.userId() != null && user.userId() == 0L
                 && "system@educonnect.invalid".equalsIgnoreCase(user.email());
         if (!systemRequest && (user.hasActiveAuthority("ADMIN") || user.hasActiveAuthority("STAFF"))) {
-            fail(HttpStatus.FORBIDDEN, "Staff/Admin review termination requests but cannot submit unsigned party requests");
+            fail(HttpStatus.FORBIDDEN, "Staff can only view assigned termination cases; Admin must use the administrative termination flow");
         }
         if (wholeClass && user.hasActiveAuthority("STUDENT")) fail(HttpStatus.FORBIDDEN, "Student can request only their own agreement");
         if (!wholeClass && user.hasActiveAuthority("TUTOR")) fail(HttpStatus.FORBIDDEN, "Tutor must request termination for the whole class");
@@ -506,7 +506,7 @@ public class TerminationService {
         cases.saveAndFlush(c);
         String receivedMessage = ORIGIN_AUTO_ABSENCE.equals(origin)
                 ? "Hệ thống ghi nhận Gia sư vắng 3 buổi liên tiếp. Lịch tương lai đã được tạm giữ; Gia sư cần gửi giải trình và minh chứng trước hạn hiển thị trong hồ sơ."
-                : "Yêu cầu dừng lớp học đã được gửi và đang chờ thẩm định.";
+                : "Yêu cầu dừng lớp học đã được gửi và đang chờ Admin xem xét.";
         notifyParties(anchor, c, receivedMessage);
         return view(c);
     }
@@ -688,7 +688,7 @@ public class TerminationService {
         switch (action) {
             case "RESPOND" -> {
                 requireStatus(c, "HOLD_PENDING", "REQUESTED", "RECOMMENDED");
-                if (manager) fail(HttpStatus.FORBIDDEN, "Use review actions for Staff/Admin");
+                if (manager) fail(HttpStatus.FORBIDDEN, "Only contract parties can submit a response; Admin uses decision actions and Staff is read-only");
                 if (ORIGIN_AUTO_ABSENCE.equals(c.getOrigin())) {
                     if (!user.hasActiveAuthority("TUTOR")) {
                         fail(HttpStatus.FORBIDDEN, "Only the Tutor can explain an automatic absence warning");
@@ -700,13 +700,10 @@ public class TerminationService {
                 if (user.hasActiveAuthority("TUTOR")) c.setTutorRespondedAt(OffsetDateTime.now());
             }
             case "RECOMMEND" -> {
-                if (!user.hasActiveAuthority("STAFF") && !user.hasActiveAuthority("ADMIN")) {
-                    fail(HttpStatus.FORBIDDEN, "Only Staff/Admin can recommend termination");
+                if (!user.hasActiveAuthority("ADMIN")) {
+                    fail(HttpStatus.FORBIDDEN, "Only Admin can decide termination cases; Staff access is read-only");
                 }
-                requireStatus(c, "REQUESTED");
-                requireAutomaticWarningReady(c);
-                requireNoPendingDisputes(c);
-                c.setStatus("RECOMMENDED");
+                fail(HttpStatus.BAD_REQUEST, "Recommendation step is no longer used; Admin must approve or reject the termination request directly");
             }
             case "REJECT" -> {
                 if (!user.hasActiveAuthority("ADMIN")) fail(HttpStatus.FORBIDDEN, "Only Admin can reject termination and restore learning");
@@ -765,11 +762,11 @@ public class TerminationService {
             case "APPROVED" -> c.isWholeClass()
                     ? "Admin đã phê duyệt hủy cả lớp. Hệ thống đang xử lý quyết toán và hoàn phần cọc còn lại."
                     : "Admin đã phê duyệt chấm dứt hợp đồng của học viên. Lớp vẫn tiếp tục với các học viên khác; phần cọc còn lại của hợp đồng đang được xử lý hoàn trả.";
-            case "RECOMMENDED" -> "Hồ sơ dừng lớp học đã được Staff thẩm định và đề xuất xử lý.";
+            case "RECOMMENDED" -> "Hồ sơ lịch sử đang chờ Admin ra quyết định cuối cùng.";
             case "REJECTED" -> "Yêu cầu dừng lớp học đã bị từ chối.";
             default -> "Cập nhật hồ sơ dừng hợp đồng: " + c.getStatus();
         };
-        if ("RESPOND".equals(action)) statusMessage = "Hồ sơ dừng/hủy đã có phản hồi mới. Staff/Admin có thể mở hồ sơ để thẩm định.";
+        if ("RESPOND".equals(action)) statusMessage = "Hồ sơ dừng/hủy đã có phản hồi mới. Admin có thể mở hồ sơ để xem xét và quyết định.";
         notifyParties(anchor, c, statusMessage);
         if (Set.of("APPROVE", "FORCE_APPROVE").contains(action) && c.isWholeClass()) {
             for (var item : items.findByCaseIdOrderByAgreementId(c.getId())) {

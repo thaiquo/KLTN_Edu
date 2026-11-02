@@ -129,7 +129,7 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
       const key = item.actor.toLowerCase();
       const row = map.get(key) || { email: item.actor, total: 0, approved: 0, rejected: 0, disputes: 0, terminations: 0, last: item.at };
       row.total += 1;
-      if (["APPROVED", "APPROVE", "FORCE_APPROVE", "RECOMMENDED"].includes(item.status)) row.approved += 1;
+      if (["APPROVED", "APPROVE", "FORCE_APPROVE"].includes(item.status)) row.approved += 1;
       if (["REJECTED", "REJECT"].includes(item.status)) row.rejected += 1;
       if (item.id.startsWith("dispute-")) row.disputes += 1;
       if (item.id.startsWith("termination-")) row.terminations += 1;
@@ -367,7 +367,7 @@ function Shortcut({ icon: Icon, title, subtitle, onClick }: { icon: any; title: 
 
 function Status({ value }: { value: string }) {
   const text = String(value || "--");
-  const ok = ["APPROVED", "APPROVE", "FORCE_APPROVE", "RECOMMENDED", "RESOLVED"].includes(text);
+  const ok = ["APPROVED", "APPROVE", "FORCE_APPROVE", "RESOLVED"].includes(text);
   const bad = ["REJECTED", "REJECT", "FAILED", "FAILED_RETRYABLE"].includes(text);
   return (
     <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase ${

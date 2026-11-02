@@ -204,16 +204,16 @@ class TerminationServiceTest {
         }
         verify(items, never()).save(any());
     }
-    @Test void unassignedStaffCannotReview() {
+    @Test void unassignedStaffCannotViewTerminationCase() {
         var c = request("REQUESTED", false);
         assertThatThrownBy(() -> service.act(c.getId(), "RECOMMEND", "Verified", user(4, "other@test.vn", "STAFF")))
                 .hasMessageContaining("404");
     }
-    @Test void assignedStaffCanRecommendButCannotFinalizeWholeClassTermination() {
+    @Test void assignedStaffHasReadOnlyTerminationAccessAndCannotRecommend() {
         var c = request("REQUESTED", true);
-        service.act(c.getId(), "RECOMMEND", "Reviewed evidence", user(4, "staff@test.vn", "STAFF"));
-        assertThat(c.getStatus()).isEqualTo("RECOMMENDED");
-        assertThat(c.getAuditJson()).contains("staff@test.vn").contains("RECOMMEND");
+        assertThatThrownBy(() -> service.act(c.getId(), "RECOMMEND", "Reviewed evidence",
+                user(4, "staff@test.vn", "STAFF"))).hasMessageContaining("403");
+        assertThat(c.getStatus()).isEqualTo("REQUESTED");
         verify(items, never()).save(any());
     }
     @Test void assignedStaffCannotRejectAnyTerminationOrigin() {
@@ -438,11 +438,11 @@ class TerminationServiceTest {
         assertThat(result.refundedUnits()).isEqualTo("4200000");
         assertThat(result.remainingUnits()).isEqualTo("0");
     }
-    @Test void adminCanUseStaffRecommendationActionAndIsAudited() {
+    @Test void adminUsesDirectDecisionInsteadOfRecommendationStep() {
         var c = request("REQUESTED", false);
-        service.act(c.getId(), "RECOMMEND", "Review complete", user(1, "admin@test.vn", "ADMIN"));
-        assertThat(c.getStatus()).isEqualTo("RECOMMENDED");
-        assertThat(c.getAuditJson()).contains("admin@test.vn").contains("ADMIN").contains("RECOMMEND");
+        assertThatThrownBy(() -> service.act(c.getId(), "RECOMMEND", "Review complete",
+                user(1, "admin@test.vn", "ADMIN"))).hasMessageContaining("400");
+        assertThat(c.getStatus()).isEqualTo("REQUESTED");
         verify(items, never()).save(any());
     }
     @Test void managerRejectionReleasesOperationalHold() {
