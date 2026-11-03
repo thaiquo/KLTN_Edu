@@ -313,51 +313,40 @@ Quy tắc thanh lý và đồng bộ trạng thái lớp học khi Học viên d
 
 
 
-## 13. Classroom Status State Table � Lifecycle & Schedule Occupancy (2026-11-03)
+## 13. Bảng trạng thái vòng đời lớp và chính sách chiếm lịch (2026-11-03)
 
-Bang trang thai chinh thuc cho vong doi lop hoc va quy tac chiem lich Gia su:
-
-| Tinh huong | Trang thai cuoi | Chiem lich Tutor | Ghi chu |
+| Tình huống | Trạng thái cuối | Chiếm lịch Gia sư | Ghi chú |
 |---|---|---|---|
-| Lop toi ngay khai giang, activeStudents == 0 | CLOSED | Khong (giai phong ngay) | He thong tu dong, khong co hop dong can thanh ly |
-| Lop du si so / da bat dau, co ACCEPTED/ENROLLED | LOCKED | Co | Khong thay doi |
-| Lop dang thanh ly hop dong (terminationCutoffSession != null) | LOCKED | Co | Phai cho refund on-chain xac nhan truoc khi giai phong |
-| Hoc vien trial cuoi cung opt-out hoan tat | CANCELLED | Khong (giai phong sau refund) | Section 12 |
-| Admin/Gia su huy toan lop, settlement hoan tat | CANCELLED | Khong | Phai cho tat ca agreement settlement xong |
+| Lớp PUBLISHED tới ngày khai giảng, không có ACCEPTED/ENROLLED | CLOSED | Không | Chưa có học viên hiệu lực nên không có hợp đồng cần thanh lý |
+| Lớp PUBLISHED tới ngày khai giảng, có ACCEPTED/ENROLLED | LOCKED | Có | Đóng tuyển sinh, hủy yêu cầu chờ và sinh buổi tuần đầu |
+| Lớp ACTIVE cũ đã vận hành | ACTIVE | Có | Không tự đóng chỉ dựa trên enrollment của Learning Service |
+| Lớp đang thanh lý (terminationCutoffSession khác null) | LOCKED | Có | Chờ hoàn tất settlement/refund trước khi giải phóng |
+| Học viên trial cuối cùng opt-out hoàn tất | CANCELLED | Không | Giải phóng sau khi refund được xác nhận |
+| Admin/Gia sư hủy toàn lớp, settlement hoàn tất | CANCELLED | Không | Chờ toàn bộ agreement hoàn tất thanh lý |
 
-Quy tac phan biet CLOSED vs CANCELLED:
-- CLOSED = lop chua tung van hanh, chua co hop dong tai chinh can thanh ly. Dung khi lop tu dong do 0 hoc vien truoc khi bat dau.
-- CANCELLED = lop da co hop dong va da hoan thanh toan bo quy trinh quyet toan / hoan coc. Dung sau khi refund on-chain xac nhan.
+CLOSED dành cho lớp chưa vận hành và không có hợp đồng tài chính phải thanh lý. CANCELLED dành cho lớp đã có luồng hợp đồng và đã hoàn tất quyết toán/hoàn cọc.
 
-Statuses chiem lich Gia su (blocking statuses):
-PENDING_APPROVAL | ACTIVE | PRIVATE | PUBLISHED | LOCKED
-CLOSED va CANCELLED khong chiem lich - lich Gia su duoc giai phong ngay khi lop chuyen sang mot trong hai trang thai nay.
+Các trạng thái chiếm lịch Gia sư là PENDING_APPROVAL, ACTIVE, PRIVATE, PUBLISHED, LOCKED. CLOSED và CANCELLED không chiếm lịch.
 
-### 13.1 Auto-Close Empty Classroom at Start Date
+### 13.1. Xử lý lớp khi đến ngày khai giảng
 
-Khi Scheduler chay va phat hien lop PUBLISHED hoac ACTIVE da toi startDate:
+ClassroomLifecycleScheduler xử lý từng lớp trong transaction riêng và khóa bi quan bản ghi lớp. Luồng duyệt enrollment cũng khóa cùng bản ghi lớp trước khi đọc/cập nhật yêu cầu, do đó scheduler và Gia sư không thể đồng thời hoàn tất hai quyết định mâu thuẫn.
 
-1. Dem ACCEPTED + ENROLLED (hoc vien hieu luc - bao gom ca dang trong funding pipeline).
-2. Neu activeStudents == 0:
-   - Chuyen lop sang CLOSED.
-   - Huy tat ca yeu cau PENDING voi ly do "Lop tu dong dong do khong co hoc vien khi den ngay khai giang".
-   - Huy (CANCELLED) tat ca buoi hoc chua hoan thanh neu co du lieu cu.
-   - Xoa attendance tuong lai.
-   - Thong bao realtime cho Gia su (CLASS_AUTO_CLOSED).
-   - Khong sinh buoi hoc moi. Lich Gia su duoc giai phong.
-3. Neu activeStudents >= 1:
-   - PUBLISHED -> LOCKED.
-   - Sinh buoi tuan dau tien nhu binh thuong.
+1. Lớp có terminationCutoffSession không được xử lý bởi lifecycle khai giảng.
+2. Lớp ACTIVE cũ chỉ tiếp tục cơ chế sinh buổi lũy tiến; không tự đóng từ dữ liệu enrollment cục bộ.
+3. Với lớp PUBLISHED, hệ thống đếm đúng ACCEPTED + ENROLLED:
+   - Nếu bằng 0: chuyển lớp sang CLOSED, hủy các yêu cầu PENDING, chỉ hủy buổi SCHEDULED từ ngày xử lý trở đi, xóa attendance của chính các buổi tương lai đó và không sinh buổi mới.
+   - Nếu lớn hơn 0: chuyển lớp sang LOCKED, hủy các yêu cầu PENDING còn lại và sinh tuần học đầu.
+4. Mỗi yêu cầu bị hệ thống hủy phát sự kiện bền vững ENROLLMENT_SYSTEM_CANCELLED cho Học viên. Lớp rỗng đồng thời phát realtime CLASS_AUTO_CLOSED cho Gia sư.
+5. Frontend tải lại lịch Gia sư khi nhận sự kiện lớp; chính sách chiếm lịch dùng chung một utility để tránh hai màn hình hiểu trạng thái khác nhau.
 
-Scheduler xu ly tung lop trong transaction rieng voi pessimistic write lock de tranh race condition voi luong kich hoat enrollment.
+### 13.2. Bảo toàn lịch sử
+
+Không được xóa attendance hoặc đổi trạng thái của buổi COMPLETED, IN_PROGRESS hay buổi SCHEDULED trong quá khứ khi tự đóng lớp rỗng. Việc dọn dữ liệu chỉ áp dụng cho buổi tương lai chưa bắt đầu.
 
 ## 14. Change Policy
 
-Business rules co the thay doi trong qua trinh phat trien. Khi nguoi dung xac nhan business rule moi:
-
-1. Rule moi thay the rule cu trong pham vi duoc xac nhan.
-2. Phai kiem tra anh huong toi architecture, API, code va documentation.
-3. Phai cap nhat cac docs lien quan khi duoc yeu cau.
+Business rules có thể thay đổi trong quá trình phát triển. Khi người dùng xác nhận business rule mới:
 
 1. Rule mới thay thế rule cũ trong phạm vi được xác nhận.
 2. Phải kiểm tra ảnh hưởng tới architecture, API, code và documentation.

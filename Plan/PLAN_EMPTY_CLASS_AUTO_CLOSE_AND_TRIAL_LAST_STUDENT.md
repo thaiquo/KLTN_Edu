@@ -1,9 +1,9 @@
 # Kế hoạch đóng lớp rỗng và bảo toàn hủy lớp khi Student trial cuối cùng rời lớp
 
-> Trạng thái: **IMPLEMENTED & VERIFIED WITH TESTS**  
-> Ngày rà soát: **2026-11-03**  
-> Nhánh làm việc khi triển khai: `feature/quocthai`  
-> Phạm vi: `learning-service`, hồi quy liên dịch vụ với `contract-service`, `frontend-web`, notification/realtime và tài liệu vận hành.  
+> Trạng thái: **IN PROGRESS — PRE-MERGE VERIFIED**
+> Ngày rà soát: **2026-11-03**
+> Nhánh làm việc khi triển khai: `feature/quocthai`
+> Phạm vi: `learning-service`, hồi quy liên dịch vụ với `contract-service`, `frontend-web`, notification/realtime và tài liệu vận hành.
 > Không thuộc phạm vi: bật Tutor Absence `ENFORCE`, thay đổi Smart Contract/Solidity, thay đổi tỷ lệ settlement hoặc giải phóng lịch trước khi blockchain xác nhận hoàn cọc.
 
 ## 0. Mục tiêu và kết luận audit
@@ -21,10 +21,26 @@ Mục tiêu cuối cùng gồm hai quy tắc độc lập nhưng phải có kế
 Kết quả audit source:
 
 - Quy tắc 1 đã được triển khai qua commit `b31bade` và harden tại `0a86e3b`. `TerminationProcessor` chỉ gửi `cancelClassIfEmpty=true` khi không còn agreement khác chưa kết thúc; `LearningTerminationService` khóa bi quan lớp, đóng enrollment, đếm `ACCEPTED/ENROLLED`, hủy lớp rỗng và lưu kết quả replay vào command inbox.
-- Quy tắc 2 **chưa được backend triển khai đúng**. `ClassroomLifecycleScheduler` hiện chuyển mọi lớp `PUBLISHED` đã đến `startDate` thành `LOCKED` rồi luôn gọi `generateInitialWeekSessions()`, không đếm Student.
-- Frontend đã có banner `CLOSED` với nội dung “đến ngày bắt đầu nhưng 0 học viên”, nhưng không có production code nào hiện chuyển lớp sang `CLOSED`.
+- Quy tắc 2 đã được triển khai cục bộ trên `feature/quocthai` nhưng **chưa merge/deploy**. Scheduler khóa lớp, chỉ đánh giá lớp `PUBLISHED`, đếm `ACCEPTED/ENROLLED`, rồi chuyển `CLOSED` hoặc `LOCKED` theo đúng nhánh.
+- Luồng duyệt enrollment đã được harden: lấy ID lớp, khóa bi quan lớp, re-check trạng thái `PUBLISHED`, sau đó mới đọc lại và duyệt request. Điều này loại race với scheduler.
+- Lớp `ACTIVE` cũ không tự đóng từ enrollment cục bộ; lớp đang có cutoff termination bị bỏ qua.
+- Cleanup lớp rỗng chỉ hủy buổi `SCHEDULED` từ ngày xử lý trở đi và bảo toàn lịch sử `IN_PROGRESS`/`COMPLETED`/buổi quá khứ.
+- Yêu cầu `PENDING` bị lifecycle hủy phát notification bền vững `ENROLLMENT_SYSTEM_CANCELLED` cho Student; Gia sư nhận realtime `CLASS_AUTO_CLOSED` và màn lịch tự refresh.
 - `LOCKED` đang chặn lịch Tutor ở backend và frontend. Không được loại `LOCKED` khỏi danh sách trạng thái chiếm lịch, vì trạng thái này còn đại diện cho lớp đủ sĩ số, lớp đã bắt đầu có người học và lớp đang thanh lý.
-- Bộ test hiện tại bao phủ trial last-student, RollingSession chặn `CLOSED/CANCELLED` và schedule conflict, nhưng chưa có test cho `ClassroomLifecycleScheduler` đóng lớp 0 Student.
+- Automated gate đã pass: Learning 331/331, Notification 80/80, Contract 321 run = 313 pass + 8 Anvil skipped, Frontend Node 24/24, TypeScript và production build. PR/CI, browser walkthrough và production canary chưa thực hiện.
+
+### 0.1. Tiến độ triển khai hiện tại
+
+| Nhóm | Trạng thái |
+| --- | --- |
+| TASK-00..03 — lifecycle, khóa race, cleanup an toàn | Hoàn tất cục bộ; targeted test pass |
+| TASK-04 — dry-run/reconciliation production | Chưa chạy; script SQL riêng của người dùng không bị sửa |
+| TASK-05 — policy chiếm lịch backend/frontend | Hoàn tất cục bộ; frontend dùng utility chung |
+| TASK-06 — hồi quy trial last-student | Hoàn tất; Learning và Contract full suite pass |
+| TASK-07 — notification/realtime | Hoàn tất cục bộ; targeted test pass |
+| TASK-08 — docs canonical | Hoàn tất cục bộ và đã đối chiếu với source/test |
+| TASK-09 — full validation | Automated gate hoàn tất; browser walkthrough còn chờ |
+| TASK-10 — commit/PR/deploy/canary | Commit/push nhánh feature hoàn tất; còn PR/deploy/canary |
 
 ## 1. Quy tắc nghiệp vụ phải chốt trước khi sửa
 
@@ -129,10 +145,10 @@ Thiết kế đề xuất:
 
 Thay `findAll().stream()` bằng repository query lấy đúng ID cần xử lý:
 
-1. `PUBLISHED` có `startDate <= today`.
-2. Dữ liệu cần phục hồi: `ACTIVE/LOCKED`, `startDate <= today`, `terminationCutoffSession IS NULL` và không còn `ACCEPTED/ENROLLED`.
+1. `PUBLISHED` có `startDate <= today` để phân nhánh `CLOSED/LOCKED`.
+2. `ACTIVE` có `startDate <= today` chỉ để giữ hành vi sinh buổi lũy tiến idempotent; tuyệt đối không tự đóng từ enrollment của Learning Service.
 
-Không tự sửa `LOCKED` có cutoff vì đó có thể là lớp đang settlement/refund. Với dữ liệu production cũ, phải có dry-run report trước khi cho phép reconciliation ghi trạng thái.
+Không tự sửa `LOCKED` hoặc `ACTIVE` thành `CLOSED` bằng scheduler. Với dữ liệu production cũ, phải có dry-run report và đối chiếu Contract trước mọi reconciliation ghi trạng thái.
 
 ### 3.4. Cleanup lớp rỗng phải lũy đẳng
 
@@ -141,8 +157,8 @@ Trong nhánh `activeStudentCount == 0`:
 - Nếu đã `CLOSED`, trả về thành công và không phát sự kiện trùng.
 - Chuyển lớp sang `CLOSED`.
 - Với request `PENDING`: chuyển trạng thái kết thúc và lưu lý do “Lớp tự đóng do không có học viên khi đến ngày khai giảng”. Ưu tiên `CANCELLED` để thống nhất với lớp bị hệ thống đóng; không giả thành quyết định từ chối của Tutor.
-- Với session chưa `COMPLETED`: chuyển `CANCELLED`; giữ session `COMPLETED` để audit.
-- Xóa attendance của session bị hủy.
+- Chỉ với session `SCHEDULED` có `sessionDate >= businessToday`: chuyển `CANCELLED` và xóa attendance của chính session đó.
+- Giữ nguyên session quá khứ, `IN_PROGRESS`, `COMPLETED` và attendance tương ứng để audit.
 - Không đặt termination cutoff giả và không tạo termination case vì không có escrow cần thanh lý.
 - Không gọi `generateInitialWeekSessions()`.
 - Phát đúng một class lifecycle event/realtime update và notification cho Tutor.
@@ -151,13 +167,13 @@ Trong nhánh `activeStudentCount == 0`:
 
 Giữ `LOCKED` là trạng thái chiếm lịch. Chỉ giải phóng lịch bằng việc chuyển đúng lớp rỗng sang `CLOSED` hoặc lớp đã thanh lý sang `CANCELLED`.
 
-Nên gom predicate backend đang lặp tại `ClassRoomService`, `TutorAvailabilityController`, `CommunityPostService` vào một policy dùng chung, ví dụ `ClassRoomScheduleOccupancyPolicy`. Frontend dùng một utility tương ứng để tránh backend cho phép nhưng UI vẫn hiển thị bận hoặc ngược lại.
+Backend dùng `ClassRoomScheduleOccupancyPolicy`; frontend dùng `classScheduleOccupancy.js` tại cả Create Class Wizard và Tutor Availability để tránh hai màn hình hiểu trạng thái khác nhau.
 
 ## 4. Danh sách task triển khai
 
 ### TASK-00 — Khóa baseline và tạo test đỏ
 
-**Phụ thuộc:** Không.  
+**Phụ thuộc:** Không.
 **Mục tiêu:** Chứng minh lỗi hiện tại trước khi sửa.
 
 File dự kiến:
@@ -209,7 +225,7 @@ Công việc:
 1. Đếm `ACCEPTED + ENROLLED` trong transaction đã khóa lớp.
 2. Nếu bằng 0, chuyển `CLOSED`.
 3. Đóng request `PENDING` và phát event phù hợp, không để Student tiếp tục ký/fund từ request đã hết hiệu lực.
-4. Hủy session chưa hoàn tất và attendance liên quan nếu dữ liệu cũ đã tạo nhầm.
+4. Chỉ hủy session `SCHEDULED` từ ngày xử lý trở đi và attendance liên quan; không sửa lịch sử quá khứ/đang học/đã hoàn tất.
 5. Không gọi Rolling Session.
 6. Gửi notification/realtime trung tính, không nhắc hoàn cọc.
 
@@ -305,6 +321,7 @@ Công việc:
 3. `LOCKED`: phân biệt khóa tuyển sinh, đang học và đang thanh lý nếu có termination context.
 4. Không hiển thị thông điệp “đã hoàn tiền” cho `CLOSED`.
 5. Sau realtime refresh, lịch Tutor không còn render lớp `CLOSED/CANCELLED` là occupied.
+6. Student có request bị lifecycle hủy nhận notification bền vững `ENROLLMENT_SYSTEM_CANCELLED` và trang lớp tự refresh.
 
 **Tiêu chí hoàn tất:** UI không mâu thuẫn với backend và không gây hiểu nhầm tài chính.
 
@@ -325,7 +342,7 @@ Công việc:
 1. Ghi state table `LOCKED/CLOSED/CANCELLED` chính thức.
 2. Sửa tài liệu session cũ đang nói mọi lớp đến ngày bắt đầu đều `LOCKED` và sinh batch đầu.
 3. Bổ sung checklist lớp 0 Student và kiểm tra tái sử dụng lịch Tutor.
-4. Chỉ chuyển trạng thái kế hoạch sang IMPLEMENTED khi source, test và runtime evidence đủ.
+4. Giữ trạng thái `IN PROGRESS — PRE-MERGE HARDENING` cho đến khi full-suite gate, PR/CI và production canary hoàn tất.
 
 ### TASK-09 — Validation gate trước PR
 
@@ -416,4 +433,3 @@ TASK-00 test đỏ
 ```
 
 Không gộp bước sửa dữ liệu production vào cùng commit code một cách tự động. Code phải deploy và qua test/canary trước; reconciliation dữ liệu cũ là thao tác vận hành riêng với target đã đối soát.
-

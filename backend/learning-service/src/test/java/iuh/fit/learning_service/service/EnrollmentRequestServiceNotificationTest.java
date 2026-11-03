@@ -14,6 +14,8 @@ import iuh.fit.learning_service.repository.EnrollmentRequestRepository;
 import iuh.fit.learning_service.repository.TutorAuthorizationStateRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -25,6 +27,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -115,11 +118,13 @@ class EnrollmentRequestServiceNotificationTest {
                 100L,
                 EnrollmentRequestStatus.PENDING);
 
-        when(enrollmentRequestRepository.findById(500L))
-                .thenReturn(Optional.of(request));
+        when(enrollmentRequestRepository.findClassRoomIdById(500L)).thenReturn(Optional.of(10L));
 
         when(classRoomRepository.findByIdForUpdate(10L))
                 .thenReturn(Optional.of(classRoom));
+
+        when(enrollmentRequestRepository.findById(500L))
+                .thenReturn(Optional.of(request));
 
         when(enrollmentRequestRepository.countByClassRoomIdAndStatusIn(
                 ArgumentMatchers.eq(10L),
@@ -140,6 +145,29 @@ class EnrollmentRequestServiceNotificationTest {
                 200L,
                 "Math 10",
                 "An");
+
+        var order = inOrder(enrollmentRequestRepository, classRoomRepository);
+        order.verify(enrollmentRequestRepository).findClassRoomIdById(500L);
+        order.verify(classRoomRepository).findByIdForUpdate(10L);
+        order.verify(enrollmentRequestRepository).findById(500L);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ClassRoomStatus.class, names = {"LOCKED", "CLOSED"})
+    void acceptRequestRejectsClassroomThatNoLongerAcceptsEnrollment(ClassRoomStatus status) {
+        EnrollmentRequestService service = service();
+        ClassRoom classRoom = classRoom();
+        classRoom.setStatus(status);
+
+        when(enrollmentRequestRepository.findClassRoomIdById(500L)).thenReturn(Optional.of(10L));
+        when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(classRoom));
+
+        assertThatThrownBy(() -> service.acceptRequest(500L, "tutor@example.com", 200L))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("đóng nhận yêu cầu");
+
+        verify(enrollmentRequestRepository, never()).findById(500L);
+        verify(eventPublisher, never()).publishEnrollmentAccepted(any(), any(), any(), any(), any(), any());
     }
 
     @Test

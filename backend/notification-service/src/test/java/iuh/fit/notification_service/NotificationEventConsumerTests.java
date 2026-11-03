@@ -250,6 +250,24 @@ class NotificationEventConsumerTests {
     }
 
     @Test
+    void enrollmentSystemCancelledCreatesPersistentStudentNotification() {
+        consumer.onEnrollmentSystemCancelled(enrollmentEvent(
+                "enrollment-system-cancelled-1",
+                "ENROLLMENT_SYSTEM_CANCELLED",
+                100L,
+                null,
+                "L\u1edbp \u0111\u00e3 \u0111\u00f3ng khi \u0111\u1ebfn ng\u00e0y khai gi\u1ea3ng"));
+
+        var notification = notificationRepository.findByEventIdAndRecipientUserId(
+                "enrollment-system-cancelled-1", 100L);
+        assertThat(notification).isPresent();
+        assertThat(notification.get().getType()).isEqualTo("ENROLLMENT_SYSTEM_CANCELLED");
+        assertThat(notification.get().getTargetRole()).isEqualTo("STUDENT");
+        assertThat(notification.get().getReferenceType()).isEqualTo("ENROLLMENT_REQUEST");
+        assertThat(notification.get().getMessage()).contains("L\u00fd do");
+    }
+
+    @Test
     void teachingRegistrationReviewedCreatesTutorNotificationAndDeduplicates() {
         var event = new TeachingRegistrationReviewedEvent(
                 "teaching-reviewed-1",

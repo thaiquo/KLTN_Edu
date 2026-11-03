@@ -187,22 +187,28 @@ public class EnrollmentRequestService {
             String tutorEmail,
             Long tutorUserId,
             String agreementId) {
-        EnrollmentRequest req = enrollmentRequestRepository.findById(requestId)
+        Long targetClassId = enrollmentRequestRepository.findClassRoomIdById(requestId)
                 .orElseThrow(() -> new ResourceNotFoundException("Enrollment request not found: " + requestId));
-
-        ClassRoom classRoom = req.getClassRoom();
+        ClassRoom classRoom = classRoomRepository.findByIdForUpdate(targetClassId)
+                .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + targetClassId));
         if (!classRoom.getTutorEmail().equalsIgnoreCase(tutorEmail)) {
             throw new ForbiddenException("Bạn không có quyền quản lý yêu cầu của lớp học này");
         }
+        if (classRoom.getTerminationCutoffSession() != null) throw new BadRequestException("Classroom is terminating");
+        if (classRoom.getStatus() != ClassRoomStatus.PUBLISHED) {
+            throw new BadRequestException("Lớp học đã đóng nhận yêu cầu tham gia");
+        }
 
+        // Load the request only after acquiring the classroom lock so the lifecycle
+        // scheduler and tutor acceptance cannot both complete for the same request.
+        EnrollmentRequest req = enrollmentRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Enrollment request not found: " + requestId));
+        if (!targetClassId.equals(req.getClassRoom().getId())) {
+            throw new BadRequestException("Yêu cầu tham gia không còn thuộc lớp học này");
+        }
         if (req.getStatus() != EnrollmentRequestStatus.PENDING) {
             throw new BadRequestException("Yêu cầu này không ở trạng thái chờ duyệt (Trạng thái hiện tại: " + req.getStatus() + ")");
         }
-
-        final Long targetClassId = req.getClassRoom().getId();
-        classRoom = classRoomRepository.findByIdForUpdate(targetClassId)
-                .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + targetClassId));
-        if (classRoom.getTerminationCutoffSession() != null) throw new BadRequestException("Classroom is terminating");
 
         long occupiedCount = enrollmentRequestRepository.countByClassRoomIdAndStatusIn(
                 classRoom.getId(), List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED));

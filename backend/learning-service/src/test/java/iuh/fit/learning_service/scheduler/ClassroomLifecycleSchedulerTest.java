@@ -56,4 +56,3 @@ class ClassroomLifecycleSchedulerTest {
         verify(classroomLifecycleService).processStartingClassroom(eq(103L), any(LocalDate.class));
     }
 }
-

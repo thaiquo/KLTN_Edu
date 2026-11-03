@@ -11,6 +11,7 @@ import { tutorApplicationApi } from "../../api/tutorApplications";
 import { tutorApi } from "../../api/tutors";
 import { useAuth } from "../../hooks/useAuth";
 import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
+import { blocksTutorSchedule } from "../../utils/classScheduleOccupancy";
 
 interface CreateClassWizardProps {
   onBack: () => void;
@@ -94,14 +95,6 @@ const VIETNAMESE_DAYS = [
   { value: 7, label: "Thứ 7" },
   { value: 8, label: "Chủ nhật" }
 ];
-
-const BLOCKING_CLASS_STATUSES = new Set([
-  "PENDING_APPROVAL",
-  "ACTIVE",
-  "PRIVATE",
-  "PUBLISHED",
-  "LOCKED"
-]);
 
 // Time conversion helpers
 function timeToMinutes(t: string): number {
@@ -343,7 +336,7 @@ export function CreateClassWizard({ onBack, onSuccess, sourcePostId, initialDraf
         const occupied: OccupiedSlot[] = [];
         if (Array.isArray(myClasses)) {
           for (const cls of myClasses) {
-            if (BLOCKING_CLASS_STATUSES.has(cls.status)) {
+            if (blocksTutorSchedule(cls.status)) {
               if (Array.isArray(cls.schedules)) {
                 for (const sch of cls.schedules) {
                   occupied.push({
@@ -426,7 +419,7 @@ export function CreateClassWizard({ onBack, onSuccess, sourcePostId, initialDraf
     const occupied: OccupiedSlot[] = [];
     if (Array.isArray(myClasses)) {
       for (const cls of myClasses) {
-        if (BLOCKING_CLASS_STATUSES.has(cls.status) && Array.isArray(cls.schedules)) {
+        if (blocksTutorSchedule(cls.status) && Array.isArray(cls.schedules)) {
           for (const sch of cls.schedules) {
             occupied.push({
               dayOfWeek: sch.dayOfWeek,

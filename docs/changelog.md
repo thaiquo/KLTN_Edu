@@ -2,20 +2,24 @@
 
 ---
 
-## 03/11/2026 — Tự động đóng lớp 0 học viên khi đến ngày khai giảng và chuẩn hóa chính sách chiếm lịch
+## 03/11/2026 — PRE-MERGE: harden tự động đóng lớp rỗng và đồng bộ lịch
 
 - **Xử lý vòng đời lớp học khi đến ngày khai giảng (`startDate <= today`)**:
   - Tách tiến trình quét `ClassroomLifecycleScheduler` thành từng transaction độc lập cho từng lớp học, sử dụng khóa bi quan (`PESSIMISTIC_WRITE`) trên `class_rooms` để chống race condition với luồng duyệt học viên/ký quỹ.
   - Phân nhánh chính xác theo số học viên hiệu lực (`ACCEPTED` hoặc `ENROLLED`):
-    - **Lớp 0 học viên**: Tự động chuyển `CLOSED`, hủy các yêu cầu `PENDING`, hủy các buổi học chưa hoàn tất, xóa attendance tương lai, không gọi `RollingSessionService`, gửi thông báo Realtime `CLASS_AUTO_CLOSED` cho Gia sư, và giải phóng lịch dạy ngay lập tức.
-    - **Lớp có học viên**: Chuyển `LOCKED` (đóng tuyển sinh) và tự động sinh buổi học tuần đầu qua `RollingSessionService`.
+    - **Lớp `PUBLISHED` có 0 học viên**: chuyển `CLOSED`, hủy yêu cầu `PENDING`, chỉ hủy buổi `SCHEDULED` từ ngày xử lý trở đi, bảo toàn lịch sử/attendance cũ, không gọi `RollingSessionService`, gửi realtime `CLASS_AUTO_CLOSED` cho Gia sư và giải phóng lịch.
+    - **Lớp `PUBLISHED` có học viên**: chuyển `LOCKED`, hủy yêu cầu chờ còn lại và sinh tuần học đầu qua `RollingSessionService`.
+    - **Lớp `ACTIVE` cũ hoặc đang termination**: không tự đóng dựa trên enrollment cục bộ.
+  - Luồng duyệt enrollment khóa lớp trước khi đọc lại request và chỉ cho phép lớp `PUBLISHED`, loại race với scheduler.
+  - Request bị lifecycle hủy phát notification bền vững `ENROLLMENT_SYSTEM_CANCELLED` cho Student; Tutor Availability tự refresh khi nhận sự kiện lớp.
 - **Chuẩn hóa chính sách chiếm lịch (`ClassRoomScheduleOccupancyPolicy`)**:
   - Gom các kiểm tra trạng thái chiếm lịch phân tán ở backend (`ClassRoomService`, `TutorAvailabilityController`, `CommunityPostService`) về class dùng chung `ClassRoomScheduleOccupancyPolicy`.
   - Trạng thái chiếm lịch Gia sư: `PENDING_APPROVAL`, `ACTIVE`, `PRIVATE`, `PUBLISHED`, `LOCKED`.
   - Trạng thái giải phóng lịch: `CLOSED`, `CANCELLED`, `REJECTED`, `DRAFT`.
-  - Khớp 100% với `BLOCKING_CLASS_STATUSES` ở Frontend (`CreateClassWizard.tsx` và `TutorAvailabilityScheduler.tsx`).
+  - Frontend dùng chung `classScheduleOccupancy.js` ở `CreateClassWizard.tsx` và `TutorAvailabilityScheduler.tsx`.
 - **Hồi quy & Đồng bộ tài liệu**:
-  - Bộ kiểm thử đơn vị & tích hợp: `ClassroomLifecycleServiceTest` (6/6 pass), `ClassroomLifecycleSchedulerTest` (1/1 pass), `ClassRoomScheduleOccupancyPolicyTest` (2/2 pass), toàn bộ luồng chấm dứt/học thử (28/28 pass).
+  - Automated gate: Learning 331/331, Notification 80/80, Contract 321 run = 313 pass + 8 Anvil skipped, Frontend Node 24/24, TypeScript pass và production build pass.
+  - Commit/push nhánh feature đã hoàn tất; chưa PR/deploy/canary và chưa được mô tả là đã chạy production.
   - Cập nhật chuẩn mực nghiệp vụ: `docs/BUSINESS_RULES.md` (Mục 13 - Bảng trạng thái vòng đời & chiếm lịch), `docs/session/EDUCONNECT_SESSION_ATTENDANCE_ESCROW_MASTER_PLAN.md` (Mục 3.1), `docs/IMPLEMENTATION_STATUS.md`.
 
 ## 03/11/2026 — Bật runtime Học thử, giữ Gia sư vắng ở SHADOW và chuẩn bị canary thủ công

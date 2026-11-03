@@ -98,7 +98,7 @@ export function getNotificationTarget(notification, activeRole) {
     return target('/dashboard');
   }
 
-  if (type === 'ENROLLMENT_ACCEPTED' || type === 'ENROLLMENT_REJECTED') {
+  if (type === 'ENROLLMENT_ACCEPTED' || type === 'ENROLLMENT_REJECTED' || type === 'ENROLLMENT_SYSTEM_CANCELLED') {
     return target('/my-classes');
   }
 

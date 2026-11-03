@@ -179,6 +179,28 @@ public class LearningEventPublisher {
         );
     }
 
+    public void publishEnrollmentSystemCancelled(
+            Long requestId,
+            Long classId,
+            Long recipientStudentId,
+            String classTitle,
+            String reason,
+            String studentName
+    ) {
+        publishEnrollment(
+                LearningRabbitConfig.ENROLLMENT_SYSTEM_CANCELLED_ROUTING_KEY,
+                "ENROLLMENT_SYSTEM_CANCELLED",
+                requestId,
+                classId,
+                recipientStudentId,
+                null,
+                classTitle,
+                "CANCELLED",
+                reason,
+                studentName
+        );
+    }
+
     public void publishCommunityPostConverted(
             Long postId,
             Long classId,

@@ -18,4 +18,3 @@ public final class ClassRoomScheduleOccupancyPolicy {
                 || status == ClassRoomStatus.LOCKED;
     }
 }
-

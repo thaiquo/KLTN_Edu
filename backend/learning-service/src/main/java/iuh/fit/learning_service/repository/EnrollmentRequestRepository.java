@@ -14,6 +14,9 @@ import java.util.Optional;
 @Repository
 public interface EnrollmentRequestRepository extends JpaRepository<EnrollmentRequest, Long> {
 
+    @Query("SELECT r.classRoom.id FROM EnrollmentRequest r WHERE r.id = :requestId")
+    Optional<Long> findClassRoomIdById(@Param("requestId") Long requestId);
+
     long countByClassRoomIdAndStatus(Long classRoomId, EnrollmentRequestStatus status);
 
     long countByClassRoomIdAndStatusIn(Long classRoomId, Collection<EnrollmentRequestStatus> statuses);

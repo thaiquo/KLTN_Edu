@@ -6,6 +6,7 @@ import iuh.fit.learning_service.entity.EnrollmentRequest;
 import iuh.fit.learning_service.enums.ClassRoomStatus;
 import iuh.fit.learning_service.enums.ClassSessionStatus;
 import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
+import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.realtime.RealtimeEventHub;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.ClassSessionRepository;
@@ -25,16 +26,22 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ClassroomLifecycleService {
 
+    private static final String START_DATE_CANCELLATION_REASON =
+            "Lớp đã đóng yêu cầu tham gia khi đến ngày khai giảng";
+    private static final String EMPTY_CLASS_CLOSURE_REASON =
+            "Lớp tự đóng do không có học viên khi đến ngày khai giảng";
+
     private final ClassRoomRepository classRoomRepository;
     private final EnrollmentRequestRepository enrollmentRequestRepository;
     private final ClassSessionRepository classSessionRepository;
     private final SessionAttendanceRepository sessionAttendanceRepository;
     private final RollingSessionService rollingSessionService;
     private final RealtimeEventHub realtimeEventHub;
+    private final LearningEventPublisher eventPublisher;
 
     /**
-     * Process lifecycle for an individual classroom that has reached its start date.
-     * Runs in its own transaction with a pessimistic write lock to prevent race conditions.
+     * Processes a classroom that has reached its start date in an isolated transaction.
+     * The pessimistic classroom lock serializes this job with enrollment acceptance.
      */
     @Transactional
     public void processStartingClassroom(Long classroomId, LocalDate today) {
@@ -43,70 +50,83 @@ public class ClassroomLifecycleService {
             return;
         }
 
-        // Re-check start date and eligibility under lock
         if (room.getStartDate() == null || room.getStartDate().isAfter(today)) {
             return;
         }
         if (room.getStatus() != ClassRoomStatus.PUBLISHED && room.getStatus() != ClassRoomStatus.ACTIVE) {
             return;
         }
+        if (room.getTerminationCutoffSession() != null) {
+            return;
+        }
 
-        // Effective students include ACCEPTED (in funding pipeline) and ENROLLED (activated)
-        long activeStudents = enrollmentRequestRepository.countByClassRoomIdAndStatusIn(
+        // ACTIVE is a legacy/running state. Learning enrollment rows alone are not
+        // sufficient evidence to close it safely because contract state is external.
+        if (room.getStatus() == ClassRoomStatus.ACTIVE) {
+            rollingSessionService.generateInitialWeekSessions(classroomId);
+            return;
+        }
+
+        long effectiveStudents = enrollmentRequestRepository.countByClassRoomIdAndStatusIn(
                 classroomId,
                 List.of(EnrollmentRequestStatus.ACCEPTED, EnrollmentRequestStatus.ENROLLED)
         );
 
-        if (activeStudents == 0) {
-            // 0 active students: auto-close classroom, release schedule, cancel pending requests & sessions
-            if (room.getStatus() == ClassRoomStatus.CLOSED) {
-                return;
-            }
-
+        if (effectiveStudents == 0) {
             room.setStatus(ClassRoomStatus.CLOSED);
             classRoomRepository.save(room);
+            cancelPendingRequests(room, EMPTY_CLASS_CLOSURE_REASON);
+            cancelFutureScheduledSessions(classroomId, today);
 
-            // Cancel any remaining PENDING requests
-            List<EnrollmentRequest> pendingRequests = enrollmentRequestRepository.findByClassRoomIdAndStatus(
-                    classroomId, EnrollmentRequestStatus.PENDING
-            );
-            for (EnrollmentRequest req : pendingRequests) {
-                req.setStatus(EnrollmentRequestStatus.CANCELLED);
-                req.setRejectReason("Lớp tự đóng do không có học viên khi đến ngày khai giảng");
-                enrollmentRequestRepository.save(req);
-            }
-
-            // Cancel uncompleted sessions and clean attendance if any were pre-generated
-            List<ClassSession> sessions = classSessionRepository.findByClassRoomIdOrderBySequenceNumberAsc(classroomId);
-            for (ClassSession session : sessions) {
-                if (session.getStatus() != ClassSessionStatus.COMPLETED) {
-                    session.setStatus(ClassSessionStatus.CANCELLED);
-                    classSessionRepository.save(session);
-                    sessionAttendanceRepository.deleteBySession_Id(session.getId());
-                }
-            }
-
-            // Notify tutor via realtime WebSocket
             if (room.getTutorEmail() != null) {
                 realtimeEventHub.publishToUser(room.getTutorEmail(), "CLASS_AUTO_CLOSED", room.getId(), Map.of(
                         "className", room.getName() != null ? room.getName() : "",
-                        "reason", "Lớp tự đóng do không có học viên khi đến ngày khai giảng"
+                        "reason", EMPTY_CLASS_CLOSURE_REASON
                 ));
             }
 
-            log.info("Auto-closed ClassRoom #{} ({}) due to reaching startDate {} with 0 active students",
+            log.info("Auto-closed ClassRoom #{} ({}) at startDate {} with 0 effective students",
                     room.getId(), room.getName(), room.getStartDate());
-        } else {
-            // Has active students: lock recruitment and generate initial week sessions
-            if (room.getStatus() == ClassRoomStatus.PUBLISHED) {
-                room.setStatus(ClassRoomStatus.LOCKED);
-                classRoomRepository.save(room);
-                log.info("Auto-locked recruitment for ClassRoom #{} ({}) with {} active students due to reaching startDate {}",
-                        room.getId(), room.getName(), activeStudents, room.getStartDate());
-            }
+            return;
+        }
 
-            rollingSessionService.generateInitialWeekSessions(classroomId);
+        room.setStatus(ClassRoomStatus.LOCKED);
+        classRoomRepository.save(room);
+        cancelPendingRequests(room, START_DATE_CANCELLATION_REASON);
+        rollingSessionService.generateInitialWeekSessions(classroomId);
+
+        log.info("Auto-locked ClassRoom #{} ({}) at startDate {} with {} effective students",
+                room.getId(), room.getName(), room.getStartDate(), effectiveStudents);
+    }
+
+    private void cancelPendingRequests(ClassRoom room, String reason) {
+        List<EnrollmentRequest> pendingRequests = enrollmentRequestRepository.findByClassRoomIdAndStatus(
+                room.getId(), EnrollmentRequestStatus.PENDING
+        );
+        for (EnrollmentRequest request : pendingRequests) {
+            request.setStatus(EnrollmentRequestStatus.CANCELLED);
+            request.setRejectReason(reason);
+            enrollmentRequestRepository.save(request);
+            eventPublisher.publishEnrollmentSystemCancelled(
+                    request.getId(),
+                    room.getId(),
+                    request.getStudentId(),
+                    room.getName(),
+                    reason,
+                    request.getStudentName()
+            );
+        }
+    }
+
+    private void cancelFutureScheduledSessions(Long classroomId, LocalDate today) {
+        List<ClassSession> sessions = classSessionRepository.findByClassRoomIdOrderBySequenceNumberAsc(classroomId);
+        for (ClassSession session : sessions) {
+            if (session.getStatus() == ClassSessionStatus.SCHEDULED
+                    && !session.getSessionDate().isBefore(today)) {
+                session.setStatus(ClassSessionStatus.CANCELLED);
+                classSessionRepository.save(session);
+                sessionAttendanceRepository.deleteBySession_Id(session.getId());
+            }
         }
     }
 }
-
