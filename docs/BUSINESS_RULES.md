@@ -344,7 +344,32 @@ ClassroomLifecycleScheduler xử lý từng lớp trong transaction riêng và k
 
 Không được xóa attendance hoặc đổi trạng thái của buổi COMPLETED, IN_PROGRESS hay buổi SCHEDULED trong quá khứ khi tự đóng lớp rỗng. Việc dọn dữ liệu chỉ áp dụng cho buổi tương lai chưa bắt đầu.
 
-## 14. Change Policy
+## 14. Quy tắc thời gian tạo lớp học, nạp cọc On-chain và Chu kỳ Học thử (2026-11-04)
+
+### 14.1. Ràng buộc thời gian tạo lớp học (Buổi học #1 ≥ 48 giờ)
+- Khi Gia sư tạo lớp học, hệ thống sử dụng `CanonicalSessionPlanner` để tính toán chính xác ngày và giờ của Buổi học đầu tiên (Buổi #1) dựa trên `startDate` và thời khóa biểu trong tuần.
+- Khoảng cách từ thời điểm tạo lớp đến giờ bắt đầu của Buổi #1 bắt buộc phải **≥ 48 giờ**.
+- Mục đích: Dành tối thiểu 24 giờ cho quá trình tuyển sinh, gửi đơn và duyệt đơn, đảm bảo khi bước vào khâu thanh toán thì hợp đồng luôn còn **> 24.5 giờ** trước buổi học đầu tiên (đáp ứng đúng yêu cầu cửa sổ nạp cọc của Smart Contract Escrow).
+- Kiểm soát: Giao diện hiển thị Hộp đánh giá trực quan (Assessment Box) theo thời gian thực và khóa nút tạo lớp; Backend ném `BadRequestException` nếu vi phạm.
+
+### 14.2. Chặn quyền vào học đối với học viên chưa nạp cọc
+- Khi Gia sư duyệt đơn và hai bên đã ký hợp đồng điện tử EIP-712, trạng thái đơn của học viên là `ACCEPTED`, chưa chuyển sang `ENROLLED`.
+- `SessionAccessControl` quy định: Chỉ học viên có trạng thái `ENROLLED` (đã nạp cọc Escrow on-chain thành công) mới được phép tham gia buổi học.
+- Học viên chưa nạp cọc bị chặn hoàn toàn: không nhìn thấy link Google Meet/Zoom, không được điểm danh, không được xem tài liệu hay đề bài tập.
+- Nếu học viên không nạp cọc đến hạn chót (hoặc sát giờ học < 24.5h), giao dịch nạp cọc bị từ chối; lớp học không có học viên nạp cọc sẽ tự động đóng (`CLOSED`/`CANCELLED`) để giải phóng lịch cho Gia sư.
+
+### 14.3. Quy trình Học thử và Quyền Dừng học thử (Trial Opt-Out)
+- **Xác định Buổi học thử**: Buổi học thử chính là **Buổi học số 1** của khóa học. Sau khi buổi #1 kết thúc và điểm danh hoàn tất, Gia sư được hưởng 85% tiền buổi học (theo quy tắc `BOTH_PRESENT`).
+- **Hạn chót quyết định dừng học thử (`trialDeadline`)**: Được xác định chính xác bằng **Thời điểm bắt đầu của Buổi học số 2** (`nextSessionStartAt`). Học viên có toàn bộ khoảng thời gian từ sau buổi 1 đến trước buổi 2 để trải nghiệm và đưa ra quyết định.
+- **Thao tác Dừng học thử (Trial Opt-Out)**:
+  - Học viên bấm nút "Dừng học thử" trong chi tiết hợp đồng và ký xác nhận bằng ví MetaMask (EIP-712 gasless).
+  - Dòng tiền: Buổi #1 đã diễn ra được quyết toán cho gia sư; Smart Contract Escrow tự động hoàn trả 100% tiền cọc chưa sử dụng của các buổi còn lại (từ Buổi 2 đến hết khóa) về ví MetaMask của học viên.
+  - Lịch học của gia sư từ Buổi 2 trở đi được giải phóng hoàn toàn.
+- **Tự động chuyển tiếp khóa học (`AUTO_DEADLINE`)**:
+  - Nếu học viên không bấm dừng trước thời điểm Buổi #2 bắt đầu, đúng giờ Buổi #2 hệ thống tự động chốt trạng thái `CONTINUED`.
+  - Quyền dừng học thử tự động khép lại; khóa học tiếp tục diễn ra bình thường cho đến khi kết thúc.
+
+## 15. Change Policy
 
 Business rules có thể thay đổi trong quá trình phát triển. Khi người dùng xác nhận business rule mới:
 

@@ -2,6 +2,23 @@
 
 ---
 
+## 04/11/2026 — Ràng buộc buổi học đầu tiên ≥ 48 giờ khi tạo lớp & Chuẩn hóa chu kỳ nạp cọc, học thử
+
+- **Xử lý sự cố lớp #44 kẹt on-chain (`08b64430-865f-4780-9f7f-23a7f5db5e5f`)**:
+  - Phát hiện nguyên nhân gốc: Khi `ESCROW_TRIAL_ENABLED=true`, Smart Contract quy định cửa sổ nạp cọc 24 giờ và hệ thống yêu cầu thêm 30 phút an toàn xác nhận blockchain trước buổi học đầu tiên (tổng cộng 24 giờ 30 phút). Hợp đồng lớp #44 được ký khi buổi đầu chỉ còn cách 10.5 giờ, dẫn đến `contract-service` từ chối tạo giao dịch đăng ký on-chain và hợp đồng bị kẹt ở `PREPARING_BLOCKCHAIN`.
+  - Đã dọn dẹp an toàn trên production database: Hủy hợp đồng, hủy đơn đăng ký, chuyển trạng thái lớp sang `CANCELLED` và giải phóng 100% lịch dạy cho gia sư.
+- **Triển khai ràng buộc tạo lớp học ≥ 48 giờ (PR #25 / Commit `ed7847b` -> Merge `62925a6`)**:
+  - **Backend (`ClassRoomService.java`)**: Tích hợp `CanonicalSessionPlanner` để xác định chính xác ngày và giờ của Buổi học #1 (`sessionDate` + `startTime`). Đo khoảng cách thời gian từ lúc tạo lớp đến giờ bắt đầu buổi #1; ném `BadRequestException` nếu khoảng cách < 48 giờ.
+  - **Frontend (`CreateClassWizard.tsx`)**: Tự động mô phỏng tìm Buổi học #1 theo `startDate` và lịch các thứ trong tuần; hiển thị hộp đánh giá trực quan (Real-time Assessment Box) - màu xanh khi ≥ 48 giờ, màu đỏ cảnh báo khi < 48 giờ; viền đỏ ô ngày; cập nhật checklist điều kiện và khóa nút tiếp tục/tạo lớp.
+  - **Kiểm thử**: Backend Learning Service 332/332 tests PASS; Frontend 11/11 tests PASS, TypeScript 0 lỗi, Production Build thành công (6.79s). Đã deploy tự động qua GitHub Actions lên VPS.
+- **Ghi nhận quy chuẩn nghiệp vụ & giải đáp phiên làm việc (Session Q&A)**:
+  - **Học viên ký nhưng chưa nạp cọc**: Trạng thái đơn là `ACCEPTED`, chưa chuyển `ENROLLED`. `SessionAccessControl` chặn 100% quyền vào lớp: không thấy link Meet/Zoom, không điểm danh, không xem bài tập. Cửa sổ nạp cọc quá hạn (< 24.5h trước buổi 1) bị từ chối; lớp 0 học viên nạp cọc sẽ tự động đóng và giải phóng lịch gia sư.
+  - **Quy trình Học thử & Dừng học thử (Trial Opt-Out)**:
+    - Buổi học thử là **Buổi học #1**. Gia sư nhận 85% tiền buổi #1 nếu có mặt giảng dạy.
+    - Hạn chót bấm "Dừng học thử" (`trialDeadline`): **Trước thời điểm bắt đầu Buổi học #2** (`nextSessionStartAt`).
+    - Nếu học viên bấm "Dừng học thử" trước giờ Buổi 2: Buổi 1 quyết toán cho gia sư; Smart Contract Escrow tự động hoàn trả 100% tiền cọc các buổi còn lại (từ buổi 2 đến hết khóa) về ví MetaMask của học viên; lịch học gia sư được giải phóng.
+    - Nếu quá giờ Buổi #2 không bấm dừng: Hệ thống tự động kích hoạt `AUTO_DEADLINE` chuyển sang `CONTINUED`, đóng vĩnh viễn quyền dừng học thử tự động và tiếp tục khóa học bình thường.
+
 ## 03/11/2026 — PRE-MERGE: harden tự động đóng lớp rỗng và đồng bộ lịch
 
 - **Xử lý vòng đời lớp học khi đến ngày khai giảng (`startDate <= today`)**:
