@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,6 +40,16 @@ public interface ClassRoomRepository extends JpaRepository<ClassRoom, Long>, Jpa
     @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT c FROM ClassRoom c WHERE c.id = :id")
     Optional<ClassRoom> findByIdForUpdate(@Param("id") Long id);
+
+    @Query("SELECT c.id FROM ClassRoom c " +
+           "WHERE (c.status = :published OR c.status = :active) " +
+           "AND c.startDate IS NOT NULL AND c.startDate <= :today " +
+           "ORDER BY c.id ASC")
+    List<Long> findStartingClassroomCandidateIds(
+            @Param("published") ClassRoomStatus published,
+            @Param("active") ClassRoomStatus active,
+            @Param("today") LocalDate today
+    );
 
     @Query("SELECT c FROM ClassRoom c " +
            "LEFT JOIN FETCH c.tutorSubjectRegistration r " +

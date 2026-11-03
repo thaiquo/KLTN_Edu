@@ -311,9 +311,53 @@ Quy tắc thanh lý và đồng bộ trạng thái lớp học khi Học viên d
   - Thông báo tới Gia sư khi lớp tự hủy: "Lớp đã tự động hủy vì không còn học viên hiệu lực."
   - Giao diện trạng thái `CANCELLED` sử dụng câu chữ trung tính: "Lớp đã hủy và hoàn tất thanh lý", không quy chụp mặc định cho Admin.
 
-## 13. Change Policy
 
-Business rules có thể thay đổi trong quá trình phát triển. Khi người dùng xác nhận business rule mới:
+
+## 13. Classroom Status State Table � Lifecycle & Schedule Occupancy (2026-11-03)
+
+Bang trang thai chinh thuc cho vong doi lop hoc va quy tac chiem lich Gia su:
+
+| Tinh huong | Trang thai cuoi | Chiem lich Tutor | Ghi chu |
+|---|---|---|---|
+| Lop toi ngay khai giang, activeStudents == 0 | CLOSED | Khong (giai phong ngay) | He thong tu dong, khong co hop dong can thanh ly |
+| Lop du si so / da bat dau, co ACCEPTED/ENROLLED | LOCKED | Co | Khong thay doi |
+| Lop dang thanh ly hop dong (terminationCutoffSession != null) | LOCKED | Co | Phai cho refund on-chain xac nhan truoc khi giai phong |
+| Hoc vien trial cuoi cung opt-out hoan tat | CANCELLED | Khong (giai phong sau refund) | Section 12 |
+| Admin/Gia su huy toan lop, settlement hoan tat | CANCELLED | Khong | Phai cho tat ca agreement settlement xong |
+
+Quy tac phan biet CLOSED vs CANCELLED:
+- CLOSED = lop chua tung van hanh, chua co hop dong tai chinh can thanh ly. Dung khi lop tu dong do 0 hoc vien truoc khi bat dau.
+- CANCELLED = lop da co hop dong va da hoan thanh toan bo quy trinh quyet toan / hoan coc. Dung sau khi refund on-chain xac nhan.
+
+Statuses chiem lich Gia su (blocking statuses):
+PENDING_APPROVAL | ACTIVE | PRIVATE | PUBLISHED | LOCKED
+CLOSED va CANCELLED khong chiem lich - lich Gia su duoc giai phong ngay khi lop chuyen sang mot trong hai trang thai nay.
+
+### 13.1 Auto-Close Empty Classroom at Start Date
+
+Khi Scheduler chay va phat hien lop PUBLISHED hoac ACTIVE da toi startDate:
+
+1. Dem ACCEPTED + ENROLLED (hoc vien hieu luc - bao gom ca dang trong funding pipeline).
+2. Neu activeStudents == 0:
+   - Chuyen lop sang CLOSED.
+   - Huy tat ca yeu cau PENDING voi ly do "Lop tu dong dong do khong co hoc vien khi den ngay khai giang".
+   - Huy (CANCELLED) tat ca buoi hoc chua hoan thanh neu co du lieu cu.
+   - Xoa attendance tuong lai.
+   - Thong bao realtime cho Gia su (CLASS_AUTO_CLOSED).
+   - Khong sinh buoi hoc moi. Lich Gia su duoc giai phong.
+3. Neu activeStudents >= 1:
+   - PUBLISHED -> LOCKED.
+   - Sinh buoi tuan dau tien nhu binh thuong.
+
+Scheduler xu ly tung lop trong transaction rieng voi pessimistic write lock de tranh race condition voi luong kich hoat enrollment.
+
+## 14. Change Policy
+
+Business rules co the thay doi trong qua trinh phat trien. Khi nguoi dung xac nhan business rule moi:
+
+1. Rule moi thay the rule cu trong pham vi duoc xac nhan.
+2. Phai kiem tra anh huong toi architecture, API, code va documentation.
+3. Phai cap nhat cac docs lien quan khi duoc yeu cau.
 
 1. Rule mới thay thế rule cũ trong phạm vi được xác nhận.
 2. Phải kiểm tra ảnh hưởng tới architecture, API, code và documentation.

@@ -2,6 +2,32 @@
 
 ---
 
+## 03/11/2026 — Tự động đóng lớp 0 học viên khi đến ngày khai giảng và chuẩn hóa chính sách chiếm lịch
+
+- **Xử lý vòng đời lớp học khi đến ngày khai giảng (`startDate <= today`)**:
+  - Tách tiến trình quét `ClassroomLifecycleScheduler` thành từng transaction độc lập cho từng lớp học, sử dụng khóa bi quan (`PESSIMISTIC_WRITE`) trên `class_rooms` để chống race condition với luồng duyệt học viên/ký quỹ.
+  - Phân nhánh chính xác theo số học viên hiệu lực (`ACCEPTED` hoặc `ENROLLED`):
+    - **Lớp 0 học viên**: Tự động chuyển `CLOSED`, hủy các yêu cầu `PENDING`, hủy các buổi học chưa hoàn tất, xóa attendance tương lai, không gọi `RollingSessionService`, gửi thông báo Realtime `CLASS_AUTO_CLOSED` cho Gia sư, và giải phóng lịch dạy ngay lập tức.
+    - **Lớp có học viên**: Chuyển `LOCKED` (đóng tuyển sinh) và tự động sinh buổi học tuần đầu qua `RollingSessionService`.
+- **Chuẩn hóa chính sách chiếm lịch (`ClassRoomScheduleOccupancyPolicy`)**:
+  - Gom các kiểm tra trạng thái chiếm lịch phân tán ở backend (`ClassRoomService`, `TutorAvailabilityController`, `CommunityPostService`) về class dùng chung `ClassRoomScheduleOccupancyPolicy`.
+  - Trạng thái chiếm lịch Gia sư: `PENDING_APPROVAL`, `ACTIVE`, `PRIVATE`, `PUBLISHED`, `LOCKED`.
+  - Trạng thái giải phóng lịch: `CLOSED`, `CANCELLED`, `REJECTED`, `DRAFT`.
+  - Khớp 100% với `BLOCKING_CLASS_STATUSES` ở Frontend (`CreateClassWizard.tsx` và `TutorAvailabilityScheduler.tsx`).
+- **Hồi quy & Đồng bộ tài liệu**:
+  - Bộ kiểm thử đơn vị & tích hợp: `ClassroomLifecycleServiceTest` (6/6 pass), `ClassroomLifecycleSchedulerTest` (1/1 pass), `ClassRoomScheduleOccupancyPolicyTest` (2/2 pass), toàn bộ luồng chấm dứt/học thử (28/28 pass).
+  - Cập nhật chuẩn mực nghiệp vụ: `docs/BUSINESS_RULES.md` (Mục 13 - Bảng trạng thái vòng đời & chiếm lịch), `docs/session/EDUCONNECT_SESSION_ATTENDANCE_ESCROW_MASTER_PLAN.md` (Mục 3.1), `docs/IMPLEMENTATION_STATUS.md`.
+
+## 03/11/2026 — Bật runtime Học thử, giữ Gia sư vắng ở SHADOW và chuẩn bị canary thủ công
+
+- Đối soát release production `b519528386bf2d56e6033b6d246b5c6132b17911`, public health trả `ok`; `main`, `origin/feature/quocthai` và working branch cùng commit.
+- Xác nhận `ESCROW_TRIAL_ENABLED=true` trong cả Learning Service và Contract Service; Contract nhận funding safety margin `30m`.
+- Tiếp tục giữ `TUTOR_ABSENCE_GOVERNANCE_MODE=SHADOW` với allowlist trống. Các tín hiệu gia sư vắng chỉ được ghi nhận để quan sát, chưa được phép HOLD, tạo probation hoặc tự hủy lớp trên production.
+- Đối soát dữ liệu: lớp #42 và #43 cùng enrollment liên quan đã `CANCELLED`; ba termination case hiện có đều `COMPLETED`; không còn hồ sơ chấm dứt đang chờ. `agreement_trial` vẫn chưa có dữ liệu, vì vậy lớp mới có ít nhất hai buổi sẽ là canary trial production đầu tiên.
+- Kiểm thử mục tiêu sau audit đạt Learning 42/42 và Contract termination/trial/absence 98/98. Luồng dùng chung đã xác nhận: HOLD/FREEZE lịch -> quyết toán các buổi đến cutoff -> hủy và hoàn phần cọc chưa dùng on-chain -> chờ event refund -> CLOSE enrollment/class -> giải phóng lịch. Opt-out của một Student chỉ giải phóng lịch Student đó; Tutor chỉ được giải phóng lịch khi lớp không còn người học và chuyển `CANCELLED`.
+- Ghi nhận vấn đề cần sửa: bản xem trước hợp đồng trước ký trong `StudentRequestsView` còn điều khoản cũ/mơ hồ và thiếu phụ lục trial, trong khi tài liệu hợp đồng chính thức đã đúng hơn. Chưa coi trial là E2E production hoàn tất trước khi chạy checklist canary và sửa phần preview này.
+- Bổ sung [checklist kiểm thử Trial/Termination](TRIAL_TERMINATION_MANUAL_CHECKLIST.md) để ghi nhận ID, thời hạn, trạng thái, transaction hash, refund event và khả năng tái sử dụng lịch của hai phía.
+
 ## 02/11/2026 — Kiểm chứng hủy lớp 0 buổi, mở khóa con trỏ Blockchain và chuẩn bị bật tính năng Học thử
 
 - **Rà soát quyền Gia sư hủy lớp chưa diễn ra buổi nào (0/N buổi)**: Đối soát toàn diện mã nguồn Backend (`TerminationService.java`, `LearningTerminationService.java`), Frontend (`EscrowContractsView.tsx`, `TerminationRequestModal.tsx`) và Integration Test. Xác nhận điều kiện "kết thúc buổi học đầu tiên" chỉ áp dụng cho Học viên đơn phương xin nghỉ; Gia sư đề xuất hủy cả lớp khi chưa học buổi nào là hoàn toàn hợp lệ (`cutoff = 0`). Khi Admin duyệt, Smart Contract thực thi `cancelAgreementAndRefundUnused` để hoàn trả 100% tiền cọc về ví từng học viên on-chain.

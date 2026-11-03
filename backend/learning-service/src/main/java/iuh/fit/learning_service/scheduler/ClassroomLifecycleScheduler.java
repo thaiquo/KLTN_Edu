@@ -1,9 +1,8 @@
 package iuh.fit.learning_service.scheduler;
 
-import iuh.fit.learning_service.entity.ClassRoom;
 import iuh.fit.learning_service.enums.ClassRoomStatus;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
-import iuh.fit.learning_service.service.RollingSessionService;
+import iuh.fit.learning_service.service.ClassroomLifecycleService;
 import iuh.fit.learning_service.service.SessionAttendanceService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,7 +10,6 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -26,36 +24,29 @@ public class ClassroomLifecycleScheduler {
     private static final ZoneId BUSINESS_ZONE = ZoneId.of(BUSINESS_TIME_ZONE);
 
     private final ClassRoomRepository classRoomRepository;
-    private final RollingSessionService rollingSessionService;
+    private final ClassroomLifecycleService classroomLifecycleService;
     private final SessionAttendanceService sessionAttendanceService;
 
     /**
-     * Quét định kỳ mỗi ngày lúc 00:01 sáng để tự động khóa tuyển sinh các lớp đến ngày khai giảng (startDate <= today)
-     * và tự động mở các buổi học của tuần đầu tiên.
+     * Quét định kỳ mỗi ngày lúc 00:01 sáng để tự động xử lý vòng đời các lớp đến ngày khai giảng (startDate <= today):
+     * - Lớp 0 học viên hiệu lực -> tự động đóng (CLOSED), giải phóng lịch và hủy request chờ.
+     * - Lớp có học viên hiệu lực -> tự động khóa tuyển sinh (LOCKED) và mở các buổi học tuần đầu tiên.
+     * Mỗi lớp được xử lý trong transaction độc lập có khóa bi quan để chống race condition.
      */
     @Scheduled(cron = "0 1 0 * * *", zone = BUSINESS_TIME_ZONE)
-    @Transactional
     public void scanAndLockStartingClassrooms() {
         LocalDate today = LocalDate.now(BUSINESS_ZONE);
         log.info("ClassroomLifecycleScheduler: Running daily scan for classrooms starting on or before {}", today);
 
-        List<ClassRoom> startingClasses = classRoomRepository.findAll().stream()
-                .filter(c -> (c.getStatus() == ClassRoomStatus.PUBLISHED || c.getStatus() == ClassRoomStatus.ACTIVE)
-                        && c.getStartDate() != null && !c.getStartDate().isAfter(today))
-                .toList();
+        List<Long> candidateIds = classRoomRepository.findStartingClassroomCandidateIds(
+                ClassRoomStatus.PUBLISHED, ClassRoomStatus.ACTIVE, today
+        );
 
-        for (ClassRoom classRoom : startingClasses) {
+        for (Long classroomId : candidateIds) {
             try {
-                if (classRoom.getStatus() == ClassRoomStatus.PUBLISHED) {
-                    classRoom.setStatus(ClassRoomStatus.LOCKED);
-                    classRoomRepository.save(classRoom);
-                    log.info("Auto-locked recruitment for ClassRoom #{} ({}) due to reaching startDate {}",
-                            classRoom.getId(), classRoom.getName(), classRoom.getStartDate());
-                }
-
-                rollingSessionService.generateInitialWeekSessions(classRoom.getId());
+                classroomLifecycleService.processStartingClassroom(classroomId, today);
             } catch (Exception e) {
-                log.error("Failed to process lifecycle for ClassRoom #{}: {}", classRoom.getId(), e.getMessage(), e);
+                log.error("Failed to process lifecycle for ClassRoom #{}: {}", classroomId, e.getMessage(), e);
             }
         }
     }
@@ -65,7 +56,6 @@ public class ClassroomLifecycleScheduler {
      * tự động phân xử kết quả điểm danh và kích hoạt sinh cuốn chiếu tuần tiếp theo.
      */
     @Scheduled(fixedDelay = 60000)
-    @Transactional
     public void scanAndFinalizePastDueSessions() {
         try {
             sessionAttendanceService.autoFinalizePastDueSessions();
