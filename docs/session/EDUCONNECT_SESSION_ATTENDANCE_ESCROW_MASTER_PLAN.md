@@ -52,16 +52,30 @@
 
 ---
 
-## 3. CƠ CHẾ TỰ ĐỘNG KHÓA LỚP THEO NGÀY KHAI GIẢNG (CLASSROOM AUTO-LOCK)
+## 3. CƠ CHẾ XỬ LÝ VÒNG ĐỜI LỚP HỌC THEO NGÀY KHAI GIẢNG (CLASSROOM LIFECYCLE & AUTO-LOCK)
 
-### 3.1. Điều kiện Kích hoạt Khóa lớp:
+### 3.1. Điều kiện Kích hoạt Xử lý Lớp học:
 1. **Đạt đủ sĩ số tối đa (`occupiedCount >= maxStudents`):** Lớp tự động chuyển sang `LOCKED`.
 2. **Đến ngày khai giảng (`LocalDate.now() >= startDate`):**
-   - Tiến trình ngầm `ClassroomLifecycleScheduler` quét định kỳ hàng ngày.
-   - Nếu lớp đang ở trạng thái `PUBLISHED` mà `startDate <= today`:
-     - Chuyển trạng thái lớp thành `LOCKED`.
-     - Hủy các yêu cầu xin học còn `PENDING` chưa được duyệt.
-     - Tự động gọi `RollingSessionService` để **kích hoạt mở 1 tuần học đầu tiên**.
+   - Tiến trình ngầm `ClassroomLifecycleScheduler` quét định kỳ hàng ngày (00:01 AM) và xử lý từng lớp với khóa bi quan (`PESSIMISTIC_WRITE`).
+   - Lớp có `terminationCutoffSession` không được lifecycle khai giảng can thiệp.
+   - Lớp `ACTIVE` cũ không tự đóng chỉ dựa trên enrollment của Learning Service; hệ thống giữ trạng thái và tiếp tục sinh buổi theo cơ chế lũy tiến.
+   - Chỉ lớp `PUBLISHED` được phân nhánh theo số học viên hiệu lực.
+   - Kiểm tra số học viên hiệu lực (`ACCEPTED` hoặc `ENROLLED`):
+     - **Nếu `activeStudents == 0`:**
+       - Tự động chuyển trạng thái lớp sang `CLOSED`.
+       - Hủy các yêu cầu xin học còn `PENDING` ("Lớp tự đóng do không có học viên khi đến ngày khai giảng").
+       - Chỉ hủy (`CANCELLED`) các buổi `SCHEDULED` từ ngày xử lý trở đi và xóa attendance của chính các buổi đó; bảo toàn buổi quá khứ, `IN_PROGRESS` và `COMPLETED`.
+       - **Không gọi `RollingSessionService`**.
+       - Giải phóng lịch dạy của Gia sư (trạng thái `CLOSED` không chiếm lịch).
+       - Phát thông báo Realtime `CLASS_AUTO_CLOSED` cho Gia sư.
+     - **Nếu `activeStudents > 0`:**
+       - Lớp `PUBLISHED` chuyển thành `LOCKED` (khóa tuyển sinh).
+       - Hủy các yêu cầu xin học còn `PENDING` chưa được duyệt.
+       - Tự động gọi `RollingSessionService` để **kích hoạt mở 1 tuần học đầu tiên**.
+       - Tiếp tục giữ lịch dạy của Gia sư.
+   - Mọi yêu cầu `PENDING` bị lifecycle hủy đều phát sự kiện bền vững `ENROLLMENT_SYSTEM_CANCELLED` tới Học viên.
+   - Luồng Gia sư duyệt enrollment khóa cùng bản ghi lớp trước khi đọc lại yêu cầu và chỉ chấp nhận lớp `PUBLISHED`, ngăn race với scheduler.
 
 ---
 

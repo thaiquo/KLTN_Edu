@@ -203,6 +203,26 @@ public class NotificationEventConsumer {
         ));
     }
 
+    @RabbitListener(queues = NotificationRabbitConfig.ENROLLMENT_SYSTEM_CANCELLED_QUEUE)
+    public void onEnrollmentSystemCancelled(EnrollmentNotificationEvent event) {
+        if (!isValidEnrollmentEvent(event, "ENROLLMENT_SYSTEM_CANCELLED")) {
+            return;
+        }
+        String reason = safeReason(event.rejectReason());
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                "ENROLLMENT_SYSTEM_CANCELLED",
+                "Y\u00eau c\u1ea7u tham gia l\u1edbp \u0111\u00e3 \u0111\u01b0\u1ee3c h\u1ec7 th\u1ed1ng \u0111\u00f3ng",
+                reason == null
+                        ? classMessage("Y\u00eau c\u1ea7u tham gia l\u1edbp", event, " \u0111\u00e3 \u0111\u01b0\u1ee3c h\u1ec7 th\u1ed1ng \u0111\u00f3ng.")
+                        : classMessage("Y\u00eau c\u1ea7u tham gia l\u1edbp", event, " \u0111\u00e3 \u0111\u01b0\u1ee3c h\u1ec7 th\u1ed1ng \u0111\u00f3ng. L\u00fd do: " + reason),
+                "STUDENT",
+                "ENROLLMENT_REQUEST",
+                String.valueOf(event.enrollmentRequestId())
+        ));
+    }
+
     @RabbitListener(queues = NotificationRabbitConfig.CLASS_REVIEWED_QUEUE)
     public void onClassReviewed(ClassReviewedNotificationEvent event) {
         if (!isValidClassReviewedEvent(event)) {

@@ -26,6 +26,7 @@ public class NotificationRabbitConfig {
     public static final String ENROLLMENT_ACCEPTED_QUEUE = "notification.enrollment-accepted";
     public static final String ENROLLMENT_REJECTED_QUEUE = "notification.enrollment-rejected";
     public static final String ENROLLMENT_CANCELLED_QUEUE = "notification.enrollment-cancelled";
+    public static final String ENROLLMENT_SYSTEM_CANCELLED_QUEUE = "notification.enrollment-system-cancelled";
     public static final String CLASS_REVIEWED_QUEUE = "notification.class-reviewed";
     public static final String TEACHING_REGISTRATION_REVIEWED_QUEUE = "notification.teaching-registration-reviewed";
     public static final String TEACHING_REGISTRATION_SUBMITTED_QUEUE = "notification.teaching-registration-submitted";
@@ -46,6 +47,7 @@ public class NotificationRabbitConfig {
     public static final String ENROLLMENT_ACCEPTED_ROUTING_KEY = "learning.enrollment.accepted";
     public static final String ENROLLMENT_REJECTED_ROUTING_KEY = "learning.enrollment.rejected";
     public static final String ENROLLMENT_CANCELLED_ROUTING_KEY = "learning.enrollment.cancelled";
+    public static final String ENROLLMENT_SYSTEM_CANCELLED_ROUTING_KEY = "learning.enrollment.system-cancelled";
     public static final String CLASS_REVIEWED_ROUTING_KEY = "learning.class.reviewed";
     public static final String TEACHING_REGISTRATION_REVIEWED_ROUTING_KEY = "learning.teaching-registration.reviewed";
     public static final String TEACHING_REGISTRATION_SUBMITTED_ROUTING_KEY = "learning.teaching-registration.submitted";
@@ -105,6 +107,11 @@ public class NotificationRabbitConfig {
     @Bean
     Queue notificationEnrollmentCancelledQueue() {
         return new Queue(ENROLLMENT_CANCELLED_QUEUE, true);
+    }
+
+    @Bean
+    Queue notificationEnrollmentSystemCancelledQueue() {
+        return new Queue(ENROLLMENT_SYSTEM_CANCELLED_QUEUE, true);
     }
 
     @Bean
@@ -200,6 +207,16 @@ public class NotificationRabbitConfig {
     @Bean
     Binding notificationEnrollmentCancelledBinding(Queue notificationEnrollmentCancelledQueue, DirectExchange eduEventsExchange) {
         return BindingBuilder.bind(notificationEnrollmentCancelledQueue).to(eduEventsExchange).with(ENROLLMENT_CANCELLED_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding notificationEnrollmentSystemCancelledBinding(
+            Queue notificationEnrollmentSystemCancelledQueue,
+            DirectExchange eduEventsExchange
+    ) {
+        return BindingBuilder.bind(notificationEnrollmentSystemCancelledQueue)
+                .to(eduEventsExchange)
+                .with(ENROLLMENT_SYSTEM_CANCELLED_ROUTING_KEY);
     }
 
     @Bean

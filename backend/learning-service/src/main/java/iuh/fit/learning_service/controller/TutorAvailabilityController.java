@@ -7,6 +7,7 @@ import iuh.fit.learning_service.enums.ClassRoomStatus;
 import iuh.fit.learning_service.exception.BadRequestException;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.TutorAvailabilityRepository;
+import iuh.fit.learning_service.service.ClassRoomScheduleOccupancyPolicy;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.transaction.annotation.Transactional;
@@ -154,11 +155,7 @@ public class TutorAvailabilityController {
     }
 
     private boolean blocksTutorSchedule(ClassRoomStatus status) {
-        return status == ClassRoomStatus.PENDING_APPROVAL
-                || status == ClassRoomStatus.ACTIVE
-                || status == ClassRoomStatus.PRIVATE
-                || status == ClassRoomStatus.PUBLISHED
-                || status == ClassRoomStatus.LOCKED;
+        return ClassRoomScheduleOccupancyPolicy.blocksTutorSchedule(status);
     }
 
     private record ValidatedSlot(Integer dayOfWeek, LocalTime startTime, LocalTime endTime) {}

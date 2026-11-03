@@ -121,6 +121,28 @@ class LearningEventPublisherTest {
     }
 
     @Test
+    void publishEnrollmentSystemCancelledTargetsStudentWithReason() {
+        RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
+        LearningEventPublisher publisher = newPublisher(rabbitTemplate);
+        ArgumentCaptor<EnrollmentNotificationEvent> captor = ArgumentCaptor.forClass(EnrollmentNotificationEvent.class);
+
+        publisher.publishEnrollmentSystemCancelled(
+                11L, 22L, 33L, "Math 10", "Lớp đã đóng", "An");
+
+        verify(rabbitTemplate).convertAndSend(
+                eq(LearningRabbitConfig.EXCHANGE),
+                eq(LearningRabbitConfig.ENROLLMENT_SYSTEM_CANCELLED_ROUTING_KEY),
+                captor.capture()
+        );
+        EnrollmentNotificationEvent event = captor.getValue();
+        assertThat(event.eventType()).isEqualTo("ENROLLMENT_SYSTEM_CANCELLED");
+        assertThat(event.recipientUserId()).isEqualTo(33L);
+        assertThat(event.actorUserId()).isNull();
+        assertThat(event.reviewStatus()).isEqualTo("CANCELLED");
+        assertThat(event.rejectReason()).isEqualTo("Lớp đã đóng");
+    }
+
+    @Test
     void publishEnrollmentSkipsSelfNotification() {
         RabbitTemplate rabbitTemplate = mock(RabbitTemplate.class);
         LearningEventPublisher publisher = newPublisher(rabbitTemplate);

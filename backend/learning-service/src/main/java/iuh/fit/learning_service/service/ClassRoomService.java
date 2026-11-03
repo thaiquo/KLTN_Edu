@@ -1136,11 +1136,7 @@ public class ClassRoomService {
         for (ClassRoom existing : existingClasses) {
             // A HOLD can still be rejected by Admin. Reserve the slot until
             // Learning has actually closed the classroom.
-            if (existing.getStatus() == ClassRoomStatus.ACTIVE ||
-                existing.getStatus() == ClassRoomStatus.PENDING_APPROVAL ||
-                existing.getStatus() == ClassRoomStatus.PRIVATE ||
-                existing.getStatus() == ClassRoomStatus.PUBLISHED ||
-                existing.getStatus() == ClassRoomStatus.LOCKED) {
+            if (ClassRoomScheduleOccupancyPolicy.blocksTutorSchedule(existing.getStatus())) {
                 if (!dateRangesOverlap(newStartDate, newEndDate, existing.getStartDate(), existing.getEndDate())) {
                     continue;
                 }

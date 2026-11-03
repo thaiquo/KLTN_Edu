@@ -1656,11 +1656,7 @@ public class CommunityPostService {
     }
 
     private boolean blocksTutorSchedule(ClassRoomStatus status) {
-        return status == ClassRoomStatus.ACTIVE
-                || status == ClassRoomStatus.PENDING_APPROVAL
-                || status == ClassRoomStatus.PRIVATE
-                || status == ClassRoomStatus.PUBLISHED
-                || status == ClassRoomStatus.LOCKED;
+        return ClassRoomScheduleOccupancyPolicy.blocksTutorSchedule(status);
     }
 
     private PollTimePeriod resolvePeriod(PostPollOption option) {

@@ -5,6 +5,7 @@ import {
   isStoppedScheduleSession,
   isUpcomingScheduleSession
 } from './scheduleUtils.js';
+import { BLOCKING_CLASS_STATUSES, blocksTutorSchedule } from './classScheduleOccupancy.js';
 
 const currentDate = new Date(2026, 9, 2, 15, 30);
 const schedules = [{ dayOfWeek: 6, startTime: '15:00', endTime: '16:30' }];
@@ -37,4 +38,18 @@ test('stopped sessions remain history without occupying the student schedule', (
   assert.equal(isUpcomingScheduleSession({ status: 'SCHEDULED', attendanceStopped: true }), false);
   assert.equal(isUpcomingScheduleSession({ status: 'COMPLETED' }), false);
   assert.equal(isUpcomingScheduleSession({ status: 'SCHEDULED' }), true);
+});
+
+test('class schedule occupancy uses one explicit status policy', () => {
+  assert.deepEqual(BLOCKING_CLASS_STATUSES, [
+    'PENDING_APPROVAL',
+    'ACTIVE',
+    'PRIVATE',
+    'PUBLISHED',
+    'LOCKED'
+  ]);
+  for (const status of BLOCKING_CLASS_STATUSES) assert.equal(blocksTutorSchedule(status), true);
+  for (const status of ['DRAFT', 'REJECTED', 'CLOSED', 'CANCELLED']) {
+    assert.equal(blocksTutorSchedule(status), false);
+  }
 });

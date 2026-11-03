@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 import { classApi } from "../../api/classes";
 import { apiRequest } from "../../api/client";
+import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
+import { blocksTutorSchedule } from "../../utils/classScheduleOccupancy";
 
 export interface AvailabilitySlot {
   id: string;
@@ -72,14 +74,6 @@ const VIETNAMESE_DAYS = [
   { value: 7, label: "Thứ 7" },
   { value: 8, label: "Chủ nhật" }
 ];
-
-const BLOCKING_CLASS_STATUSES = new Set([
-  "PENDING_APPROVAL",
-  "ACTIVE",
-  "PRIVATE",
-  "PUBLISHED",
-  "LOCKED"
-]);
 
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 const MINUTES = ["00", "15", "30", "45"];
@@ -220,6 +214,11 @@ export function TutorAvailabilityScheduler({ onNavigate }: TutorAvailabilitySche
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [refreshRevision, setRefreshRevision] = useState(0);
+
+  useRealtimeRefresh(["CLASS_MUTATED"], () => {
+    setRefreshRevision((revision) => revision + 1);
+  });
 
   // Teaching Calendar Week Offset
   const [weekOffset, setWeekOffset] = useState(0);
@@ -280,7 +279,7 @@ export function TutorAvailabilityScheduler({ onNavigate }: TutorAvailabilitySche
         for (const cls of classes) {
           // LOCKED includes a class being settled/terminated. Its teaching slot
           // remains reserved until the whole-class cancellation is complete.
-          if (BLOCKING_CLASS_STATUSES.has(cls.status)) {
+          if (blocksTutorSchedule(cls.status)) {
             if (Array.isArray(cls.schedules)) {
               for (const sch of cls.schedules) {
                 occupied.push({
@@ -315,7 +314,7 @@ export function TutorAvailabilityScheduler({ onNavigate }: TutorAvailabilitySche
       }
     }
     loadData();
-  }, []);
+  }, [refreshRevision]);
 
   // Compute net free intervals after excluding occupied class slots
   const netFreeSegments = useMemo(() => {

@@ -311,7 +311,40 @@ Quy tắc thanh lý và đồng bộ trạng thái lớp học khi Học viên d
   - Thông báo tới Gia sư khi lớp tự hủy: "Lớp đã tự động hủy vì không còn học viên hiệu lực."
   - Giao diện trạng thái `CANCELLED` sử dụng câu chữ trung tính: "Lớp đã hủy và hoàn tất thanh lý", không quy chụp mặc định cho Admin.
 
-## 13. Change Policy
+
+
+## 13. Bảng trạng thái vòng đời lớp và chính sách chiếm lịch (2026-11-03)
+
+| Tình huống | Trạng thái cuối | Chiếm lịch Gia sư | Ghi chú |
+|---|---|---|---|
+| Lớp PUBLISHED tới ngày khai giảng, không có ACCEPTED/ENROLLED | CLOSED | Không | Chưa có học viên hiệu lực nên không có hợp đồng cần thanh lý |
+| Lớp PUBLISHED tới ngày khai giảng, có ACCEPTED/ENROLLED | LOCKED | Có | Đóng tuyển sinh, hủy yêu cầu chờ và sinh buổi tuần đầu |
+| Lớp ACTIVE cũ đã vận hành | ACTIVE | Có | Không tự đóng chỉ dựa trên enrollment của Learning Service |
+| Lớp đang thanh lý (terminationCutoffSession khác null) | LOCKED | Có | Chờ hoàn tất settlement/refund trước khi giải phóng |
+| Học viên trial cuối cùng opt-out hoàn tất | CANCELLED | Không | Giải phóng sau khi refund được xác nhận |
+| Admin/Gia sư hủy toàn lớp, settlement hoàn tất | CANCELLED | Không | Chờ toàn bộ agreement hoàn tất thanh lý |
+
+CLOSED dành cho lớp chưa vận hành và không có hợp đồng tài chính phải thanh lý. CANCELLED dành cho lớp đã có luồng hợp đồng và đã hoàn tất quyết toán/hoàn cọc.
+
+Các trạng thái chiếm lịch Gia sư là PENDING_APPROVAL, ACTIVE, PRIVATE, PUBLISHED, LOCKED. CLOSED và CANCELLED không chiếm lịch.
+
+### 13.1. Xử lý lớp khi đến ngày khai giảng
+
+ClassroomLifecycleScheduler xử lý từng lớp trong transaction riêng và khóa bi quan bản ghi lớp. Luồng duyệt enrollment cũng khóa cùng bản ghi lớp trước khi đọc/cập nhật yêu cầu, do đó scheduler và Gia sư không thể đồng thời hoàn tất hai quyết định mâu thuẫn.
+
+1. Lớp có terminationCutoffSession không được xử lý bởi lifecycle khai giảng.
+2. Lớp ACTIVE cũ chỉ tiếp tục cơ chế sinh buổi lũy tiến; không tự đóng từ dữ liệu enrollment cục bộ.
+3. Với lớp PUBLISHED, hệ thống đếm đúng ACCEPTED + ENROLLED:
+   - Nếu bằng 0: chuyển lớp sang CLOSED, hủy các yêu cầu PENDING, chỉ hủy buổi SCHEDULED từ ngày xử lý trở đi, xóa attendance của chính các buổi tương lai đó và không sinh buổi mới.
+   - Nếu lớn hơn 0: chuyển lớp sang LOCKED, hủy các yêu cầu PENDING còn lại và sinh tuần học đầu.
+4. Mỗi yêu cầu bị hệ thống hủy phát sự kiện bền vững ENROLLMENT_SYSTEM_CANCELLED cho Học viên. Lớp rỗng đồng thời phát realtime CLASS_AUTO_CLOSED cho Gia sư.
+5. Frontend tải lại lịch Gia sư khi nhận sự kiện lớp; chính sách chiếm lịch dùng chung một utility để tránh hai màn hình hiểu trạng thái khác nhau.
+
+### 13.2. Bảo toàn lịch sử
+
+Không được xóa attendance hoặc đổi trạng thái của buổi COMPLETED, IN_PROGRESS hay buổi SCHEDULED trong quá khứ khi tự đóng lớp rỗng. Việc dọn dữ liệu chỉ áp dụng cho buổi tương lai chưa bắt đầu.
+
+## 14. Change Policy
 
 Business rules có thể thay đổi trong quá trình phát triển. Khi người dùng xác nhận business rule mới:
 

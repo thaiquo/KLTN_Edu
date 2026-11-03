@@ -229,7 +229,7 @@ function notificationToastType(
     return 'success';
   }
 
-  if (notificationType === 'ENROLLMENT_REJECTED') {
+  if (notificationType === 'ENROLLMENT_REJECTED' || notificationType === 'ENROLLMENT_SYSTEM_CANCELLED') {
     return 'error';
   }
 

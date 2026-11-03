@@ -159,6 +159,7 @@ export function StudentMyClassesPage() {
       'CLASSROOM_STATUS_CHANGED',
       'ENROLLMENT_REQUESTED',
       'ENROLLMENT_CANCELLED',
+      'ENROLLMENT_SYSTEM_CANCELLED',
       'AGREEMENT_UPDATED',
       'AGREEMENT_ACTIVATED',
       'TERMINATION_UPDATED',
@@ -173,7 +174,7 @@ export function StudentMyClassesPage() {
     loadRequests(false);
   }, []);
 
-  useRealtimeRefresh(['TERMINATION_UPDATED', 'TERMINATION_COMPLETED', 'ENROLLMENT_ACCEPTED', 'ENROLLMENT_REJECTED', 'ENROLLMENT_CANCELLED', 'AGREEMENT_FUNDED', 'AGREEMENT_EXPIRED'], () => loadRequests(true));
+  useRealtimeRefresh(['TERMINATION_UPDATED', 'TERMINATION_COMPLETED', 'ENROLLMENT_ACCEPTED', 'ENROLLMENT_REJECTED', 'ENROLLMENT_CANCELLED', 'ENROLLMENT_SYSTEM_CANCELLED', 'AGREEMENT_FUNDED', 'AGREEMENT_EXPIRED'], () => loadRequests(true));
 
   // Calculate counts
   const enrolledClasses = useMemo(() => {

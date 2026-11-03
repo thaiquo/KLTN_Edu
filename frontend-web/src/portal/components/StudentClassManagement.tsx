@@ -307,6 +307,7 @@ export const StudentClassManagement: React.FC<StudentClassManagementProps> = ({ 
       'CLASSROOM_STATUS_CHANGED',
       'ENROLLMENT_REQUESTED',
       'ENROLLMENT_CANCELLED',
+      'ENROLLMENT_SYSTEM_CANCELLED',
       'AGREEMENT_UPDATED',
       'AGREEMENT_ACTIVATED',
       'TERMINATION_UPDATED',
