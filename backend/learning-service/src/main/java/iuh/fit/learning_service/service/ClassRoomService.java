@@ -63,6 +63,7 @@ public class ClassRoomService {
     private final RealtimeEventHub realtimeEventHub;
     private final LearningStorageCleanupService learningStorageCleanupService;
     private final iuh.fit.learning_service.config.EscrowTrialProperties trialProperties;
+    private final CanonicalSessionPlanner sessionPlanner = new CanonicalSessionPlanner();
 
     public ClassRoomService(
             ClassRoomRepository classRoomRepository,
@@ -404,6 +405,26 @@ public class ClassRoomService {
             schedules.add(schedule);
         }
         classRoom.setSchedules(schedules);
+
+        // Validate that the planned first session is at least 48 hours in the future
+        List<CanonicalSessionPlanner.PlannedSession> plannedSessions = sessionPlanner.plan(classRoom);
+        if (plannedSessions.isEmpty()) {
+            throw new BadRequestException("Không thể lập lịch buổi học từ cấu hình ngày bắt đầu và thời khóa biểu đã chọn.");
+        }
+        CanonicalSessionPlanner.PlannedSession firstSession = plannedSessions.get(0);
+        LocalDateTime firstSessionStart = LocalDateTime.of(firstSession.sessionDate(), LocalTime.parse(firstSession.startTime()));
+        LocalDateTime nowInZone = LocalDateTime.now(CanonicalSessionPlanner.BUSINESS_ZONE);
+        Duration leadTime = Duration.between(nowInZone, firstSessionStart);
+        if (leadTime.isNegative() || leadTime.toHours() < 48) {
+            long hours = Math.max(0, leadTime.toHours());
+            long minutes = Math.max(0, leadTime.toMinutesPart());
+            throw new BadRequestException(String.format(
+                    "Buổi học đầu tiên của lớp (%s lúc %s) phải cách thời điểm hiện tại ít nhất 48 giờ (hiện tại chỉ cách %d giờ %d phút) để đảm bảo thời gian tuyển sinh và học viên nạp cọc on-chain an toàn (> 24.5 giờ theo Smart Contract).",
+                    firstSession.sessionDate().format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")),
+                    firstSession.startTime(),
+                    hours,
+                    minutes));
+        }
 
         // Add chapters if any
         List<ClassChapter> chapters = new ArrayList<>();

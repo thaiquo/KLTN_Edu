@@ -264,6 +264,12 @@ export function CreateClassWizard({ onBack, onSuccess, sourcePostId, initialDraf
   const [durationPerSession, setDurationPerSession] = useState<number>(initialDraft?.durationMinutes || 90);
   const [durationValue, setDurationValue] = useState<number>(3);
   const [durationUnit, setDurationUnit] = useState<"MONTH" | "WEEK">("MONTH");
+  // Minimum start date is today + 2 days (ensuring recruitment lead time & >24.5h on-chain funding window)
+  const minStartDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 2);
+    return d.toISOString().split("T")[0];
+  }, []);
   const [startDate, setStartDate] = useState<string>(() => {
     const d = new Date();
     d.setDate(d.getDate() + 7); // Default to next week
@@ -581,6 +587,51 @@ export function CreateClassWizard({ onBack, onSuccess, sourcePostId, initialDraf
     };
   }, [startDate, durationValue, durationUnit, sessionsPerWeek, pricePerSession]);
 
+  // Real-time calculation of the first planned session occurrence and lead time
+  const firstSessionSummary = useMemo(() => {
+    if (!startDate) return null;
+    const validSessions = configuredSessions.filter(s => s.freeIntervalId && s.dayOfWeek && s.startTime && s.endTime);
+    if (validSessions.length === 0) return null;
+
+    const [y, m, d] = startDate.split("-").map(Number);
+    if (!y || !m || !d) return null;
+
+    for (let offset = 0; offset < 14; offset++) {
+      const curDate = new Date(y, m - 1, d + offset, 0, 0, 0);
+      const jsDay = curDate.getDay();
+      const projectDay = jsDay === 0 ? 8 : jsDay + 1;
+
+      const matching = validSessions.filter(s => Number(s.dayOfWeek) === projectDay);
+      if (matching.length > 0) {
+        matching.sort((a, b) => a.startTime.localeCompare(b.startTime));
+        const first = matching[0];
+        const [sh, sm] = first.startTime.split(":").map(Number);
+        const sessionDateTime = new Date(curDate.getFullYear(), curDate.getMonth(), curDate.getDate(), sh, sm, 0);
+        const now = new Date();
+        const leadMs = sessionDateTime.getTime() - now.getTime();
+        const leadHours = leadMs / (1000 * 60 * 60);
+
+        const dd = String(curDate.getDate()).padStart(2, "0");
+        const mm = String(curDate.getMonth() + 1).padStart(2, "0");
+        const yyyy = curDate.getFullYear();
+        const dayLabel = VIETNAMESE_DAYS.find(v => v.value === projectDay)?.label || `Thứ ${projectDay}`;
+
+        return {
+          dateStr: `${yyyy}-${mm}-${dd}`,
+          displayDate: `${dd}/${mm}/${yyyy}`,
+          dayOfWeek: projectDay,
+          dayLabel,
+          startTime: first.startTime,
+          endTime: first.endTime,
+          sessionDateTime,
+          leadHours,
+          isValid: leadHours >= 48
+        };
+      }
+    }
+    return null;
+  }, [startDate, configuredSessions]);
+
   // Chapter management
   const handleAddChapter = () => {
     const newId = String(Date.now());
@@ -715,7 +766,9 @@ export function CreateClassWizard({ onBack, onSuccess, sourcePostId, initialDraf
       isSyllabus = chapters.length >= 1 && chapters.every(c => c.title.trim().length > 0) && Boolean(syllabusFileUrl);
     }
 
-    const isAllValid = isSubjectLevel && isName && isDesc && isMode && isPrice && isSchedule && isSyllabus;
+    const isStartDateValid = Boolean(startDate && startDate >= minStartDate);
+    const isFirstSessionValid = Boolean(firstSessionSummary && firstSessionSummary.isValid);
+    const isAllValid = isSubjectLevel && isName && isDesc && isMode && isPrice && isSchedule && isSyllabus && isStartDateValid && isFirstSessionValid;
 
     return {
       isSubjectLevel,
@@ -725,12 +778,14 @@ export function CreateClassWizard({ onBack, onSuccess, sourcePostId, initialDraf
       isPrice,
       isSchedule,
       isSyllabus,
+      isStartDateValid,
+      isFirstSessionValid,
       isAllValid
     };
   }, [
     selectedRegId, selectedLevelId, className, description, learningMode, 
     meetingLink, address, pricePerSession, activeRegistration, scheduleValidation, 
-    syllabusMode, chapters, syllabusFileUrl
+    syllabusMode, chapters, syllabusFileUrl, startDate, minStartDate, firstSessionSummary
   ]);
 
   const canUseOnline = tutorTeachingModes.includes("ONLINE");
@@ -740,6 +795,16 @@ export function CreateClassWizard({ onBack, onSuccess, sourcePostId, initialDraf
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorBanner(null);
+
+    if (!validationChecks.isStartDateValid) {
+      setErrorBanner(`Ngày bắt đầu khóa học không hợp lệ. Ngày bắt đầu phải từ ngày ${minStartDate.split('-').reverse().join('/')} trở đi (cách thời điểm hiện tại ít nhất 2 ngày).`);
+      return;
+    }
+
+    if (!validationChecks.isFirstSessionValid) {
+      setErrorBanner("Buổi học đầu tiên của lớp chưa cách thời điểm hiện tại đủ 48 giờ. Vui lòng dời ngày bắt đầu hoặc chọn khung giờ khác để học viên kịp nạp cọc on-chain.");
+      return;
+    }
 
     if (!validationChecks.isAllValid) {
       setErrorBanner("Vui lòng hoàn thành đầy đủ tất cả các thông tin yêu cầu theo danh sách kiểm tra bên dưới.");
@@ -1178,10 +1243,18 @@ export function CreateClassWizard({ onBack, onSuccess, sourcePostId, initialDraf
             </label>
             <input 
               type="date"
+              min={minStartDate}
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:border-brand-primary"
+              className={`px-3.5 py-2.5 rounded-xl text-xs font-bold focus:outline-none transition-all ${
+                firstSessionSummary && !firstSessionSummary.isValid
+                  ? "bg-rose-50 border-2 border-rose-400 text-rose-900 focus:border-rose-500"
+                  : "bg-slate-50 border border-slate-200 text-slate-800 focus:bg-white focus:border-brand-primary"
+              }`}
             />
+            <p className="text-[11px] font-medium text-slate-500 mt-1.5 flex items-center gap-1">
+              <span>💡</span> Ngày bắt đầu tối thiểu từ <strong className="text-brand-primary font-bold">{minStartDate.split('-').reverse().join('/')}</strong> (cách thời điểm hiện tại ít nhất 2 ngày để đảm bảo thời gian tuyển sinh và học viên nạp cọc on-chain an toàn).
+            </p>
           </div>
 
           {/* Display Overview of Net Free Slots Organized by Day */}
@@ -1409,6 +1482,54 @@ export function CreateClassWizard({ onBack, onSuccess, sourcePostId, initialDraf
                 </ul>
               </div>
             )}
+
+            {/* Real-time Assessment Box for Session #1 Lead Time */}
+            {firstSessionSummary && (
+              <div className={`p-4 rounded-2xl border transition-all ${
+                firstSessionSummary.isValid
+                  ? "bg-emerald-50/80 border-emerald-200"
+                  : "bg-rose-50 border-2 border-rose-300"
+              }`}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+                    <span>{firstSessionSummary.isValid ? "✅" : "⚠️"}</span>
+                    <span className={firstSessionSummary.isValid ? "text-emerald-900" : "text-rose-900"}>
+                      {firstSessionSummary.isValid ? "Buổi học đầu tiên hợp lệ" : "Buổi học đầu tiên quá gần thời điểm hiện tại!"}
+                    </span>
+                  </span>
+                  <span className={`text-[11px] font-black px-2.5 py-0.5 rounded-full ${
+                    firstSessionSummary.isValid
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-rose-100 text-rose-800 animate-pulse"
+                  }`}>
+                    Cách hiện tại: {Math.max(0, Math.floor(firstSessionSummary.leadHours))} giờ {Math.max(0, Math.floor((firstSessionSummary.leadHours % 1) * 60))} phút
+                  </span>
+                </div>
+
+                <div className="text-xs space-y-1">
+                  <p className={firstSessionSummary.isValid ? "text-emerald-800 font-medium" : "text-rose-800 font-medium"}>
+                    Buổi học mở đầu (#1) dự kiến diễn ra vào: <strong className="font-bold underline">{firstSessionSummary.dayLabel}, ngày {firstSessionSummary.displayDate} lúc {firstSessionSummary.startTime} - {firstSessionSummary.endTime}</strong>.
+                  </p>
+                  {!firstSessionSummary.isValid ? (
+                    <div className="mt-2 text-[11px] bg-white/90 p-3 rounded-xl border border-rose-200 text-rose-800 space-y-1.5 shadow-sm">
+                      <p className="font-semibold text-rose-900">
+                        🚫 <strong>Chưa đủ điều kiện an toàn:</strong> Quy định hệ thống yêu cầu buổi học đầu tiên phải cách thời điểm hiện tại ít nhất <strong>48 giờ</strong>.
+                      </p>
+                      <p className="text-slate-600">
+                        💡 <strong>Tại sao?</strong> Khi áp dụng chính sách học thử, Smart Contract yêu cầu học viên phải hoàn tất nạp cọc trước buổi đầu tối thiểu <strong>24 giờ 30 phút</strong>. Cần tối thiểu 48 giờ để học viên có thời gian tìm lớp, gia sư duyệt đơn và học viên nạp cọc an toàn.
+                      </p>
+                      <p className="font-bold text-brand-primary">
+                        👉 <strong>Cách xử lý:</strong> Vui lòng dời ô <strong>Ngày bắt đầu khóa học</strong> sang ngày muộn hơn hoặc đổi giờ học của buổi đầu.
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-emerald-700">
+                      ✓ Đảm bảo đủ thời gian tuyển sinh và học viên nạp cọc on-chain an toàn (&gt; 24.5 giờ theo Smart Contract).
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Auto Calculation Preview Card */}
@@ -1589,6 +1710,14 @@ export function CreateClassWizard({ onBack, onSuccess, sourcePostId, initialDraf
                   ? (syllabusFileUrl ? "Đã tải file lộ trình" : "Chưa tải file lộ trình") 
                   : (chapters.length >= 1 && syllabusFileUrl ? "Đã nhập chương & tải file" : "Chưa đủ chương hoặc file")
               }
+            </div>
+
+            <div className={`flex items-center gap-2 font-bold ${validationChecks.isStartDateValid ? "text-emerald-700" : "text-slate-400"}`}>
+              {validationChecks.isStartDateValid ? "✓" : "○"} Ngày khai giảng từ {minStartDate.split('-').reverse().join('/')} trở đi
+            </div>
+
+            <div className={`flex items-center gap-2 font-bold ${validationChecks.isFirstSessionValid ? "text-emerald-700" : "text-slate-400"}`}>
+              {validationChecks.isFirstSessionValid ? "✓" : "○"} Buổi học đầu tiên cách hiện tại ít nhất 48 giờ (Đảm bảo cửa sổ nạp cọc on-chain)
             </div>
           </div>
         </div>
