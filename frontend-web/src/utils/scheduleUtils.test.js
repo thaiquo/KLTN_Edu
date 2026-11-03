@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isClassLiveNow } from './scheduleUtils.js';
+import {
+  isClassLiveNow,
+  isStoppedScheduleSession,
+  isUpcomingScheduleSession
+} from './scheduleUtils.js';
 
 const currentDate = new Date(2026, 9, 2, 15, 30);
 const schedules = [{ dayOfWeek: 6, startTime: '15:00', endTime: '16:30' }];
@@ -23,4 +27,14 @@ test('hold applies per session and per participant without stopping other partic
   assert.equal(check({ sessions: [session], terminationCutoffSession: 1 }), false);
   assert.equal(check({ sessions: [session], terminationCutoffSession: 2 }), true);
   assert.equal(check({ terminationCutoffSession: 0 }), false);
+});
+
+test('stopped sessions remain history without occupying the student schedule', () => {
+  assert.equal(isStoppedScheduleSession({ status: 'CANCELLED' }), true);
+  assert.equal(isStoppedScheduleSession({ status: 'SCHEDULED', attendanceStopped: true }), true);
+  assert.equal(isStoppedScheduleSession({ status: 'SCHEDULED' }), false);
+  assert.equal(isUpcomingScheduleSession({ status: 'CANCELLED' }), false);
+  assert.equal(isUpcomingScheduleSession({ status: 'SCHEDULED', attendanceStopped: true }), false);
+  assert.equal(isUpcomingScheduleSession({ status: 'COMPLETED' }), false);
+  assert.equal(isUpcomingScheduleSession({ status: 'SCHEDULED' }), true);
 });

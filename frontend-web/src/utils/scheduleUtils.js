@@ -73,6 +73,20 @@ export function parseTimeToMinutes(timeStr) {
   return hours * 60 + minutes;
 }
 
+/**
+ * Stopped/cancelled sessions remain in the API as learning history, but they no
+ * longer reserve time on the student's calendar or block a new class.
+ */
+export function isStoppedScheduleSession(session) {
+  return String(session?.status || '').toUpperCase() === 'CANCELLED'
+    || Boolean(session?.attendanceStopped);
+}
+
+export function isUpcomingScheduleSession(session) {
+  const status = String(session?.status || '').toUpperCase();
+  return !isStoppedScheduleSession(session) && status !== 'COMPLETED';
+}
+
 function timeToMinutes(timeStr) {
   const m = parseTimeToMinutes(timeStr);
   return m !== null ? m : 0;
