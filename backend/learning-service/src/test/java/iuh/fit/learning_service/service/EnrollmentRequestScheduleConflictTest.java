@@ -183,6 +183,35 @@ class EnrollmentRequestScheduleConflictTest {
     }
 
     @Test
+    void allowsEnrollmentAfterIndividualAgreementIsCancelledWhileOldClassContinues() {
+        EnrollmentRequestService service = service();
+        ClassRoom targetClass = createClassRoom(10L, "Target class", LocalDate.now(), LocalDate.now().plusMonths(2));
+        targetClass.setSchedules(List.of(createSchedule(targetClass, 2, "18:00", "19:30")));
+
+        ClassRoom oldClass = createClassRoom(20L, "Old class", LocalDate.now(), LocalDate.now().plusMonths(2));
+        oldClass.setSchedules(List.of(createSchedule(oldClass, 2, "18:00", "19:30")));
+        EnrollmentRequest cancelledEnrollment = new EnrollmentRequest();
+        cancelledEnrollment.setClassRoom(oldClass);
+        cancelledEnrollment.setStudentId(100L);
+        cancelledEnrollment.setStudentEmail("student@example.com");
+        cancelledEnrollment.setStatus(EnrollmentRequestStatus.CANCELLED);
+        cancelledEnrollment.setAgreementId("agreement-cancelled");
+
+        when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
+        when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.ACCEPTED)).thenReturn(0L);
+        when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.PENDING)).thenReturn(0L);
+        when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any())).thenReturn(false);
+        when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(cancelledEnrollment));
+        when(enrollmentRequestRepository.save(any())).thenAnswer(i -> {
+            EnrollmentRequest r = i.getArgument(0);
+            ReflectionTestUtils.setField(r, "id", 1L);
+            return r;
+        });
+
+        assertThat(service.enrollClass(10L, 100L, "student@example.com", validRequest())).isNotNull();
+    }
+
+    @Test
     void allowsEnrollmentWhenSchedulesDoNotOverlapInTime() {
         EnrollmentRequestService service = service();
 
@@ -353,6 +382,46 @@ class EnrollmentRequestScheduleConflictTest {
         assertThat(response.sessions().get(0).attendanceStopped()).isFalse();
         assertThat(response.sessions().get(1).status()).isEqualTo("CANCELLED");
         assertThat(response.sessions().get(1).attendanceStopped()).isTrue();
+    }
+
+    @Test
+    void individuallyCancelledEnrollmentHasNoRecurringScheduleButKeepsStoppedSessionHistory() {
+        EnrollmentRequestService service = service();
+        ClassRoom classRoom = createClassRoom(20L, "Class continuing for other students", LocalDate.now().minusMonths(1), LocalDate.now().plusMonths(1));
+        classRoom.setSchedules(List.of(createSchedule(classRoom, 2, "19:00", "20:30")));
+        EnrollmentRequest enrollment = new EnrollmentRequest();
+        enrollment.setClassRoom(classRoom);
+        enrollment.setStudentId(100L);
+        enrollment.setStudentEmail("student@example.com");
+        enrollment.setStatus(EnrollmentRequestStatus.CANCELLED);
+        enrollment.setAgreementId("agreement-terminated");
+
+        ClassSession future = new ClassSession();
+        ReflectionTestUtils.setField(future, "id", 102L);
+        future.setClassRoom(classRoom);
+        future.setSequenceNumber(2);
+        future.setSessionDate(LocalDate.now().plusDays(7));
+        future.setStartTime("19:00");
+        future.setEndTime("20:30");
+        future.setStatus(ClassSessionStatus.SCHEDULED);
+
+        LearningTerminationStop stop = new LearningTerminationStop();
+        stop.setAgreementId("agreement-terminated");
+        stop.setClassroomId(20L);
+        stop.setStudentId(100L);
+        stop.setCutoffSession(1);
+
+        when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(enrollment));
+        when(terminationStops.findByClassroomIdAndStudentId(20L, 100L)).thenReturn(List.of(stop));
+        when(classSessionRepository.findByClassRoomIdInOrderBySessionDateAscStartTimeAsc(List.of(20L)))
+                .thenReturn(List.of(future));
+
+        StudentScheduleResponse response = service.getStudentSchedule("student@example.com");
+
+        assertThat(response.recurringSchedules()).isEmpty();
+        assertThat(response.sessions()).hasSize(1);
+        assertThat(response.sessions().get(0).status()).isEqualTo("CANCELLED");
+        assertThat(response.sessions().get(0).attendanceStopped()).isTrue();
     }
 
     private EnrollmentRequestService service() {

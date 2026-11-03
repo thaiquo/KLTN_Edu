@@ -2,6 +2,16 @@
 
 ---
 
+## 02/11/2026 — Kiểm chứng hủy lớp 0 buổi, mở khóa con trỏ Blockchain và chuẩn bị bật tính năng Học thử
+
+- **Rà soát quyền Gia sư hủy lớp chưa diễn ra buổi nào (0/N buổi)**: Đối soát toàn diện mã nguồn Backend (`TerminationService.java`, `LearningTerminationService.java`), Frontend (`EscrowContractsView.tsx`, `TerminationRequestModal.tsx`) và Integration Test. Xác nhận điều kiện "kết thúc buổi học đầu tiên" chỉ áp dụng cho Học viên đơn phương xin nghỉ; Gia sư đề xuất hủy cả lớp khi chưa học buổi nào là hoàn toàn hợp lệ (`cutoff = 0`). Khi Admin duyệt, Smart Contract thực thi `cancelAgreementAndRefundUnused` để hoàn trả 100% tiền cọc về ví từng học viên on-chain.
+- **Sửa giao diện Admin duyệt hồ sơ `HOLD_PENDING` (PR #20 / Commit `39ce289`)**: Hiển thị đầy đủ nút Duyệt, Từ chối và ô nhập lý do trong `TerminationPanel.tsx` khi hồ sơ ở trạng thái `HOLD_PENDING`; cho phép Admin thao tác trực tiếp, đồng thời giữ nguyên chốt an toàn tài chính (phải đồng bộ Learning HOLD thành công trước khi tạo lệnh thanh lý).
+- **Mở khóa con trỏ sự kiện Blockchain Sepolia trên VPS**: Thực thi lệnh đặt lại `last_confirmed_block_hash = NULL` trên database `kltn_db` (Chain ID 11155111). Đã gỡ bỏ triệt để cảnh báo lệch hash block do RPC reorg/discrepancy, phục hồi khả năng quét log tự động cho Event Ingestion Poller.
+- **Hiện trạng dữ liệu & Tiến độ tiếp tục**:
+  - Lớp Hóa học 11 (#43) đã kết thúc và hoàn tiền $4.20 USDC x 2 học viên on-chain thành công (`CANCELLED`).
+  - Lớp Tiếng Anh 11 (#42, 2 học viên, $4.80 USDC x 2, 0/8 buổi) đã mở khóa sẵn sàng để Gia sư gửi đề xuất dừng lớp và Admin duyệt hoàn cọc.
+  - Lộ trình phiên kế tiếp: Hoàn tất hủy lớp #42 trên Web UI $\rightarrow$ Chạy sao lưu dữ liệu `clean-before-trial` $\rightarrow$ Đổi biến môi trường `ESCROW_TRIAL_ENABLED=true` và `TUTOR_ABSENCE_GOVERNANCE_MODE=SHADOW` $\rightarrow$ Tái khởi động services $\rightarrow$ Gia sư tạo lớp học thử mới (v1) để vận hành thử nghiệm.
+
 ## 02/11/2026 — Sửa đồng bộ HOLD 401 và cấu hình ví Web production
 
 - Sửa bộ lọc JWT nội bộ của Learning Service để endpoint chấm dứt hợp đồng dùng đúng scope `learning-termination`, thống nhất với token do Contract Service phát và với kiểm tra tại controller. Lỗi cũ khiến Learning trả HTTP 401, hồ sơ giữ ở `HOLD_PENDING` và Admin nhận HTTP 409 trước bước quyết toán.

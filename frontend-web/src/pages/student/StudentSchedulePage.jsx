@@ -24,7 +24,12 @@ import {
 } from 'lucide-react';
 import { classApi } from '../../api/classes';
 import { StudentPageScaffold, StudentEmptyState } from './StudentPageScaffold';
-import { formatDayOfWeek, formatTimeSlot, DAY_OF_WEEK_LABELS } from '../../utils/scheduleUtils';
+import {
+  formatDayOfWeek,
+  formatTimeSlot,
+  isStoppedScheduleSession,
+  isUpcomingScheduleSession
+} from '../../utils/scheduleUtils';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 
 const STATUS_SESSION_META = {
@@ -137,6 +142,19 @@ export function StudentSchedulePage() {
     return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
   }, [scheduleData]);
 
+  const activeDistinctClasses = useMemo(() => {
+    const map = new Map();
+    (scheduleData.recurringSchedules || []).forEach((s) => {
+      if (s.classRoomId && s.className) map.set(String(s.classRoomId), s.className);
+    });
+    (scheduleData.sessions || []).filter(isUpcomingScheduleSession).forEach((s) => {
+      if (s.classRoomId && s.className) map.set(String(s.classRoomId), s.className);
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [scheduleData]);
+
+  const visibleClassOptions = activeTab === 'sessions' ? distinctClasses : activeDistinctClasses;
+
   const filteredSessions = useMemo(() => {
     return (scheduleData.sessions || []).filter((s) => {
       if (selectedClassId !== 'ALL' && String(s.classRoomId) !== selectedClassId) return false;
@@ -154,7 +172,7 @@ export function StudentSchedulePage() {
   // Sessions grouped by ISO Date string
   const sessionsByDate = useMemo(() => {
     const map = {};
-    filteredSessions.forEach((session) => {
+    filteredSessions.filter((session) => !isStoppedScheduleSession(session)).forEach((session) => {
       const d = session.sessionDate;
       if (!map[d]) map[d] = [];
       map[d].push(session);
@@ -174,17 +192,19 @@ export function StudentSchedulePage() {
     return map;
   }, [filteredRecurring]);
 
-  const uniqueClassesCount = useMemo(() => {
+  const activeClassesCount = useMemo(() => {
     const set = new Set();
     (scheduleData.recurringSchedules || []).forEach((s) => set.add(s.classRoomId));
-    (scheduleData.sessions || []).forEach((s) => set.add(s.classRoomId));
+    (scheduleData.sessions || [])
+      .filter(isUpcomingScheduleSession)
+      .forEach((s) => set.add(s.classRoomId));
+    set.delete(null);
+    set.delete(undefined);
     return set.size;
   }, [scheduleData]);
 
   const upcomingSessionsCount = useMemo(() => {
-    return (scheduleData.sessions || []).filter(
-      (s) => s.status !== 'COMPLETED' && s.status !== 'CANCELLED' && !s.attendanceStopped
-    ).length;
+    return (scheduleData.sessions || []).filter(isUpcomingScheduleSession).length;
   }, [scheduleData.sessions]);
 
   return (
@@ -222,7 +242,7 @@ export function StudentSchedulePage() {
               <BookOpen size={18} />
             </span>
           </div>
-          <p className="mt-3 font-display text-2xl font-black text-slate-900">{uniqueClassesCount} lớp</p>
+          <p className="mt-3 font-display text-2xl font-black text-slate-900">{activeClassesCount} lớp</p>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
@@ -293,7 +313,7 @@ export function StudentSchedulePage() {
 
         <div className="flex items-center gap-2 flex-wrap">
           {/* Class Filter Dropdown */}
-          {distinctClasses.length > 0 && (
+          {visibleClassOptions.length > 0 && (
             <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 shadow-2xs">
               <BookOpen size={13} className="text-slate-400" />
               <select
@@ -301,8 +321,8 @@ export function StudentSchedulePage() {
                 onChange={(e) => setSelectedClassId(e.target.value)}
                 className="bg-transparent text-xs font-bold text-slate-700 outline-none cursor-pointer"
               >
-                <option value="ALL">Tất cả lớp học ({distinctClasses.length})</option>
-                {distinctClasses.map((c) => (
+                <option value="ALL">Tất cả lớp học ({visibleClassOptions.length})</option>
+                {visibleClassOptions.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
