@@ -427,7 +427,7 @@ class ClassRoomServiceTest {
     void tutorWithOnlineModeCanCreateOnlineClass() {
         arrangeCreateClass(TeachingMode.ONLINE, List.of());
 
-        var response = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "18:00", "19:30", LocalDate.of(2026, 10, 1)));
+        var response = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "18:00", "19:30", LocalDate.now().plusDays(7)));
 
         assertThat(response.learningMode()).isEqualTo(LearningMode.ONLINE);
     }
@@ -452,7 +452,7 @@ class ClassRoomServiceTest {
         lenient().when(classRoomRepository.findByTutorEmailWithDetails("tutor@example.com")).thenReturn(List.of());
         lenient().when(classRoomRepository.save(any(ClassRoom.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        var response = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "18:00", "19:30", LocalDate.of(2026, 10, 1)));
+        var response = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "18:00", "19:30", LocalDate.now().plusDays(7)));
 
         assertThat(response.tutorProfileId()).isEqualTo(88L);
         assertThat(registration.getTutorProfileId()).isEqualTo(88L);
@@ -477,7 +477,7 @@ class ClassRoomServiceTest {
         lenient().when(classRoomRepository.findByTutorEmailWithDetails("tutor@example.com")).thenReturn(List.of());
         lenient().when(classRoomRepository.save(any(ClassRoom.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        var response = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "18:00", "19:30", LocalDate.of(2026, 10, 1)));
+        var response = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "18:00", "19:30", LocalDate.now().plusDays(7)));
 
         assertThat(response.tutorProfileId()).isEqualTo(33L);
         assertThat(registration.getTutorProfileId()).isEqualTo(33L);
@@ -489,14 +489,14 @@ class ClassRoomServiceTest {
         arrangeCreateClass(TeachingMode.ONLINE, List.of());
 
         assertThrows(BadRequestException.class,
-                () -> service.createClass("tutor@example.com", createRequest(LearningMode.OFFLINE, "18:00", "19:30", LocalDate.of(2026, 10, 1))));
+                () -> service.createClass("tutor@example.com", createRequest(LearningMode.OFFLINE, "18:00", "19:30", LocalDate.now().plusDays(7))));
     }
 
     @Test
     void tutorWithOfflineModeCanCreateOfflineClass() {
         arrangeCreateClass(TeachingMode.OFFLINE, List.of());
 
-        var response = service.createClass("tutor@example.com", createRequest(LearningMode.OFFLINE, "18:00", "19:30", LocalDate.of(2026, 10, 1)));
+        var response = service.createClass("tutor@example.com", createRequest(LearningMode.OFFLINE, "18:00", "19:30", LocalDate.now().plusDays(7)));
 
         assertThat(response.learningMode()).isEqualTo(LearningMode.OFFLINE);
     }
@@ -505,8 +505,8 @@ class ClassRoomServiceTest {
     void tutorWithBothModesCanCreateOnlineAndOfflineClasses() {
         arrangeCreateClass(List.of(TeachingMode.ONLINE, TeachingMode.OFFLINE), List.of());
 
-        var online = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "18:00", "19:30", LocalDate.of(2026, 10, 1)));
-        var offline = service.createClass("tutor@example.com", createRequest(LearningMode.OFFLINE, "20:00", "21:30", LocalDate.of(2026, 10, 1)));
+        var online = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "18:00", "19:30", LocalDate.now().plusDays(7)));
+        var offline = service.createClass("tutor@example.com", createRequest(LearningMode.OFFLINE, "20:00", "21:30", LocalDate.now().plusDays(7)));
 
         assertThat(online.learningMode()).isEqualTo(LearningMode.ONLINE);
         assertThat(offline.learningMode()).isEqualTo(LearningMode.OFFLINE);
@@ -514,61 +514,61 @@ class ClassRoomServiceTest {
 
     @Test
     void sameDayTimeWithoutDateRangeOverlapDoesNotConflict() {
-        ClassRoom existing = existingClass(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), 5, "18:00", "20:00");
+        ClassRoom existing = existingClass(LocalDate.now().plusDays(7), LocalDate.now().plusDays(20), 5, "18:00", "20:00");
         arrangeCreateClass(List.of(TeachingMode.ONLINE), List.of(existing));
 
-        var response = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "18:00", "20:00", LocalDate.of(2026, 12, 1)));
+        var response = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "18:00", "20:00", LocalDate.now().plusDays(30)));
 
         assertThat(response.learningMode()).isEqualTo(LearningMode.ONLINE);
     }
 
     @Test
     void sameDayTimeWithDateRangeOverlapConflicts() {
-        ClassRoom existing = existingClass(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), 5, "18:00", "20:00");
+        ClassRoom existing = existingClass(LocalDate.now().plusDays(7), LocalDate.now().plusDays(35), 5, "18:00", "20:00");
         arrangeCreateClass(List.of(TeachingMode.ONLINE), List.of(existing));
 
         assertThrows(BadRequestException.class,
-                () -> service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "19:00", "21:00", LocalDate.of(2026, 10, 15))));
+                () -> service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "19:00", "21:00", LocalDate.now().plusDays(10))));
     }
 
     @Test
     void pendingClassCancellationStillReservesTutorSchedule() {
-        ClassRoom existing = existingClass(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), 5, "18:00", "20:00");
+        ClassRoom existing = existingClass(LocalDate.now().plusDays(7), LocalDate.now().plusDays(35), 5, "18:00", "20:00");
         existing.setStatus(ClassRoomStatus.LOCKED);
         existing.setTerminationCutoffSession(1);
         arrangeCreateClass(List.of(TeachingMode.ONLINE), List.of(existing));
 
         assertThrows(BadRequestException.class,
-                () -> service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "19:00", "21:00", LocalDate.of(2026, 10, 15))));
+                () -> service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "19:00", "21:00", LocalDate.now().plusDays(10))));
     }
 
     @Test
     void cancelledClassReleasesTutorSchedule() {
-        ClassRoom existing = existingClass(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), 5, "18:00", "20:00");
+        ClassRoom existing = existingClass(LocalDate.now().plusDays(7), LocalDate.now().plusDays(35), 5, "18:00", "20:00");
         existing.setStatus(ClassRoomStatus.CANCELLED);
         existing.setTerminationCutoffSession(1);
         arrangeCreateClass(List.of(TeachingMode.ONLINE), List.of(existing));
 
         assertThat(service.createClass("tutor@example.com",
-                createRequest(LearningMode.ONLINE, "19:00", "21:00", LocalDate.of(2026, 10, 15)))).isNotNull();
+                createRequest(LearningMode.ONLINE, "19:00", "21:00", LocalDate.now().plusDays(10)))).isNotNull();
     }
 
     @Test
     void overlappingDateRangeDifferentDayDoesNotConflict() {
-        ClassRoom existing = existingClass(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), 4, "18:00", "20:00");
+        ClassRoom existing = existingClass(LocalDate.now().plusDays(7), LocalDate.now().plusDays(35), 4, "18:00", "20:00");
         arrangeCreateClass(List.of(TeachingMode.ONLINE), List.of(existing));
 
-        var response = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "18:00", "20:00", LocalDate.of(2026, 10, 15)));
+        var response = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "18:00", "20:00", LocalDate.now().plusDays(10)));
 
         assertThat(response.learningMode()).isEqualTo(LearningMode.ONLINE);
     }
 
     @Test
     void overlappingDateRangeSameDayNonOverlappingTimeDoesNotConflict() {
-        ClassRoom existing = existingClass(LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31), 5, "18:00", "20:00");
+        ClassRoom existing = existingClass(LocalDate.now().plusDays(7), LocalDate.now().plusDays(35), 5, "18:00", "20:00");
         arrangeCreateClass(List.of(TeachingMode.ONLINE), List.of(existing));
 
-        var response = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "20:00", "21:30", LocalDate.of(2026, 10, 15)));
+        var response = service.createClass("tutor@example.com", createRequest(LearningMode.ONLINE, "20:00", "21:30", LocalDate.now().plusDays(10)));
 
         assertThat(response.learningMode()).isEqualTo(LearningMode.ONLINE);
     }
@@ -596,7 +596,7 @@ class ClassRoomServiceTest {
         classRoom.setDurationPerSessionMinutes(90);
         classRoom.setDurationValue(4);
         classRoom.setDurationUnit(DurationUnit.WEEK);
-        classRoom.setStartDate(LocalDate.of(2026, 10, 1));
+        classRoom.setStartDate(LocalDate.now().plusDays(7));
         classRoom.setEndDate(LocalDate.of(2026, 10, 29));
         classRoom.setTotalSessions(8);
         classRoom.setCreatedAt(LocalDateTime.parse(createdAt));
@@ -751,7 +751,7 @@ class ClassRoomServiceTest {
         when(trialProperties.isEnabled()).thenReturn(true);
 
         ClassRoomDtos.CreateClassRoomRequest req = createRequest(
-                LearningMode.ONLINE, "18:00", "19:30", LocalDate.now().plusDays(1));
+                LearningMode.ONLINE, "18:00", "19:30", LocalDate.now().plusDays(7));
         var response = service.createClass("tutor@example.com", req);
         assertThat(response).isNotNull();
 
@@ -766,12 +766,37 @@ class ClassRoomServiceTest {
         when(trialProperties.isEnabled()).thenReturn(false);
 
         ClassRoomDtos.CreateClassRoomRequest req = createRequest(
-                LearningMode.ONLINE, "18:00", "19:30", LocalDate.now().plusDays(1));
+                LearningMode.ONLINE, "18:00", "19:30", LocalDate.now().plusDays(7));
         var response = service.createClass("tutor@example.com", req);
         assertThat(response).isNotNull();
 
         org.mockito.ArgumentCaptor<ClassRoom> captor = org.mockito.ArgumentCaptor.forClass(ClassRoom.class);
         verify(classRoomRepository).save(captor.capture());
         assertThat(captor.getValue().getTrialPolicyVersion()).isNull();
+    }
+    @Test
+    void createClassFailsWhenFirstSessionStartsInLessThan48Hours() {
+        arrangeCreateClass(List.of(TeachingMode.ONLINE), List.of());
+
+        java.time.LocalDateTime now = java.time.LocalDateTime.now(iuh.fit.learning_service.service.CanonicalSessionPlanner.BUSINESS_ZONE);
+        java.time.LocalDateTime targetSessionTime = now.plusHours(30);
+        int dayOfWeek = targetSessionTime.getDayOfWeek().getValue() + 1;
+        String startTime = "07:00";
+        String endTime = "08:30";
+
+        ClassRoomDtos.CreateClassRoomRequest req = new ClassRoomDtos.CreateClassRoomRequest(
+                10L, 20L, 88L, "Tutor Example", "Lớp test lead time", "Mô tả",
+                LearningMode.ONLINE, "https://meet.example/test", null, 10, null, 150,
+                BigDecimal.valueOf(150_000), 1, 90, 4, DurationUnit.WEEK,
+                targetSessionTime.toLocalDate(),
+                List.of(new ClassRoomDtos.ScheduleRequest(dayOfWeek, startTime, endTime)),
+                SyllabusMode.FILE, "https://files.example/syllabus.pdf", List.of()
+        );
+
+        iuh.fit.learning_service.exception.BadRequestException ex = org.junit.jupiter.api.Assertions.assertThrows(
+                iuh.fit.learning_service.exception.BadRequestException.class,
+                () -> service.createClass("tutor@example.com", req)
+        );
+        org.assertj.core.api.Assertions.assertThat(ex.getMessage()).contains("ít nhất 48 giờ");
     }
 }
