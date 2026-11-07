@@ -2,6 +2,7 @@ package iuh.fit.learning_service.service;
 
 import iuh.fit.learning_service.dto.EnrollmentRequestDtos.EnrollClassRequest;
 import iuh.fit.learning_service.entity.ClassRoom;
+import iuh.fit.learning_service.entity.ClassSchedule;
 import iuh.fit.learning_service.entity.EnrollmentRequest;
 import iuh.fit.learning_service.entity.TutorAuthorizationState;
 import iuh.fit.learning_service.enums.ClassRoomStatus;
@@ -22,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -53,6 +55,9 @@ class EnrollmentRequestServiceNotificationTest {
 
     @Mock
     private RollingSessionService rollingSessionService;
+
+    @Mock
+    private StudentScheduleGuard studentScheduleGuard;
 
     @Test
     void enrollClassPublishesEnrollmentRequestedToTutor() {
@@ -265,7 +270,8 @@ class EnrollmentRequestServiceNotificationTest {
                 tutorAuthorizationStateRepository,
                 eventPublisher,
                 rollingSessionService,
-                org.mockito.Mockito.mock(iuh.fit.learning_service.repository.LearningTerminationStopRepository.class));
+                org.mockito.Mockito.mock(iuh.fit.learning_service.repository.LearningTerminationStopRepository.class),
+                studentScheduleGuard);
     }
 
     private ClassRoom classRoom() {
@@ -281,6 +287,12 @@ class EnrollmentRequestServiceNotificationTest {
         classRoom.setStartDate(LocalDate.now().plusDays(10));
         classRoom.setMaxStudents(2);
         classRoom.setMaxPendingRequests(3);
+        ClassSchedule schedule = new ClassSchedule();
+        schedule.setClassRoom(classRoom);
+        schedule.setDayOfWeek(2);
+        schedule.setStartTime("18:00");
+        schedule.setEndTime("19:30");
+        classRoom.setSchedules(List.of(schedule));
 
         return classRoom;
     }

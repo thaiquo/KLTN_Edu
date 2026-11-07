@@ -51,6 +51,11 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
 - Giám sát lớp học.
 - Xử lý khiếu nại.
 - Hỗ trợ người dùng.
+- Staff đăng ký ca rảnh như nguyện vọng. Admin có quyền tạo lịch trống và tự phân công dù chưa có đăng ký; thuật toán chỉ gợi ý theo lịch rảnh, chống trùng ngày và cân bằng ca. Admin được chỉnh và là người duy nhất công bố lịch chính thức. Phân ca Staff không gọi AI Service/Gemini.
+- Nếu nghỉ đột xuất, Admin trao đổi với Staff khác, cập nhật người nhận thay kèm lý do; mọi thay đổi được audit và người thay vẫn phải bắt đầu ca mới có quyền ghi.
+- Với thao tác ghi nghiệp vụ, Staff phải được phân đúng ca, đã bấm bắt đầu ca và ca vẫn đang diễn ra. Ngoài ca Staff chỉ được xem trong phạm vi hiện có.
+- Trạng thái đang trực không mở rộng quyền: Staff vẫn không được làm nghiệp vụ Admin-only và vẫn chịu reviewer/assignee/ownership rule.
+- Khi Admin thay người trực, lý do và lịch sử thay đổi phải được lưu; người cũ mất quyền ghi ngay, người mới phải nhận ca trước khi thao tác.
 
 ### Admin
 
@@ -369,7 +374,16 @@ Không được xóa attendance hoặc đổi trạng thái của buổi COMPLET
   - Nếu học viên không bấm dừng trước thời điểm Buổi #2 bắt đầu, đúng giờ Buổi #2 hệ thống tự động chốt trạng thái `CONTINUED`.
   - Quyền dừng học thử tự động khép lại; khóa học tiếp tục diễn ra bình thường cho đến khi kết thúc.
 
-## 15. Change Policy
+## 15. Ràng buộc chống trùng lịch học viên (2026-11-07)
+
+- Ngay khi Student gửi yêu cầu tham gia thành công, enrollment `PENDING` giữ khung giờ và xuất hiện trên lịch với trạng thái chờ duyệt. `ACCEPTED` tiếp tục giữ chỗ trong lúc hoàn tất hợp đồng/ký quỹ; `ENROLLED` là lịch học chính thức.
+- Student không được tạo yêu cầu mới có khoảng ngày giao nhau, cùng thứ và thời gian thỏa `startA < endB && startB < endA` với enrollment `PENDING`, `ACCEPTED` hoặc `ENROLLED`. Hai ca sát biên, ví dụ `13:00-14:30` và `14:30-16:00`, được phép vì không giao nhau.
+- Backend kiểm tra tại lúc gửi yêu cầu, Tutor duyệt và lúc escrow kích hoạt enrollment. Các thao tác giữ lịch được tuần tự hóa theo Student để hai classroom khác nhau không thể cùng thắng khi đăng ký/duyệt đồng thời.
+- `studentId` là định danh chính khi đối chiếu lịch; email chỉ là fallback cho enrollment lịch sử chưa có `studentId`. Dữ liệu thứ/giờ của lớp bị thiếu hoặc sai định dạng phải fail-closed và yêu cầu quản trị viên sửa, không được âm thầm bỏ qua kiểm tra. Giá trị Chủ nhật cũ `1` được chuẩn hóa tương đương giá trị hiện hành `8`.
+- `REJECTED`, `EXPIRED`, `CANCELLED` không giữ lịch. Classroom `CANCELLED/CLOSED` giải phóng lịch; HOLD/chờ quyết toán hoặc hoàn cọc vẫn giữ lịch cho đến trạng thái cuối theo quy tắc tại Mục 13.
+- Lịch `PENDING/ACCEPTED` chỉ hiển thị thông tin reservation an toàn; không cấp session, attendance hoặc link phòng học trước khi enrollment thành `ENROLLED`.
+
+## 16. Change Policy
 
 Business rules có thể thay đổi trong quá trình phát triển. Khi người dùng xác nhận business rule mới:
 

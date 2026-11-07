@@ -61,6 +61,8 @@ import { StudentCommunityManagement } from "./components/StudentCommunityManagem
 import { HelpDeskPage } from "./components/HelpDeskPage";
 import { DisputeEscalationPage } from "./components/staff/DisputeEscalationPage";
 import { CommunityModerationPage } from "./components/staff/CommunityModerationPage";
+import { StaffMyDutyRosterView } from "./components/staff/StaffMyDutyRosterView";
+import { AdminStaffDutyManagement } from "./components/admin/AdminStaffDutyManagement";
 import { canAccessPortalPage, resolvePortalPage } from "./portalAccess";
 
 // High Resolution course and avatar placeholders
@@ -353,6 +355,12 @@ export default function App({ user, onLogout }: AppProps) {
 
       case "reports":
         return <StaffReportsPage />;
+
+      case "duty-roster":
+        return activeRole === "staff" ? <StaffMyDutyRosterView /> : <AdminStaffDutyManagement />;
+
+      case "staff-duty-management":
+        return activeRole === "admin" ? <AdminStaffDutyManagement /> : null;
 
       case "user-management":
         return <AdminPortal />;

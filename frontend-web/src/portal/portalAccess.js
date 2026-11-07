@@ -7,6 +7,7 @@ const STAFF_PAGES = [
   "escalations",
   "community-moderation",
   "reports",
+  "duty-roster",
   "settings",
   "help",
 ];
@@ -45,6 +46,7 @@ const PAGES_BY_ROLE = {
     "admin-finance",
     "user-management",
     "subject-catalog",
+    "staff-duty-management",
   ]),
 };
 

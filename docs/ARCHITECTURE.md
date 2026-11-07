@@ -29,7 +29,7 @@ Gateway routes the current REST families and WebSocket paths: `/api/auth`, `/api
 
 | Service | Owns | Notes |
 | --- | --- | --- |
-| `account-service` | Authentication, users/roles, active role, Student/Tutor profiles, Tutor application identity data, geography reference data, internal active Staff/Admin notification recipient lookup. | Browser auth uses HttpOnly JWT cookies. Internal recipient lookup is service-token protected. |
+| `account-service` | Authentication, users/roles, active role, Student/Tutor profiles, Tutor application identity data, geography reference data, Staff duty roster/duty status, internal active Staff/Admin notification recipient lookup. | Browser auth uses HttpOnly JWT cookies. Internal recipient and Staff duty checks are service-token protected. |
 | `learning-service` | Teaching catalog, tutor authorization/subjects, tutor availability, public Tutor/Class learning data, classrooms, enrollment, sessions, attendance, homework, reviews, Community posts/polls/interactions/bookmarks, Tutor Follow, post-to-class behavior. | Community is in V8, Tutor Follow in V9, Tutor profile normalization in V10 and opaque public share UUIDs in V11. |
 | `contract-service` | E-contract, EIP-712 signing, final PDF/artifacts, escrow/payment lifecycle, blockchain reconciliation, settlement, disputes, termination governance, termination outbox, Contract -> Learning lifecycle events. | Contract is the source of truth for termination governance. |
 | `notification-service` | Persisted Bell notifications, Rabbit consumers, notification WebSocket, human Student-Tutor messaging, chat attachments metadata, structured resource references, chat REST/WebSocket. | Human messaging is not the AI chatbot; Learning remains source of truth for shared Class/Post cards. |
@@ -43,6 +43,9 @@ Gateway routes the current REST families and WebSocket paths: `/api/auth`, `/api
 - State-changing browser requests require CSRF handling.
 - CORS is credentialed and routed through the Gateway for Web.
 - Authorization uses roles and the current `activeRole`; changing the role model requires explicit approval.
+- Staff duty is an additional write condition, not a replacement authorization model. Account owns roster state and gates its Staff mutations locally; Learning/Contract query Account using service JWT scope `staff-duty-check` and fail closed when duty cannot be verified. Existing reviewer, assignee and ownership checks still run after the duty gate.
+- Staff scheduling is Admin-controlled. Account provides a deterministic rule/constraint-based scheduling algorithm using submitted availability and workload balance; it is not an AI/ML/LLM capability and never calls AI Service/Gemini. It never publishes or replaces Staff autonomously. Admin can instead create an empty draft and assign active Staff manually.
+- Duty status is not embedded in browser JWT because it becomes stale when a shift expires or Admin reassigns the slot.
 - Internal service endpoints are not public APIs. Current examples:
   - Account `GET /api/internal/notification-reviewers` requires `X-Service-Token` signed with subject `contract-service` and scope `notification-recipients`.
   - Notification `POST /api/notifications/internal/send` requires subject `contract-service` and scope `notification-send`.
@@ -140,7 +143,7 @@ Each service owns its data model even when local development uses the same Postg
 
 | Service | Current migration baseline | Representative data |
 | --- | --- | --- |
-| Account | Compact V1..V3 | users, roles, refresh sessions, OTP, students, tutors, tutor profiles, tutor applications/documents, wallet challenges. |
+| Account | Compact V1..V5 | users, roles, refresh sessions, OTP, students, tutors, tutor profiles, tutor applications/documents, wallet challenges, support tickets và Staff duty roster. V5 hiện ở feature branch, chưa deploy production. |
 | Learning | Compact V1..V18 | legacy compatibility, normalized catalog, tutor registrations, classrooms, sessions/homework/materials, reviews, Community/Tutor Follow, Tutor profile reference normalization, public share UUIDs, AI community moderation, catalog subject mapping, trial policy metadata, absence governance safety, and command inbox class cancelled (V18). |
 | Contract | Continuous V1..V22 | agreements, acceptances, artifacts, escrow payments, settlements, disputes/evidence, blockchain transactions/events, termination governance/outbox, escrow trial policy, and tutor absence governance (V22). |
 | Notification | V1..V6 | notifications, direct conversations, text/media messages, child attachments and structured Class/Post share references. |

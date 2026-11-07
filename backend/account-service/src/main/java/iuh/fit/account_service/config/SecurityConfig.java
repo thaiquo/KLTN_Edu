@@ -1,6 +1,7 @@
 package iuh.fit.account_service.config;
 
 import iuh.fit.account_service.config.security.JwtAuthenticationFilter;
+import iuh.fit.account_service.config.security.StaffDutyWriteFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -27,13 +28,16 @@ import java.util.List;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final StaffDutyWriteFilter staffDutyWriteFilter;
     private final CorsOriginProperties corsOriginProperties;
 
     public SecurityConfig(
             JwtAuthenticationFilter jwtAuthenticationFilter,
+            StaffDutyWriteFilter staffDutyWriteFilter,
             CorsOriginProperties corsOriginProperties
     ) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.staffDutyWriteFilter = staffDutyWriteFilter;
         this.corsOriginProperties = corsOriginProperties;
     }
 
@@ -78,6 +82,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/internal/notification-reviewers").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/internal/contract-snapshot/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/internal/staff-duty/write-access").permitAll()
                         .requestMatchers(
                                 "/api/auth/register",
                                 "/api/auth/verify-email",
@@ -109,6 +114,7 @@ public class SecurityConfig {
                         jwtAuthenticationFilter,
                         UsernamePasswordAuthenticationFilter.class
                 )
+                .addFilterAfter(staffDutyWriteFilter, JwtAuthenticationFilter.class)
                 .build();
     }
 

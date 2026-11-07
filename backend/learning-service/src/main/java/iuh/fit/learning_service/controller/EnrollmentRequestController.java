@@ -48,7 +48,7 @@ public class EnrollmentRequestController {
         if (authentication == null) {
             return ResponseEntity.ok(new StudentScheduleResponse(List.of(), List.of()));
         }
-        return ResponseEntity.ok(service.getStudentSchedule(authentication.getName()));
+        return ResponseEntity.ok(service.getStudentSchedule(currentUserId(authentication), authentication.getName()));
     }
 
     @PostMapping({"/api/v1/classes/{classId}/enroll", "/api/classes/{classId}/enroll"})

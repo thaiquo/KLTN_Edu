@@ -3,6 +3,8 @@ package iuh.fit.account_service.messaging;
 import iuh.fit.account_service.messaging.event.TutorApplicationSubmittedEvent;
 import iuh.fit.account_service.messaging.event.TutorApprovedEvent;
 import iuh.fit.account_service.messaging.event.TutorRejectedEvent;
+import iuh.fit.account_service.messaging.event.StaffRosterPublishedEvent;
+import iuh.fit.account_service.messaging.event.StaffShiftReassignedEvent;
 import iuh.fit.account_service.service.StaffNotificationRecipientResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,6 +44,14 @@ public class AccountEventPublisher {
 
     public void publishTutorRejected(TutorRejectedEvent event) {
         publishAfterCommit(() -> send(AccountRabbitConfig.TUTOR_REJECTED_ROUTING_KEY, event), event.eventId());
+    }
+
+    public void publishStaffRosterPublished(StaffRosterPublishedEvent event) {
+        publishAfterCommit(() -> send(AccountRabbitConfig.STAFF_ROSTER_PUBLISHED_ROUTING_KEY, event), event.eventId());
+    }
+
+    public void publishStaffShiftReassigned(StaffShiftReassignedEvent event) {
+        publishAfterCommit(() -> send(AccountRabbitConfig.STAFF_SHIFT_REASSIGNED_ROUTING_KEY, event), event.eventId());
     }
 
     private void send(String routingKey, Object event) {

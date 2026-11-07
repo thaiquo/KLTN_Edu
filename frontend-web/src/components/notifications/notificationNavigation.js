@@ -42,6 +42,15 @@ export function getNotificationTarget(notification, activeRole) {
     return target('/staff/tutors', 'class-management');
   }
 
+  if (type === 'STAFF_ROSTER_PUBLISHED'
+      || type === 'STAFF_SHIFT_REASSIGNED'
+      || referenceType === 'STAFF_DUTY_WEEK'
+      || referenceType === 'STAFF_SHIFT_ASSIGNMENT') {
+    return role === 'ADMIN'
+      ? target('/dashboard?tab=staff-duty-management', 'staff-duty-management')
+      : target('/dashboard?tab=duty-roster', 'duty-roster');
+  }
+
   if (type.startsWith('TERMINATION_')) {
     if (role === 'STUDENT') return target('/student/wallet', 'wallet');
     const ref = notification?.referenceId;

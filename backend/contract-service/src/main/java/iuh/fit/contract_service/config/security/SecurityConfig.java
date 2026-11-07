@@ -24,13 +24,16 @@ import java.util.List;
 public class SecurityConfig {
 
     private final CookieJwtAuthenticationFilter cookieJwtAuthenticationFilter;
+    private final StaffDutyWriteFilter staffDutyWriteFilter;
     private final CorsOriginProperties corsOriginProperties;
 
     public SecurityConfig(
             CookieJwtAuthenticationFilter cookieJwtAuthenticationFilter,
+            StaffDutyWriteFilter staffDutyWriteFilter,
             CorsOriginProperties corsOriginProperties
     ) {
         this.cookieJwtAuthenticationFilter = cookieJwtAuthenticationFilter;
+        this.staffDutyWriteFilter = staffDutyWriteFilter;
         this.corsOriginProperties = corsOriginProperties;
     }
 
@@ -70,6 +73,7 @@ public class SecurityConfig {
                 .formLogin(AbstractHttpConfigurer::disable)
                 .logout(AbstractHttpConfigurer::disable)
                 .addFilterBefore(cookieJwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(staffDutyWriteFilter, CookieJwtAuthenticationFilter.class)
                 .build();
     }
 

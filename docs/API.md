@@ -90,12 +90,12 @@ Tutor/account related APIs include `/api/tutors`, `/api/tutors/search-v2`, `/api
 | `GET` | `/api/public/classes/shared/{publicShareId}` | Public class detail resolved from an opaque share UUID; only `PUBLISHED` classes are returned. |
 | `POST` | `/api/public/classes/{id}/verify-key` | Verify join key. |
 | `GET` | `/api/public/classes/semantic-source` | Public-safe class source for AI indexing/validation. |
-| `POST` | `/api/classes/{classId}/enroll` | Student enroll/request join. |
+| `POST` | `/api/classes/{classId}/enroll` | Student enroll/request join; a successful `PENDING` request immediately reserves the recurring slot. Returns `409` with code `STUDENT_SCHEDULE_CONFLICT` when it overlaps another `PENDING`/`ACCEPTED`/`ENROLLED` reservation. |
 | `GET` | `/api/student/classes` | Student classes. |
-| `GET` | `/api/student/schedule` | Student schedule. |
+| `GET` | `/api/student/schedule` | Student schedule, including safe recurring reservations with `enrollmentStatus=PENDING/ACCEPTED/ENROLLED`; concrete sessions remain limited to enrolled/history flows. |
 | `GET` | `/api/enrollment-requests/my-requests` | Student request list. |
 | `POST` | `/api/enrollment-requests/{requestId}/cancel` | Cancel request. |
-| `POST` | `/api/enrollment-requests/{requestId}/accept` | Tutor accept. |
+| `POST` | `/api/enrollment-requests/{requestId}/accept` | Tutor accept; rechecks the Student schedule and returns `409 STUDENT_SCHEDULE_CONFLICT` on a stale/concurrent conflict. |
 | `POST` | `/api/enrollment-requests/{requestId}/reject` | Tutor reject. |
 
 Session/homework APIs are under `/api/classes/{classId}/sessions`, `/api/sessions/{sessionId}/...`, `/api/classes/{classId}/materials`, `/api/classes/{classId}/syllabus-file`, `/api/tutor/homework-overview`, and `/api/student/homework-overview`.

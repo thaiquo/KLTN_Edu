@@ -323,6 +323,8 @@ These are target events derived from current project scope and docs. They are no
 | `DISPUTE_OPENED` | `PARTIAL` | Contract Service | Tutor | Persistent notification implemented after confirmed opening | Implemented through Notification Service WebSocket | `TUTOR` | Portal `complaints` |
 | `DISPUTE_RESOLVED` | `PARTIAL` | Contract Service | Student/Tutor | Persistent notification implemented after confirmed resolution | Implemented through Notification Service WebSocket | `STUDENT`/`TUTOR` | `/contracts` or Portal `complaints` |
 | `TERMINATION_UPDATED` | `IMPLEMENTED` | Contract Service | Student/Tutor, Staff/Admin queue | Outbox delivery for parties, assigned Staff and active Admin recipients resolved by Account | Notification Service WebSocket for persisted party notifications; REST polling for the management queue | `STUDENT`/`TUTOR`/`STAFF`/`ADMIN` | `/contracts` or Portal contract management |
+| `STAFF_ROSTER_PUBLISHED` | `IMPLEMENTED` | Account Service | Staff có ca trong tuần | Persistent notification idempotent theo tuần và người nhận | Notification Service WebSocket after persistence | `STAFF` | Portal `duty-roster` |
+| `STAFF_SHIFT_REASSIGNED` | `IMPLEMENTED` | Account Service | Staff cũ và Staff thay thế | Persistent notification idempotent theo assignment/version/người nhận | Notification Service WebSocket after persistence | `STAFF` | Portal `duty-roster` |
 
 ## 16. WebSocket Matrix
 
@@ -497,6 +499,8 @@ Current route targets that may be used:
 | `/dashboard` | `IMPLEMENTED` | Tutor/Staff/Admin portal shell depending role. |
 | `/tutor/teaching-registrations` | `IMPLEMENTED` | Tutor teaching registration page. |
 | `/staff/tutors` | `IMPLEMENTED` | Staff/Admin review UI. |
+| `/dashboard?tab=duty-roster` | `IMPLEMENTED` | Staff xem lịch trực và nhận ca. |
+| `/dashboard?tab=staff-duty-management` | `IMPLEMENTED` | Admin điều phối, công bố và thay người. |
 
 For planned features without existing UI, mark the target as `TBD / FUTURE ROUTE`. Do not invent a current route.
 

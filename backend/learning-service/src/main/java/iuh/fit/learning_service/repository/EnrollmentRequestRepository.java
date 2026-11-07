@@ -27,6 +27,17 @@ public interface EnrollmentRequestRepository extends JpaRepository<EnrollmentReq
             Collection<EnrollmentRequestStatus> statuses
     );
 
+    @Query("SELECT CASE WHEN COUNT(r) > 0 THEN true ELSE false END FROM EnrollmentRequest r " +
+           "WHERE r.classRoom.id = :classRoomId " +
+           "AND (r.studentId = :studentId " +
+           "OR (r.studentId IS NULL AND lower(r.studentEmail) = lower(:studentEmail))) " +
+           "AND r.status IN :statuses")
+    boolean existsActiveByClassRoomAndStudentIdentity(
+            @Param("classRoomId") Long classRoomId,
+            @Param("studentId") Long studentId,
+            @Param("studentEmail") String studentEmail,
+            @Param("statuses") Collection<EnrollmentRequestStatus> statuses);
+
     @Query("SELECT r FROM EnrollmentRequest r " +
            "JOIN FETCH r.classRoom c " +
            "WHERE c.id = :classRoomId " +
@@ -38,6 +49,15 @@ public interface EnrollmentRequestRepository extends JpaRepository<EnrollmentReq
            "WHERE lower(r.studentEmail) = lower(:studentEmail) " +
            "ORDER BY r.createdAt DESC")
     List<EnrollmentRequest> findByStudentEmailWithDetails(@Param("studentEmail") String studentEmail);
+
+    @Query("SELECT r FROM EnrollmentRequest r " +
+           "JOIN FETCH r.classRoom c " +
+           "WHERE r.studentId = :studentId " +
+           "OR (r.studentId IS NULL AND lower(r.studentEmail) = lower(:studentEmail)) " +
+           "ORDER BY r.createdAt DESC")
+    List<EnrollmentRequest> findByStudentIdentityWithDetails(
+            @Param("studentId") Long studentId,
+            @Param("studentEmail") String studentEmail);
 
     @Query("SELECT r FROM EnrollmentRequest r " +
            "JOIN FETCH r.classRoom c " +
