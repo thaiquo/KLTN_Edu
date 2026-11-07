@@ -8,12 +8,15 @@ import iuh.fit.notification_service.messaging.event.SubjectRequestSubmittedEvent
 import iuh.fit.notification_service.messaging.event.TeachingRegistrationReviewedEvent;
 import iuh.fit.notification_service.messaging.event.TeachingRegistrationSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApplicationSubmittedEvent;
+import iuh.fit.notification_service.messaging.event.StaffRosterPublishedEvent;
+import iuh.fit.notification_service.messaging.event.StaffShiftReassignedEvent;
 import iuh.fit.notification_service.service.NotificationCommand;
 import iuh.fit.notification_service.service.NotificationService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -25,6 +28,36 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.doThrow;
 
 class NotificationEventConsumerTest {
+
+    @Test
+    void createsStaffNotificationsForPublishedRosterAndEmergencyReplacement() {
+        NotificationService notificationService = mock(NotificationService.class);
+        NotificationEventConsumer consumer = new NotificationEventConsumer(notificationService);
+        ArgumentCaptor<NotificationCommand> captor = ArgumentCaptor.forClass(NotificationCommand.class);
+
+        consumer.onStaffRosterPublished(new StaffRosterPublishedEvent(
+                "staff-roster-published:2026-11-16:20",
+                20L,
+                LocalDate.of(2026, 11, 16),
+                LocalDate.of(2026, 11, 21),
+                LocalDateTime.now()));
+        consumer.onStaffShiftReassigned(new StaffShiftReassignedEvent(
+                "staff-shift-reassigned:10:0:20:21",
+                21L,
+                10L,
+                LocalDate.of(2026, 11, 16),
+                "MORNING",
+                "ASSIGNED",
+                LocalDateTime.now()));
+
+        verify(notificationService, times(2)).createIfAbsent(captor.capture());
+        assertThat(captor.getAllValues()).extracting(NotificationCommand::type)
+                .containsExactly("STAFF_ROSTER_PUBLISHED", "STAFF_SHIFT_REASSIGNED");
+        assertThat(captor.getAllValues()).extracting(NotificationCommand::targetRole)
+                .containsOnly("STAFF");
+        assertThat(captor.getAllValues()).extracting(NotificationCommand::referenceType)
+                .containsExactly("STAFF_DUTY_WEEK", "STAFF_SHIFT_ASSIGNMENT");
+    }
 
     @Test
     void persistenceFailurePropagatesToRabbitListenerContainer() {

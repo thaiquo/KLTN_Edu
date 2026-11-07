@@ -1,5 +1,6 @@
 package iuh.fit.account_service.repository;
 
+import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.entity.UserRole;
 import iuh.fit.account_service.enums.AccountStatus;
 import iuh.fit.account_service.enums.Role;
@@ -27,6 +28,23 @@ public interface UserRoleRepository extends JpaRepository<UserRole, Long> {
                and ur.user.accountStatus = :status
             """)
     List<Long> findUserIdsByRoleAndAccountStatus(
+            @Param("role") Role role,
+            @Param("status") AccountStatus status
+    );
+
+    @Query("""
+            select user
+              from User user
+             where user.accountStatus = :status
+               and exists (
+                    select ur.id
+                      from UserRole ur
+                     where ur.user = user
+                       and ur.role = :role
+               )
+             order by user.id
+            """)
+    List<User> findUsersByRoleAndAccountStatus(
             @Param("role") Role role,
             @Param("status") AccountStatus status
     );

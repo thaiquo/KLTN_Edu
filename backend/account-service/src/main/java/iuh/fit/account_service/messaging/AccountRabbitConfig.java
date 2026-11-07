@@ -22,6 +22,8 @@ public class AccountRabbitConfig {
     public static final String TUTOR_APPLICATION_SUBMITTED_ROUTING_KEY = "account.tutor-application.submitted";
     public static final String TUTOR_APPROVED_ROUTING_KEY = "account.tutor.approved";
     public static final String TUTOR_REJECTED_ROUTING_KEY = "account.tutor.rejected";
+    public static final String STAFF_ROSTER_PUBLISHED_ROUTING_KEY = "account.staff-roster.published";
+    public static final String STAFF_SHIFT_REASSIGNED_ROUTING_KEY = "account.staff-shift.reassigned";
     public static final String SUBJECT_REQUEST_APPROVED_ROUTING_KEY = "learning.subject-request.approved";
     public static final String SUBJECT_REQUEST_REJECTED_ROUTING_KEY = "learning.subject-request.rejected";
 

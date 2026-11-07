@@ -81,7 +81,8 @@ public final class EnrollmentRequestDtos {
             String startTime,
             String endTime,
             java.time.LocalDate startDate,
-            java.time.LocalDate endDate
+            java.time.LocalDate endDate,
+            EnrollmentRequestStatus enrollmentStatus
     ) {}
 
     public record UpcomingSessionItemDto(

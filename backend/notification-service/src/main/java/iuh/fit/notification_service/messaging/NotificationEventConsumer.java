@@ -15,6 +15,8 @@ import iuh.fit.notification_service.messaging.event.CommunityPostModeratedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApplicationSubmittedEvent;
 import iuh.fit.notification_service.messaging.event.TutorApprovedEvent;
 import iuh.fit.notification_service.messaging.event.TutorRejectedEvent;
+import iuh.fit.notification_service.messaging.event.StaffRosterPublishedEvent;
+import iuh.fit.notification_service.messaging.event.StaffShiftReassignedEvent;
 import iuh.fit.notification_service.service.NotificationCommand;
 import iuh.fit.notification_service.service.NotificationService;
 import org.slf4j.Logger;
@@ -474,6 +476,55 @@ public class NotificationEventConsumer {
                 StringUtils.hasText(event.targetRole()) ? event.targetRole().trim().toUpperCase() : null,
                 "COMMUNITY_POST",
                 String.valueOf(event.postId())
+        ));
+    }
+
+    @RabbitListener(queues = NotificationRabbitConfig.STAFF_ROSTER_PUBLISHED_QUEUE)
+    public void onStaffRosterPublished(StaffRosterPublishedEvent event) {
+        if (event == null
+                || !StringUtils.hasText(event.eventId())
+                || event.recipientUserId() == null
+                || event.weekStartDate() == null
+                || event.weekEndDate() == null) {
+            log.warn("Skipping invalid staff roster published notification event");
+            return;
+        }
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                "STAFF_ROSTER_PUBLISHED",
+                "Lịch trực tuần mới đã được công bố",
+                "Lịch trực từ " + event.weekStartDate() + " đến " + event.weekEndDate()
+                        + " đã được công bố. Vui lòng kiểm tra các ca được phân công.",
+                "STAFF",
+                "STAFF_DUTY_WEEK",
+                event.weekStartDate().toString()
+        ));
+    }
+
+    @RabbitListener(queues = NotificationRabbitConfig.STAFF_SHIFT_REASSIGNED_QUEUE)
+    public void onStaffShiftReassigned(StaffShiftReassignedEvent event) {
+        if (event == null
+                || !StringUtils.hasText(event.eventId())
+                || event.recipientUserId() == null
+                || event.assignmentId() == null
+                || event.workDate() == null
+                || !StringUtils.hasText(event.shiftCode())
+                || (!"ASSIGNED".equals(event.changeType()) && !"REMOVED".equals(event.changeType()))) {
+            log.warn("Skipping invalid staff shift reassigned notification event");
+            return;
+        }
+        boolean assigned = "ASSIGNED".equals(event.changeType());
+        notificationService.createIfAbsent(new NotificationCommand(
+                event.eventId(),
+                event.recipientUserId(),
+                "STAFF_SHIFT_REASSIGNED",
+                assigned ? "Bạn được phân công ca trực thay thế" : "Ca trực của bạn đã được thay người",
+                (assigned ? "Bạn được phân công" : "Bạn không còn phụ trách")
+                        + " ca " + event.shiftCode() + " ngày " + event.workDate() + ".",
+                "STAFF",
+                "STAFF_SHIFT_ASSIGNMENT",
+                String.valueOf(event.assignmentId())
         ));
     }
 

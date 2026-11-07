@@ -238,7 +238,7 @@ export function checkClassScheduleConflict(targetClass, activeSchedules) {
       if (datesOverlap(targetStart, targetEnd, aStart, aEnd)) {
         if (timesOverlap(tStartTime, tEndTime, aSlot.startTime, aSlot.endTime)) {
           return {
-            conflictingClassTitle: aSlot.classRoomTitle || 'Lớp đã đăng ký',
+            conflictingClassTitle: aSlot.className || aSlot.classRoomTitle || aSlot.name || 'Lớp đã đăng ký',
             dayOfWeek: tDay,
             dayLabel: formatDayOfWeek(tDay),
             targetTime: formatTimeSlot(tStartTime, tEndTime),

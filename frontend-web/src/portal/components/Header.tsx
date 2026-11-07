@@ -12,6 +12,7 @@ import {
   getNotificationRoute,
 } from "../../components/notifications/notificationNavigation";
 import { UserRole } from "../types";
+import { StaffDutyBadge } from "./staff/StaffDutyBadge";
 
 interface HeaderProps {
   activeRole: UserRole;
@@ -109,6 +110,7 @@ export function Header({
       </div>
 
       <div className="flex items-center gap-4">
+        {activeRole === "staff" && <StaffDutyBadge onNavigate={onNavigate} />}
         <div className="hidden lg:flex items-center bg-brand-low px-3 py-2 rounded-xl border border-brand-border/20">
           <span className="text-[11px] font-display font-black tracking-widest text-brand-primary uppercase">
             {statusMap[activeRole]}

@@ -1,6 +1,7 @@
 package iuh.fit.learning_service.config;
 
 import iuh.fit.learning_service.config.security.CookieJwtAuthenticationFilter;
+import iuh.fit.learning_service.config.security.StaffDutyWriteFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
@@ -24,13 +25,16 @@ import java.util.List;
 @EnableMethodSecurity
 public class SecurityConfig {
     private final CookieJwtAuthenticationFilter jwtAuthenticationFilter;
+    private final StaffDutyWriteFilter staffDutyWriteFilter;
     private final CorsOriginProperties corsOriginProperties;
 
     public SecurityConfig(
             CookieJwtAuthenticationFilter jwtAuthenticationFilter,
+            StaffDutyWriteFilter staffDutyWriteFilter,
             CorsOriginProperties corsOriginProperties
     ) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.staffDutyWriteFilter = staffDutyWriteFilter;
         this.corsOriginProperties = corsOriginProperties;
     }
 
@@ -77,6 +81,7 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(staffDutyWriteFilter, CookieJwtAuthenticationFilter.class)
                 .build();
     }
 

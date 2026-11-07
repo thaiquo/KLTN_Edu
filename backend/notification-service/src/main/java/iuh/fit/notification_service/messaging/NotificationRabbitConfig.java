@@ -37,6 +37,8 @@ public class NotificationRabbitConfig {
     public static final String COMMUNITY_POST_CONVERTED_QUEUE = "notification.community-post-converted";
     public static final String COMMUNITY_POST_INTERACTION_QUEUE = "notification.community-post-interaction";
     public static final String COMMUNITY_POST_MODERATED_QUEUE = "notification.community-post-moderated";
+    public static final String STAFF_ROSTER_PUBLISHED_QUEUE = "notification.staff-roster-published";
+    public static final String STAFF_SHIFT_REASSIGNED_QUEUE = "notification.staff-shift-reassigned";
 
     public static final String TUTOR_APPLICATION_SUBMITTED_ROUTING_KEY = "account.tutor-application.submitted";
     public static final String TUTOR_APPROVED_ROUTING_KEY = "account.tutor.approved";
@@ -58,6 +60,8 @@ public class NotificationRabbitConfig {
     public static final String COMMUNITY_POST_CONVERTED_ROUTING_KEY = "learning.community-post.converted";
     public static final String COMMUNITY_POST_INTERACTION_ROUTING_KEY = "learning.community-post.interaction";
     public static final String COMMUNITY_POST_MODERATED_ROUTING_KEY = "learning.community-post.moderated";
+    public static final String STAFF_ROSTER_PUBLISHED_ROUTING_KEY = "account.staff-roster.published";
+    public static final String STAFF_SHIFT_REASSIGNED_ROUTING_KEY = "account.staff-shift.reassigned";
 
     @Bean
     DirectExchange eduEventsExchange() {
@@ -162,6 +166,16 @@ public class NotificationRabbitConfig {
     @Bean
     Queue notificationCommunityPostModeratedQueue() {
         return new Queue(COMMUNITY_POST_MODERATED_QUEUE, true);
+    }
+
+    @Bean
+    Queue notificationStaffRosterPublishedQueue() {
+        return new Queue(STAFF_ROSTER_PUBLISHED_QUEUE, true);
+    }
+
+    @Bean
+    Queue notificationStaffShiftReassignedQueue() {
+        return new Queue(STAFF_SHIFT_REASSIGNED_QUEUE, true);
     }
 
     @Bean
@@ -282,6 +296,26 @@ public class NotificationRabbitConfig {
         return BindingBuilder.bind(notificationCommunityPostModeratedQueue)
                 .to(eduEventsExchange)
                 .with(COMMUNITY_POST_MODERATED_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding notificationStaffRosterPublishedBinding(
+            Queue notificationStaffRosterPublishedQueue,
+            DirectExchange eduEventsExchange
+    ) {
+        return BindingBuilder.bind(notificationStaffRosterPublishedQueue)
+                .to(eduEventsExchange)
+                .with(STAFF_ROSTER_PUBLISHED_ROUTING_KEY);
+    }
+
+    @Bean
+    Binding notificationStaffShiftReassignedBinding(
+            Queue notificationStaffShiftReassignedQueue,
+            DirectExchange eduEventsExchange
+    ) {
+        return BindingBuilder.bind(notificationStaffShiftReassignedQueue)
+                .to(eduEventsExchange)
+                .with(STAFF_SHIFT_REASSIGNED_ROUTING_KEY);
     }
 
     @Bean

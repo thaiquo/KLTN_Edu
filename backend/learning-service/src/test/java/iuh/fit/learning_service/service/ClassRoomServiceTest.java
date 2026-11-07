@@ -783,6 +783,9 @@ class ClassRoomServiceTest {
         int dayOfWeek = targetSessionTime.getDayOfWeek().getValue() + 1;
         String startTime = "07:00";
         String endTime = "08:30";
+        when(availabilityRepository.findByTutorEmailIgnoreCaseOrderByDayOfWeekAscStartTimeAsc("tutor@example.com"))
+                .thenReturn(List.of(new TutorAvailability(
+                        "tutor@example.com", dayOfWeek, "00:00", "23:59")));
 
         ClassRoomDtos.CreateClassRoomRequest req = new ClassRoomDtos.CreateClassRoomRequest(
                 10L, 20L, 88L, "Tutor Example", "Lớp test lead time", "Mô tả",

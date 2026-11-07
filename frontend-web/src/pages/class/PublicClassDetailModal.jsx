@@ -221,11 +221,18 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
         studentDateOfBirth: user?.dateOfBirth,
         studentAddress: formatProfileAddress(user)
       });
-      feedback.success('Đã gửi yêu cầu tham gia lớp.');
+      const latestSchedule = await classApi.getStudentSchedule().catch(() => null);
+      if (latestSchedule) setStudentSchedule(latestSchedule);
+      feedback.success('Đã gửi yêu cầu tham gia lớp. Khung giờ đã được giữ trên lịch học của bạn.');
       setShowInviteKeyForm(false);
       await fetchMyRequestStatus();
       if (onRefreshClass) onRefreshClass();
     } catch (err) {
+      if (err?.code === 'STUDENT_SCHEDULE_CONFLICT' || err?.status === 409) {
+        const { classApi } = await import('../../api/classes');
+        const latestSchedule = await classApi.getStudentSchedule().catch(() => null);
+        if (latestSchedule) setStudentSchedule(latestSchedule);
+      }
       feedback.error(err?.message || 'Không thể gửi yêu cầu tham gia lớp.');
     } finally {
       setSubmitting(false);
@@ -246,6 +253,8 @@ export function PublicClassDetailModal({ classRoom, onClose, onRefreshClass }) {
     try {
       const { classApi } = await import('../../api/classes');
       await classApi.cancelEnrollmentRequest(myRequest.id);
+      const latestSchedule = await classApi.getStudentSchedule().catch(() => null);
+      if (latestSchedule) setStudentSchedule(latestSchedule);
       feedback.success('Đã hủy yêu cầu tham gia lớp.');
       setMyRequest(null);
       await fetchMyRequestStatus();

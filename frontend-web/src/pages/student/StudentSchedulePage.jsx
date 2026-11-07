@@ -40,6 +40,12 @@ const STATUS_SESSION_META = {
   ABSENT: { label: 'Vắng mặt', className: 'bg-amber-50 text-amber-700 border-amber-200' }
 };
 
+const ENROLLMENT_STATUS_META = {
+  PENDING: { label: 'Chờ gia sư duyệt', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  ACCEPTED: { label: 'Đang giữ chỗ', className: 'bg-violet-50 text-violet-700 border-violet-200' },
+  ENROLLED: { label: 'Đang học', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+};
+
 function getStartOfWeek(date) {
   const d = new Date(date);
   const day = d.getDay(); // 0 is Sunday, 1 is Monday...
@@ -105,7 +111,18 @@ export function StudentSchedulePage() {
     loadSchedule(false);
   }, []);
 
-  useRealtimeRefresh(['TERMINATION_UPDATED', 'TERMINATION_COMPLETED', 'ENROLLMENT_ACCEPTED', 'CLASS_MUTATED', 'ATTENDANCE_MARKED'], () => loadSchedule(true));
+  useRealtimeRefresh([
+    'TERMINATION_UPDATED',
+    'TERMINATION_COMPLETED',
+    'ENROLLMENT_REQUESTED',
+    'ENROLLMENT_ACCEPTED',
+    'ENROLLMENT_REJECTED',
+    'ENROLLMENT_CANCELLED',
+    'ENROLLMENT_SYSTEM_CANCELLED',
+    'AGREEMENT_EXPIRED',
+    'CLASS_MUTATED',
+    'ATTENDANCE_MARKED'
+  ], () => loadSchedule(true));
 
   const currentWeekStart = useMemo(() => {
     const today = new Date();
@@ -237,7 +254,7 @@ export function StudentSchedulePage() {
       <section className="grid gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-2xs">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-black uppercase tracking-wider text-slate-500">Lớp đang theo học</span>
+            <span className="text-xs font-black uppercase tracking-wider text-slate-500">Lớp giữ lịch / đang học</span>
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-50 text-blue-700">
               <BookOpen size={18} />
             </span>
@@ -383,6 +400,9 @@ export function StudentSchedulePage() {
             {weekDays.map((day) => {
               const daySessions = sessionsByDate[day.isoDate] || [];
               const dayRecurring = recurringByDay[day.systemDay] || [];
+              const visibleRecurring = dayRecurring.filter((slot) =>
+                !daySessions.some((session) => String(session.classRoomId) === String(slot.classRoomId))
+              );
 
               return (
                 <div
@@ -409,8 +429,7 @@ export function StudentSchedulePage() {
 
                   {/* Sessions or Recurring Slots on this day */}
                   <div className="space-y-2 flex-1">
-                    {daySessions.length > 0 ? (
-                      daySessions.map((session) => {
+                    {daySessions.map((session) => {
                         const isCancelled = session.status === 'CANCELLED' || Boolean(session.attendanceStopped);
                         const statusMeta = isCancelled
                           ? { label: Boolean(session.attendanceStopped) ? 'Đã dừng học' : 'Đã hủy', className: 'bg-rose-50 text-rose-700 border-rose-200' }
@@ -484,12 +503,12 @@ export function StudentSchedulePage() {
                             </div>
                           </div>
                         );
-                      })
-                    ) : dayRecurring.length > 0 ? (
-                      // Display recurring slot placeholder if no specific session instance
-                      dayRecurring.map((slot, idx) => {
+                      })}
+                    {visibleRecurring.map((slot, idx) => {
                         const title = slot.className || slot.classRoomTitle || 'Lớp học';
                         const tutor = slot.tutorFullName || slot.tutorName;
+                        const reservationMeta = ENROLLMENT_STATUS_META[slot.enrollmentStatus]
+                          || ENROLLMENT_STATUS_META.ENROLLED;
 
                         return (
                           <div
@@ -497,9 +516,12 @@ export function StudentSchedulePage() {
                             onClick={() => setDetailModal({ type: 'RECURRING', data: slot })}
                             className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/40 p-2.5 space-y-1.5 hover:border-indigo-400 hover:bg-indigo-50/70 transition-all cursor-pointer"
                           >
-                            <p className="text-[11px] font-black text-indigo-950 line-clamp-1">
-                              {title}
-                            </p>
+                            <div className="flex items-center justify-between gap-1">
+                              <p className="text-[11px] font-black text-indigo-950 line-clamp-1">{title}</p>
+                              <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border shrink-0 ${reservationMeta.className}`}>
+                                {reservationMeta.label}
+                              </span>
+                            </div>
                             <p className="text-[10px] font-bold text-indigo-700 flex items-center gap-1">
                               <Clock size={11} /> {formatTimeSlot(slot.startTime, slot.endTime)}
                             </p>
@@ -514,8 +536,8 @@ export function StudentSchedulePage() {
                             </div>
                           </div>
                         );
-                      })
-                    ) : (
+                      })}
+                    {daySessions.length === 0 && visibleRecurring.length === 0 && (
                       <div className="flex h-20 items-center justify-center text-center">
                         <span className="text-[11px] font-medium text-slate-300">Trống lịch</span>
                       </div>
@@ -532,13 +554,13 @@ export function StudentSchedulePage() {
       {activeTab === 'recurring' && (
         <div className="space-y-4">
           <p className="text-xs font-semibold text-slate-500">
-            Các khung giờ học định kỳ cố định hàng tuần theo hợp đồng của bạn. Hệ thống sẽ tự động đối soát và cảnh báo khi đăng ký lớp mới để tránh trùng lịch.
+            Các khung giờ định kỳ đang giữ chỗ hoặc đã thành lịch học chính thức. Hệ thống tự động đối soát khi đăng ký lớp mới để tránh trùng lịch.
           </p>
 
           {scheduleData.recurringSchedules?.length === 0 ? (
             <StudentEmptyState
               title="Chưa có lịch học định kỳ"
-              description="Bạn chưa tham gia lớp học nào có lịch định kỳ đang hoạt động."
+              description="Bạn chưa có yêu cầu giữ chỗ hoặc lớp đang học nào có lịch định kỳ."
               actionLabel="Tìm kiếm lớp học"
               actionHref="/classes"
             />
@@ -568,8 +590,10 @@ export function StudentSchedulePage() {
                         >
                           <div className="flex items-center justify-between">
                             <h4 className="text-xs font-black text-slate-900 line-clamp-1">{slot.className || slot.classRoomTitle}</h4>
-                            <span className="text-[10px] font-extrabold text-brand-primary">
-                              {slot.learningMode === 'ONLINE' ? 'Trực tuyến' : 'Tại chỗ'}
+                            <span className={`rounded-full border px-2 py-0.5 text-[10px] font-extrabold ${
+                              (ENROLLMENT_STATUS_META[slot.enrollmentStatus] || ENROLLMENT_STATUS_META.ENROLLED).className
+                            }`}>
+                              {(ENROLLMENT_STATUS_META[slot.enrollmentStatus] || ENROLLMENT_STATUS_META.ENROLLED).label}
                             </span>
                           </div>
                           <p className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
@@ -763,6 +787,14 @@ export function StudentSchedulePage() {
                   </div>
 
                   <div className="space-y-2 text-slate-600">
+                    {detailModal.data.enrollmentStatus && (
+                      <p className="flex items-center gap-2">
+                        <ShieldCheck size={14} className="text-amber-500 shrink-0" />
+                        <span>Trạng thái lịch: <strong>{
+                          (ENROLLMENT_STATUS_META[detailModal.data.enrollmentStatus] || ENROLLMENT_STATUS_META.ENROLLED).label
+                        }</strong></span>
+                      </p>
+                    )}
                     <p className="flex items-center gap-2">
                       <User size={14} className="text-slate-400 shrink-0" />
                       <span>Gia sư: <strong>{detailModal.data.tutorFullName || detailModal.data.tutorName || 'Chưa cập nhật'}</strong></span>
@@ -796,6 +828,14 @@ export function StudentSchedulePage() {
                   </div>
 
                   <div className="space-y-2 text-slate-600">
+                    {detailModal.data.enrollmentStatus && (
+                      <p className="flex items-center gap-2">
+                        <ShieldCheck size={14} className="text-amber-500 shrink-0" />
+                        <span>Trạng thái: <strong>{
+                          (ENROLLMENT_STATUS_META[detailModal.data.enrollmentStatus] || ENROLLMENT_STATUS_META.ENROLLED).label
+                        }</strong></span>
+                      </p>
+                    )}
                     <p className="flex items-center gap-2">
                       <User size={14} className="text-slate-400 shrink-0" />
                       <span>Gia sư giảng dạy: <strong>{detailModal.data.tutorFullName || detailModal.data.tutorName || 'Chưa cập nhật'}</strong></span>
@@ -826,7 +866,8 @@ export function StudentSchedulePage() {
               >
                 Đóng
               </button>
-              {detailModal.data.classRoomId && (
+              {detailModal.data.classRoomId
+                && (detailModal.type === 'SESSION' || detailModal.data.enrollmentStatus === 'ENROLLED') && (
                 <Link
                   to={`/my-classes?classId=${detailModal.data.classRoomId}`}
                   className="inline-flex items-center gap-2 rounded-xl bg-brand-primary px-4 py-2 text-xs font-black text-white hover:bg-brand-primary/95 transition-all shadow-xs"

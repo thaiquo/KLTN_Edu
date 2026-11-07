@@ -12,6 +12,7 @@ import iuh.fit.learning_service.enums.ClassSessionStatus;
 import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 import iuh.fit.learning_service.enums.JoinMode;
 import iuh.fit.learning_service.exception.BadRequestException;
+import iuh.fit.learning_service.exception.StudentScheduleConflictException;
 import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
 import iuh.fit.learning_service.repository.ClassSessionRepository;
@@ -33,6 +34,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class EnrollmentRequestScheduleConflictTest {
@@ -60,6 +63,9 @@ class EnrollmentRequestScheduleConflictTest {
     @Mock
     private LearningTerminationStopRepository terminationStops;
 
+    @Mock
+    private StudentScheduleGuard studentScheduleGuard;
+
     @Test
     void rejectsEnrollmentWhenScheduleConflictsWithActiveEnrolledClass() {
         EnrollmentRequestService service = service();
@@ -82,7 +88,7 @@ class EnrollmentRequestScheduleConflictTest {
         when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
         when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.ACCEPTED)).thenReturn(0L);
         when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any())).thenReturn(false);
-        when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(acceptedReq));
+        when(enrollmentRequestRepository.findByStudentIdentityWithDetails(100L, "student@example.com")).thenReturn(List.of(acceptedReq));
 
         EnrollClassRequest request = validRequest();
 
@@ -116,12 +122,105 @@ class EnrollmentRequestScheduleConflictTest {
         when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
         when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.ACCEPTED)).thenReturn(0L);
         when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any())).thenReturn(false);
-        when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(acceptedReq));
+        when(enrollmentRequestRepository.findByStudentIdentityWithDetails(100L, "student@example.com")).thenReturn(List.of(acceptedReq));
 
         EnrollClassRequest request = validRequest();
         assertThatThrownBy(() -> service.enrollClass(10L, 100L, "student@example.com", request))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("Trùng lịch học");
+    }
+
+    @Test
+    void pendingRequestImmediatelyReservesStudentSchedule() {
+        EnrollmentRequestService service = service();
+        ClassRoom targetClass = createClassRoom(10L, "Hóa học", LocalDate.now(), LocalDate.now().plusMonths(2));
+        targetClass.setSchedules(List.of(createSchedule(targetClass, 7, "13:00", "14:30")));
+
+        ClassRoom pendingClass = createClassRoom(20L, "Toán học", LocalDate.now(), LocalDate.now().plusMonths(2));
+        pendingClass.setSchedules(List.of(createSchedule(pendingClass, 7, "13:00", "14:30")));
+        EnrollmentRequest pending = new EnrollmentRequest();
+        ReflectionTestUtils.setField(pending, "id", 2L);
+        pending.setClassRoom(pendingClass);
+        pending.setStudentId(100L);
+        pending.setStudentEmail("student@example.com");
+        pending.setStatus(EnrollmentRequestStatus.PENDING);
+
+        when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
+        when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.ACCEPTED)).thenReturn(0L);
+        when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any())).thenReturn(false);
+        when(enrollmentRequestRepository.findByStudentIdentityWithDetails(100L, "student@example.com")).thenReturn(List.of(pending));
+
+        assertThatThrownBy(() -> service.enrollClass(10L, 100L, "student@example.com", validRequest()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Toán học");
+    }
+
+    @Test
+    void tutorAcceptanceRechecksConflictBeforeChangingStatus() {
+        EnrollmentRequestService service = service();
+        ClassRoom targetClass = createClassRoom(10L, "Hóa học", LocalDate.now(), LocalDate.now().plusMonths(2));
+        targetClass.setSchedules(List.of(createSchedule(targetClass, 7, "13:00", "14:30")));
+        EnrollmentRequest target = new EnrollmentRequest();
+        ReflectionTestUtils.setField(target, "id", 1L);
+        target.setClassRoom(targetClass);
+        target.setStudentId(100L);
+        target.setStudentEmail("student@example.com");
+        target.setStatus(EnrollmentRequestStatus.PENDING);
+
+        ClassRoom existingClass = createClassRoom(20L, "Toán học", LocalDate.now(), LocalDate.now().plusMonths(2));
+        existingClass.setSchedules(List.of(createSchedule(existingClass, 7, "13:00", "14:30")));
+        EnrollmentRequest existing = new EnrollmentRequest();
+        ReflectionTestUtils.setField(existing, "id", 2L);
+        existing.setClassRoom(existingClass);
+        existing.setStudentId(100L);
+        existing.setStudentEmail("student@example.com");
+        existing.setStatus(EnrollmentRequestStatus.ACCEPTED);
+
+        when(enrollmentRequestRepository.findClassRoomIdById(1L)).thenReturn(Optional.of(10L));
+        when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
+        when(enrollmentRequestRepository.findById(1L)).thenReturn(Optional.of(target));
+        when(enrollmentRequestRepository.findByStudentIdentityWithDetails(100L, "student@example.com"))
+                .thenReturn(List.of(target, existing));
+
+        assertThatThrownBy(() -> service.acceptRequest(1L, "tutor@example.com", 200L, null))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Toán học");
+        verify(enrollmentRequestRepository, never()).save(target);
+        verify(eventPublisher, never()).publishEnrollmentAccepted(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void escrowActivationRechecksConflictBeforeEnrollmentAndAttendance() {
+        EnrollmentRequestService service = service();
+        ClassRoom targetClass = createClassRoom(10L, "Hóa học", LocalDate.now(), LocalDate.now().plusMonths(2));
+        targetClass.setSchedules(List.of(createSchedule(targetClass, 7, "13:00", "14:30")));
+        EnrollmentRequest target = new EnrollmentRequest();
+        ReflectionTestUtils.setField(target, "id", 1L);
+        target.setClassRoom(targetClass);
+        target.setStudentId(100L);
+        target.setStudentEmail("student@example.com");
+        target.setAgreementId("agreement-1");
+        target.setStatus(EnrollmentRequestStatus.ACCEPTED);
+
+        ClassRoom existingClass = createClassRoom(20L, "Toán học", LocalDate.now(), LocalDate.now().plusMonths(2));
+        existingClass.setSchedules(List.of(createSchedule(existingClass, 7, "13:00", "14:30")));
+        EnrollmentRequest existing = new EnrollmentRequest();
+        ReflectionTestUtils.setField(existing, "id", 2L);
+        existing.setClassRoom(existingClass);
+        existing.setStudentId(100L);
+        existing.setStudentEmail("student@example.com");
+        existing.setStatus(EnrollmentRequestStatus.ENROLLED);
+
+        when(enrollmentRequestRepository.findByAgreementId("agreement-1")).thenReturn(Optional.of(target));
+        when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
+        when(enrollmentRequestRepository.findByStudentIdentityWithDetails(100L, "student@example.com"))
+                .thenReturn(List.of(target, existing));
+
+        assertThatThrownBy(() -> service.activateEnrollment(10L, 100L, "agreement-1"))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Toán học");
+        verify(enrollmentRequestRepository, never()).save(target);
+        verify(rollingSessionService, never()).createMissingAttendancesForEnrollment(any());
     }
 
     @Test
@@ -145,7 +244,7 @@ class EnrollmentRequestScheduleConflictTest {
         when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
         when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.ACCEPTED)).thenReturn(0L);
         when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any())).thenReturn(false);
-        when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(enrollment));
+        when(enrollmentRequestRepository.findByStudentIdentityWithDetails(100L, "student@example.com")).thenReturn(List.of(enrollment));
         lenient().when(terminationStops.findByClassroomIdAndStudentId(20L, 100L)).thenReturn(List.of(hold));
 
         assertThatThrownBy(() -> service.enrollClass(10L, 100L, "student@example.com", validRequest()))
@@ -172,7 +271,7 @@ class EnrollmentRequestScheduleConflictTest {
         when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.ACCEPTED)).thenReturn(0L);
         when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.PENDING)).thenReturn(0L);
         when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any())).thenReturn(false);
-        when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(oldEnrollment));
+        when(enrollmentRequestRepository.findByStudentIdentityWithDetails(100L, "student@example.com")).thenReturn(List.of(oldEnrollment));
         when(enrollmentRequestRepository.save(any())).thenAnswer(i -> {
             EnrollmentRequest r = i.getArgument(0);
             ReflectionTestUtils.setField(r, "id", 1L);
@@ -201,7 +300,7 @@ class EnrollmentRequestScheduleConflictTest {
         when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.ACCEPTED)).thenReturn(0L);
         when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.PENDING)).thenReturn(0L);
         when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any())).thenReturn(false);
-        when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(cancelledEnrollment));
+        when(enrollmentRequestRepository.findByStudentIdentityWithDetails(100L, "student@example.com")).thenReturn(List.of(cancelledEnrollment));
         when(enrollmentRequestRepository.save(any())).thenAnswer(i -> {
             EnrollmentRequest r = i.getArgument(0);
             ReflectionTestUtils.setField(r, "id", 1L);
@@ -234,7 +333,7 @@ class EnrollmentRequestScheduleConflictTest {
         when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.ACCEPTED)).thenReturn(0L);
         when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.PENDING)).thenReturn(0L);
         when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any())).thenReturn(false);
-        when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(acceptedReq));
+        when(enrollmentRequestRepository.findByStudentIdentityWithDetails(100L, "student@example.com")).thenReturn(List.of(acceptedReq));
         when(enrollmentRequestRepository.save(any())).thenAnswer(i -> {
             EnrollmentRequest r = i.getArgument(0);
             ReflectionTestUtils.setField(r, "id", 1L);
@@ -273,7 +372,7 @@ class EnrollmentRequestScheduleConflictTest {
         when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.ACCEPTED)).thenReturn(0L);
         when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.PENDING)).thenReturn(0L);
         when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any())).thenReturn(false);
-        when(enrollmentRequestRepository.findByStudentEmailWithDetails("student@example.com")).thenReturn(List.of(acceptedReq));
+        when(enrollmentRequestRepository.findByStudentIdentityWithDetails(100L, "student@example.com")).thenReturn(List.of(acceptedReq));
         when(enrollmentRequestRepository.save(any())).thenAnswer(i -> {
             EnrollmentRequest r = i.getArgument(0);
             ReflectionTestUtils.setField(r, "id", 1L);
@@ -325,9 +424,10 @@ class EnrollmentRequestScheduleConflictTest {
     }
 
     @Test
-    void studentScheduleExcludesAcceptedReservationUntilEscrowFundingActivatesIt() {
+    void studentScheduleIncludesAcceptedReservationBeforeEscrowFunding() {
         EnrollmentRequestService service = service();
         ClassRoom reservedClass = createClassRoom(20L, "Lớp đang giữ chỗ", LocalDate.now(), LocalDate.now().plusMonths(1));
+        reservedClass.setSchedules(List.of(createSchedule(reservedClass, 3, "18:00", "19:30")));
         EnrollmentRequest request = new EnrollmentRequest();
         request.setClassRoom(reservedClass);
         request.setStudentEmail("student@example.com");
@@ -336,7 +436,8 @@ class EnrollmentRequestScheduleConflictTest {
 
         StudentScheduleResponse response = service.getStudentSchedule("student@example.com");
 
-        assertThat(response.recurringSchedules()).isEmpty();
+        assertThat(response.recurringSchedules()).hasSize(1);
+        assertThat(response.recurringSchedules().getFirst().enrollmentStatus()).isEqualTo(EnrollmentRequestStatus.ACCEPTED);
         assertThat(response.sessions()).isEmpty();
     }
 
@@ -424,6 +525,128 @@ class EnrollmentRequestScheduleConflictTest {
         assertThat(response.sessions().get(0).attendanceStopped()).isTrue();
     }
 
+    @Test
+    void tutorCannotAcceptRequestWhileAnEarlierPendingReservationConflicts() {
+        EnrollmentRequestService service = service();
+        ClassRoom targetClass = createClassRoom(10L, "Hóa học", LocalDate.now(), LocalDate.now().plusMonths(2));
+        targetClass.setSchedules(List.of(createSchedule(targetClass, 7, "13:00", "14:30")));
+        EnrollmentRequest target = new EnrollmentRequest();
+        ReflectionTestUtils.setField(target, "id", 1L);
+        target.setClassRoom(targetClass);
+        target.setStudentId(100L);
+        target.setStudentEmail("student@example.com");
+        target.setStatus(EnrollmentRequestStatus.PENDING);
+
+        ClassRoom pendingClass = createClassRoom(20L, "Toán học", LocalDate.now(), LocalDate.now().plusMonths(2));
+        pendingClass.setSchedules(List.of(createSchedule(pendingClass, 7, "13:00", "14:30")));
+        EnrollmentRequest pending = new EnrollmentRequest();
+        ReflectionTestUtils.setField(pending, "id", 2L);
+        pending.setClassRoom(pendingClass);
+        pending.setStudentId(100L);
+        pending.setStudentEmail("student@example.com");
+        pending.setStatus(EnrollmentRequestStatus.PENDING);
+
+        when(enrollmentRequestRepository.findClassRoomIdById(1L)).thenReturn(Optional.of(10L));
+        when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
+        when(enrollmentRequestRepository.findById(1L)).thenReturn(Optional.of(target));
+        when(enrollmentRequestRepository.findByStudentIdentityWithDetails(100L, "student@example.com"))
+                .thenReturn(List.of(target, pending));
+
+        assertThatThrownBy(() -> service.acceptRequest(1L, "tutor@example.com", 200L, null))
+                .isInstanceOf(StudentScheduleConflictException.class)
+                .hasMessageContaining("Toán học");
+        assertThat(target.getStatus()).isEqualTo(EnrollmentRequestStatus.PENDING);
+        verify(enrollmentRequestRepository, never()).save(target);
+        verify(eventPublisher, never()).publishEnrollmentAccepted(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void escrowActivationIsBlockedByConflictingPendingReservation() {
+        EnrollmentRequestService service = service();
+        ClassRoom targetClass = createClassRoom(10L, "Hóa học", LocalDate.now(), LocalDate.now().plusMonths(2));
+        targetClass.setSchedules(List.of(createSchedule(targetClass, 7, "13:00", "14:30")));
+        EnrollmentRequest target = new EnrollmentRequest();
+        ReflectionTestUtils.setField(target, "id", 1L);
+        target.setClassRoom(targetClass);
+        target.setStudentId(100L);
+        target.setStudentEmail("student@example.com");
+        target.setAgreementId("agreement-1");
+        target.setStatus(EnrollmentRequestStatus.ACCEPTED);
+
+        ClassRoom pendingClass = createClassRoom(20L, "Toán học", LocalDate.now(), LocalDate.now().plusMonths(2));
+        pendingClass.setSchedules(List.of(createSchedule(pendingClass, 7, "13:00", "14:30")));
+        EnrollmentRequest pending = new EnrollmentRequest();
+        ReflectionTestUtils.setField(pending, "id", 2L);
+        pending.setClassRoom(pendingClass);
+        pending.setStudentId(100L);
+        pending.setStudentEmail("student@example.com");
+        pending.setStatus(EnrollmentRequestStatus.PENDING);
+
+        when(enrollmentRequestRepository.findByAgreementId("agreement-1")).thenReturn(Optional.of(target));
+        when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
+        when(enrollmentRequestRepository.findByStudentIdentityWithDetails(100L, "student@example.com"))
+                .thenReturn(List.of(target, pending));
+
+        assertThatThrownBy(() -> service.activateEnrollment(10L, 100L, "agreement-1"))
+                .isInstanceOf(StudentScheduleConflictException.class)
+                .hasMessageContaining("Toán học");
+        assertThat(target.getStatus()).isEqualTo(EnrollmentRequestStatus.ACCEPTED);
+        verify(enrollmentRequestRepository, never()).save(target);
+        verify(rollingSessionService, never()).createMissingAttendancesForEnrollment(target);
+    }
+
+    @Test
+    void sundayLegacyValueOneConflictsWithCanonicalValueEight() {
+        EnrollmentRequestService service = service();
+        ClassRoom targetClass = createClassRoom(10L, "Hóa học", LocalDate.now(), LocalDate.now().plusMonths(2));
+        targetClass.setSchedules(List.of(createSchedule(targetClass, 8, "13:00", "14:30")));
+        EnrollmentRequest target = new EnrollmentRequest();
+        ReflectionTestUtils.setField(target, "id", 1L);
+        target.setClassRoom(targetClass);
+        target.setStudentId(100L);
+        target.setStudentEmail("student@example.com");
+        target.setStatus(EnrollmentRequestStatus.PENDING);
+
+        ClassRoom legacySundayClass = createClassRoom(20L, "Toán học", LocalDate.now(), LocalDate.now().plusMonths(2));
+        legacySundayClass.setSchedules(List.of(createSchedule(legacySundayClass, 1, "13:00", "14:30")));
+        EnrollmentRequest existing = new EnrollmentRequest();
+        ReflectionTestUtils.setField(existing, "id", 2L);
+        existing.setClassRoom(legacySundayClass);
+        existing.setStudentId(100L);
+        existing.setStudentEmail("student@example.com");
+        existing.setStatus(EnrollmentRequestStatus.ACCEPTED);
+
+        when(enrollmentRequestRepository.findClassRoomIdById(1L)).thenReturn(Optional.of(10L));
+        when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
+        when(enrollmentRequestRepository.findById(1L)).thenReturn(Optional.of(target));
+        when(enrollmentRequestRepository.findByStudentIdentityWithDetails(100L, "student@example.com"))
+                .thenReturn(List.of(target, existing));
+
+        assertThatThrownBy(() -> service.acceptRequest(1L, "tutor@example.com", 200L, null))
+                .isInstanceOf(StudentScheduleConflictException.class)
+                .hasMessageContaining("Chủ nhật");
+    }
+
+    @Test
+    void malformedScheduleFailsClosedInsteadOfSkippingConflictCheck() {
+        EnrollmentRequestService service = service();
+        ClassRoom targetClass = createClassRoom(10L, "Hóa học", LocalDate.now(), LocalDate.now().plusMonths(2));
+        targetClass.setSchedules(List.of(createSchedule(targetClass, 7, "not-a-time", "14:30")));
+
+        when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
+        when(enrollmentRequestRepository.countByClassRoomIdAndStatus(10L, EnrollmentRequestStatus.ACCEPTED)).thenReturn(0L);
+        when(enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(any(), any(), any()))
+                .thenReturn(false);
+        when(enrollmentRequestRepository.existsActiveByClassRoomAndStudentIdentity(any(), any(), any(), any()))
+                .thenReturn(false);
+
+        assertThatThrownBy(() -> service.enrollClass(10L, 100L, "student@example.com", validRequest()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Dữ liệu lịch")
+                .hasMessageContaining("không hợp lệ");
+        verify(enrollmentRequestRepository, never()).save(any());
+    }
+
     private EnrollmentRequestService service() {
         return new EnrollmentRequestService(
                 classRoomRepository,
@@ -432,7 +655,8 @@ class EnrollmentRequestScheduleConflictTest {
                 tutorAuthorizationStateRepository,
                 eventPublisher,
                 rollingSessionService,
-                terminationStops);
+                terminationStops,
+                studentScheduleGuard);
     }
 
     private EnrollClassRequest validRequest() {

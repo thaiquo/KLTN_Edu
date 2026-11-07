@@ -2,6 +2,7 @@ package iuh.fit.learning_service.service;
 
 import iuh.fit.learning_service.dto.EnrollmentRequestDtos.EnrollClassRequest;
 import iuh.fit.learning_service.entity.ClassRoom;
+import iuh.fit.learning_service.entity.ClassSchedule;
 import iuh.fit.learning_service.entity.EnrollmentRequest;
 import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
 import iuh.fit.learning_service.exception.BadRequestException;
@@ -45,7 +46,8 @@ class EnrollmentRequestServiceIdentityTest {
             tutorAuthorizationStateRepository,
             eventPublisher,
             rollingSessionService,
-                mock(iuh.fit.learning_service.repository.LearningTerminationStopRepository.class));
+            mock(iuh.fit.learning_service.repository.LearningTerminationStopRepository.class),
+            mock(StudentScheduleGuard.class));
 
     @Test
     void rejectsEnrollmentWhenJwtDoesNotContainStudentId() {
@@ -214,8 +216,15 @@ class EnrollmentRequestServiceIdentityTest {
         ClassRoom classRoom = new ClassRoom();
         org.springframework.test.util.ReflectionTestUtils.setField(classRoom, "id", 22L);
         classRoom.setStatus(ClassRoomStatus.LOCKED);
+        ClassSchedule schedule = new ClassSchedule();
+        schedule.setClassRoom(classRoom);
+        schedule.setDayOfWeek(2);
+        schedule.setStartTime("18:00");
+        schedule.setEndTime("19:30");
+        classRoom.setSchedules(java.util.List.of(schedule));
         enrollment.setClassRoom(classRoom);
         enrollment.setStudentId(33L);
+        enrollment.setStudentEmail("student@example.com");
         enrollment.setAgreementId("agreement-a");
         enrollment.setStatus(EnrollmentRequestStatus.ACCEPTED);
         when(enrollmentRequestRepository.findByAgreementId("agreement-a"))

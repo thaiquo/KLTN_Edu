@@ -84,6 +84,7 @@ export function Sidebar({
           { id: "class-management", label: "Quản lý lớp học", icon: BookOpen },
           { id: "subject-catalog", label: "Quản lý môn học", icon: Layers3 },
           { id: "reports", label: "Báo cáo nghiệp vụ", icon: BarChart3 },
+          { id: "staff-duty-management", label: "Điều phối lịch trực", icon: Calendar },
           { id: "settings", label: "Cài đặt hệ thống", icon: Settings },
         ];
       case "staff":
@@ -96,6 +97,7 @@ export function Sidebar({
           { id: "escalations", label: "Chuyển cấp Admin", icon: ShieldAlert },
           { id: "community-moderation", label: "Kiểm duyệt Community", icon: Globe },
           { id: "reports", label: "Báo cáo nghiệp vụ", icon: BarChart3 },
+          { id: "duty-roster", label: "Lịch trực của tôi", icon: Calendar },
         ];
       default:
         return [];

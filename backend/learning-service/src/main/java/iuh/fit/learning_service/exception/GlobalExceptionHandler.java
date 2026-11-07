@@ -10,10 +10,26 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import jakarta.validation.ConstraintViolationException;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(StudentScheduleConflictException.class)
+    ResponseEntity<Map<String, Object>> studentScheduleConflict(StudentScheduleConflictException ex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.CONFLICT.value());
+        body.put("code", "STUDENT_SCHEDULE_CONFLICT");
+        body.put("message", ex.getMessage());
+        body.put("conflictingClassId", ex.getConflictingClassId());
+        body.put("conflictingClassName", ex.getConflictingClassName());
+        body.put("dayOfWeek", ex.getDayOfWeek());
+        body.put("startTime", ex.getStartTime());
+        body.put("endTime", ex.getEndTime());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     ResponseEntity<Map<String, Object>> notFound(RuntimeException ex) {
         return error(HttpStatus.NOT_FOUND, ex.getMessage());
