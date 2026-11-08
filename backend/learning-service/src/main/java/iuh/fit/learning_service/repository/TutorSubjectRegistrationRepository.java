@@ -9,11 +9,18 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface TutorSubjectRegistrationRepository extends JpaRepository<TutorSubjectRegistration, Long>, JpaSpecificationExecutor<TutorSubjectRegistration> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select registration from TutorSubjectRegistration registration where registration.id = :id")
+    Optional<TutorSubjectRegistration> findByIdForUpdate(@Param("id") Long id);
+
     List<TutorSubjectRegistration> findByTutorEmailIgnoreCaseOrderByCreatedAtDesc(String tutorEmail);
     List<TutorSubjectRegistration> findByStatusOrderBySubmittedAtAsc(TutorSubjectRegistrationStatus status);
     List<TutorSubjectRegistration> findByTutorProfileIdInAndStatusOrderByCreatedAtAsc(

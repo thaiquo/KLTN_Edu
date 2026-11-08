@@ -65,7 +65,7 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
     @Test
     void staffCannotApproveNewSubjectProposal() {
         TutorSubjectRegistration proposal = pendingProposal(10L);
-        when(registrations.findById(10L)).thenReturn(Optional.of(proposal));
+        when(registrations.findByIdForUpdate(10L)).thenReturn(Optional.of(proposal));
 
         assertThatThrownBy(() -> service.approve(10L, "staff@example.com", null, false))
                 .isInstanceOf(AccessDeniedException.class)
@@ -75,7 +75,7 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
     @Test
     void staffCannotRejectNewSubjectProposal() {
         TutorSubjectRegistration proposal = pendingProposal(11L);
-        when(registrations.findById(11L)).thenReturn(Optional.of(proposal));
+        when(registrations.findByIdForUpdate(11L)).thenReturn(Optional.of(proposal));
 
         assertThatThrownBy(() -> service.reject(11L, "staff@example.com", null, false))
                 .isInstanceOf(AccessDeniedException.class)
@@ -186,7 +186,7 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
         proposal.getProposedLevels().add(proposedLevel("GRADE_1", "Lớp 1", LevelType.GRADE));
         proposal.getProposedLevels().add(proposedLevel("GRADE_3", "Lớp 3", LevelType.GRADE));
         proposal.getProposedLevels().add(proposedLevel("GRADE_5", "Lớp 5", LevelType.GRADE));
-        when(registrations.findById(21L)).thenReturn(Optional.of(proposal));
+        when(registrations.findByIdForUpdate(21L)).thenReturn(Optional.of(proposal));
         when(subjects.findByCategoryIdOrderByOrderIndexAscNameAsc(20L)).thenReturn(List.of());
         when(subjects.save(any(CatalogSubject.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(levels.save(any(CatalogLevel.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -212,7 +212,7 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
         proposal.setProposedSubjectName("Khoa học máy tính");
         proposal.getProposedLevels().add(proposedLevel(null, "Lớp 1", LevelType.GRADE));
         proposal.getProposedLevels().add(proposedLevel(null, "Lớp 3", LevelType.GRADE));
-        when(registrations.findById(22L)).thenReturn(Optional.of(proposal));
+        when(registrations.findByIdForUpdate(22L)).thenReturn(Optional.of(proposal));
         when(subjects.findByCategoryIdOrderByOrderIndexAscNameAsc(20L)).thenReturn(List.of());
         when(subjects.save(any(CatalogSubject.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(levels.save(any(CatalogLevel.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -232,7 +232,7 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
         state.setUserId(77L);
         state.setStatus("APPROVED");
         state.setTutorProfileId(55L);
-        when(registrations.findById(30L)).thenReturn(Optional.of(registration));
+        when(registrations.findByIdForUpdate(30L)).thenReturn(Optional.of(registration));
         when(registrations.save(any(TutorSubjectRegistration.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(tutorAuthorizationStateRepository.findByTutorProfileId(55L)).thenReturn(Optional.of(state));
 
@@ -259,7 +259,7 @@ class TutorSubjectRegistrationServiceAuthorizationTest {
         state.setUserId(78L);
         state.setStatus("APPROVED");
         state.setTutorProfileId(55L);
-        when(registrations.findById(31L)).thenReturn(Optional.of(registration));
+        when(registrations.findByIdForUpdate(31L)).thenReturn(Optional.of(registration));
         when(registrations.save(any(TutorSubjectRegistration.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(tutorAuthorizationStateRepository.findByTutorProfileId(55L)).thenReturn(Optional.of(state));
 

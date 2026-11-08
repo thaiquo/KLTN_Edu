@@ -87,7 +87,7 @@ class TutorApprovalServiceStatusSyncTest {
         TutorProfile profile = new TutorProfile();
         profile.setUser(applicant);
 
-        when(tutorApplicationRepository.findById(100L)).thenReturn(Optional.of(application));
+        when(tutorApplicationRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(application));
         when(userRepository.findByEmailIgnoreCase("staff@example.com")).thenReturn(Optional.of(reviewer));
         when(tutorApplicationSubjectRepository.findByTutorApplication_IdOrderByCreatedAtAsc(100L)).thenReturn(List.of());
         when(tutorDocumentRepository.findByTutorApplication_IdOrderByUploadedAtDesc(100L))
@@ -120,7 +120,7 @@ class TutorApprovalServiceStatusSyncTest {
         StaffRejectTutorApplicationRequest request = new StaffRejectTutorApplicationRequest();
         request.setReason("Minh chứng chưa rõ.");
 
-        when(tutorApplicationRepository.findById(101L)).thenReturn(Optional.of(application));
+        when(tutorApplicationRepository.findByIdForUpdate(101L)).thenReturn(Optional.of(application));
         when(userRepository.findByEmailIgnoreCase("staff@example.com")).thenReturn(Optional.of(reviewer));
         when(userRoleRepository.existsByUserIdAndRole(any(), any())).thenReturn(true);
         when(tutorRepository.findByUserId(11L)).thenReturn(Optional.of(tutor));

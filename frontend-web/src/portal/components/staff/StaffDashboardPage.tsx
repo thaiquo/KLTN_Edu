@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { AlertCircle, RefreshCw, Eye, FileText, X, BookOpen, GraduationCap, UserCheck } from "lucide-react";
+import { AlertCircle, RefreshCw, Eye, FileText, X, BookOpen, GraduationCap, UserCheck, Clock3 } from "lucide-react";
 import { useAuth } from "../../../hooks/useAuth";
 import { useFeedback } from "../../../components/feedback/useFeedback";
 import { DashboardStats } from "./DashboardStats";
@@ -9,6 +9,7 @@ import { ClassApprovalReview } from "./ClassApprovalReview";
 import { TutorProfileApprovalReview } from "./TutorProfileApprovalReview";
 import { teachingRegistrationApi } from "../../../api/teachingRegistrations";
 import { fetchUserDirectory, getUserDisplayName, UserSummary } from "../../../utils/userDisplay";
+import { DutyStatus, staffDutyApi } from "../../../api/staffDutyApi";
 
 export function StaffDashboardPage() {
   const { user } = useAuth();
@@ -20,6 +21,24 @@ export function StaffDashboardPage() {
   const [teachingPendingCount, setTeachingPendingCount] = useState(0);
   const [tutorProfilePendingCount, setTutorProfilePendingCount] = useState(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [dutyStatus, setDutyStatus] = useState<DutyStatus>();
+  const canWrite = isAdmin || dutyStatus?.writeAllowed === true;
+
+  useEffect(() => {
+    if (isAdmin) return;
+    let active = true;
+    const refreshDuty = () => staffDutyApi.status()
+      .then((status) => { if (active) setDutyStatus(status); })
+      .catch(() => { if (active) setDutyStatus(undefined); });
+    refreshDuty();
+    const timer = window.setInterval(refreshDuty, 30_000);
+    window.addEventListener("staff-duty:changed", refreshDuty);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("staff-duty:changed", refreshDuty);
+    };
+  }, [isAdmin]);
 
   const subtabParam = searchParams.get("subtab");
   const initialTab: "TUTOR_PROFILES" | "TEACHING_REGISTRATION" | "CLASS_ROOMS" =
@@ -155,8 +174,24 @@ export function StaffDashboardPage() {
         </div>
       )}
 
+      {!isAdmin && !canWrite && (
+        <div className="mb-4 flex items-start gap-3 border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <Clock3 className="mt-0.5 h-4 w-4 flex-none" />
+          <div>
+            <p className="font-black">Chế độ chỉ xem</p>
+            <p className="mt-0.5 text-xs font-semibold">
+              {dutyStatus?.canStart
+                ? "Ca trực của bạn đã sẵn sàng. Bấm “Bắt đầu ca” trên thanh trên cùng để mở quyền duyệt."
+                : dutyStatus
+                  ? "Bạn chưa ở trong ca trực đã nhận. Bạn vẫn có thể xem hàng chờ và lịch sử."
+                  : "Chưa xác minh được ca trực. Các thao tác duyệt tạm khóa để tránh xử lý sai quyền."}
+            </p>
+          </div>
+        </div>
+      )}
+
       {activeTab === "CLASS_ROOMS" ? (
-        <ClassApprovalReview key={`classes-${refreshTrigger}`} />
+        <ClassApprovalReview key={`classes-${refreshTrigger}`} canWrite={canWrite} />
       ) : activeTab === "TUTOR_PROFILES" ? (
         <TutorProfileApprovalReview
           key={`tutor-profiles-${refreshTrigger}`}
@@ -164,6 +199,7 @@ export function StaffDashboardPage() {
           onError={feedback.error}
           onPendingCountChange={setTutorProfilePendingCount}
           onActionSuccess={loadHistory}
+          canWrite={canWrite}
         />
       ) : (
         <>
@@ -180,6 +216,7 @@ export function StaffDashboardPage() {
             onError={feedback.error} 
             onPendingCountChange={setTeachingPendingCount} 
             onActionSuccess={loadHistory}
+            canWrite={canWrite}
           />
 
           <TeachingRegistrationHistorySection 

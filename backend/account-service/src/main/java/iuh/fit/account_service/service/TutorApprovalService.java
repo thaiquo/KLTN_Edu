@@ -132,7 +132,7 @@ public class TutorApprovalService {
 
     @Transactional
     public StaffTutorApplicationDetailResponse approve(Long applicationId, String reviewerEmail, StaffReviewNoteRequest request) {
-        TutorApplication application = getApplication(applicationId);
+        TutorApplication application = getApplicationForUpdate(applicationId);
         ensurePending(application);
         User reviewer = getReviewer(reviewerEmail);
         User applicant = application.getUser();
@@ -170,7 +170,7 @@ public class TutorApprovalService {
 
     @Transactional
     public StaffTutorApplicationDetailResponse reject(Long applicationId, String reviewerEmail, StaffRejectTutorApplicationRequest request) {
-        TutorApplication application = getApplication(applicationId);
+        TutorApplication application = getApplicationForUpdate(applicationId);
         ensurePending(application);
         User reviewer = getReviewer(reviewerEmail);
 
@@ -497,6 +497,11 @@ public class TutorApprovalService {
         if (application.getStatus() != TutorApplicationStatus.PENDING) {
             throw new ConflictException("Tutor application has already been processed");
         }
+    }
+
+    private TutorApplication getApplicationForUpdate(Long applicationId) {
+        return tutorApplicationRepository.findByIdForUpdate(applicationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Tutor application not found"));
     }
 
     private String normalize(String value) {

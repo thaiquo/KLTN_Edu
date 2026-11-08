@@ -128,7 +128,7 @@ class ClassRoomServiceTest {
         state.setTutorProfileId(88L);
         state.setStatus("APPROVED");
 
-        when(classRoomRepository.findById(77L)).thenReturn(Optional.of(classRoom));
+        when(classRoomRepository.findByIdForUpdate(77L)).thenReturn(Optional.of(classRoom));
         when(classRoomRepository.save(classRoom)).thenReturn(classRoom);
         when(tutorAuthorizationStateRepository.findByTutorProfileId(88L)).thenReturn(Optional.of(state));
 
@@ -157,7 +157,7 @@ class ClassRoomServiceTest {
         state.setTutorProfileId(88L);
         state.setStatus("APPROVED");
 
-        when(classRoomRepository.findById(77L)).thenReturn(Optional.of(classRoom));
+        when(classRoomRepository.findByIdForUpdate(77L)).thenReturn(Optional.of(classRoom));
         when(classRoomRepository.save(classRoom)).thenReturn(classRoom);
         when(tutorAuthorizationStateRepository.findByTutorProfileId(88L)).thenReturn(Optional.of(state));
 

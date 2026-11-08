@@ -21,6 +21,7 @@ export function StaffDutyBadge({ onNavigate }: { onNavigate?: (page: string) => 
     try {
       await staffDutyApi.startShift();
       refresh();
+      window.dispatchEvent(new Event("staff-duty:changed"));
     } finally {
       setBusy(false);
     }

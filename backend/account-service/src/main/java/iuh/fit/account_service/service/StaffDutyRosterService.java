@@ -45,7 +45,7 @@ public class StaffDutyRosterService {
             UserRoleRepository userRoleRepository,
             AccountEventPublisher eventPublisher,
             Clock staffDutyClock,
-            @Value("${staff.duty.enforcement-enabled:false}") boolean enforcementEnabled
+            @Value("${staff.duty.enforcement-enabled:true}") boolean enforcementEnabled
     ) {
         this.availabilityRepository = availabilityRepository;
         this.assignmentRepository = assignmentRepository;

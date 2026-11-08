@@ -560,7 +560,7 @@ public class ClassRoomService {
 
     @Transactional
     public ClassRoomDtos.ClassRoomResponse approveClass(Long id, String reviewerEmail) {
-        ClassRoom classRoom = classRoomRepository.findById(id)
+        ClassRoom classRoom = classRoomRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + id));
         if (classRoom.getStatus() != ClassRoomStatus.PENDING_APPROVAL) {
             throw new BadRequestException("Only PENDING_APPROVAL classrooms can be approved");
@@ -577,7 +577,7 @@ public class ClassRoomService {
 
     @Transactional
     public ClassRoomDtos.ClassRoomResponse rejectClass(Long id, String reviewerEmail, String reason) {
-        ClassRoom classRoom = classRoomRepository.findById(id)
+        ClassRoom classRoom = classRoomRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + id));
         if (classRoom.getStatus() != ClassRoomStatus.PENDING_APPROVAL) {
             throw new BadRequestException("Only PENDING_APPROVAL classrooms can be rejected");

@@ -5,7 +5,7 @@
 > **Owner dữ liệu:** `backend/account-service`
 > **Các nơi thực thi quyền:** `account-service`, `learning-service`, `contract-service`, `frontend-web`
 > **Nhánh:** `feature/quocthai`
-> **Production:** Người dùng đã xác nhận chuẩn bị merge/deploy ngày 2026-11-07. Release phải giữ `STAFF_DUTY_ENFORCEMENT_ENABLED=false`; chỉ bật gate sau khi Admin công bố lịch của một tuần tương lai và smoke test đạt.
+> **Production:** Quyết định cập nhật ngày 2026-11-08: duty gate được bật mặc định trong source/Compose. Trước lần deploy áp dụng đầu tiên, Admin phải công bố đủ lịch của tuần chưa bắt đầu; `STAFF_DUTY_ENFORCEMENT_ENABLED=false` chỉ còn là kill switch khẩn cấp. Trạng thái production vẫn phải được xác minh riêng sau deploy.
 
 ## 1. Quyết định nghiệp vụ đã chốt
 
@@ -43,7 +43,7 @@
 - Admin không bị giới hạn theo ca trực.
 - Các thao tác đọc (`GET`, `HEAD`) không bị khóa theo ca.
 - Backend là nguồn thực thi quyền. Frontend chỉ phản ánh trạng thái và vô hiệu hóa nút để cải thiện UX.
-- Rollout production dùng `STAFF_DUTY_ENFORCEMENT_ENABLED=false` mặc định. Cờ phải cùng giá trị ở Account/Learning/Contract; chỉ bật sau khi Admin đã công bố lịch của tuần hiệu lực đầu tiên.
+- Source và Compose dùng `STAFF_DUTY_ENFORCEMENT_ENABLED=true` mặc định. Cờ phải cùng giá trị ở Account/Learning/Contract; chỉ đặt `false` để rollback khẩn cấp. Không deploy cấu hình bật gate khi chưa có lịch đã công bố cho tuần hiệu lực đầu tiên.
 
 ### 1.4. Công thức quyền ghi
 
@@ -323,7 +323,7 @@ Ký hiệu: `[x]` đã hiện thực và có kiểm chứng bước tương ứn
 - [x] D2. Trang Staff có calendar tuần, điều hướng tuần, trạng thái tiếng Việt, tab đăng ký ca rảnh theo mô hình chọn–chỉnh sửa–hủy–lưu và chỉ hiện nhận ca khi backend trả `canStart`.
 - [x] D3. Trang Admin có thẻ tổng quan, calendar tuần, tạo lịch trống, gợi ý xếp lịch, modal manual assign/replace, ưu tiên lịch rảnh, cảnh báo trùng ngày, publish confirmation và audit timeline tiếng Việt.
 - [x] D4. Tích hợp `App.tsx`, `Sidebar.tsx`, `portalAccess.js`.
-- [~] D5. Trang duty roster đã disable hành động theo trạng thái/canStart và có badge/lỗi backend; còn đồng bộ read-only trên toàn bộ màn nghiệp vụ Staff khác.
+- [~] D5. Trang duty roster có badge/nhận ca; màn duyệt lớp, hồ sơ gia sư và quyền dạy đã đồng bộ banner chỉ xem và khóa nút theo `writeAllowed`. Các màn mutation Staff khác vẫn dựa vào backend 403 và cần tiếp tục đồng bộ UX khi chỉnh sửa từng phân hệ.
 
 ### Giai đoạn E — Nghiệm thu
 
@@ -346,10 +346,10 @@ Ký hiệu: `[x]` đã hiện thực và có kiểm chứng bước tương ứn
 3. Giữ nguyên các flag trial/tutor-absence hiện hành; release roster không được tự chuyển tutor-absence sang `ENFORCE` hoặc thay đổi chính sách trial.
 4. Chạy full regression roster + quyền Staff + các luồng Student/Tutor trọng yếu.
 5. Mở PR từ `feature/quocthai` vào `main` theo branch protection.
-6. Deploy code/schema/UI với `STAFF_DUTY_ENFORCEMENT_ENABLED=false`; Staff vẫn làm việc theo quyền cũ trong giai đoạn chuẩn bị.
-7. Admin tạo, chỉnh và công bố lịch cho tuần chưa bắt đầu kế tiếp; không backfill tuần đang chạy.
-8. Smoke test trạng thái lịch, start shift và duty-check, rồi bật cùng lúc `STAFF_DUTY_ENFORCEMENT_ENABLED=true` ở Account/Learning/Contract vào đầu tuần hiệu lực.
-9. Theo dõi 403/503 và audit trong tuần đầu; nếu có sự cố, tắt cờ để khôi phục quyền Staff cũ trong khi giữ nguyên dữ liệu lịch.
+6. Trước deploy, Admin tạo, chỉnh và công bố lịch cho tuần chưa bắt đầu kế tiếp; không backfill tuần đang chạy.
+7. Deploy code/schema/UI với `STAFF_DUTY_ENFORCEMENT_ENABLED=true` đồng nhất ở Account/Learning/Contract.
+8. Smoke test trạng thái lịch, start shift, thao tác duyệt trong ca và phản hồi chỉ xem ngoài ca.
+9. Theo dõi 403/503 và audit trong tuần đầu; nếu có sự cố, đặt cờ `false` ở cả ba service để rollback quyền ghi trong khi giữ nguyên dữ liệu lịch.
 
 ## 9. Ngoài phạm vi V1
 

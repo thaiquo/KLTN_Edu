@@ -383,7 +383,7 @@ public class TutorSubjectRegistrationService {
     }
 
     private TutorSubjectRegistration pending(Long id) {
-        TutorSubjectRegistration registration = registrations.findById(id)
+        TutorSubjectRegistration registration = registrations.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Teaching registration not found"));
         if (registration.getStatus() != TutorSubjectRegistrationStatus.PENDING) {
             throw new ConflictException("Teaching registration has already been processed");
