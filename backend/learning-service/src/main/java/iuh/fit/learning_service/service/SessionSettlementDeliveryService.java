@@ -101,7 +101,13 @@ public class SessionSettlementDeliveryService {
                         && s.getStatus() != ClassSessionStatus.CANCELLED)
                 .findFirst();
 
-        if (totalSessions != null && currentSeq != null && currentSeq < totalSessions && nextSessionOpt.isEmpty()) {
+        boolean reachedTerminationCutoff = room != null
+                && room.getTerminationCutoffSession() != null
+                && currentSeq != null
+                && currentSeq.equals(room.getTerminationCutoffSession());
+
+        if (totalSessions != null && currentSeq != null && currentSeq < totalSessions
+                && nextSessionOpt.isEmpty() && !reachedTerminationCutoff) {
             log.warn("Classroom {} session {} completed but next session not yet generated (totalSessions={}). Postponing settlement delivery.",
                     roomId, currentSeq, totalSessions);
             return;

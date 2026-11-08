@@ -5,7 +5,7 @@
 > **Owner dữ liệu:** `backend/account-service`
 > **Các nơi thực thi quyền:** `account-service`, `learning-service`, `contract-service`, `frontend-web`
 > **Nhánh:** `feature/quocthai`
-> **Production:** Quyết định cập nhật ngày 2026-11-08: duty gate được bật mặc định trong source/Compose. Trước lần deploy áp dụng đầu tiên, Admin phải công bố đủ lịch của tuần chưa bắt đầu; `STAFF_DUTY_ENFORCEMENT_ENABLED=false` chỉ còn là kill switch khẩn cấp. Trạng thái production vẫn phải được xác minh riêng sau deploy.
+> **Production:** Đã xác minh ngày 2026-11-08 trên release `3de6020`: Account/Learning/Contract cùng nhận `STAFF_DUTY_ENFORCEMENT_ENABLED=true`; tuần 2026-11-09 đến 2026-11-14 có đủ 12/12 ca đã phân công và công bố. `false` chỉ còn là kill switch khẩn cấp.
 
 ## 1. Quyết định nghiệp vụ đã chốt
 
