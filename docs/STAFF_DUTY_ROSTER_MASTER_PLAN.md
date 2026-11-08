@@ -153,6 +153,8 @@ ASSIGNED --shift expired without start--> ABSENT
 - Slot chỉ thuộc thứ Hai–thứ Bảy của đúng tuần đó.
 - Không nhận ngày quá khứ, Chủ nhật hoặc slot trùng.
 - Staff chỉ sửa availability của chính mình.
+- Cửa sổ đăng ký/chỉnh sửa cho tuần kế tiếp kết thúc lúc 23:59 Thứ Bảy theo múi giờ `Asia/Bangkok`. Từ Chủ nhật, Staff chỉ xem dữ liệu đã gửi; Admin dùng dữ liệu hiện có hoặc tự phân công cho tuần bắt đầu ngày kế tiếp.
+- Availability đã gửi trước hạn không bị xóa khi cửa sổ đóng và vẫn là dữ liệu nguyện vọng để Admin/thuật toán tham khảo.
 - Sau khi tuần đã công bố, availability của tuần đó bị khóa.
 
 ### 3.2. Thuật toán gợi ý xếp lịch (`auto-assign`)

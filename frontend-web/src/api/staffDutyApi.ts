@@ -26,6 +26,7 @@ export interface WeeklyRoster {
   weekStartDate: string;
   weekEndDate: string;
   published: boolean;
+  availabilityEditable: boolean;
   availability: DutySlot[];
   assignments: DutyAssignment[];
   activeStaff: Array<{ id: number; fullName: string; email: string }>;
