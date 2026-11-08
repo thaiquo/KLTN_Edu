@@ -69,6 +69,13 @@ function slotKey(date: string, code: ShiftCode) {
   return `${date}:${code}`;
 }
 
+function isSundayInDutyZone(date = new Date()) {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    timeZone: "Asia/Bangkok",
+  }).format(date) === "Sun";
+}
+
 export function StaffMyDutyRosterView() {
   const currentWeek = monday();
   const nextWeek = monday(1);
@@ -96,7 +103,8 @@ export function StaffMyDutyRosterView() {
       setSelected(availability);
       setSavedSelection(new Set(availability));
       setDutyStatus(status);
-      setEditingAvailability(availability.size === 0);
+      const editable = data.availabilityEditable ?? (!data.published && !isSundayInDutyZone());
+      setEditingAvailability(editable && availability.size === 0);
     } catch (error: any) {
       setMessage({ tone: "error", text: error?.message || "Không thể tải lịch trực." });
     } finally {
@@ -111,6 +119,7 @@ export function StaffMyDutyRosterView() {
   const assignmentAt = (date: string, code: ShiftCode) =>
     assignments.find(item => item.workDate === date && item.shiftCode === code);
   const isAvailabilityView = view === "AVAILABILITY";
+  const availabilityClosed = isSundayInDutyZone() || roster?.availabilityEditable === false;
   const selectionChanged = useMemo(() => {
     if (selected.size !== savedSelection.size) return true;
     return Array.from(selected).some(key => !savedSelection.has(key));
@@ -127,7 +136,7 @@ export function StaffMyDutyRosterView() {
   };
 
   const toggle = (date: string, code: ShiftCode) => {
-    if (!editingAvailability || roster?.published) return;
+    if (!editingAvailability || roster?.published || availabilityClosed) return;
     const key = slotKey(date, code);
     setSelected(previous => {
       const next = new Set(previous);
@@ -227,7 +236,11 @@ export function StaffMyDutyRosterView() {
             </h2>
             <p className="mt-1 text-xs font-semibold text-slate-500">
               {isAvailabilityView
-                ? roster?.published ? "Lịch tuần này đã được công bố nên không thể sửa ca rảnh." : `${editingAvailability ? "Đang chọn" : "Đã lưu"}: ${selected.size} ca rảnh`
+                ? roster?.published
+                  ? "Lịch tuần này đã được công bố nên không thể sửa ca rảnh."
+                  : availabilityClosed
+                    ? `Đã đóng đăng ký: ${selected.size} ca rảnh đã lưu. Admin sẽ phân công lịch tuần tới.`
+                    : `${editingAvailability ? "Đang chọn" : "Đã lưu"}: ${selected.size} ca rảnh`
                 : "Nhấp vào từng tuần để xem lịch sử hoặc ca sắp tới."}
             </p>
           </div>
@@ -238,12 +251,18 @@ export function StaffMyDutyRosterView() {
               <button type="button" title="Tuần sau" onClick={() => setWeek(value => shiftWeek(value, 1))} className="grid h-8 w-8 place-items-center rounded-lg text-slate-600 hover:bg-slate-100"><ChevronRight className="h-4 w-4" /></button>
             </div>
           )}
-          {isAvailabilityView && !roster?.published && !editingAvailability && (
+          {isAvailabilityView && !roster?.published && !availabilityClosed && !editingAvailability && (
             <button type="button" onClick={() => setEditingAvailability(true)} className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-50">
               <Pencil className="h-4 w-4" /> Chỉnh sửa lựa chọn
             </button>
           )}
         </div>
+
+        {isAvailabilityView && availabilityClosed && !roster?.published && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+            Hạn đăng ký và chỉnh sửa ca rảnh là 23:59 Thứ Bảy (giờ Việt Nam). Chủ nhật chỉ xem dữ liệu đã gửi; Admin sẽ dùng dữ liệu này hoặc tự phân công ca cho tuần tới.
+          </div>
+        )}
 
         <div className="mt-4 overflow-x-auto pb-1">
           <div className="grid min-w-[760px] grid-cols-6 gap-3">
@@ -264,7 +283,7 @@ export function StaffMyDutyRosterView() {
                       const key = slotKey(date, shift.code);
                       const isSelected = selected.has(key);
                       const meta = assignment ? statusMeta[assignment.status] : null;
-                      const selectable = isAvailabilityView && editingAvailability && !roster?.published;
+                      const selectable = isAvailabilityView && editingAvailability && !roster?.published && !availabilityClosed;
                       return (
                         <button key={shift.code} type="button" disabled={!selectable} onClick={() => toggle(date, shift.code)}
                           aria-pressed={isSelected}
@@ -293,10 +312,10 @@ export function StaffMyDutyRosterView() {
             {isAvailabilityView ? <span>Ca rảnh chỉ là nguyện vọng; Admin là người quyết định và công bố lịch cuối cùng.</span> : <StatusLegend />}
           </div>
           <div className="flex items-center gap-2">
-            {isAvailabilityView && editingAvailability && !roster?.published && savedSelection.size > 0 && (
+            {isAvailabilityView && editingAvailability && !roster?.published && !availabilityClosed && savedSelection.size > 0 && (
               <button type="button" disabled={loading} onClick={cancelEditing} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 hover:bg-slate-50 disabled:opacity-50"><X className="h-4 w-4" /> Hủy</button>
             )}
-            {isAvailabilityView && editingAvailability && !roster?.published && (
+            {isAvailabilityView && editingAvailability && !roster?.published && !availabilityClosed && (
               <button type="button" disabled={loading || !selectionChanged} onClick={save} className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-xs font-black text-white shadow-xs hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300"><Save className="h-4 w-4" /> {loading ? "Đang lưu..." : "Lưu ca rảnh"}</button>
             )}
             {!isAvailabilityView && week === currentWeek && dutyStatus?.canStart && (

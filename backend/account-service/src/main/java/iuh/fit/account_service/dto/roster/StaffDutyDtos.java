@@ -51,6 +51,7 @@ public final class StaffDutyDtos {
             LocalDate weekStartDate,
             LocalDate weekEndDate,
             boolean published,
+            boolean availabilityEditable,
             List<Slot> availability,
             List<AssignmentView> assignments,
             List<StaffOption> activeStaff,

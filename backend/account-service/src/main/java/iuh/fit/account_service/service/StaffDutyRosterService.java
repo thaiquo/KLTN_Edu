@@ -62,6 +62,10 @@ public class StaffDutyRosterService {
         User staff = requireActiveStaffByEmail(staffEmail);
         LocalDate weekStart = request.weekStartDate();
         validateNextWeek(weekStart);
+        if (LocalDate.now(clock).getDayOfWeek() == DayOfWeek.SUNDAY) {
+            throw new ConflictException(
+                    "Đã hết hạn đăng ký ca rảnh cho tuần tới. Từ Chủ nhật, Admin sẽ thực hiện phân công ca");
+        }
         validateSlots(weekStart, request.slots());
         LocalDate weekEnd = weekStart.plusDays(5);
         if (isPublished(assignmentRepository.findByWorkDateBetweenOrderByWorkDateAscShiftCodeAsc(weekStart, weekEnd))) {
@@ -69,6 +73,10 @@ public class StaffDutyRosterService {
         }
 
         availabilityRepository.deleteByStaffIdAndWorkDateBetween(staff.getId(), weekStart, weekEnd);
+        // Hibernate executes inserts before entity deletes during a flush. Force the
+        // replacement delete to reach PostgreSQL first, otherwise unchanged slots
+        // collide with uk_staff_availability_slot when Staff edits a saved week.
+        availabilityRepository.flush();
         for (Slot slot : request.slots()) {
             StaffAvailability row = new StaffAvailability();
             row.setStaff(staff);
@@ -267,7 +275,8 @@ public class StaffDutyRosterService {
                 .findByStaffIdAndWorkDateBetweenOrderByWorkDateAscShiftCodeAsc(staff.getId(), weekStart, weekEnd);
         boolean weekPublished = isPublished(
                 assignmentRepository.findByWorkDateBetweenOrderByWorkDateAscShiftCodeAsc(weekStart, weekEnd));
-        return new WeeklyRoster(weekStart, weekEnd, weekPublished, slots,
+        boolean availabilityEditable = !weekPublished && isNextWeekAvailabilityWindowOpen(weekStart);
+        return new WeeklyRoster(weekStart, weekEnd, weekPublished, availabilityEditable, slots,
                 assignments.stream().map(this::toView).toList(), List.of(), List.of());
     }
 
@@ -284,7 +293,9 @@ public class StaffDutyRosterService {
                 .map(item -> new StaffAvailabilityView(
                         item.getStaff().getId(), item.getWorkDate(), item.getShiftCode()))
                 .toList();
-        return new WeeklyRoster(weekStart, weekEnd, isPublished(assignments), List.of(),
+        boolean weekPublished = isPublished(assignments);
+        boolean availabilityEditable = !weekPublished && isNextWeekAvailabilityWindowOpen(weekStart);
+        return new WeeklyRoster(weekStart, weekEnd, weekPublished, availabilityEditable, List.of(),
                 assignments.stream().map(this::toView).toList(), staff, availability);
     }
 
@@ -387,6 +398,12 @@ public class StaffDutyRosterService {
         if (!weekStart.equals(expected)) {
             throw new BadRequestException("Chỉ được đăng ký ca rảnh cho tuần kế tiếp");
         }
+    }
+
+    private boolean isNextWeekAvailabilityWindowOpen(LocalDate weekStart) {
+        LocalDate today = LocalDate.now(clock);
+        return today.getDayOfWeek() != DayOfWeek.SUNDAY
+                && weekStart.equals(today.with(TemporalAdjusters.next(DayOfWeek.MONDAY)));
     }
 
     private void validateSlots(LocalDate weekStart, List<Slot> slots) {

@@ -2,6 +2,8 @@ package iuh.fit.account_service.service;
 
 import iuh.fit.account_service.dto.roster.StaffDutyDtos.WriteAccess;
 import iuh.fit.account_service.dto.roster.StaffDutyDtos.EmergencyReplaceRequest;
+import iuh.fit.account_service.dto.roster.StaffDutyDtos.AvailabilityRequest;
+import iuh.fit.account_service.dto.roster.StaffDutyDtos.Slot;
 import iuh.fit.account_service.entity.*;
 import iuh.fit.account_service.enums.*;
 import iuh.fit.account_service.exception.ConflictException;
@@ -10,6 +12,7 @@ import iuh.fit.account_service.repository.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -40,6 +43,85 @@ class StaffDutyRosterServiceTest {
         service = new StaffDutyRosterService(
                 availabilityRepository, assignmentRepository, auditRepository,
                 userRepository, userRoleRepository, eventPublisher, clock, true);
+    }
+
+    @Test
+    void submitAvailabilityFlushesDeletedSlotsBeforeReinsertingEditedSelection() {
+        LocalDate monday = LocalDate.of(2026, 11, 16);
+        User staff = user(1L, "staff1@edu.vn", "Staff 1");
+        List<Slot> slots = List.of(
+                new Slot(monday, ShiftCode.MORNING),
+                new Slot(monday.plusDays(1), ShiftCode.EVENING));
+
+        when(userRepository.findByEmailIgnoreCase(staff.getEmail())).thenReturn(Optional.of(staff));
+        when(userRoleRepository.existsByUserIdAndRole(staff.getId(), Role.STAFF)).thenReturn(true);
+        when(assignmentRepository.findByWorkDateBetweenOrderByWorkDateAscShiftCodeAsc(
+                monday, monday.plusDays(5))).thenReturn(List.of());
+        when(availabilityRepository.findByStaffIdAndWorkDateBetween(
+                staff.getId(), monday, monday.plusDays(5))).thenReturn(List.of());
+        when(assignmentRepository.findByStaffIdAndWorkDateBetweenOrderByWorkDateAscShiftCodeAsc(
+                staff.getId(), monday, monday.plusDays(5))).thenReturn(List.of());
+
+        service.submitAvailability(staff.getEmail(), new AvailabilityRequest(monday, slots));
+
+        InOrder writes = inOrder(availabilityRepository);
+        writes.verify(availabilityRepository)
+                .deleteByStaffIdAndWorkDateBetween(staff.getId(), monday, monday.plusDays(5));
+        writes.verify(availabilityRepository).flush();
+        writes.verify(availabilityRepository, times(slots.size())).save(any(StaffAvailability.class));
+    }
+
+    @Test
+    void submitAvailabilityRejectsSundayButKeepsPreviouslySubmittedDataUntouched() {
+        Clock sundayClock = Clock.fixed(
+                Instant.parse("2026-11-08T03:00:00Z"), ZoneId.of("Asia/Bangkok"));
+        StaffDutyRosterService sundayService = new StaffDutyRosterService(
+                availabilityRepository, assignmentRepository, auditRepository,
+                userRepository, userRoleRepository, eventPublisher, sundayClock, true);
+        LocalDate monday = LocalDate.of(2026, 11, 9);
+        User staff = user(1L, "staff1@edu.vn", "Staff 1");
+        AvailabilityRequest request = new AvailabilityRequest(
+                monday, List.of(new Slot(monday, ShiftCode.MORNING)));
+
+        when(userRepository.findByEmailIgnoreCase(staff.getEmail())).thenReturn(Optional.of(staff));
+        when(userRoleRepository.existsByUserIdAndRole(staff.getId(), Role.STAFF)).thenReturn(true);
+
+        assertThatThrownBy(() -> sundayService.submitAvailability(staff.getEmail(), request))
+                .isInstanceOf(ConflictException.class)
+                .hasMessageContaining("hết hạn đăng ký");
+
+        verify(availabilityRepository, never())
+                .deleteByStaffIdAndWorkDateBetween(anyLong(), any(LocalDate.class), any(LocalDate.class));
+        verify(availabilityRepository, never()).save(any(StaffAvailability.class));
+    }
+
+    @Test
+    void sundayRosterRemainsReadableAndMarksAvailabilityReadOnly() {
+        Clock sundayClock = Clock.fixed(
+                Instant.parse("2026-11-08T03:00:00Z"), ZoneId.of("Asia/Bangkok"));
+        StaffDutyRosterService sundayService = new StaffDutyRosterService(
+                availabilityRepository, assignmentRepository, auditRepository,
+                userRepository, userRoleRepository, eventPublisher, sundayClock, true);
+        LocalDate monday = LocalDate.of(2026, 11, 9);
+        User staff = user(1L, "staff1@edu.vn", "Staff 1");
+        StaffAvailability saved = new StaffAvailability();
+        saved.setStaff(staff);
+        saved.setWorkDate(monday);
+        saved.setShiftCode(ShiftCode.MORNING);
+
+        when(userRepository.findByEmailIgnoreCase(staff.getEmail())).thenReturn(Optional.of(staff));
+        when(userRoleRepository.existsByUserIdAndRole(staff.getId(), Role.STAFF)).thenReturn(true);
+        when(availabilityRepository.findByStaffIdAndWorkDateBetween(
+                staff.getId(), monday, monday.plusDays(5))).thenReturn(List.of(saved));
+        when(assignmentRepository.findByStaffIdAndWorkDateBetweenOrderByWorkDateAscShiftCodeAsc(
+                staff.getId(), monday, monday.plusDays(5))).thenReturn(List.of());
+        when(assignmentRepository.findByWorkDateBetweenOrderByWorkDateAscShiftCodeAsc(
+                monday, monday.plusDays(5))).thenReturn(List.of());
+
+        var roster = sundayService.myRoster(staff.getEmail(), monday);
+
+        assertThat(roster.availability()).containsExactly(new Slot(monday, ShiftCode.MORNING));
+        assertThat(roster.availabilityEditable()).isFalse();
     }
 
     @Test
