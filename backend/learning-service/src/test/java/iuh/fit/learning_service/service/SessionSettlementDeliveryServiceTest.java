@@ -192,6 +192,57 @@ class SessionSettlementDeliveryServiceTest {
     }
 
     @Test
+    void deliversTerminationCutoffSettlementWhenEveryLaterSessionIsCancelled() {
+        var sessions = mock(ClassSessionRepository.class);
+        var attendances = mock(SessionAttendanceRepository.class);
+        var dispatcher = mock(ContractServiceDispatcher.class);
+        var service = newService(sessions, attendances, dispatcher);
+        var room = new ClassRoom();
+        room.setId(47L);
+        room.setTotalSessions(8);
+        room.setTerminationCutoffSession(1);
+
+        var cutoffSession = new ClassSession();
+        cutoffSession.setId(89L);
+        cutoffSession.setSequenceNumber(1);
+        cutoffSession.setClassRoom(room);
+        cutoffSession.setAttendanceFinalizedAt(OffsetDateTime.parse("2026-11-07T07:30:19Z"));
+
+        var cancelledNext = new ClassSession();
+        cancelledNext.setId(90L);
+        cancelledNext.setSequenceNumber(2);
+        cancelledNext.setClassRoom(room);
+        cancelledNext.setStatus(ClassSessionStatus.CANCELLED);
+
+        var first = new SessionAttendance();
+        first.setStudentId(920031L);
+        first.setFinalOutcome(AttendanceOutcome.TUTOR_ABSENT);
+        var second = new SessionAttendance();
+        second.setStudentId(920034L);
+        second.setFinalOutcome(AttendanceOutcome.TUTOR_ABSENT);
+
+        when(sessions.findTop50ByStatusAndSettlementDispatchedFalseOrderByIdAsc(ClassSessionStatus.COMPLETED))
+                .thenReturn(List.of(cutoffSession));
+        when(sessions.findById(89L)).thenReturn(Optional.of(cutoffSession));
+        when(attendances.findBySessionId(89L)).thenReturn(List.of(first, second));
+        when(sessions.findByClassRoomIdOrderBySequenceNumberAsc(47L))
+                .thenReturn(List.of(cutoffSession, cancelledNext));
+        when(dispatcher.dispatchAutoPropose(
+                eq(47L), eq(1L), any(ContractServiceDispatcher.AutoProposePayload.class)))
+                .thenReturn(true);
+
+        service.deliverPending();
+
+        var payloadCaptor = ArgumentCaptor.forClass(ContractServiceDispatcher.AutoProposePayload.class);
+        verify(dispatcher).dispatchAutoPropose(eq(47L), eq(1L), payloadCaptor.capture());
+        assertThat(payloadCaptor.getValue().tutorAttendanceOutcome()).isEqualTo("TUTOR_ABSENT");
+        assertThat(payloadCaptor.getValue().nextSessionSequence()).isNull();
+        assertThat(payloadCaptor.getValue().nextSessionStartAt()).isNull();
+        assertThat(cutoffSession.getGovernanceSnapshotCapturedAt()).isNotNull();
+        assertThat(cutoffSession.isSettlementDispatched()).isTrue();
+    }
+
+    @Test
     void expiredNextSessionIsCapturedAsNoActiveGovernanceWindow() {
         var sessions = mock(ClassSessionRepository.class);
         var attendances = mock(SessionAttendanceRepository.class);
