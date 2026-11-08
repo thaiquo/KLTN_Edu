@@ -22,7 +22,7 @@ public class StaffDutyWriteFilter extends OncePerRequestFilter {
 
     public StaffDutyWriteFilter(
             StaffDutyRosterService rosterService,
-            @Value("${staff.duty.enforcement-enabled:false}") boolean enforcementEnabled
+            @Value("${staff.duty.enforcement-enabled:true}") boolean enforcementEnabled
     ) {
         this.rosterService = rosterService;
         this.enforcementEnabled = enforcementEnabled;

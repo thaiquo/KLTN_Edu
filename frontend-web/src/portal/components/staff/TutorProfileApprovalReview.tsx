@@ -33,13 +33,15 @@ interface TutorProfileApprovalReviewProps {
   onError: (err: string) => void;
   onPendingCountChange?: (count: number) => void;
   onActionSuccess?: () => void;
+  canWrite?: boolean;
 }
 
 export function TutorProfileApprovalReview({
   onNotice,
   onError,
   onPendingCountChange,
-  onActionSuccess
+  onActionSuccess,
+  canWrite = true
 }: TutorProfileApprovalReviewProps) {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -143,6 +145,10 @@ export function TutorProfileApprovalReview({
 
   const handleApproveSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canWrite) {
+      onError("Bạn cần bắt đầu ca trực trước khi duyệt hồ sơ.");
+      return;
+    }
     if (!approvingId) return;
     setSubmitting(true);
     try {
@@ -164,6 +170,10 @@ export function TutorProfileApprovalReview({
 
   const handleRejectSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canWrite) {
+      onError("Bạn cần bắt đầu ca trực trước khi từ chối hồ sơ.");
+      return;
+    }
     if (!rejectingId) return;
     if (!rejectReason.trim()) {
       onError("Vui lòng nhập lý do từ chối.");
@@ -642,7 +652,7 @@ export function TutorProfileApprovalReview({
                   <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
                     <button
                       type="button"
-                      disabled={submitting}
+                      disabled={submitting || !canWrite}
                       onClick={() => setRejectingId(selectedId)}
                       className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-xs font-black text-red-700 hover:bg-red-100 transition-colors disabled:opacity-50"
                     >
@@ -651,7 +661,7 @@ export function TutorProfileApprovalReview({
                     </button>
                     <button
                       type="button"
-                      disabled={submitting}
+                      disabled={submitting || !canWrite}
                       onClick={() => setApprovingId(selectedId)}
                       className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-emerald-600 text-xs font-black text-white hover:bg-emerald-700 transition-colors shadow-sm disabled:opacity-50"
                     >
@@ -692,7 +702,7 @@ export function TutorProfileApprovalReview({
               </button>
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || !canWrite}
                 className="px-5 py-2 rounded-xl bg-emerald-600 text-xs font-extrabold text-white hover:bg-emerald-700 disabled:opacity-50"
               >
                 {submitting ? "Đang xử lý..." : "Xác nhận Phê duyệt"}
@@ -728,7 +738,7 @@ export function TutorProfileApprovalReview({
               </button>
               <button
                 type="submit"
-                disabled={submitting || !rejectReason.trim()}
+                disabled={submitting || !canWrite || !rejectReason.trim()}
                 className="px-4 py-2 rounded-xl bg-red-600 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50"
               >
                 {submitting ? "Đang xử lý..." : "Xác nhận từ chối"}

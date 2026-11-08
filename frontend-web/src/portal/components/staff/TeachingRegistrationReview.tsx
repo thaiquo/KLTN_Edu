@@ -24,14 +24,16 @@ export function TeachingRegistrationReview({
   onError,
   onPendingCountChange,
   onActionSuccess,
+  canWrite = true,
 }: {
   onNotice: (message: string) => void;
   onError: (message: string) => void;
   onPendingCountChange?: (count: number) => void;
   onActionSuccess?: () => void;
+  canWrite?: boolean;
 }) {
   const { user } = useAuth();
-  const isAdmin = user?.activeRole === "ADMIN";
+  const isAdmin = String(user?.activeRole || "").toUpperCase() === "ADMIN";
   const [activeTab, setActiveTab] = useState<ReviewKind>("registration");
   const [registrations, setRegistrations] = useState<any[]>([]);
   const [suggestions, setSuggestions] = useState<any[]>([]);
@@ -94,6 +96,10 @@ export function TeachingRegistrationReview({
   }, [activeTab, isAdmin, page, pageSize, legacyPage]);
 
   async function approveRegistration(item: any, note: string) {
+    if (!canWrite) {
+      onError("Bạn cần bắt đầu ca trực trước khi duyệt đăng ký dạy.");
+      return;
+    }
     setBusy(true);
     try {
       await teachingRegistrationApi.approve(item.id, note);
@@ -118,6 +124,10 @@ export function TeachingRegistrationReview({
   }
 
   async function rejectRegistration(item: any, reason: string) {
+    if (!canWrite) {
+      onError("Bạn cần bắt đầu ca trực trước khi từ chối đăng ký dạy.");
+      return;
+    }
     if (!reason.trim()) {
       onError("Vui lòng nhập lý do từ chối.");
       return;
@@ -223,6 +233,7 @@ export function TeachingRegistrationReview({
         <RegistrationDetailModal
           item={selected.item}
           busy={busy}
+          canWrite={canWrite}
           onClose={() => setSelected(undefined)}
           onApprove={(note) => approveRegistration(selected.item, note)}
           onReject={(reason) => rejectRegistration(selected.item, reason)}
@@ -233,6 +244,7 @@ export function TeachingRegistrationReview({
         <SubjectRequestDetailModal
           item={selected.item}
           busy={busy}
+          canWrite={canWrite}
           onClose={() => setSelected(undefined)}
           onApprove={() => approveSubjectRequest(selected.item)}
           onReject={(reason: string) => rejectSubjectRequest(selected.item, reason)}
@@ -325,7 +337,7 @@ function SubjectRequestQueue({ items, onSelect }: { items: any[]; onSelect: (ite
   );
 }
 
-function SubjectRequestDetailModal({ item, busy, onClose, onApprove, onReject }: any) {
+function SubjectRequestDetailModal({ item, busy, canWrite, onClose, onApprove, onReject }: any) {
   const [reason, setReason] = useState("");
   const [rejectMode, setRejectMode] = useState(false);
   const requester = tutorDisplayName(item);
@@ -351,14 +363,14 @@ function SubjectRequestDetailModal({ item, busy, onClose, onApprove, onReject }:
       )}
       <div className="mt-4 flex flex-wrap justify-end gap-2">
         {rejectMode && <button type="button" disabled={busy} onClick={() => setRejectMode(false)} className="px-4 py-2.5 text-xs font-black text-slate-500">Hủy</button>}
-        <button type="button" disabled={busy} onClick={() => rejectMode ? onReject(reason) : setRejectMode(true)} className="border border-rose-300 bg-rose-50 px-4 py-2.5 text-xs font-black text-rose-700 disabled:opacity-50">{rejectMode ? "Xác nhận từ chối" : "Từ chối"}</button>
-        {!rejectMode && <button type="button" disabled={busy} onClick={onApprove} className="bg-[#147b77] px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">{busy ? "Đang xử lý..." : "Duyệt & Tạo môn"}</button>}
+        <button type="button" disabled={busy || !canWrite} onClick={() => rejectMode ? onReject(reason) : setRejectMode(true)} className="border border-rose-300 bg-rose-50 px-4 py-2.5 text-xs font-black text-rose-700 disabled:opacity-50">{rejectMode ? "Xác nhận từ chối" : "Từ chối"}</button>
+        {!rejectMode && <button type="button" disabled={busy || !canWrite} onClick={onApprove} className="bg-[#147b77] px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">{busy ? "Đang xử lý..." : "Duyệt & Tạo môn"}</button>}
       </div>
     </Modal>
   );
 }
 
-function RegistrationDetailModal({ item, busy, onClose, onApprove, onReject, onError }: any) {
+function RegistrationDetailModal({ item, busy, canWrite, onClose, onApprove, onReject, onError }: any) {
   const [note, setNote] = useState("");
   const [rejectMode, setRejectMode] = useState(false);
   const isProposal = !item.subject;
@@ -404,8 +416,8 @@ function RegistrationDetailModal({ item, busy, onClose, onApprove, onReject, onE
       </label>
       <div className="mt-4 flex flex-wrap justify-end gap-2">
         {rejectMode && <button type="button" disabled={busy} onClick={() => setRejectMode(false)} className="px-4 py-2.5 text-xs font-black text-slate-500">Hủy</button>}
-        <button type="button" disabled={busy} onClick={() => rejectMode ? onReject(note) : setRejectMode(true)} className="border border-rose-300 bg-rose-50 px-4 py-2.5 text-xs font-black text-rose-700 disabled:opacity-50">{rejectMode ? "Xác nhận từ chối" : "Từ chối"}</button>
-        {!rejectMode && <button type="button" disabled={busy} onClick={() => onApprove(note)} className="bg-[#147b77] px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">
+        <button type="button" disabled={busy || !canWrite} onClick={() => rejectMode ? onReject(note) : setRejectMode(true)} className="border border-rose-300 bg-rose-50 px-4 py-2.5 text-xs font-black text-rose-700 disabled:opacity-50">{rejectMode ? "Xác nhận từ chối" : "Từ chối"}</button>
+        {!rejectMode && <button type="button" disabled={busy || !canWrite} onClick={() => onApprove(note)} className="bg-[#147b77] px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">
           {busy ? "Đang xử lý..." : isProposal ? "Duyệt & Tạo môn" : "Duyệt quyền dạy"}
         </button>}
       </div>
