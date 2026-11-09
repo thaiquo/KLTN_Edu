@@ -49,23 +49,27 @@ public class AdminClassRoomController {
         String reviewerEmail = admin
                 ? reviewer
                 : (reviewedByMe || reportOnly ? authentication.getName() : null);
+        String staffScopeEmail = admin ? null : authentication.getName();
         String primarySort = reportOnly ? "reviewedAt" : "createdAt";
         return service.getAllClassesForAdmin(
                 status, tutorEmail, subjectId, keyword, reviewerEmail, approved, reportOnly,
                 from == null ? null : from.atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime(),
                 to == null ? null : to.atZoneSameInstant(ZoneId.systemDefault()).toLocalDateTime(),
+                staffScopeEmail,
                 PageRequest.of(Math.max(0, page), Math.min(50, Math.max(1, size)),
                         Sort.by(Sort.Order.desc(primarySort), Sort.Order.desc("id"))));
     }
 
     @GetMapping("/stats")
-    public ClassRoomDtos.ClassRoomStatsResponse getAdminStats() {
-        return service.getAdminClassStats();
+    public ClassRoomDtos.ClassRoomStatsResponse getAdminStats(Authentication authentication) {
+        return service.getAdminClassStats(
+                hasRole(authentication, "ROLE_ADMIN") ? null : authentication.getName());
     }
 
     @GetMapping("/{id}")
-    public ClassRoomDtos.ClassRoomResponse getClassById(@PathVariable Long id) {
-        return service.getClassByIdForAdmin(id);
+    public ClassRoomDtos.ClassRoomResponse getClassById(@PathVariable Long id, Authentication authentication) {
+        return service.getClassByIdForAdmin(
+                id, hasRole(authentication, "ROLE_ADMIN") ? null : authentication.getName());
     }
 
     @PostMapping("/{id}/approve")

@@ -518,6 +518,24 @@ public class ClassRoomService {
             LocalDateTime to,
             Pageable pageable
     ) {
+        return getAllClassesForAdmin(status, tutorEmail, subjectId, keyword, reviewedByEmail,
+                approved, reviewedOnly, from, to, null, pageable);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ClassRoomDtos.ClassRoomResponse> getAllClassesForAdmin(
+            ClassRoomStatus status,
+            String tutorEmail,
+            Long subjectId,
+            String keyword,
+            String reviewedByEmail,
+            boolean approved,
+            boolean reviewedOnly,
+            LocalDateTime from,
+            LocalDateTime to,
+            String staffScopeEmail,
+            Pageable pageable
+    ) {
         Specification<ClassRoom> spec = (root, query, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();
             if (approved) {
@@ -527,6 +545,14 @@ public class ClassRoomService {
             }
             if (reviewedByEmail != null && !reviewedByEmail.isBlank()) {
                 predicates.add(cb.equal(cb.lower(root.get("reviewedByEmail")), reviewedByEmail.trim().toLowerCase()));
+            } else if (staffScopeEmail != null && !staffScopeEmail.isBlank()
+                    && status != ClassRoomStatus.PENDING_APPROVAL) {
+                var owned = cb.equal(cb.lower(root.get("reviewedByEmail")), staffScopeEmail.trim().toLowerCase());
+                if (status == null && !approved && !reviewedOnly) {
+                    predicates.add(cb.or(cb.equal(root.get("status"), ClassRoomStatus.PENDING_APPROVAL), owned));
+                } else {
+                    predicates.add(owned);
+                }
             }
             if (reviewedOnly) predicates.add(cb.isNotNull(root.get("reviewedAt")));
             if (from != null) predicates.add(cb.greaterThanOrEqualTo(root.get("reviewedAt"), from));
@@ -553,8 +579,19 @@ public class ClassRoomService {
 
     @Transactional(readOnly = true)
     public ClassRoomDtos.ClassRoomResponse getClassByIdForAdmin(Long id) {
+        return getClassByIdForAdmin(id, null);
+    }
+
+    @Transactional(readOnly = true)
+    public ClassRoomDtos.ClassRoomResponse getClassByIdForAdmin(Long id, String staffScopeEmail) {
         ClassRoom classRoom = classRoomRepository.findByIdWithDetails(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Classroom not found: " + id));
+        if (staffScopeEmail != null
+                && classRoom.getStatus() != ClassRoomStatus.PENDING_APPROVAL
+                && (classRoom.getReviewedByEmail() == null
+                || !classRoom.getReviewedByEmail().equalsIgnoreCase(staffScopeEmail))) {
+            throw new ResourceNotFoundException("Classroom not found: " + id);
+        }
         return toResponse(classRoom);
     }
 
@@ -647,16 +684,37 @@ public class ClassRoomService {
 
     @Transactional(readOnly = true)
     public ClassRoomDtos.ClassRoomStatsResponse getAdminClassStats() {
-        long total = classRoomRepository.count();
-        long active = classRoomRepository.countByStatus(ClassRoomStatus.ACTIVE);
-        long pending = classRoomRepository.countByStatus(ClassRoomStatus.PENDING_APPROVAL);
-        long privateCount = classRoomRepository.countByStatus(ClassRoomStatus.PRIVATE);
-        long publishedCount = classRoomRepository.countByStatus(ClassRoomStatus.PUBLISHED);
-        long lockedCount = classRoomRepository.countByStatus(ClassRoomStatus.LOCKED);
-        long closedCount = classRoomRepository.countByStatus(ClassRoomStatus.CLOSED);
-        long rejected = classRoomRepository.countByStatus(ClassRoomStatus.REJECTED);
-        long draft = classRoomRepository.countByStatus(ClassRoomStatus.DRAFT);
+        return getAdminClassStats(null);
+    }
+
+    @Transactional(readOnly = true)
+    public ClassRoomDtos.ClassRoomStatsResponse getAdminClassStats(String staffScopeEmail) {
+        long total = countVisibleClasses(null, staffScopeEmail);
+        long active = countVisibleClasses(ClassRoomStatus.ACTIVE, staffScopeEmail);
+        long pending = countVisibleClasses(ClassRoomStatus.PENDING_APPROVAL, staffScopeEmail);
+        long privateCount = countVisibleClasses(ClassRoomStatus.PRIVATE, staffScopeEmail);
+        long publishedCount = countVisibleClasses(ClassRoomStatus.PUBLISHED, staffScopeEmail);
+        long lockedCount = countVisibleClasses(ClassRoomStatus.LOCKED, staffScopeEmail);
+        long closedCount = countVisibleClasses(ClassRoomStatus.CLOSED, staffScopeEmail);
+        long rejected = countVisibleClasses(ClassRoomStatus.REJECTED, staffScopeEmail);
+        long draft = countVisibleClasses(ClassRoomStatus.DRAFT, staffScopeEmail);
         return new ClassRoomDtos.ClassRoomStatsResponse(total, active, pending, privateCount, publishedCount, lockedCount, closedCount, rejected, draft);
+    }
+
+    private long countVisibleClasses(ClassRoomStatus status, String staffScopeEmail) {
+        if (staffScopeEmail == null || staffScopeEmail.isBlank()) {
+            return status == null ? classRoomRepository.count() : classRoomRepository.countByStatus(status);
+        }
+        return classRoomRepository.count((root, query, cb) -> {
+            var owned = cb.equal(cb.lower(root.get("reviewedByEmail")), staffScopeEmail.trim().toLowerCase());
+            if (status == ClassRoomStatus.PENDING_APPROVAL) {
+                return cb.equal(root.get("status"), ClassRoomStatus.PENDING_APPROVAL);
+            }
+            if (status != null) {
+                return cb.and(cb.equal(root.get("status"), status), owned);
+            }
+            return cb.or(cb.equal(root.get("status"), ClassRoomStatus.PENDING_APPROVAL), owned);
+        });
     }
 
     @Transactional(readOnly = true)

@@ -53,7 +53,8 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
 - Hỗ trợ người dùng.
 - Staff đăng ký ca rảnh như nguyện vọng. Admin có quyền tạo lịch trống và tự phân công dù chưa có đăng ký; thuật toán chỉ gợi ý theo lịch rảnh, chống trùng ngày và cân bằng ca. Admin được chỉnh và là người duy nhất công bố lịch chính thức. Phân ca Staff không gọi AI Service/Gemini.
 - Nếu nghỉ đột xuất, Admin trao đổi với Staff khác, cập nhật người nhận thay kèm lý do; mọi thay đổi được audit và người thay vẫn phải bắt đầu ca mới có quyền ghi.
-- Với thao tác ghi nghiệp vụ, Staff phải được phân đúng ca, đã bấm bắt đầu ca và ca vẫn đang diễn ra. Ngoài ca Staff chỉ được xem trong phạm vi hiện có.
+- Với thao tác ghi nghiệp vụ, Staff phải được phân đúng ca, đã bấm bắt đầu ca và ca vẫn đang diễn ra. Nút nhận ca mở từ 15 phút trước giờ bắt đầu và tiếp tục mở xuyên suốt đến ngay trước giờ kết thúc; nhận ca trễ không làm mất quyền của phần thời gian còn lại. Ngoài ca Staff chỉ được xem trong phạm vi hiện có.
+- Hàng chờ lớp `PENDING_APPROVAL` là hàng đợi dùng chung. Sau khi một Staff duyệt hoặc từ chối, backend tự giới hạn lớp, thống kê, hợp đồng, khiếu nại và hồ sơ chấm dứt liên quan theo email Staff phụ trách; phạm vi bảo mật không phụ thuộc frontend gửi `reviewedByMe`.
 - Trạng thái đang trực không mở rộng quyền: Staff vẫn không được làm nghiệp vụ Admin-only và vẫn chịu reviewer/assignee/ownership rule.
 - Khi Admin thay người trực, lý do và lịch sử thay đổi phải được lưu; người cũ mất quyền ghi ngay, người mới phải nhận ca trước khi thao tác.
 

@@ -45,6 +45,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -172,6 +173,29 @@ class ClassRoomServiceTest {
                 "REJECTED",
                 "Need clearer syllabus",
                 "staff@example.com");
+    }
+
+    @Test
+    void pendingClassDetailRemainsVisibleToSharedStaffQueue() {
+        ClassRoom classRoom = classRoom("tutor@example.com", ClassRoomStatus.PENDING_APPROVAL);
+        classRoom.setId(77L);
+        when(classRoomRepository.findByIdWithDetails(77L)).thenReturn(Optional.of(classRoom));
+
+        ClassRoomDtos.ClassRoomResponse response = service.getClassByIdForAdmin(77L, "other-staff@example.com");
+
+        assertThat(response.id()).isEqualTo(77L);
+    }
+
+    @Test
+    void processedClassDetailIsLimitedToAssignedStaff() {
+        ClassRoom classRoom = classRoom("tutor@example.com", ClassRoomStatus.PRIVATE);
+        classRoom.setId(77L);
+        classRoom.setReviewedByEmail("assigned-staff@example.com");
+        when(classRoomRepository.findByIdWithDetails(77L)).thenReturn(Optional.of(classRoom));
+
+        assertThat(service.getClassByIdForAdmin(77L, "assigned-staff@example.com").id()).isEqualTo(77L);
+        assertThatThrownBy(() -> service.getClassByIdForAdmin(77L, "other-staff@example.com"))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test

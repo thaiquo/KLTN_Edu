@@ -349,6 +349,32 @@ class StaffDutyRosterServiceTest {
     }
 
     @Test
+    void staffCanCheckInAtAnyTimeBeforeAssignedShiftEnds() {
+        Clock lateClock = Clock.fixed(
+                Instant.parse("2026-11-09T07:59:00Z"), ZoneId.of("Asia/Bangkok"));
+        StaffDutyRosterService lateService = new StaffDutyRosterService(
+                availabilityRepository, assignmentRepository, auditRepository,
+                userRepository, userRoleRepository, eventPublisher, lateClock, true);
+        User staff = user(1L, "staff1@edu.vn", "Staff 1");
+        StaffShiftAssignment assignment = assignment(
+                10L, staff, LocalDate.of(2026, 11, 9), ShiftCode.MORNING,
+                ShiftAssignmentStatus.ASSIGNED);
+
+        when(userRepository.findByEmailIgnoreCase(staff.getEmail())).thenReturn(Optional.of(staff));
+        when(userRoleRepository.existsByUserIdAndRole(staff.getId(), Role.STAFF)).thenReturn(true);
+        when(assignmentRepository.findByStaffIdAndWorkDateBetweenOrderByWorkDateAscShiftCodeAsc(
+                staff.getId(), assignment.getWorkDate(), assignment.getWorkDate()))
+                .thenReturn(List.of(assignment));
+        when(assignmentRepository.save(assignment)).thenReturn(assignment);
+
+        lateService.startShift(staff.getEmail());
+
+        assertThat(assignment.getStatus()).isEqualTo(ShiftAssignmentStatus.CHECKED_IN);
+        assertThat(assignment.getCheckInAt()).isEqualTo(lateClock.instant());
+        assertThat(lateService.writeAccess(staff.getEmail()).allowed()).isTrue();
+    }
+
+    @Test
     void schedulerClosesMissedAndCheckedInShiftsAndIsSafeToRunAgain() {
         User first = user(1L, "staff1@edu.vn", "Staff 1");
         User second = user(2L, "staff2@edu.vn", "Staff 2");

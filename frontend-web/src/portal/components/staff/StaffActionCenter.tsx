@@ -52,7 +52,7 @@ const pageItems = (value: any) => Array.isArray(value?.content) ? value.content 
 export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
   const { user } = useAuth();
   const staffEmail = user?.email || "";
-  const isAdmin = String(user?.activeRole || "").toUpperCase() === "ADMIN" || user?.roles?.includes("ADMIN");
+  const isAdmin = String(user?.activeRole || "").toUpperCase() === "ADMIN";
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
