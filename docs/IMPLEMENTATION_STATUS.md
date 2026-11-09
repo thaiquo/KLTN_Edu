@@ -10,6 +10,8 @@
 
 > **Staff duty coverage update (2026-11-09):** Vẫn giữ đúng 2 ca/ngày và 12 ca/tuần, nhưng đổi thành hai ca 7 giờ nối tiếp `08:00–15:00` và `15:00–22:00`. Thay đổi loại bỏ khoảng trống `12:00–18:00`; mỗi Staff vẫn tối đa một ca/ngày, phải check-in và chỉ được ghi trong đúng ca. Admin tiếp tục không bị duty gate giới hạn.
 
+> **Staff duty inter-service fix (2026-11-09):** Learning Service phải nhận `ACCOUNT_SERVICE_URL=http://account-service:8081` trên VPS để xác minh ca trực với Account Service. Nếu thiếu biến này, client rơi về `localhost:8081` trong container Learning và mọi mutation của Staff trả `503 STAFF_DUTY_CHECK_UNAVAILABLE` dù Staff đã check-in. Compose và CI hiện kiểm tra trực tiếp biến môi trường của riêng `learning-service` để ngăn lỗi cấu hình tái diễn.
+
 > **Production runtime update (2026-11-03):** release `b519528386bf2d56e6033b6d246b5c6132b17911` đã được đối soát trực tiếp. Learning và Contract cùng nhận `ESCROW_TRIAL_ENABLED=true`; Contract nhận `ESCROW_TRIAL_FUNDING_SAFETY_MARGIN=30m`, `TUTOR_ABSENCE_GOVERNANCE_MODE=SHADOW`, allowlist trống; public `/healthz` trả `ok`. Hai lớp thanh lý gần nhất (#42, #43) và enrollment liên quan đều đã ở trạng thái `CANCELLED`; ba hồ sơ termination hiện có đều `COMPLETED`. Database chưa có `agreement_trial`, vì vậy trial đã bật về runtime nhưng chưa có bằng chứng E2E production bằng một agreement mới. Tutor-absence vẫn tuyệt đối không được mô tả là đang cưỡng chế tự động.
 
 ## 1. Status Legend

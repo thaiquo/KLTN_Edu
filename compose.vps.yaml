@@ -140,6 +140,7 @@ services:
       RABBITMQ_PORT: 5672
       RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-educonnect}
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      ACCOUNT_SERVICE_URL: http://account-service:8081
       CONTRACT_SERVICE_URL: http://contract-service:8083
       AI_SERVICE_URL: http://ai-service:8085
       ESCROW_TRIAL_ENABLED: ${ESCROW_TRIAL_ENABLED:-false}

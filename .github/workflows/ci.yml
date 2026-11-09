@@ -120,8 +120,10 @@ jobs:
           docker compose --env-file deploy/production.env.example --profile ai -f compose.vps.yaml config --quiet
           docker compose --env-file deploy/production.env.example -f compose.vps.yaml -f compose.vps.operator.yaml config --quiet
           resolved="$(docker compose --env-file deploy/production.env.example --profile ai -f compose.vps.yaml config)"
+          resolved_json="$(docker compose --env-file deploy/production.env.example --profile ai -f compose.vps.yaml config --format json)"
           grep -q 'TUTOR_ABSENCE_GOVERNANCE_MODE: ENFORCE' <<< "$resolved"
           grep -q 'TUTOR_ABSENCE_GOVERNANCE_CLASSROOM_IDS: "42"' <<< "$resolved"
+          jq -e '.services["learning-service"].environment.ACCOUNT_SERVICE_URL == "http://account-service:8081"' <<< "$resolved_json"
 
   image-builds:
     name: Build image ${{ matrix.image }}
