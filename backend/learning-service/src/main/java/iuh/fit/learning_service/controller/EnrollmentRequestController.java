@@ -89,15 +89,13 @@ public class EnrollmentRequestController {
     public ResponseEntity<EnrollmentRequestResponse> acceptRequest(
             Authentication authentication,
             @PathVariable Long requestId,
-            @RequestBody(required = false) AcceptRequestPayload payload
+            @RequestBody @Valid AcceptRequestPayload payload
     ) {
-        String agreementId = payload != null ? payload.agreementId() : null;
-
         EnrollmentRequestResponse response = service.acceptRequest(
                 requestId,
                 authentication.getName(),
                 currentUserId(authentication),
-                agreementId);
+                payload.agreementId());
 
         return ResponseEntity.ok(response);
     }

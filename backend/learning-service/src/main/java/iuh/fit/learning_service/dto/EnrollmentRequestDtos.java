@@ -1,6 +1,8 @@
 package iuh.fit.learning_service.dto;
 
 import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
@@ -24,6 +26,10 @@ public final class EnrollmentRequestDtos {
     ) {}
 
     public record AcceptRequestPayload(
+            @NotBlank(message = "Phải ký hợp đồng trước khi chấp nhận yêu cầu học")
+            @Pattern(
+                    regexp = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
+                    message = "agreementId không hợp lệ")
             String agreementId
     ) {}
 

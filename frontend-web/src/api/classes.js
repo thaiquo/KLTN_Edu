@@ -106,10 +106,15 @@ export const classApi = {
   getMyEnrollmentRequests: () => apiRequest('/api/learning/v1/enrollment-requests/my-requests'),
   getRequestsForClass: (classId) => apiRequest(`/api/learning/v1/tutor/classes/${classId}/requests`),
   getAllTutorRequests: () => apiRequest('/api/learning/v1/tutor/enrollment-requests'),
-  acceptEnrollmentRequest: (requestId, agreementId) => apiRequest(`/api/learning/v1/enrollment-requests/${requestId}/accept`, {
-    method: 'POST',
-    body: agreementId ? JSON.stringify({ agreementId }) : undefined
-  }),
+  acceptEnrollmentRequest: (requestId, agreementId) => {
+    if (!agreementId) {
+      throw new Error('Phải xem và ký hợp đồng EIP-712 trước khi chấp nhận yêu cầu học.');
+    }
+    return apiRequest(`/api/learning/v1/enrollment-requests/${requestId}/accept`, {
+      method: 'POST',
+      body: JSON.stringify({ agreementId })
+    });
+  },
   rejectEnrollmentRequest: (requestId, reason) => apiRequest(`/api/learning/v1/enrollment-requests/${requestId}/reject`, {
     method: 'POST',
     body: JSON.stringify({ reason })

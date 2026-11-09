@@ -314,7 +314,7 @@ export default function App({ user, onLogout }: AppProps) {
         return activeRole === "student" ? (
           <StudentClassManagement />
         ) : (
-          activeRole === "tutor" ? <TutorClassManagement /> : <AdminClassManagement activeRole={activeRole} />
+          activeRole === "tutor" ? <TutorClassManagement onNavigate={handleNavigate} /> : <AdminClassManagement activeRole={activeRole} />
         );
 
       case "messages":
@@ -369,10 +369,10 @@ export default function App({ user, onLogout }: AppProps) {
         return <TeachingCatalogManagement />;
 
       case "class-management":
-        return activeRole === "tutor" ? <TutorClassManagement /> : <AdminClassManagement activeRole={activeRole} />;
+        return activeRole === "tutor" ? <TutorClassManagement onNavigate={handleNavigate} /> : <AdminClassManagement activeRole={activeRole} />;
 
       case "my-classes":
-        return activeRole === "student" ? <StudentClassManagement onNavigate={handleNavigate} /> : <TutorClassManagement />;
+        return activeRole === "student" ? <StudentClassManagement onNavigate={handleNavigate} /> : <TutorClassManagement onNavigate={handleNavigate} />;
 
       case "homework":
         return <TutorHomeworkManagement onNavigate={handleNavigate} />;
