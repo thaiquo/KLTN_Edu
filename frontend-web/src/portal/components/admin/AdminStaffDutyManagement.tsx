@@ -17,8 +17,8 @@ import { useFeedback } from "../../../components/feedback/useFeedback";
 import { DutyAssignment, ShiftCode, ShiftStatus, WeeklyRoster, staffDutyApi } from "../../../api/staffDutyApi";
 
 const shifts: Array<{ code: ShiftCode; label: string; time: string; icon: string }> = [
-  { code: "MORNING", label: "Ca sáng", time: "08:00–12:00", icon: "☀️" },
-  { code: "EVENING", label: "Ca tối", time: "18:00–22:00", icon: "🌙" },
+  { code: "MORNING", label: "Ca ngày", time: "08:00–15:00", icon: "☀️" },
+  { code: "EVENING", label: "Ca chiều–tối", time: "15:00–22:00", icon: "🌙" },
 ];
 
 const statusMeta: Record<ShiftStatus, { label: string; className: string }> = {

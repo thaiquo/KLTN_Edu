@@ -62,8 +62,9 @@ Nếu không thỏa, API ghi trả `403 STAFF_OFF_DUTY_READ_ONLY`. Admin không 
 ### 1.5. Ca trực V1
 
 - Thứ Hai đến Thứ Bảy.
-- `MORNING`: 08:00–12:00.
-- `EVENING`: 18:00–22:00.
+- `MORNING` (Ca ngày): 08:00–15:00.
+- `EVENING` (Ca chiều–tối): 15:00–22:00.
+- Hai ca nối tiếp nhau, bảo đảm Staff trực liên tục từ 08:00 đến 22:00; không có khoảng trống giữa ca.
 - 12 ca/tuần.
 - Quy mô demo hiện tại: 3 Staff, mục tiêu cân bằng khoảng 4 ca/người/tuần.
 - Thuật toán phải hoạt động với số Staff active động, không hard-code đúng ba tài khoản.
