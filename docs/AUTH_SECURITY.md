@@ -118,7 +118,8 @@ Dispute/evidence áp dụng object-level authorization, không chỉ route-level
 
 - Student/Tutor chỉ thao tác agreement của chính mình theo active role.
 - Staff bị giới hạn theo `classroomReviewerEmail`; truy cập ngoài scope trả về không tìm thấy để hạn chế lộ tồn tại dữ liệu.
-- Staff mutation còn bị giới hạn theo ca trực. Hai ca nối tiếp là 08:00–15:00 và 15:00–22:00 (giờ `Asia/Bangkok`). Chỉ active role `STAFF` có assignment `CHECKED_IN` trong đúng giờ ca mới được ghi; ngoài ca vẫn đọc được nhưng mutation trả `403 STAFF_OFF_DUTY_READ_ONLY`.
+- Staff mutation còn bị giới hạn theo ca trực. Hai ca nối tiếp là 08:00–15:00 và 15:00–22:00 (giờ `Asia/Bangkok`). Staff được check-in từ 15 phút trước giờ bắt đầu đến ngay trước giờ kết thúc; quyền ghi chỉ có hiệu lực trong phần thời gian ca thực sự đang diễn ra. Chỉ active role `STAFF` có assignment `CHECKED_IN` trong đúng giờ ca mới được ghi; ngoài ca vẫn đọc được nhưng mutation trả `403 STAFF_OFF_DUTY_READ_ONLY`.
+- Learning áp reviewer scope ở backend: Staff cùng thấy hàng chờ lớp `PENDING_APPROVAL`, nhưng lớp đã xử lý, chi tiết và thống kê sau duyệt chỉ thuộc `reviewedByEmail` của Staff đó. Client query như `reviewedByMe` chỉ phục vụ giao diện, không phải ranh giới bảo mật.
 - Duty gate không áp dụng cho Admin/Student/Tutor, không thay thế reviewer/ownership và không biến Staff đang trực thành Admin.
 - Duty gate có kill switch đồng bộ `STAFF_DUTY_ENFORCEMENT_ENABLED`, mặc định `true` trong source, Compose và production. Giá trị `false` chỉ dùng để rollback khẩn cấp; Account/Learning/Contract phải luôn nhận cùng một giá trị. Trước tuần hiệu lực, Admin phải công bố đủ ca trực.
 - Learning/Contract xác minh duty status từ Account bằng service JWT scope `staff-duty-check`; lỗi xác minh liên service phải fail-closed.

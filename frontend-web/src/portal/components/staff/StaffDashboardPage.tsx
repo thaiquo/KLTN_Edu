@@ -16,7 +16,7 @@ export function StaffDashboardPage() {
   const [searchParams] = useSearchParams();
   const feedback = useFeedback();
   const staffEmail = user?.email || "";
-  const isAdmin = String(user?.activeRole || "").toUpperCase() === "ADMIN" || user?.roles?.includes("ADMIN");
+  const isAdmin = String(user?.activeRole || "").toUpperCase() === "ADMIN";
   const [error, setError] = useState("");
   const [teachingPendingCount, setTeachingPendingCount] = useState(0);
   const [tutorProfilePendingCount, setTutorProfilePendingCount] = useState(0);

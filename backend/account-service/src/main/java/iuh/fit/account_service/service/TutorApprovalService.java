@@ -261,6 +261,7 @@ public class TutorApprovalService {
 
     @Transactional(readOnly = true)
     public Page<StaffTutorApplicationSummaryResponse> listHistory(String currentUserEmail,
+                                                                  boolean admin,
                                                                   TutorApplicationStatus status,
                                                                   String search,
                                                                   String reviewerEmail,
@@ -272,7 +273,6 @@ public class TutorApprovalService {
 
         if (status != null && reviewedStatuses.contains(status)) reviewedStatuses = List.of(status);
         if (currentUser == null) return Page.empty(pageable);
-        boolean admin = userRoleRepository.existsByUserIdAndRole(currentUser.getId(), Role.ADMIN);
         List<TutorApplicationStatus> selectedStatuses = reviewedStatuses;
         Specification<TutorApplication> spec = (root, query, cb) -> {
             List<jakarta.persistence.criteria.Predicate> predicates = new ArrayList<>();

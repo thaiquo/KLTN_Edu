@@ -54,13 +54,18 @@ public class StaffTutorApplicationController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
         return tutorApprovalService.listHistory(
-                authentication.getName(), status, search, reviewer, from, to,
+                authentication.getName(), isAdmin(authentication), status, search, reviewer, from, to,
                 pageable(page, size, "reviewedAt"));
     }
 
     private PageRequest pageable(int page, int size, String field) {
         return PageRequest.of(Math.max(0, page), Math.min(50, Math.max(1, size)),
                 Sort.by(Sort.Order.desc(field), Sort.Order.desc("id")));
+    }
+
+    private boolean isAdmin(Authentication authentication) {
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
     }
 
     @GetMapping("/{applicationId}")

@@ -48,7 +48,7 @@ const fmt = (value?: string | null) => (value ? new Date(value).toLocaleString("
 export function StaffReportsPage() {
   const { user } = useAuth();
   const staffEmail = user?.email || null;
-  const isAdmin = String(user?.activeRole || "").toUpperCase() === "ADMIN" || user?.roles?.includes("ADMIN");
+  const isAdmin = String(user?.activeRole || "").toUpperCase() === "ADMIN";
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
