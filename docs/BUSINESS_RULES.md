@@ -377,6 +377,7 @@ Không được xóa attendance hoặc đổi trạng thái của buổi COMPLET
 ## 15. Ràng buộc chống trùng lịch học viên (2026-11-07)
 
 - Ngay khi Student gửi yêu cầu tham gia thành công, enrollment `PENDING` giữ khung giờ và xuất hiện trên lịch với trạng thái chờ duyệt. `ACCEPTED` tiếp tục giữ chỗ trong lúc hoàn tất hợp đồng/ký quỹ; `ENROLLED` là lịch học chính thức.
+- Student không được gửi thêm yêu cầu vào chính classroom nếu đã có enrollment `PENDING`, `ACCEPTED` hoặc `ENROLLED`; chỉ các trạng thái kết thúc như `CANCELLED`, `REJECTED` hoặc `EXPIRED` mới cho phép một yêu cầu mới theo quy tắc tuyển sinh hiện hành.
 - Student không được tạo yêu cầu mới có khoảng ngày giao nhau, cùng thứ và thời gian thỏa `startA < endB && startB < endA` với enrollment `PENDING`, `ACCEPTED` hoặc `ENROLLED`. Hai ca sát biên, ví dụ `13:00-14:30` và `14:30-16:00`, được phép vì không giao nhau.
 - Backend kiểm tra tại lúc gửi yêu cầu, Tutor duyệt và lúc escrow kích hoạt enrollment. Các thao tác giữ lịch được tuần tự hóa theo Student để hai classroom khác nhau không thể cùng thắng khi đăng ký/duyệt đồng thời.
 - `studentId` là định danh chính khi đối chiếu lịch; email chỉ là fallback cho enrollment lịch sử chưa có `studentId`. Dữ liệu thứ/giờ của lớp bị thiếu hoặc sai định dạng phải fail-closed và yêu cầu quản trị viên sửa, không được âm thầm bỏ qua kiểm tra. Giá trị Chủ nhật cũ `1` được chuẩn hóa tương đương giá trị hiện hành `8`.

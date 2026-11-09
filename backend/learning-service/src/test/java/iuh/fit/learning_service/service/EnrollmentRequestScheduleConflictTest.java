@@ -67,6 +67,32 @@ class EnrollmentRequestScheduleConflictTest {
     private StudentScheduleGuard studentScheduleGuard;
 
     @Test
+    void rejectsDuplicateRequestWhenStudentIsAlreadyEnrolledInSameClass() {
+        EnrollmentRequestService service = service();
+        ClassRoom targetClass = createClassRoom(
+                10L, "Hóa học", LocalDate.now(), LocalDate.now().plusMonths(2));
+        targetClass.setSchedules(List.of(createSchedule(targetClass, 7, "13:00", "14:30")));
+
+        when(classRoomRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(targetClass));
+        when(enrollmentRequestRepository.existsActiveByClassRoomAndStudentIdentity(
+                10L,
+                100L,
+                "student@example.com",
+                List.of(
+                        EnrollmentRequestStatus.PENDING,
+                        EnrollmentRequestStatus.ACCEPTED,
+                        EnrollmentRequestStatus.ENROLLED)))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> service.enrollClass(
+                10L, 100L, "student@example.com", validRequest()))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("đã gửi yêu cầu hoặc đang tham gia");
+
+        verify(enrollmentRequestRepository, never()).save(any());
+    }
+
+    @Test
     void rejectsEnrollmentWhenScheduleConflictsWithActiveEnrolledClass() {
         EnrollmentRequestService service = service();
 
