@@ -8,6 +8,8 @@
 
 > **Production runtime update (2026-11-04):** PR #25 merged to `main` at `62925a6`. Ràng buộc an toàn tạo lớp học đã được kích hoạt: Buổi học đầu tiên (Buổi #1) được lập lịch bằng `CanonicalSessionPlanner` và bắt buộc cách thời điểm tạo lớp ≥ 48 giờ để bảo đảm cửa sổ nạp cọc on-chain > 24.5 giờ khi bật học thử (`ESCROW_TRIAL_ENABLED=true`). Giao diện có Hộp đánh giá trực quan (Assessment Box) theo thời gian thực và khóa submit nếu < 48 giờ. Backend Learning Service hoàn tất 332/332 tests PASS. Sự cố kẹt hợp đồng ở `PREPARING_BLOCKCHAIN` do thiếu thời gian nạp cọc đã được xử lý triệt để; database VPS đã được dọn sạch các bản ghi kẹt cũ. CI/CD GitHub Actions đã tự động đóng gói và release lên VPS production.
 
+> **Staff duty coverage update (2026-11-09):** Vẫn giữ đúng 2 ca/ngày và 12 ca/tuần, nhưng đổi thành hai ca 7 giờ nối tiếp `08:00–15:00` và `15:00–22:00`. Thay đổi loại bỏ khoảng trống `12:00–18:00`; mỗi Staff vẫn tối đa một ca/ngày, phải check-in và chỉ được ghi trong đúng ca. Admin tiếp tục không bị duty gate giới hạn.
+
 > **Production runtime update (2026-11-03):** release `b519528386bf2d56e6033b6d246b5c6132b17911` đã được đối soát trực tiếp. Learning và Contract cùng nhận `ESCROW_TRIAL_ENABLED=true`; Contract nhận `ESCROW_TRIAL_FUNDING_SAFETY_MARGIN=30m`, `TUTOR_ABSENCE_GOVERNANCE_MODE=SHADOW`, allowlist trống; public `/healthz` trả `ok`. Hai lớp thanh lý gần nhất (#42, #43) và enrollment liên quan đều đã ở trạng thái `CANCELLED`; ba hồ sơ termination hiện có đều `COMPLETED`. Database chưa có `agreement_trial`, vì vậy trial đã bật về runtime nhưng chưa có bằng chứng E2E production bằng một agreement mới. Tutor-absence vẫn tuyệt đối không được mô tả là đang cưỡng chế tự động.
 
 ## 1. Status Legend
