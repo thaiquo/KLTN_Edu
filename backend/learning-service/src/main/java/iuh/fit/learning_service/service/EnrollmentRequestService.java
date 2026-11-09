@@ -120,16 +120,22 @@ public class EnrollmentRequestService {
             }
         }
 
-        // Check duplicate request
+        // Check duplicate request, including an already-funded enrollment in the
+        // same classroom. Schedule-conflict validation intentionally skips the
+        // target classroom, so this identity guard must cover ENROLLED as well.
+        List<EnrollmentRequestStatus> activeSameClassStatuses = List.of(
+                EnrollmentRequestStatus.PENDING,
+                EnrollmentRequestStatus.ACCEPTED,
+                EnrollmentRequestStatus.ENROLLED);
         boolean alreadySubmitted = enrollmentRequestRepository.existsByClassRoomIdAndStudentEmailIgnoreCaseAndStatusIn(
                 classRoomId,
                 studentEmail,
-                List.of(EnrollmentRequestStatus.PENDING, EnrollmentRequestStatus.ACCEPTED)
+                activeSameClassStatuses
         ) || enrollmentRequestRepository.existsActiveByClassRoomAndStudentIdentity(
                 classRoomId,
                 authenticatedStudentId,
                 studentEmail,
-                List.of(EnrollmentRequestStatus.PENDING, EnrollmentRequestStatus.ACCEPTED)
+                activeSameClassStatuses
         );
         if (alreadySubmitted) {
             throw new BadRequestException("Bạn đã gửi yêu cầu hoặc đang tham gia lớp học này.");
