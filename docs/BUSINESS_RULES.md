@@ -108,7 +108,7 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
 - Tutor restricted mode: Tutor có hồ sơ `DRAFT`, `PENDING` hoặc `REJECTED` vẫn được đăng nhập/switch sang ngữ cảnh Gia sư để xem trạng thái, cập nhật hồ sơ, upload tài liệu và gửi/gửi lại hồ sơ theo flow hiện có. Chỉ Tutor `APPROVED` mới được dùng đầy đủ các chức năng giảng dạy.
 - Tutor profile: hồ sơ gia sư cung cấp thông tin để hệ thống và Staff xác minh.
 - Search: Guest và user có thể tra cứu thông tin công khai; thao tác nghiệp vụ yêu cầu đăng nhập.
-- Join request: Student gửi yêu cầu tham gia lớp; Tutor xử lý yêu cầu theo trạng thái và điều kiện lớp.
+- Join request: Student gửi yêu cầu tham gia lớp; Tutor xử lý tập trung tại màn hình **Yêu cầu học** theo trạng thái và điều kiện lớp. Chấp nhận không phải là thao tác đổi trạng thái trực tiếp: Tutor phải xem điều khoản và ký hợp đồng EIP-712 thành công trước khi hệ thống liên kết `agreementId` và chuyển yêu cầu sang `ACCEPTED`. Các màn hình Tổng quan/Quản lý lớp chỉ hiển thị hoặc dẫn tới luồng tập trung này, không được cung cấp đường chấp nhận trực tiếp bỏ qua chữ ký.
 - Class: Tutor tạo/quản lý lớp tuyển sinh; Student xem thông tin lớp; Staff/Admin có nghiệp vụ giám sát/duyệt theo phạm vi.
 - Contract: khi Student và Tutor đạt thỏa thuận, hai bên cùng tham gia quản lý hợp đồng.
 - Learning: quá trình học gồm lớp học, buổi học, điểm danh và các hoạt động theo dõi tiến độ.

@@ -12,8 +12,7 @@ import {
   RefreshCw,
   User,
   Users,
-  Video,
-  X
+  Video
 } from "lucide-react";
 import { classApi } from "../../api/classes";
 
@@ -126,8 +125,6 @@ export function TutorDashboard({ userName, onNavigate }: TutorDashboardProps) {
   const [homeworkItems, setHomeworkItems] = useState<HomeworkItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
-  const [actionId, setActionId] = useState<number | null>(null);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -249,46 +246,8 @@ export function TutorDashboard({ userName, onNavigate }: TutorDashboardProps) {
     }
   ];
 
-  const showToast = (message: string) => {
-    setToast(message);
-    window.setTimeout(() => setToast(null), 3000);
-  };
-
-  const handleAccept = async (id: number) => {
-    setActionId(id);
-    try {
-      await classApi.acceptEnrollmentRequest(id);
-      showToast("Đã chấp nhận yêu cầu học");
-      await loadDashboard();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Không thể chấp nhận yêu cầu học.");
-    } finally {
-      setActionId(null);
-    }
-  };
-
-  const handleReject = async (id: number) => {
-    setActionId(id);
-    try {
-      await classApi.rejectEnrollmentRequest(id, "Gia sư đã từ chối yêu cầu từ bảng điều khiển.");
-      showToast("Đã từ chối yêu cầu học");
-      await loadDashboard();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Không thể từ chối yêu cầu học.");
-    } finally {
-      setActionId(null);
-    }
-  };
-
   return (
     <div className="space-y-8 select-none font-sans max-w-7xl mx-auto pb-10">
-      {toast && (
-        <div className="fixed top-20 right-4 z-50 bg-[#0F172A] text-white px-5 py-3 rounded-lg shadow-xl flex items-center gap-3 border border-white/10 animate-slide-in">
-          <Check className="w-5 h-5 text-emerald-300" />
-          <p className="text-sm font-semibold">{toast}</p>
-        </div>
-      )}
-
       <section className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl md:text-3xl font-bold text-[#0F172A] tracking-tight">
@@ -391,18 +350,10 @@ export function TutorDashboard({ userName, onNavigate }: TutorDashboardProps) {
                       </div>
                       <div className="flex items-center gap-2 w-full sm:w-auto">
                         <button
-                          onClick={() => handleAccept(req.id)}
-                          disabled={actionId === req.id}
-                          className="flex-1 sm:flex-none inline-flex justify-center items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-60"
+                          onClick={() => onNavigate("requests")}
+                          className="flex-1 sm:flex-none inline-flex justify-center items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-bold transition-colors"
                         >
-                          {actionId === req.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />} Chấp nhận
-                        </button>
-                        <button
-                          onClick={() => handleReject(req.id)}
-                          disabled={actionId === req.id}
-                          className="flex-1 sm:flex-none inline-flex justify-center items-center gap-1.5 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold transition-colors disabled:opacity-60"
-                        >
-                          <X className="w-4 h-4" /> Từ chối
+                          <FileText className="w-4 h-4" /> Xem & xử lý
                         </button>
                       </div>
                     </div>

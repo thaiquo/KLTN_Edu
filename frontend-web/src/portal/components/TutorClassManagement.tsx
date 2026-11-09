@@ -90,7 +90,11 @@ const VIETNAMESE_DAYS = [
   { value: 8, label: "CN" }
 ];
 
-export function TutorClassManagement() {
+interface TutorClassManagementProps {
+  onNavigate?: (page: string) => void;
+}
+
+export function TutorClassManagement({ onNavigate }: TutorClassManagementProps) {
   const feedback = useFeedback();
   const { authenticated } = useAuth();
   const [viewMode, setViewMode] = useState<"list" | "create">("list");
@@ -192,49 +196,6 @@ export function TutorClassManagement() {
       setClassAgreements([]);
     } finally {
       setRequestsLoading(false);
-    }
-  };
-
-  const handleAcceptRequest = async (requestId: number, studentName?: string) => {
-    const name = studentName || "học viên này";
-    const accepted = await feedback.confirm({
-      title: "Chấp nhận yêu cầu tham gia?",
-      message: `Bạn có chắc muốn nhận ${name} vào lớp học này không?`,
-      confirmText: "Chấp nhận",
-      cancelText: "Hủy"
-    });
-    if (!accepted) {
-      return;
-    }
-    try {
-      await classApi.acceptEnrollmentRequest(requestId);
-      feedback.success("Đã chấp nhận yêu cầu tham gia.");
-      if (detailModalClass) loadRequestsForClass(detailModalClass.id);
-      loadClasses();
-    } catch (err: any) {
-      feedback.error(err?.message || "Không thể chấp nhận yêu cầu.");
-    }
-  };
-
-  const handleRejectRequest = async (requestId: number, studentName?: string) => {
-    const name = studentName || "học viên này";
-    const accepted = await feedback.confirm({
-      title: "Từ chối yêu cầu tham gia?",
-      message: `Bạn có chắc muốn từ chối yêu cầu tham gia của ${name} không?`,
-      confirmText: "Từ chối",
-      cancelText: "Hủy",
-      variant: "destructive"
-    });
-    if (!accepted) {
-      return;
-    }
-    try {
-      await classApi.rejectEnrollmentRequest(requestId, undefined);
-      feedback.success("Đã từ chối yêu cầu tham gia.");
-      if (detailModalClass) loadRequestsForClass(detailModalClass.id);
-      loadClasses();
-    } catch (err: any) {
-      feedback.error(err?.message || "Không thể từ chối yêu cầu.");
     }
   };
 
@@ -1593,6 +1554,29 @@ export function TutorClassManagement() {
                   </button>
                 </div>
 
+                <div className="flex flex-col gap-3 rounded-2xl border border-blue-200 bg-blue-50/70 p-3.5 text-blue-950 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start gap-2">
+                    <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                    <p className="font-semibold leading-relaxed">
+                      Mục này chỉ dùng để theo dõi. Để chấp nhận hoặc từ chối, hãy mở <strong>Yêu cầu học</strong>;
+                      thao tác chấp nhận chỉ hoàn tất sau khi xem và ký hợp đồng EIP-712.
+                    </p>
+                  </div>
+                  {onNavigate && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDetailModalClass(null);
+                        onNavigate("requests");
+                      }}
+                      className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 font-black text-white shadow-sm transition-colors hover:bg-blue-700"
+                    >
+                      <FileText className="h-3.5 w-3.5" />
+                      Mở Yêu cầu học
+                    </button>
+                  )}
+                </div>
+
                 {requestsLoading ? (
                   <div className="p-6 text-center text-slate-400 font-medium">Đang tải danh sách...</div>
                 ) : enrollmentRequests.length === 0 ? (
@@ -1626,22 +1610,9 @@ export function TutorClassManagement() {
                           </div>
 
                           {req.status === "PENDING" && (
-                            <div className="flex items-center gap-2 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => handleRejectRequest(req.id, displayName)}
-                                className="px-3.5 py-1.5 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold transition-all"
-                              >
-                                Từ chối
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleAcceptRequest(req.id, displayName)}
-                                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 text-xs font-black transition-all shadow-sm"
-                              >
-                                Chấp nhận
-                              </button>
-                            </div>
+                            <span className="shrink-0 rounded-xl border border-blue-200 bg-blue-50 px-3 py-1.5 text-[11px] font-bold text-blue-700">
+                              Xử lý tại Yêu cầu học
+                            </span>
                           )}
                         </div>
                       );
