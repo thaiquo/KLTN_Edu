@@ -240,7 +240,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
           }
         }
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => {
       cancelled = true;
     };
@@ -281,6 +281,24 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
   const [lessonDraft, setLessonDraft] = useState<LessonDraftResponse | null>(null);
   const [lessonDraftLoading, setLessonDraftLoading] = useState<boolean>(false);
   const [lessonDraftError, setLessonDraftError] = useState<string>("");
+
+  // Validation for Tutor Assignment Modal
+  const sessionStartMin = useMemo(() => {
+    if (!editingSession?.sessionDate) return "";
+    const time = (editingSession.startTime || "00:00").slice(0, 5);
+    return `${editingSession.sessionDate}T${time}`;
+  }, [editingSession]);
+
+  const isAssignmentTitleValid = assignmentTitle.trim().length > 0;
+  const isAssignmentDescValid = assignmentDesc.trim().length > 0;
+  const isAssignmentDueProvided = Boolean(assignmentDueAt);
+  const isDeadlineBeforeSession = Boolean(
+    isAssignmentDueProvided && sessionStartMin && assignmentDueAt < sessionStartMin
+  );
+  const isAssignmentDueValid = isAssignmentDueProvided && !isDeadlineBeforeSession;
+
+  const isSessionAssignmentFormValid =
+    isAssignmentTitleValid && isAssignmentDescValid && isAssignmentDueValid;
 
   // Quick grading state in attendance roster
   const [gradingScoreMap, setGradingScoreMap] = useState<Record<number, string>>({});
@@ -726,6 +744,28 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
   const handleSaveSessionDetails = async () => {
     if (!editingSession) return;
+    const trimmedTitle = assignmentTitle.trim();
+    const trimmedDesc = assignmentDesc.trim();
+    if (!trimmedTitle) {
+      showToast("Vui lòng nhập tiêu đề bài tập về nhà", "error");
+      return;
+    }
+    if (!trimmedDesc) {
+      showToast("Vui lòng nhập mô tả chi tiết yêu cầu bài tập", "error");
+      return;
+    }
+    if (!assignmentDueAt) {
+      showToast("Vui lòng chọn hạn nộp bài tập", "error");
+      return;
+    }
+    if (sessionStartMin && assignmentDueAt < sessionStartMin) {
+      showToast(
+        `Hạn nộp bài tập phải từ thời gian buổi học trở đi (${editingSession.sessionDate} ${(editingSession.startTime || "").slice(0, 5)})`,
+        "error"
+      );
+      return;
+    }
+
     const normalizedAssignmentDueAt = assignmentDueAt ? (assignmentDueAt.length === 16 ? `${assignmentDueAt}:00` : assignmentDueAt) : undefined;
     const submissionRequired = Boolean(normalizedAssignmentDueAt);
     setActionLoading(true);
@@ -734,8 +774,8 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
         method: "PUT",
         body: JSON.stringify({
           topic: assignmentTopic,
-          assignmentTitle: assignmentTitle,
-          assignmentDescription: assignmentDesc,
+          assignmentTitle: trimmedTitle,
+          assignmentDescription: trimmedDesc,
           assignmentFileUrl: assignmentFileUrl,
           assignmentDueAt: normalizedAssignmentDueAt,
           submissionRequired,
@@ -1140,11 +1180,10 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
       {/* Toast Alert */}
       {toastMessage && (
         <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-xl border text-sm font-medium transition-all ${
-            toastMessage.type === "success"
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3 rounded-xl shadow-xl border text-sm font-medium transition-all ${toastMessage.type === "success"
               ? "bg-emerald-50 text-emerald-800 border-emerald-200"
               : "bg-rose-50 text-rose-800 border-rose-200"
-          }`}
+            }`}
         >
           {toastMessage.type === "success" ? (
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
@@ -1165,7 +1204,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
         const nextUpcomingForStudent = sessions
           .filter((s) => isSessionAvailable(s) && s.sessionDate >= todayStr)
           .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate) || a.sequenceNumber - b.sequenceNumber)[0]
-         ;
+          ;
         const isStudentCheckedInForCurrent = isStudentCheckedInForSession(activeSessionForStudent);
         const isSessionActiveNow = Boolean(activeSessionForStudent);
         const accessibleMeetingLink = currentUserRole === 'STUDENT' ? unlockedMeetingLink : meetingLink;
@@ -1216,11 +1255,10 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               </div>
             ) : (
               <div className="flex flex-col sm:flex-row sm:items-center gap-3 bg-white/10 backdrop-blur-md p-3 rounded-xl border border-white/20 max-w-full">
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                  !canAccessMeetingLink
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${!canAccessMeetingLink
                     ? "bg-amber-500/20 text-amber-300 border border-amber-400/30"
                     : "bg-indigo-600 text-white"
-                }`}>
+                  }`}>
                   {!canAccessMeetingLink ? <Lock className="w-5 h-5" /> : <Video className="w-5 h-5" />}
                 </div>
                 <div className="min-w-0 max-w-[280px]">
@@ -1348,23 +1386,21 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
             : 'Gia sư chưa cập nhật link phòng học';
 
         return (
-          <div className={`p-5 sm:p-6 border-b transition-all ${
-            isActiveNow
+          <div className={`p-5 sm:p-6 border-b transition-all ${isActiveNow
               ? "bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-amber-500/15 border-amber-300 ring-2 ring-amber-400/20"
               : isToday
-              ? "bg-gradient-to-r from-indigo-50/90 via-blue-50/70 to-indigo-50/90 border-indigo-200"
-              : "bg-slate-50/90 border-slate-200"
-          }`}>
+                ? "bg-gradient-to-r from-indigo-50/90 via-blue-50/70 to-indigo-50/90 border-indigo-200"
+                : "bg-slate-50/90 border-slate-200"
+            }`}>
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               {/* Left side: Sequence & Info */}
               <div className="flex items-start gap-3.5 flex-1 min-w-0">
-                <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex flex-col items-center justify-center font-bold text-xs shrink-0 shadow-xs ${
-                  isActiveNow
+                <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex flex-col items-center justify-center font-bold text-xs shrink-0 shadow-xs ${isActiveNow
                     ? "bg-rose-600 text-white animate-pulse"
                     : isToday
-                    ? "bg-amber-500 text-white"
-                    : "bg-indigo-600 text-white"
-                }`}>
+                      ? "bg-amber-500 text-white"
+                      : "bg-indigo-600 text-white"
+                  }`}>
                   <span className="text-[10px] uppercase font-semibold opacity-90">Buổi</span>
                   <span className="text-lg sm:text-xl leading-none font-black font-display">{spotlight.sequenceNumber}</span>
                 </div>
@@ -1487,9 +1523,8 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                       <button
                         disabled={currentUserRole !== 'TUTOR' || !isActiveNow || actionLoading}
                         onClick={() => handleTutorDirectCheckin(spotlight.id)}
-                        className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-xs ${
-                          isActiveNow ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-slate-200 text-slate-400 cursor-not-allowed"
-                        }`}
+                        className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-xs ${isActiveNow ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                          }`}
                       >
                         <CheckCircle2 className="w-4 h-4" />
                         <span>{isActiveNow ? "Điểm Danh Vào Dạy" : isSessionPastEndTime(spotlight) ? "Đã Hết Giờ Dạy" : "Chưa Đến Giờ Dạy"}</span>
@@ -1525,7 +1560,7 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
         const nextSession = sessions
           .filter((s) => isSessionAvailable(s) && s.sessionDate >= todayStr)
           .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate) || a.sequenceNumber - b.sequenceNumber)[0]
-         ;
+          ;
         const totalCourseSessions = propsTotalSessions || classDetail?.totalSessions || sessions.length;
         const hasRollingSessions = totalCourseSessions > sessions.length;
         const currentStep = (activeSession || todaySession || nextSession)?.sequenceNumber || 0;
@@ -1576,13 +1611,12 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
 
               {/* Status pill badge */}
               <div className="flex items-center gap-2 shrink-0">
-                <span className={`px-3 py-1.5 rounded-xl text-xs font-black border ${
-                  historyMode
+                <span className={`px-3 py-1.5 rounded-xl text-xs font-black border ${historyMode
                     ? "bg-rose-50 text-rose-800 border-rose-200"
                     : currentStep > 0
-                    ? "bg-indigo-50 text-indigo-800 border-indigo-200"
-                    : "bg-slate-100 text-slate-700 border-slate-200"
-                }`}>
+                      ? "bg-indigo-50 text-indigo-800 border-indigo-200"
+                      : "bg-slate-100 text-slate-700 border-slate-200"
+                  }`}>
                   {historyMode ? "Lớp đã dừng (Chế độ xem lịch sử)" : currentStep > 0 ? `Buổi hiện tại: Buổi ${currentStep}/${totalCourseSessions}` : "Lớp chưa có buổi kế tiếp"}
                 </span>
               </div>
@@ -1610,15 +1644,14 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                     className="flex flex-col items-center min-w-[78px] text-center group cursor-pointer transition-all shrink-0"
                   >
                     <div
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs transition-all shadow-2xs ${
-                        isPassed
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs transition-all shadow-2xs ${isPassed
                           ? "bg-emerald-600 text-white hover:bg-emerald-700"
                           : isCancelled
-                          ? "bg-rose-100 text-rose-700 border border-rose-300"
-                          : isCurrent
-                          ? "bg-indigo-600 text-white ring-4 ring-indigo-200 scale-105 shadow-md"
-                          : "bg-slate-50 text-slate-600 border border-slate-200 group-hover:border-indigo-300 group-hover:bg-indigo-50/50"
-                      }`}
+                            ? "bg-rose-100 text-rose-700 border border-rose-300"
+                            : isCurrent
+                              ? "bg-indigo-600 text-white ring-4 ring-indigo-200 scale-105 shadow-md"
+                              : "bg-slate-50 text-slate-600 border border-slate-200 group-hover:border-indigo-300 group-hover:bg-indigo-50/50"
+                        }`}
                     >
                       {isPassed ? <CheckCircle2 className="w-4 h-4" /> : isCancelled ? <Ban className="w-4 h-4" /> : s.sequenceNumber}
                     </div>
@@ -1629,15 +1662,14 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                       {s.sessionDate?.slice(5)}
                     </span>
                     <span
-                      className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-md mt-0.5 ${
-                        isPassed
+                      className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded-md mt-0.5 ${isPassed
                           ? "bg-emerald-100 text-emerald-800"
                           : isCancelled
-                          ? "bg-rose-100 text-rose-800"
-                          : isCurrent
-                          ? "bg-indigo-100 text-indigo-800 font-black"
-                          : "bg-slate-100 text-slate-500"
-                      }`}
+                            ? "bg-rose-100 text-rose-800"
+                            : isCurrent
+                              ? "bg-indigo-100 text-indigo-800 font-black"
+                              : "bg-slate-100 text-slate-500"
+                        }`}
                     >
                       {isPassed ? "Đã xong" : isCancelled ? "Đã dừng" : isCurrent ? "Đang học" : "Sắp tới"}
                     </span>
@@ -1677,19 +1709,17 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                             document.getElementById(`session-${s.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                           }, 50);
                         }}
-                        className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${
-                          isNext
+                        className={`p-3 rounded-xl border text-xs cursor-pointer transition-all ${isNext
                             ? "bg-indigo-50/80 border-indigo-300 ring-1 ring-indigo-200 hover:bg-indigo-100/70"
                             : "bg-slate-50/70 border-slate-200 hover:bg-slate-100/70 hover:border-slate-300"
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center justify-between gap-1 mb-1">
                           <span className="font-black text-slate-900 font-display text-xs">
                             Buổi {s.sequenceNumber}: {s.topic || `Buổi học #${s.sequenceNumber}`}
                           </span>
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                            isNext ? "bg-indigo-600 text-white" : "bg-slate-200 text-slate-700"
-                          }`}>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${isNext ? "bg-indigo-600 text-white" : "bg-slate-200 text-slate-700"
+                            }`}>
                             {isNext ? "Kế tiếp" : "Chưa tới"}
                           </span>
                         </div>
@@ -1723,22 +1753,20 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => setActiveTab("ALL")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                activeTab === "ALL"
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === "ALL"
                   ? "bg-white text-indigo-700 shadow-xs font-black"
                   : "text-slate-600 hover:text-slate-900"
-              }`}
+                }`}
             >
               <span>Tất cả ({sessions.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab("UPCOMING")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                activeTab === "UPCOMING"
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === "UPCOMING"
                   ? "bg-white text-indigo-700 shadow-xs font-black"
                   : "text-slate-600 hover:text-slate-900"
-              }`}
+                }`}
             >
               <Calendar className="w-3.5 h-3.5 text-indigo-600" />
               <span>Sắp tới ({upcomingSessions.length})</span>
@@ -1746,11 +1774,10 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => setActiveTab("COMPLETED")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                activeTab === "COMPLETED"
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === "COMPLETED"
                   ? "bg-white text-indigo-700 shadow-xs font-black"
                   : "text-slate-600 hover:text-slate-900"
-              }`}
+                }`}
             >
               <History className="w-3.5 h-3.5" />
               <span>Đã diễn ra ({completedSessions.length})</span>
@@ -1759,13 +1786,12 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab("DISPUTABLE")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  activeTab === "DISPUTABLE"
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === "DISPUTABLE"
                     ? "bg-rose-600 text-white shadow-xs font-black"
                     : disputableSessions.length > 0
-                    ? "bg-rose-50 text-rose-700 border border-rose-200 font-extrabold hover:bg-rose-100"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
+                      ? "bg-rose-50 text-rose-700 border border-rose-200 font-extrabold hover:bg-rose-100"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
               >
                 <ShieldAlert className="w-3.5 h-3.5" />
                 <span>Trong hạn khiếu nại ({disputableSessions.length})</span>
@@ -1774,11 +1800,10 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => setActiveTab("FOCUSED")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                activeTab === "FOCUSED"
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${activeTab === "FOCUSED"
                   ? "bg-white text-indigo-700 shadow-xs font-black"
                   : "text-slate-600 hover:text-slate-900"
-              }`}
+                }`}
               title="Chỉ hiển thị 2 buổi trọng tâm (buổi gần nhất vừa qua và buổi kế tiếp)"
             >
               <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
@@ -1859,10 +1884,10 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
             {activeTab === "DISPUTABLE"
               ? "Hiện tại không có buổi học nào đang trong thời hạn 24 giờ khiếu nại."
               : activeTab === "COMPLETED"
-              ? "Chưa có buổi học nào hoàn thành trong lịch sử khóa học."
-              : activeTab === "UPCOMING"
-              ? "Không có buổi học nào sắp tới. Tất cả buổi học đã hoàn thành."
-              : "Không có buổi học nào trong danh mục này."}
+                ? "Chưa có buổi học nào hoàn thành trong lịch sử khóa học."
+                : activeTab === "UPCOMING"
+                  ? "Không có buổi học nào sắp tới. Tất cả buổi học đã hoàn thành."
+                  : "Không có buổi học nào trong danh mục này."}
           </div>
         ) : (
           <div className="space-y-4" id="sessions-timeline-list">
@@ -1904,35 +1929,33 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                   ? "Không có học viên trong sổ điểm danh"
                   : finalizedOutcomeCount === 0
                     ? "Chưa có dữ liệu kết quả điểm danh"
-                : (session.tutorAbsentCount || 0) > 0
-                  ? `Gia sư vắng: ${session.tutorAbsentCount}/${session.totalAttendees || 0} học viên bị ảnh hưởng (TUTOR_ABSENT)`
-                  : (session.studentAbsentCount || 0) > 0
-                    ? `Cùng có mặt: ${session.bothPresentCount || 0} • Học viên vắng: ${session.studentAbsentCount || 0}`
-                    : `Cùng có mặt: ${session.bothPresentCount || 0}/${session.totalAttendees || 0} (BOTH_PRESENT)`;
+                    : (session.tutorAbsentCount || 0) > 0
+                      ? `Gia sư vắng: ${session.tutorAbsentCount}/${session.totalAttendees || 0} học viên bị ảnh hưởng (TUTOR_ABSENT)`
+                      : (session.studentAbsentCount || 0) > 0
+                        ? `Cùng có mặt: ${session.bothPresentCount || 0} • Học viên vắng: ${session.studentAbsentCount || 0}`
+                        : `Cùng có mặt: ${session.bothPresentCount || 0}/${session.totalAttendees || 0} (BOTH_PRESENT)`;
 
               return (
                 <div
                   key={session.id}
                   id={`session-${session.id}`}
-                  className={`p-5 rounded-xl border transition-all ${
-                    active
+                  className={`p-5 rounded-xl border transition-all ${active
                       ? "bg-amber-50/60 border-amber-300 shadow-sm ring-2 ring-amber-400/20"
                       : isCompleted
-                      ? "bg-slate-50/80 border-slate-200"
-                      : "bg-white border-slate-200 hover:border-indigo-200"
-                  }`}
+                        ? "bg-slate-50/80 border-slate-200"
+                        : "bg-white border-slate-200 hover:border-indigo-200"
+                    }`}
                 >
                   <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
                     {/* Left: Sequence & Basic Info */}
                     <div className="flex items-start gap-4 flex-1">
                       <div
-                        className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center font-bold text-xs shrink-0 ${
-                          isCompleted
+                        className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center font-bold text-xs shrink-0 ${isCompleted
                             ? "bg-emerald-100 text-emerald-800"
                             : active
-                            ? "bg-amber-500 text-white animate-pulse"
-                            : "bg-indigo-50 text-indigo-700"
-                        }`}
+                              ? "bg-amber-500 text-white animate-pulse"
+                              : "bg-indigo-50 text-indigo-700"
+                          }`}
                       >
                         <span className="text-[10px] uppercase font-normal">Buổi</span>
                         <span className="text-base leading-none">{session.sequenceNumber}</span>
@@ -2007,13 +2030,12 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                           const isRefunded = mySettlement?.status === "REFUNDED";
 
                           return (
-                            <div className={`mt-3 p-3.5 rounded-2xl border transition-all ${
-                              isDisputable
+                            <div className={`mt-3 p-3.5 rounded-2xl border transition-all ${isDisputable
                                 ? "bg-amber-50/70 border-amber-300 ring-2 ring-amber-400/20"
                                 : isDisputed
-                                ? "bg-rose-50/60 border-rose-200"
-                                : "bg-indigo-50/50 border-indigo-100"
-                            }`}>
+                                  ? "bg-rose-50/60 border-rose-200"
+                                  : "bg-indigo-50/50 border-indigo-100"
+                              }`}>
                               <div className="flex flex-wrap items-center justify-between gap-2.5 text-xs">
                                 <div className="flex items-center gap-3 flex-wrap">
                                   <span className="font-semibold text-slate-700 flex items-center gap-1">
@@ -2036,11 +2058,10 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                     </strong>
                                   </span>
                                   <span className="text-slate-300">•</span>
-                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                    tutorWasPresent && finalizedOutcomeCount > 0 && (session.studentAbsentCount || 0) === 0
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${tutorWasPresent && finalizedOutcomeCount > 0 && (session.studentAbsentCount || 0) === 0
                                       ? "bg-blue-100 text-blue-800"
                                       : "bg-rose-100 text-rose-800"
-                                  }`}>
+                                    }`}>
                                     Kết quả: {completedOutcomeLabel}
                                   </span>
                                 </div>
@@ -2048,17 +2069,16 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                 {/* Status Badge */}
                                 <div className="flex items-center gap-2 flex-wrap">
                                   {mySettlement ? (
-                                    <div className={`text-[11px] font-bold flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${
-                                      isRefunded
+                                    <div className={`text-[11px] font-bold flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${isRefunded
                                         ? "text-emerald-800 bg-emerald-50 border-emerald-200"
                                         : isSettled
-                                        ? "text-blue-800 bg-blue-50 border-blue-200"
-                                        : isDisputed
-                                        ? "text-rose-800 bg-rose-50 border-rose-200 font-black animate-pulse"
-                                        : isDisputable
-                                        ? "text-amber-900 bg-amber-100/90 border-amber-300 font-black"
-                                        : "text-indigo-700 bg-white border-indigo-200"
-                                    }`}>
+                                          ? "text-blue-800 bg-blue-50 border-blue-200"
+                                          : isDisputed
+                                            ? "text-rose-800 bg-rose-50 border-rose-200 font-black animate-pulse"
+                                            : isDisputable
+                                              ? "text-amber-900 bg-amber-100/90 border-amber-300 font-black"
+                                              : "text-indigo-700 bg-white border-indigo-200"
+                                      }`}>
                                       {isRefunded || isSettled ? (
                                         <CheckCircle2 className="w-3.5 h-3.5" />
                                       ) : isDisputed ? (
@@ -2070,16 +2090,16 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                         {isRefunded
                                           ? `Đã hoàn ${mySettlement.studentRefundUsdc.toLocaleString("vi-VN")} USDC về ví học viên`
                                           : isSettled && mySettlement.studentRefundUsdc > 0
-                                          ? `Đã quyết toán và hoàn ${mySettlement.studentRefundUsdc.toLocaleString("vi-VN")} USDC`
-                                          : isSettled
-                                          ? "Đã quyết toán on-chain"
-                                          : isDisputed
-                                          ? "Đang giữ tiền on-chain chờ phân xử khiếu nại"
-                                          : isDisputable
-                                          ? `Còn hạn khiếu nại (còn ${formatRemainingTime(mySettlement.disputeDeadline!, now.getTime())})`
-                                          : isDisputeExpired
-                                          ? "Đã hết hạn khiếu nại 24h · Chờ giải ngân on-chain"
-                                          : `Đề xuất quyết toán · Chờ đến ${mySettlement.disputeDeadline ? formatExactTime(mySettlement.disputeDeadline) : "hết 24 giờ"}`}
+                                            ? `Đã quyết toán và hoàn ${mySettlement.studentRefundUsdc.toLocaleString("vi-VN")} USDC`
+                                            : isSettled
+                                              ? "Đã quyết toán on-chain"
+                                              : isDisputed
+                                                ? "Đang giữ tiền on-chain chờ phân xử khiếu nại"
+                                                : isDisputable
+                                                  ? `Còn hạn khiếu nại (còn ${formatRemainingTime(mySettlement.disputeDeadline!, now.getTime())})`
+                                                  : isDisputeExpired
+                                                    ? "Đã hết hạn khiếu nại 24h · Chờ giải ngân on-chain"
+                                                    : `Đề xuất quyết toán · Chờ đến ${mySettlement.disputeDeadline ? formatExactTime(mySettlement.disputeDeadline) : "hết 24 giờ"}`}
                                       </span>
                                     </div>
                                   ) : session.settlementDispatched ? (
@@ -2132,8 +2152,8 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                         {isSettled
                                           ? "Buổi học đã hoàn tất quyết toán hợp đồng on-chain."
                                           : isDisputeExpired
-                                          ? "Đã hết thời hạn 24 giờ để gửi khiếu nại cho buổi học này."
-                                          : "Thông tin quyết toán buổi học"}
+                                            ? "Đã hết thời hạn 24 giờ để gửi khiếu nại cho buổi học này."
+                                            : "Thông tin quyết toán buổi học"}
                                       </span>
                                       <a
                                         href={`/student/complaints?classroomId=${session.classRoomId}`}
@@ -2158,100 +2178,100 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                             <div className="mt-3.5 p-4 rounded-2xl bg-gradient-to-b from-emerald-50/90 to-teal-50/40 border border-emerald-200/90 shadow-xs flex flex-col gap-3.5">
                               {/* 1. Phần Đề Bài & Yêu Cầu Bài Tập */}
                               {hasAssignmentContent && (
-                              <div className="flex items-start gap-3">
-                                <div className="p-2.5 rounded-xl bg-emerald-600 text-white shrink-0 mt-0.5 shadow-xs">
-                                  <Unlock className="w-4 h-4" />
-                                </div>
-                                <div className="text-xs flex-1 min-w-0">
-                                  <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
-                                    <span className="font-black text-emerald-950 text-sm font-display flex items-center gap-1.5">
-                                      <FileText className="w-4 h-4 text-emerald-700" />
-                                      Bài tập: {session.assignmentTitle || "Yêu cầu bài tập buổi học"}
-                                    </span>
-                                    {currentUserRole === "STUDENT" && (
-                                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-200/90 text-emerald-900 flex items-center gap-1 border border-emerald-300">
-                                        <CheckCircle2 className="w-3 h-3 text-emerald-700" />
-                                        ĐÃ MỞ KHÓA BÀI TẬP
+                                <div className="flex items-start gap-3">
+                                  <div className="p-2.5 rounded-xl bg-emerald-600 text-white shrink-0 mt-0.5 shadow-xs">
+                                    <Unlock className="w-4 h-4" />
+                                  </div>
+                                  <div className="text-xs flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+                                      <span className="font-black text-emerald-950 text-sm font-display flex items-center gap-1.5">
+                                        <FileText className="w-4 h-4 text-emerald-700" />
+                                        Bài tập: {session.assignmentTitle || "Yêu cầu bài tập buổi học"}
                                       </span>
+                                      {currentUserRole === "STUDENT" && (
+                                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-200/90 text-emerald-900 flex items-center gap-1 border border-emerald-300">
+                                          <CheckCircle2 className="w-3 h-3 text-emerald-700" />
+                                          ĐÃ MỞ KHÓA BÀI TẬP
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Nội dung đề bài & hướng dẫn chi tiết */}
+                                    {session.assignmentDescription && (
+                                      <div className="mt-2 p-3 bg-white/95 rounded-xl border border-emerald-200/80 shadow-2xs">
+                                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                          <FileText className="w-3 h-3 text-emerald-600" />
+                                          Nội dung đề bài & hướng dẫn:
+                                        </div>
+                                        <p className="text-slate-800 text-xs leading-relaxed whitespace-pre-wrap font-medium">
+                                          {session.assignmentDescription}
+                                        </p>
+                                      </div>
+                                    )}
+
+                                    {/* File đề bài đính kèm */}
+                                    {session.assignmentFiles && session.assignmentFiles.length > 0 && (
+                                      <div className="mt-2.5">
+                                        <div className="text-[11px] font-bold text-slate-600 mb-1.5 flex items-center gap-1">
+                                          <Download className="w-3 h-3 text-blue-600" />
+                                          <span>File đề bài đính kèm ({session.assignmentFiles.length} file):</span>
+                                        </div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          {session.assignmentFiles.map((file) => (
+                                            <div
+                                              key={file.id}
+                                              className="inline-flex items-center justify-between gap-2.5 px-3 py-1.5 bg-white text-slate-800 font-bold border border-blue-200 rounded-xl shadow-2xs hover:border-blue-300 text-xs transition-all"
+                                            >
+                                              <div className="flex items-center gap-1.5 truncate max-w-[220px]">
+                                                <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                                                <span className="truncate">{file.fileName}</span>
+                                                <span className="text-[10px] text-slate-400 font-normal">({formatFileSize(file.fileSize)})</span>
+                                              </div>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDownloadSessionFile(session.id, file.id)}
+                                                disabled={downloadingSessionFileId === file.id}
+                                                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-black flex items-center gap-1 shadow-xs active:scale-95 cursor-pointer shrink-0"
+                                              >
+                                                {downloadingSessionFileId === file.id ? (
+                                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                                ) : (
+                                                  <Download className="w-3 h-3" />
+                                                )}
+                                                <span>Tải về xem</span>
+                                              </button>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Link đề bài ngoài bổ sung */}
+                                    {(session.assignmentExternalUrl || (!session.assignmentFiles?.length && session.assignmentFileUrl)) && (
+                                      <div className="mt-2">
+                                        <a
+                                          href={session.assignmentExternalUrl || session.assignmentFileUrl}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-blue-700 font-bold hover:bg-blue-50 border border-blue-200 rounded-xl shadow-2xs transition-all text-xs"
+                                        >
+                                          <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
+                                          <span>Đề bài link ngoài / bổ sung</span>
+                                        </a>
+                                      </div>
+                                    )}
+
+                                    {/* Hạn nộp bài tập */}
+                                    {session.assignmentDueAt && (
+                                      <div className="mt-2.5 flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-emerald-100/60 px-3 py-1.5 rounded-xl border border-emerald-200/70 inline-flex">
+                                        <Clock className="w-3.5 h-3.5 text-emerald-700" />
+                                        <span>
+                                          Hạn nộp bài: <strong className="text-emerald-950 font-black">{new Date(session.assignmentDueAt).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}</strong>
+                                        </span>
+                                      </div>
                                     )}
                                   </div>
-
-                                  {/* Nội dung đề bài & hướng dẫn chi tiết */}
-                                  {session.assignmentDescription && (
-                                    <div className="mt-2 p-3 bg-white/95 rounded-xl border border-emerald-200/80 shadow-2xs">
-                                      <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1 flex items-center gap-1">
-                                        <FileText className="w-3 h-3 text-emerald-600" />
-                                        Nội dung đề bài & hướng dẫn:
-                                      </div>
-                                      <p className="text-slate-800 text-xs leading-relaxed whitespace-pre-wrap font-medium">
-                                        {session.assignmentDescription}
-                                      </p>
-                                    </div>
-                                  )}
-
-                                  {/* File đề bài đính kèm */}
-                                  {session.assignmentFiles && session.assignmentFiles.length > 0 && (
-                                    <div className="mt-2.5">
-                                      <div className="text-[11px] font-bold text-slate-600 mb-1.5 flex items-center gap-1">
-                                        <Download className="w-3 h-3 text-blue-600" />
-                                        <span>File đề bài đính kèm ({session.assignmentFiles.length} file):</span>
-                                      </div>
-                                      <div className="flex flex-wrap items-center gap-2">
-                                        {session.assignmentFiles.map((file) => (
-                                          <div
-                                            key={file.id}
-                                            className="inline-flex items-center justify-between gap-2.5 px-3 py-1.5 bg-white text-slate-800 font-bold border border-blue-200 rounded-xl shadow-2xs hover:border-blue-300 text-xs transition-all"
-                                          >
-                                            <div className="flex items-center gap-1.5 truncate max-w-[220px]">
-                                              <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                                              <span className="truncate">{file.fileName}</span>
-                                              <span className="text-[10px] text-slate-400 font-normal">({formatFileSize(file.fileSize)})</span>
-                                            </div>
-                                            <button
-                                              type="button"
-                                              onClick={() => handleDownloadSessionFile(session.id, file.id)}
-                                              disabled={downloadingSessionFileId === file.id}
-                                              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-black flex items-center gap-1 shadow-xs active:scale-95 cursor-pointer shrink-0"
-                                            >
-                                              {downloadingSessionFileId === file.id ? (
-                                                <Loader2 className="w-3 h-3 animate-spin" />
-                                              ) : (
-                                                <Download className="w-3 h-3" />
-                                              )}
-                                              <span>Tải về xem</span>
-                                            </button>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* Link đề bài ngoài bổ sung */}
-                                  {(session.assignmentExternalUrl || (!session.assignmentFiles?.length && session.assignmentFileUrl)) && (
-                                    <div className="mt-2">
-                                      <a
-                                        href={session.assignmentExternalUrl || session.assignmentFileUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-blue-700 font-bold hover:bg-blue-50 border border-blue-200 rounded-xl shadow-2xs transition-all text-xs"
-                                      >
-                                        <ExternalLink className="w-3.5 h-3.5 text-blue-600" />
-                                        <span>Đề bài link ngoài / bổ sung</span>
-                                      </a>
-                                    </div>
-                                  )}
-
-                                  {/* Hạn nộp bài tập */}
-                                  {session.assignmentDueAt && (
-                                    <div className="mt-2.5 flex items-center gap-1.5 text-xs font-bold text-slate-700 bg-emerald-100/60 px-3 py-1.5 rounded-xl border border-emerald-200/70 inline-flex">
-                                      <Clock className="w-3.5 h-3.5 text-emerald-700" />
-                                      <span>
-                                        Hạn nộp bài: <strong className="text-emerald-950 font-black">{new Date(session.assignmentDueAt).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })}</strong>
-                                      </span>
-                                    </div>
-                                  )}
                                 </div>
-                              </div>
                               )}
 
                               {/* 2. Phần Slide Bài Giảng & Tài Liệu Buổi Học */}
@@ -2414,11 +2434,10 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                   ) : (
                                     <button
                                       onClick={() => navigate(`/my-homework?classId=${classRoomId}&sessionId=${session.id}`)}
-                                      className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md shrink-0 active:scale-95 ${
-                                        hasSubmittedHomework
+                                      className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all shadow-md shrink-0 active:scale-95 ${hasSubmittedHomework
                                           ? "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200"
                                           : "bg-indigo-600 hover:bg-indigo-700 text-white ring-2 ring-indigo-300"
-                                      }`}
+                                        }`}
                                     >
                                       <UploadCloud className="w-4 h-4" />
                                       <span>{hasSubmittedHomework ? "Sửa / Nộp Lại Bài Tập" : "Nộp Bài Tập"}</span>
@@ -2508,17 +2527,16 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                               <button
                                 disabled={!active || actionLoading}
                                 onClick={() => handleTutorDirectCheckin(session.id)}
-                                className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
-                                  active
+                                className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${active
                                     ? "bg-emerald-600 hover:bg-emerald-700 text-white animate-bounce"
                                     : "bg-slate-200 text-slate-400 cursor-not-allowed"
-                                }`}
+                                  }`}
                                 title={
                                   active
                                     ? "Bấm để điểm danh vào dạy"
                                     : isSessionPastEndTime(session)
-                                    ? "Khung giờ dạy " + session.startTime + " - " + session.endTime + " đã kết thúc. Đang chờ hệ thống chốt buổi."
-                                    : "Chỉ mở điểm danh trong khung giờ học " + session.startTime + " - " + session.endTime
+                                      ? "Khung giờ dạy " + session.startTime + " - " + session.endTime + " đã kết thúc. Đang chờ hệ thống chốt buổi."
+                                      : "Chỉ mở điểm danh trong khung giờ học " + session.startTime + " - " + session.endTime
                                 }
                               >
                                 <CheckCircle2 className="w-4 h-4" />
@@ -2555,17 +2573,16 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                                   <button
                                     disabled={!active || actionLoading}
                                     onClick={() => handleStudentCheckin(session.id)}
-                                    className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${
-                                      active
+                                    className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm ${active
                                         ? "bg-emerald-600 hover:bg-emerald-700 text-white animate-bounce ring-2 ring-emerald-400 ring-offset-1"
                                         : "bg-slate-200 text-slate-400 cursor-not-allowed"
-                                    }`}
+                                      }`}
                                     title={
                                       active
                                         ? "Bấm để điểm danh vào học và nhận link phòng học"
                                         : isSessionPastEndTime(session)
-                                        ? "Khung giờ điểm danh " + session.startTime + " - " + session.endTime + " đã kết thúc. Đang chờ hệ thống chốt buổi."
-                                        : "Chỉ mở điểm danh trong khung giờ học " + session.startTime + " - " + session.endTime
+                                          ? "Khung giờ điểm danh " + session.startTime + " - " + session.endTime + " đã kết thúc. Đang chờ hệ thống chốt buổi."
+                                          : "Chỉ mở điểm danh trong khung giờ học " + session.startTime + " - " + session.endTime
                                     }
                                   >
                                     <CheckCircle2 className="w-4 h-4" />
@@ -2875,118 +2892,136 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                 <h4 className="mb-3 text-[11px] font-black uppercase tracking-wide text-slate-500">
                   Bài tập về nhà
                 </h4>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Tiêu đề bài tập về nhà
-                </label>
-                <input
-                  type="text"
-                  value={assignmentTitle}
-                  onChange={(e) => setAssignmentTitle(e.target.value)}
-                  placeholder="Ví dụ: Giải 5 bài toán thực hành chương 1"
-                  className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="mt-3">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Mô tả chi tiết yêu cầu bài tập
-                </label>
-                <textarea
-                  rows={4}
-                  value={assignmentDesc}
-                  onChange={(e) => setAssignmentDesc(e.target.value)}
-                  placeholder="Nhập hướng dẫn làm bài, yêu cầu nộp bài..."
-                  className="min-h-[96px] w-full resize-y rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-
-              <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-              {/* Assignment files (up to 5 files) */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-800">
-                    File bài tập đính kèm (Tối đa 5 file):
-                  </label>
-                  <span className="text-[11px] font-bold text-slate-500">
-                    {(editingSession.assignmentFiles?.length || 0)}/5 file
-                  </span>
-                </div>
-
-                {editingSession.assignmentFiles && editingSession.assignmentFiles.length > 0 && (
-                  <div className="space-y-1 max-h-32 overflow-y-auto">
-                    {editingSession.assignmentFiles.map((file) => (
-                      <div key={file.id} className="flex items-center justify-between p-1.5 rounded-lg bg-white border border-slate-200 text-xs">
-                        <span className="truncate text-slate-700 font-semibold">{file.fileName} ({formatFileSize(file.fileSize)})</span>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteSessionFile(editingSession.id, file.id, "ASSIGNMENT")}
-                          className="text-rose-600 hover:text-rose-800 text-xs font-bold px-1"
-                        >
-                          Xóa
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {(editingSession.assignmentFiles?.length || 0) < 5 && (
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <input
-                      type="file"
-                      multiple
-                      onChange={(e) => {
-                        if (e.target.files) {
-                          const files = Array.from(e.target.files);
-                          const remaining = 5 - (editingSession.assignmentFiles?.length || 0);
-                          if (files.length > remaining) {
-                            alert(`Chỉ được tải thêm tối đa ${remaining} file.`);
-                            setSelectedAssignmentFiles(files.slice(0, remaining));
-                          } else {
-                            setSelectedAssignmentFiles(files);
-                          }
-                        }
-                      }}
-                      className="min-w-0 flex-1 text-xs text-slate-600 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white cursor-pointer"
-                    />
-                    {selectedAssignmentFiles.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={handleUploadAssignmentFiles}
-                        disabled={uploadingSessionFiles}
-                        className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1 shrink-0"
-                      >
-                        {uploadingSessionFiles ? <Loader2 className="w-3 h-3 animate-spin" /> : <UploadCloud className="w-3 h-3" />}
-                        Tải {selectedAssignmentFiles.length} file
-                      </button>
-                    )}
-                  </div>
-                )}
-
                 <div>
-                  <label className="block text-[11px] text-slate-500 mb-0.5">Link đề bài ngoài bổ sung (tùy chọn):</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Tiêu đề bài tập về nhà <span className="text-rose-500 font-bold">*</span>
+                  </label>
                   <input
                     type="text"
-                    value={assignmentFileUrl}
-                    onChange={(e) => setAssignmentFileUrl(e.target.value)}
-                    placeholder="https://drive.google.com/..."
-                    className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs"
+                    value={assignmentTitle}
+                    onChange={(e) => setAssignmentTitle(e.target.value)}
+                    placeholder="Ví dụ: Giải 5 bài toán thực hành chương 1"
+                    className={`w-full rounded-lg border px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 ${!isAssignmentTitleValid && assignmentTitle.length > 0
+                        ? "border-rose-400 bg-rose-50/30"
+                        : "border-slate-300"
+                      }`}
                   />
                 </div>
-              </div>
 
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Hạn nộp bài tập
-                </label>
-                <input
-                  type="datetime-local"
-                  value={assignmentDueAt}
-                  onChange={(e) => setAssignmentDueAt(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
-              </div>
+                <div className="mt-3">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Mô tả chi tiết yêu cầu bài tập <span className="text-rose-500 font-bold">*</span>
+                  </label>
+                  <textarea
+                    rows={4}
+                    value={assignmentDesc}
+                    onChange={(e) => setAssignmentDesc(e.target.value)}
+                    placeholder="Nhập hướng dẫn làm bài, yêu cầu nộp bài..."
+                    className={`min-h-[96px] w-full resize-y rounded-lg border px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 ${!isAssignmentDescValid && assignmentDesc.length > 0
+                        ? "border-rose-400 bg-rose-50/30"
+                        : "border-slate-300"
+                      }`}
+                  />
+                </div>
+
+                <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+                  {/* Assignment files (up to 5 files) */}
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-800">
+                        File bài tập đính kèm (Tối đa 5 file):
+                      </label>
+                      <span className="text-[11px] font-bold text-slate-500">
+                        {(editingSession.assignmentFiles?.length || 0)}/5 file
+                      </span>
+                    </div>
+
+                    {editingSession.assignmentFiles && editingSession.assignmentFiles.length > 0 && (
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {editingSession.assignmentFiles.map((file) => (
+                          <div key={file.id} className="flex items-center justify-between p-1.5 rounded-lg bg-white border border-slate-200 text-xs">
+                            <span className="truncate text-slate-700 font-semibold">{file.fileName} ({formatFileSize(file.fileSize)})</span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSessionFile(editingSession.id, file.id, "ASSIGNMENT")}
+                              className="text-rose-600 hover:text-rose-800 text-xs font-bold px-1"
+                            >
+                              Xóa
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {(editingSession.assignmentFiles?.length || 0) < 5 && (
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                        <input
+                          type="file"
+                          multiple
+                          onChange={(e) => {
+                            if (e.target.files) {
+                              const files = Array.from(e.target.files);
+                              const remaining = 5 - (editingSession.assignmentFiles?.length || 0);
+                              if (files.length > remaining) {
+                                alert(`Chỉ được tải thêm tối đa ${remaining} file.`);
+                                setSelectedAssignmentFiles(files.slice(0, remaining));
+                              } else {
+                                setSelectedAssignmentFiles(files);
+                              }
+                            }
+                          }}
+                          className="min-w-0 flex-1 text-xs text-slate-600 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white cursor-pointer"
+                        />
+                        {selectedAssignmentFiles.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleUploadAssignmentFiles}
+                            disabled={uploadingSessionFiles}
+                            className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition flex items-center gap-1 shrink-0"
+                          >
+                            {uploadingSessionFiles ? <Loader2 className="w-3 h-3 animate-spin" /> : <UploadCloud className="w-3 h-3" />}
+                            Tải {selectedAssignmentFiles.length} file
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="block text-[11px] text-slate-500 mb-0.5">Link đề bài ngoài bổ sung (tùy chọn):</label>
+                      <input
+                        type="text"
+                        value={assignmentFileUrl}
+                        onChange={(e) => setAssignmentFileUrl(e.target.value)}
+                        placeholder="https://drive.google.com/..."
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Hạn nộp bài tập <span className="text-rose-500 font-bold">*</span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      min={sessionStartMin}
+                      value={assignmentDueAt}
+                      onChange={(e) => setAssignmentDueAt(e.target.value)}
+                      className={`w-full rounded-lg border px-3 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 ${isDeadlineBeforeSession
+                          ? "border-rose-400 bg-rose-50/50"
+                          : "border-slate-300"
+                        }`}
+                    />
+                    {isDeadlineBeforeSession && (
+                      <p className="mt-1.5 flex items-center gap-1 text-xs font-semibold text-rose-600">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        <span>
+                          Hạn nộp phải từ thời gian buổi học trở đi ({editingSession.sessionDate} {(editingSession.startTime || "").slice(0, 5)}).
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                </div>
               </section>
 
               {/* Lecture slides / materials */}
@@ -2995,103 +3030,122 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                   Tài liệu buổi học
                 </h4>
                 <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.75fr)]">
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-800">
-                    Slide / Bài giảng buổi học:
-                  </label>
-                  <span className="text-[11px] font-bold text-slate-500">
-                    {editingSession.materialFiles?.length || 0} file
-                  </span>
-                </div>
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-800">
+                        Slide / Bài giảng buổi học:
+                      </label>
+                      <span className="text-[11px] font-bold text-slate-500">
+                        {editingSession.materialFiles?.length || 0} file
+                      </span>
+                    </div>
 
-                {editingSession.materialFiles && editingSession.materialFiles.length > 0 && (
-                  <div className="space-y-1 max-h-32 overflow-y-auto">
-                    {editingSession.materialFiles.map((file) => (
-                      <div key={file.id} className="flex items-center justify-between p-1.5 rounded-lg bg-white border border-slate-200 text-xs">
-                        <span className="truncate text-slate-700 font-semibold">{file.fileName} ({formatFileSize(file.fileSize)})</span>
+                    {editingSession.materialFiles && editingSession.materialFiles.length > 0 && (
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {editingSession.materialFiles.map((file) => (
+                          <div key={file.id} className="flex items-center justify-between p-1.5 rounded-lg bg-white border border-slate-200 text-xs">
+                            <span className="truncate text-slate-700 font-semibold">{file.fileName} ({formatFileSize(file.fileSize)})</span>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSessionFile(editingSession.id, file.id, "MATERIAL")}
+                              className="text-rose-600 hover:text-rose-800 text-xs font-bold px-1"
+                            >
+                              Xóa
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <input
+                        type="file"
+                        multiple
+                        onChange={(e) => {
+                          if (e.target.files) {
+                            setSelectedMaterialFiles(Array.from(e.target.files));
+                          }
+                        }}
+                        className="min-w-0 flex-1 text-xs text-slate-600 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
+                      />
+                      {selectedMaterialFiles.length > 0 && (
                         <button
                           type="button"
-                          onClick={() => handleDeleteSessionFile(editingSession.id, file.id, "MATERIAL")}
-                          className="text-rose-600 hover:text-rose-800 text-xs font-bold px-1"
+                          onClick={handleUploadMaterialFiles}
+                          disabled={uploadingSessionFiles}
+                          className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1 shrink-0"
                         >
-                          Xóa
+                          {uploadingSessionFiles ? <Loader2 className="w-3 h-3 animate-spin" /> : <UploadCloud className="w-3 h-3" />}
+                          Tải {selectedMaterialFiles.length} file
                         </button>
-                      </div>
-                    ))}
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] text-slate-500 mb-0.5">Link slide ngoài bổ sung (tùy chọn):</label>
+                      <input
+                        type="text"
+                        value={assignmentMaterialUrl}
+                        onChange={(e) => setAssignmentMaterialUrl(e.target.value)}
+                        placeholder="https://drive.google.com/..."
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs"
+                      />
+                    </div>
+
                   </div>
-                )}
 
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <input
-                    type="file"
-                    multiple
-                    onChange={(e) => {
-                      if (e.target.files) {
-                        setSelectedMaterialFiles(Array.from(e.target.files));
-                      }
-                    }}
-                    className="min-w-0 flex-1 text-xs text-slate-600 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-emerald-600 file:text-white cursor-pointer"
-                  />
-                  {selectedMaterialFiles.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleUploadMaterialFiles}
-                      disabled={uploadingSessionFiles}
-                      className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1 shrink-0"
-                    >
-                      {uploadingSessionFiles ? <Loader2 className="w-3 h-3 animate-spin" /> : <UploadCloud className="w-3 h-3" />}
-                      Tải {selectedMaterialFiles.length} file
-                    </button>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-500 mb-0.5">Link slide ngoài bổ sung (tùy chọn):</label>
-                  <input
-                    type="text"
-                    value={assignmentMaterialUrl}
-                    onChange={(e) => setAssignmentMaterialUrl(e.target.value)}
-                    placeholder="https://drive.google.com/..."
-                    className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs"
-                  />
-                </div>
-
-              </div>
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Ghi chú tài liệu buổi học</label>
-                <textarea
-                  rows={5}
-                  value={assignmentMaterialDesc}
-                  onChange={(e) => setAssignmentMaterialDesc(e.target.value)}
-                  placeholder="Ví dụ: Đọc từ trang 12 đến 25..."
-                  className="min-h-[112px] w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Ghi chú tài liệu buổi học</label>
+                    <textarea
+                      rows={5}
+                      value={assignmentMaterialDesc}
+                      onChange={(e) => setAssignmentMaterialDesc(e.target.value)}
+                      placeholder="Ví dụ: Đọc từ trang 12 đến 25..."
+                      className="min-h-[112px] w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
                 </div>
               </section>
             </div>
 
-            <div className="flex shrink-0 justify-end gap-2.5 border-t border-slate-200 bg-white px-5 py-4 sm:px-6">
-              <button
-                onClick={() => {
-                  setShowAssignmentModal(false);
-                  setLessonDraft(null);
-                  setLessonDraftError("");
-                }}
-                className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100"
-              >
-                Hủy
-              </button>
-              <button
-                disabled={actionLoading}
-                onClick={handleSaveSessionDetails}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-md flex items-center gap-1.5"
-              >
-                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                <span>Lưu Buổi Học</span>
-              </button>
+            <div className="flex shrink-0 flex-col gap-3 border-t border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <div className="text-xs">
+                {!isSessionAssignmentFormValid && (
+                  <span className="flex items-center gap-1.5 font-medium text-amber-600">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>Bắt buộc nhập: Tiêu đề, Mô tả và Hạn nộp bài tập (từ thời gian buổi học trở đi).</span>
+                  </span>
+                )}
+              </div>
+              <div className="flex justify-end gap-2.5">
+                <button
+                  onClick={() => {
+                    setShowAssignmentModal(false);
+                    setLessonDraft(null);
+                    setLessonDraftError("");
+                  }}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  Hủy
+                </button>
+                <button
+                  disabled={actionLoading || !isSessionAssignmentFormValid}
+                  onClick={handleSaveSessionDetails}
+                  className={`px-5 py-2 rounded-lg text-xs font-semibold shadow-md flex items-center gap-1.5 transition-all ${
+                    actionLoading || !isSessionAssignmentFormValid
+                      ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none"
+                      : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-md cursor-pointer"
+                  }`}
+                  title={
+                    !isSessionAssignmentFormValid
+                      ? "Vui lòng nhập đầy đủ tiêu đề, mô tả và thời hạn nộp bài tập hợp lệ để lưu"
+                      : undefined
+                  }
+                >
+                  {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  <span>Lưu Buổi Học</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -3300,11 +3354,10 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                       </span>
                     )}
                     {currentUserRole === "TUTOR" && (
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
-                        isTutorCheckedIn
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${isTutorCheckedIn
                           ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
                           : "bg-amber-100 text-amber-800 border border-amber-300"
-                      }`}>
+                        }`}>
                         <CheckCircle2 className={`w-3 h-3 ${isTutorCheckedIn ? "text-emerald-600" : "text-amber-600"}`} />
                         <span>Gia sư: {isTutorCheckedIn ? "Đã điểm danh vào dạy" : "Chưa điểm danh vào dạy"}</span>
                       </span>
@@ -3349,11 +3402,10 @@ export const ClassSessionsTimeline: React.FC<Props> = ({
                     return (
                       <div
                         key={att.id}
-                        className={`p-3.5 rounded-xl border transition-all ${
-                          isPresent
+                        className={`p-3.5 rounded-xl border transition-all ${isPresent
                             ? "bg-emerald-50/90 border-emerald-300 shadow-xs"
                             : "bg-slate-50 border-slate-200 opacity-90"
-                        }`}
+                          }`}
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">

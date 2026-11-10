@@ -181,6 +181,12 @@ public class SessionAttendanceService {
         if (session.isSubmissionRequired() && session.getAssignmentDueAt() == null) {
             throw new BadRequestException("Can nop bai thi bat buoc phai co han nop.");
         }
+        if (session.getAssignmentDueAt() != null && session.getSessionDate() != null && session.getStartTime() != null) {
+            LocalDateTime sessionStartDateTime = LocalDateTime.of(session.getSessionDate(), session.getStartTime());
+            if (session.getAssignmentDueAt().isBefore(sessionStartDateTime)) {
+                throw new BadRequestException("Hạn nộp bài tập phải từ thời gian buổi học trở đi, không được trước buổi học.");
+            }
+        }
         if (request.materialUrl() != null) {
             session.setMaterialUrl(request.materialUrl().trim());
         }
