@@ -8,6 +8,7 @@ import iuh.fit.learning_service.entity.EnrollmentRequest;
 import iuh.fit.learning_service.enums.AttendanceOutcome;
 import iuh.fit.learning_service.enums.ClassSessionStatus;
 import iuh.fit.learning_service.enums.EnrollmentRequestStatus;
+import iuh.fit.learning_service.exception.BadRequestException;
 import iuh.fit.learning_service.exception.ForbiddenException;
 import iuh.fit.learning_service.messaging.LearningEventPublisher;
 import iuh.fit.learning_service.repository.ClassRoomRepository;
@@ -105,6 +106,101 @@ class SessionAttendanceServiceTest {
         session.setMaterialDescription("Mục tiêu:\n- Ôn tập hàm số");
         session.setStatus(ClassSessionStatus.SCHEDULED);
         session.setCreatedAt(LocalDateTime.now().minusDays(2));
+    }
+
+    @Test
+    @DisplayName("updateSessionDetails requires assignment title, description and deadline")
+    void updateSessionDetailsRequiresAllMandatoryAssignmentFields() {
+        session.setSessionDate(LocalDate.of(2026, 11, 10));
+        when(classSessionRepository.findById(1L)).thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> sessionAttendanceService.updateSessionDetails(
+                1L,
+                "tutor@edu.vn",
+                updateDetailsRequest("   ", "Làm bài 1-5", LocalDateTime.of(2026, 11, 10, 10, 0))))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Tiêu đề bài tập là bắt buộc.");
+
+        session.setAssignmentTitle("Bài tập chương 1");
+        assertThatThrownBy(() -> sessionAttendanceService.updateSessionDetails(
+                1L,
+                "tutor@edu.vn",
+                updateDetailsRequest("Bài tập chương 1", "   ", LocalDateTime.of(2026, 11, 10, 10, 0))))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Mô tả bài tập là bắt buộc.");
+
+        session.setAssignmentDescription("Làm bài 1-5");
+        session.setAssignmentDueAt(null);
+        assertThatThrownBy(() -> sessionAttendanceService.updateSessionDetails(
+                1L,
+                "tutor@edu.vn",
+                updateDetailsRequest("Bài tập chương 1", "Làm bài 1-5", null)))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage("Hạn nộp bài tập là bắt buộc.");
+
+        verify(classSessionRepository, never()).save(any(ClassSession.class));
+    }
+
+    @Test
+    @DisplayName("updateSessionDetails accepts deadline at session start and keeps optional resources empty")
+    void updateSessionDetailsAcceptsDeadlineAtSessionStart() {
+        session.setSessionDate(LocalDate.of(2026, 11, 10));
+        session.setAssignmentFileUrl(null);
+        LocalDateTime sessionStart = LocalDateTime.of(2026, 11, 10, 8, 0);
+        when(classSessionRepository.findById(1L)).thenReturn(Optional.of(session));
+        when(classSessionRepository.save(any(ClassSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        sessionAttendanceService.updateSessionDetails(
+                1L,
+                "tutor@edu.vn",
+                updateDetailsRequest(" Bài tập chương 1 ", " Làm bài 1-5 ", sessionStart));
+
+        assertThat(session.getAssignmentTitle()).isEqualTo("Bài tập chương 1");
+        assertThat(session.getAssignmentDescription()).isEqualTo("Làm bài 1-5");
+        assertThat(session.getAssignmentDueAt()).isEqualTo(sessionStart);
+        assertThat(session.getAssignmentFileUrl()).isNull();
+        assertThat(session.getAssignmentExternalUrl()).isNull();
+        assertThat(session.getMaterialUrl()).isNull();
+        verify(classSessionRepository).save(session);
+    }
+
+    @Test
+    @DisplayName("updateSessionDetails rejects deadline before session start")
+    void updateSessionDetailsRejectsDeadlineBeforeSessionStart() {
+        session.setSessionDate(LocalDate.of(2026, 11, 10));
+        when(classSessionRepository.findById(1L)).thenReturn(Optional.of(session));
+
+        assertThatThrownBy(() -> sessionAttendanceService.updateSessionDetails(
+                1L,
+                "tutor@edu.vn",
+                updateDetailsRequest(
+                        "Bài tập chương 1",
+                        "Làm bài 1-5",
+                        LocalDateTime.of(2026, 11, 10, 7, 59))))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("không được trước buổi học");
+
+        verify(classSessionRepository, never()).save(any(ClassSession.class));
+    }
+
+    private ClassSessionDtos.UpdateSessionDetailsRequest updateDetailsRequest(
+            String title,
+            String description,
+            LocalDateTime dueAt
+    ) {
+        return new ClassSessionDtos.UpdateSessionDetailsRequest(
+                session.getTopic(),
+                title,
+                description,
+                null,
+                dueAt,
+                true,
+                true,
+                null,
+                null,
+                null,
+                null
+        );
     }
 
     @Test

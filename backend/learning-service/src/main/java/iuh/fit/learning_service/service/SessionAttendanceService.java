@@ -178,8 +178,23 @@ public class SessionAttendanceService {
         if (request.lateSubmissionAllowed() != null) {
             session.setLateSubmissionAllowed(Boolean.TRUE.equals(request.lateSubmissionAllowed()));
         }
-        if (session.isSubmissionRequired() && session.getAssignmentDueAt() == null) {
-            throw new BadRequestException("Can nop bai thi bat buoc phai co han nop.");
+        if (session.getAssignmentTitle() == null || session.getAssignmentTitle().isBlank()) {
+            throw new BadRequestException("Tiêu đề bài tập là bắt buộc.");
+        }
+        if (session.getAssignmentDescription() == null || session.getAssignmentDescription().isBlank()) {
+            throw new BadRequestException("Mô tả bài tập là bắt buộc.");
+        }
+        if (session.getAssignmentDueAt() == null) {
+            throw new BadRequestException("Hạn nộp bài tập là bắt buộc.");
+        }
+        if (session.getSessionDate() != null && session.getStartTime() != null) {
+            LocalDateTime sessionStartDateTime = LocalDateTime.of(
+                    session.getSessionDate(),
+                    LocalTime.parse(session.getStartTime())
+            );
+            if (session.getAssignmentDueAt().isBefore(sessionStartDateTime)) {
+                throw new BadRequestException("Hạn nộp bài tập phải từ thời gian buổi học trở đi, không được trước buổi học.");
+            }
         }
         if (request.materialUrl() != null) {
             session.setMaterialUrl(request.materialUrl().trim());
