@@ -164,6 +164,25 @@ class TutorMatchingSecurityTest {
     }
 
     @Test
+    void studentCanUseBackwardCompatibleConstraintModes() throws Exception {
+        when(candidateClient.findCandidates(eq(SUBJECT_ID), eq(LEVEL_ID), eq(TeachingMode.ONLINE)))
+                .thenReturn(List.of(candidate()));
+        String body = requestBody().replace(
+                "\n}",
+                ",\n  \"scheduleConstraintMode\": \"HARD\",\n  \"budgetConstraintMode\": \"HARD\"\n}");
+
+        mockMvc.perform(post("/api/ai/matching/tutors")
+                        .with(csrf())
+                        .cookie(accessToken("student@gmail.com", "STUDENT", List.of("STUDENT")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.input.scheduleConstraintMode").value("HARD"))
+                .andExpect(jsonPath("$.input.budgetConstraintMode").value("HARD"))
+                .andExpect(jsonPath("$.constraintFiltering.scheduleMode").value("HARD"));
+    }
+
+    @Test
     void authenticatedStaffReceives403() throws Exception {
         mockMvc.perform(post("/api/ai/matching/tutors")
                         .with(csrf())

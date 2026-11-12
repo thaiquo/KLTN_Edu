@@ -26,6 +26,7 @@ import { terminationsApi, TerminationView } from "../../../api/terminationsApi";
 import { useAuth } from "../../../hooks/useAuth";
 import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
 import { fetchUserDirectory, getUserDisplayName, UserSummary } from "../../../utils/userDisplay";
+import { buildActionQueueSnapshot } from "./actionCenterState";
 
 interface StaffActionCenterProps {
   onNavigate: (page: string, subtab?: string) => void;
@@ -47,7 +48,8 @@ interface UrgentItem {
   targetSubtab?: string;
 }
 
-const pageItems = (value: any) => Array.isArray(value?.content) ? value.content : Array.isArray(value) ? value : [];
+type QueueKey = "tutors" | "teaching" | "classes" | "disputes" | "terminations";
+type QueueTotals = Record<QueueKey, number | null>;
 
 export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
   const { user } = useAuth();
@@ -56,6 +58,10 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [queueErrors, setQueueErrors] = useState<Partial<Record<QueueKey, string>>>({});
+  const [queueTotals, setQueueTotals] = useState<QueueTotals>({
+    tutors: null, teaching: null, classes: null, disputes: null, terminations: null
+  });
   const [users, setUsers] = useState<UserSummary[]>([]);
 
   // Raw pending lists
@@ -72,28 +78,28 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
     }
     setError("");
     try {
-      const [
-        userList,
-        tutorPendingList,
-        teachingPendingList,
-        classList,
-        disputePage,
-        terminationPage
-      ] = await Promise.all([
+      const results = await Promise.allSettled([
         fetchUserDirectory(),
-        staffTutorApi.pending({ page: 0, size: 10 }).catch(() => ({ content: [] })),
-        teachingRegistrationApi.adminPending({ page: 0, size: 10 }).catch(() => ({ content: [] })),
-        classApi.adminGetAllClasses({ page: 0, size: 10, status: "PENDING_APPROVAL" }).catch(() => ({ content: [] })),
-        contractsApi.listDisputes({ statusGroup: "PENDING", page: 0, size: 10 }).catch(() => ({ content: [] })),
-        terminationsApi.page({ page: 0, size: 10 }).catch(() => ({ content: [] }))
+        staffTutorApi.pending({ page: 0, size: 10 }),
+        teachingRegistrationApi.adminPending({ page: 0, size: 10 }),
+        classApi.adminGetAllClasses({ page: 0, size: 10, status: "PENDING_APPROVAL" }),
+        contractsApi.listDisputes({ statusGroup: "PENDING", page: 0, size: 10 }),
+        terminationsApi.page({ page: 0, size: 10, statusGroup: "PENDING" })
       ]);
+      const [usersResult, tutorsResult, teachingResult, classesResult, disputesResult, terminationsResult] = results;
+      setUsers(usersResult.status === "fulfilled" && Array.isArray(usersResult.value) ? usersResult.value : []);
 
-      setUsers(Array.isArray(userList) ? userList : []);
-      setPendingTutors(pageItems(tutorPendingList));
-      setPendingTeaching(pageItems(teachingPendingList));
-      setClasses(pageItems(classList));
-      setDisputes(Array.isArray(disputePage?.content) ? disputePage.content : Array.isArray(disputePage) ? disputePage : []);
-      setTerminations(pageItems(terminationPage));
+      const snapshot = buildActionQueueSnapshot([
+        tutorsResult, teachingResult, classesResult, disputesResult, terminationsResult
+      ]);
+      setPendingTutors(snapshot.items.tutors);
+      setPendingTeaching(snapshot.items.teaching);
+      setClasses(snapshot.items.classes);
+      setDisputes(snapshot.items.disputes);
+      setTerminations(snapshot.items.terminations);
+      setQueueTotals(snapshot.totals as QueueTotals);
+      setQueueErrors(snapshot.errors);
+      if (Object.keys(snapshot.errors).length === 5) setError("Không thể tải các hàng đợi tác nghiệp. Vui lòng thử lại.");
     } catch (err: any) {
       setError(err?.message || "Không thể tải dữ liệu Trung tâm tác nghiệp.");
     } finally {
@@ -284,7 +290,8 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
     });
   }, [activeDisputes, pendingClasses, pendingTeaching, pendingTerminations, pendingTutors, users]);
 
-  const totalPendingWork = pendingTutors.length + pendingTeaching.length + pendingClasses.length + activeDisputes.length + pendingTerminations.length;
+  const knownPendingWork = Object.values(queueTotals).reduce<number>((sum, value) => sum + (value ?? 0), 0);
+  const hasUnavailableQueue = Object.values(queueTotals).some((value) => value == null);
 
   return (
     <div className="min-h-[calc(100vh-96px)] bg-[#f3f6f9] p-0 font-sans text-[#073554]">
@@ -303,7 +310,9 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
           </h1>
           <p className="mt-1 text-xs font-semibold text-slate-500">
             Xin chào <strong className="text-[#073554]">{user?.fullName || staffEmail}</strong>. Bạn hiện có{" "}
-            <strong className="text-rose-600">{loading ? "..." : totalPendingWork} việc</strong> đang chờ xử lý trên 5 nghiệp vụ.
+            <strong className="text-rose-600">
+              {loading ? "..." : hasUnavailableQueue ? `ít nhất ${knownPendingWork} việc` : `${knownPendingWork} việc`}
+            </strong> đang chờ xử lý trên 5 nghiệp vụ.
           </p>
         </div>
 
@@ -326,6 +335,12 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
           <span>{error}</span>
         </div>
       )}
+      {!error && Object.keys(queueErrors).length > 0 && (
+        <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800 shadow-sm">
+          <span>Dữ liệu tải một phần: {Object.keys(queueErrors).length}/5 nguồn chưa khả dụng. Các tổng còn lại vẫn là số liệu thật.</span>
+          <button type="button" onClick={loadAll} className="shrink-0 underline underline-offset-2">Thử lại</button>
+        </div>
+      )}
 
       {/* 5 Core Action Hub Cards */}
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -333,7 +348,8 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         <ActionHubCard
           icon={UserCheck}
           title="Hồ sơ gia sư"
-          count={pendingTutors.length}
+          count={queueTotals.tutors}
+          error={queueErrors.tutors}
           countLabel="hồ sơ chờ duyệt"
           description="Kiểm tra CCCD, hộ chiếu và xác minh danh tính gia sư mới."
           badgeTone="amber"
@@ -346,7 +362,8 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         <ActionHubCard
           icon={BookOpen}
           title="Đăng ký môn dạy"
-          count={pendingTeaching.length}
+          count={queueTotals.teaching}
+          error={queueErrors.teaching}
           countLabel="yêu cầu chờ duyệt"
           description="Bằng cấp chuyên môn, kinh nghiệm và đề xuất môn học mới."
           badgeTone="indigo"
@@ -359,7 +376,8 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         <ActionHubCard
           icon={GraduationCap}
           title="Lớp học mới"
-          count={pendingClasses.length}
+          count={queueTotals.classes}
+          error={queueErrors.classes}
           countLabel="lớp chờ phê duyệt"
           description="Đối soát học phí, lộ trình giáo trình và lịch học trực tuyến/trực tiếp."
           badgeTone="emerald"
@@ -372,7 +390,8 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         <ActionHubCard
           icon={ShieldAlert}
           title="Quản lý khiếu nại"
-          count={activeDisputes.length}
+          count={queueTotals.disputes}
+          error={queueErrors.disputes}
           countLabel="khiếu nại đang mở"
           description="Xử lý tranh chấp buổi học, xem giải trình gia sư và phán quyết Escrow."
           badgeTone="rose"
@@ -385,7 +404,8 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         <ActionHubCard
           icon={ShieldCheck}
           title="Hồ sơ dừng hợp đồng"
-          count={pendingTerminations.length}
+          count={queueTotals.terminations}
+          error={queueErrors.terminations}
           countLabel="hồ sơ đang theo dõi"
           description="Theo dõi hồ sơ chấm dứt của lớp được phân công; Admin trực tiếp xử lý và quyết định."
           badgeTone="purple"
@@ -509,27 +529,27 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
 
               <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-center">
                 <p className="text-[10px] font-black uppercase text-slate-400">Tổng việc tồn</p>
-                <p className="mt-1 text-2xl font-black text-rose-600">{totalPendingWork}</p>
-                <p className="text-[10px] text-slate-500 font-semibold mt-0.5">cần giải quyết</p>
+                <p className="mt-1 text-2xl font-black text-rose-600">{hasUnavailableQueue ? `${knownPendingWork}+` : knownPendingWork}</p>
+                <p className="text-[10px] text-slate-500 font-semibold mt-0.5">{hasUnavailableQueue ? "một số nguồn chưa tải" : "cần giải quyết"}</p>
               </div>
             </div>
 
             <div className="pt-2 border-t border-slate-100 space-y-2 text-xs font-semibold text-slate-600">
               <div className="flex items-center justify-between">
                 <span>Hồ sơ CCCD chờ duyệt:</span>
-                <strong className="text-slate-900">{pendingTutors.length}</strong>
+                <strong className="text-slate-900">{queueTotals.tutors ?? "--"}</strong>
               </div>
               <div className="flex items-center justify-between">
                 <span>Lớp học chờ duyệt:</span>
-                <strong className="text-slate-900">{pendingClasses.length}</strong>
+                <strong className="text-slate-900">{queueTotals.classes ?? "--"}</strong>
               </div>
               <div className="flex items-center justify-between">
                 <span>Khiếu nại đang mở:</span>
-                <strong className="text-slate-900">{activeDisputes.length}</strong>
+                <strong className="text-slate-900">{queueTotals.disputes ?? "--"}</strong>
               </div>
               <div className="flex items-center justify-between">
                 <span>Thanh lý đang theo dõi:</span>
-                <strong className="text-slate-900">{pendingTerminations.length}</strong>
+                <strong className="text-slate-900">{queueTotals.terminations ?? "--"}</strong>
               </div>
             </div>
 
@@ -579,17 +599,19 @@ function ActionHubCard({
   badgeTone,
   actionLabel,
   onClick,
-  loading
+  loading,
+  error
 }: {
   icon: any;
   title: string;
-  count: number;
+  count: number | null;
   countLabel: string;
   description: string;
   badgeTone: "amber" | "indigo" | "emerald" | "rose" | "purple";
   actionLabel: string;
   onClick: () => void;
   loading: boolean;
+  error?: string;
 }) {
   const toneClasses = {
     amber: "border-amber-200 bg-amber-50/30 text-amber-900 hover:border-amber-400",
@@ -615,13 +637,15 @@ function ActionHubCard({
             <Icon className="h-5 w-5" />
           </div>
           <span className={`rounded-full px-2.5 py-0.5 text-xs font-black ${badgeClasses}`}>
-            {loading ? "..." : count}
+            {loading ? "..." : error ? "!" : count ?? "--"}
           </span>
         </div>
 
         <div>
           <h3 className="font-extrabold text-sm text-[#073554]">{title}</h3>
-          <p className="text-[11px] font-bold text-slate-500 mt-0.5">{loading ? "Đang tải..." : `${count} ${countLabel}`}</p>
+          <p className={`text-[11px] font-bold mt-0.5 ${error ? "text-rose-600" : "text-slate-500"}`}>
+            {loading ? "Đang tải..." : error ? "Không thể tải số liệu" : `${count ?? 0} ${countLabel}`}
+          </p>
         </div>
 
         <p className="text-[11px] text-slate-500 font-medium leading-relaxed">

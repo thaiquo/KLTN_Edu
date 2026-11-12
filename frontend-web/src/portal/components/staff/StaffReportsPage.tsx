@@ -41,7 +41,26 @@ type ActivityItem = {
 
 type DateFilterType = "ALL" | "TODAY" | "THIS_WEEK" | "THIS_MONTH" | "CUSTOM";
 type DomainFilterType = "ALL" | "TUTOR_PROFILES" | "TEACHING_REGISTRATION" | "CLASS_ROOMS" | "DISPUTES" | "TERMINATIONS";
-type OutcomeFilterType = "ALL" | "APPROVED" | "REJECTED" | "PENDING";
+type OutcomeFilterType = "ALL" | "APPROVED" | "REJECTED";
+
+type ReportSummary = {
+  total: number;
+  approved: number;
+  rejected: number;
+  approvalRate: number | null;
+  sourceTotals: Record<string, number>;
+  staffPerformance: Array<{
+    email: string;
+    total: number;
+    approved: number;
+    rejected: number;
+    tutorCount: number;
+    classCount: number;
+    disputeCount: number;
+    terminationCount: number;
+    lastActivityAt?: string | null;
+  }>;
+};
 
 const fmt = (value?: string | null) => (value ? new Date(value).toLocaleString("vi-VN") : "--");
 
@@ -52,14 +71,17 @@ export function StaffReportsPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [partialErrors, setPartialErrors] = useState<string[]>([]);
+  const [exporting, setExporting] = useState(false);
   const [users, setUsers] = useState<UserSummary[]>([]);
 
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [activityTotal, setActivityTotal] = useState(0);
   const [activityPages, setActivityPages] = useState(0);
   const [sourceTotals, setSourceTotals] = useState({ tutors: 0, teaching: 0, classes: 0, disputes: 0, terminations: 0 });
-  const [openDisputesTotal, setOpenDisputesTotal] = useState(0);
-  const [pendingTerminationsTotal, setPendingTerminationsTotal] = useState(0);
+  const [summary, setSummary] = useState<ReportSummary | null>(null);
+  const [openDisputesTotal, setOpenDisputesTotal] = useState<number | null>(null);
+  const [pendingTerminationsTotal, setPendingTerminationsTotal] = useState<number | null>(null);
 
   // Filters
   const [dateFilter, setDateFilter] = useState<DateFilterType>("ALL");
@@ -90,39 +112,54 @@ export function StaffReportsPage() {
   const load = async () => {
     setLoading(true);
     setError("");
+    setPartialErrors([]);
+    const filters = {
+      domain: domainFilter,
+      outcome: outcomeFilter,
+      staff: selectedStaffEmail,
+      search: searchKeyword.trim() || undefined,
+      from: dateRange.from,
+      to: dateRange.to
+    };
     try {
-      const [report, openDisputes, pendingTerminations] = await Promise.all([
-        operationalReportsApi.activities({
-          page: activityPage,
-          size: activityPageSize,
-          domain: domainFilter,
-          outcome: outcomeFilter,
-          staff: selectedStaffEmail,
-          search: searchKeyword.trim() || undefined,
-          from: dateRange.from,
-          to: dateRange.to
-        }),
+      const [reportResult, summaryResult, disputeResult, terminationResult] = await Promise.allSettled([
+        operationalReportsApi.activities({ page: activityPage, size: activityPageSize, ...filters }),
+        operationalReportsApi.summary(filters),
         contractsApi.listDisputes({ page: 0, size: 1, statusGroup: "PENDING" }),
         terminationsApi.page({ page: 0, size: 1, statusGroup: "PENDING" })
       ]);
-      const openDisputesPage = parsePaginatedResponse(openDisputes, "open disputes");
-      const pendingTerminationsPage = parsePaginatedResponse(pendingTerminations, "pending terminations");
-      setActivities(report.content);
-      setActivityTotal(report.totalElements);
-      setActivityPages(report.totalPages);
-      setSourceTotals({
-        tutors: report.sourceTotals.tutors || 0,
-        teaching: report.sourceTotals.teaching || 0,
-        classes: report.sourceTotals.classes || 0,
-        disputes: report.sourceTotals.disputes || 0,
-        terminations: report.sourceTotals.terminations || 0
-      });
-      setOpenDisputesTotal(openDisputesPage.totalElements);
-      setPendingTerminationsTotal(pendingTerminationsPage.totalElements);
+      const errors: string[] = [];
+      if (reportResult.status === "fulfilled") {
+        const report = reportResult.value;
+        setActivities(report.content);
+        setActivityTotal(report.totalElements);
+        setActivityPages(report.totalPages);
+        setSourceTotals({
+          tutors: report.sourceTotals.tutors || 0,
+          teaching: report.sourceTotals.teaching || 0,
+          classes: report.sourceTotals.classes || 0,
+          disputes: report.sourceTotals.disputes || 0,
+          terminations: report.sourceTotals.terminations || 0
+        });
+      } else {
+        setActivities([]);
+        setActivityTotal(0);
+        setActivityPages(0);
+        errors.push("nhật ký thao tác");
+      }
+      if (summaryResult.status === "fulfilled") setSummary(summaryResult.value as ReportSummary);
+      else { setSummary(null); errors.push("KPI tổng hợp"); }
+      if (disputeResult.status === "fulfilled") {
+        setOpenDisputesTotal(parsePaginatedResponse(disputeResult.value, "open disputes").totalElements);
+      } else { setOpenDisputesTotal(null); errors.push("khiếu nại đang mở"); }
+      if (terminationResult.status === "fulfilled") {
+        setPendingTerminationsTotal(parsePaginatedResponse(terminationResult.value, "pending terminations").totalElements);
+      } else { setPendingTerminationsTotal(null); errors.push("thanh lý đang chờ"); }
+      setPartialErrors(errors);
+      if (reportResult.status === "rejected") {
+        setError((reportResult.reason as any)?.message || "Không thể tải nhật ký báo cáo nghiệp vụ.");
+      }
     } catch (err: any) {
-      setActivities([]);
-      setActivityTotal(0);
-      setActivityPages(0);
       setError(err?.message || "Không thể tải báo cáo nghiệp vụ.");
     } finally {
       setLoading(false);
@@ -153,65 +190,23 @@ export function StaffReportsPage() {
     if (activityPages > 0 && activityPage >= activityPages) setActivityPage(activityPages - 1);
   }, [activityPage, activityPages]);
 
-  // Overall metric stats from filtered list
   const stats = useMemo(() => {
     return {
-      total: "—",
-      approved: "—",
-      rejected: "—",
-      approvalRate: "—",
+      total: summary?.total ?? "Không khả dụng",
+      approved: summary?.approved ?? "Không khả dụng",
+      rejected: summary?.rejected ?? "Không khả dụng",
+      approvalRate: summary ? (summary.approvalRate == null ? "Chưa có quyết định" : `${summary.approvalRate.toFixed(1)}%`) : "Không khả dụng",
       openDisputes: openDisputesTotal,
       pendingTerminations: pendingTerminationsTotal,
       classesCount: sourceTotals.classes,
     };
-  }, [openDisputesTotal, pendingTerminationsTotal, sourceTotals]);
+  }, [openDisputesTotal, pendingTerminationsTotal, sourceTotals, summary]);
 
   // Staff Performance Breakdown Table (for Admin or Cross-evaluation)
-  const staffEvaluationList = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        email: string;
-        name: string;
-        total: number;
-        approved: number;
-        rejected: number;
-        tutorCount: number;
-        classCount: number;
-        disputeCount: number;
-        terminationCount: number;
-      }
-    >();
-
-    filteredActivities.forEach((act) => {
-      if (!act.actor) return;
-      const key = act.actor.toLowerCase();
-      if (!map.has(key)) {
-        map.set(key, {
-          email: act.actor,
-          name: act.actorName || act.actor,
-          total: 0,
-          approved: 0,
-          rejected: 0,
-          tutorCount: 0,
-          classCount: 0,
-          disputeCount: 0,
-          terminationCount: 0
-        });
-      }
-      const entry = map.get(key)!;
-      entry.total++;
-      const s = String(act.status).toUpperCase();
-      if (["APPROVED", "APPROVE", "FORCE_APPROVE", "RESOLVED"].includes(s)) entry.approved++;
-      if (["REJECTED", "REJECT", "FAILED", "FAILED_RETRYABLE"].includes(s)) entry.rejected++;
-      if (act.domain === "TUTOR_PROFILES" || act.domain === "TEACHING_REGISTRATION") entry.tutorCount++;
-      if (act.domain === "CLASS_ROOMS") entry.classCount++;
-      if (act.domain === "DISPUTES") entry.disputeCount++;
-      if (act.domain === "TERMINATIONS") entry.terminationCount++;
-    });
-
-    return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  }, [filteredActivities]);
+  const staffEvaluationList = useMemo(() => (summary?.staffPerformance || []).map((row) => ({
+    ...row,
+    name: getUserDisplayName(row.email, users).fullName
+  })), [summary, users]);
 
   // List of distinct staff emails for filter dropdown
   const distinctStaffOptions = useMemo(() => {
@@ -225,55 +220,27 @@ export function StaffReportsPage() {
     return Array.from(set.entries()).map(([email, name]) => ({ email, name }));
   }, [users]);
 
-  const handleExportCsv = () => {
-    if (filteredActivities.length === 0) return;
-    const headers = [
-      "Thời gian",
-      "Người thao tác",
-      "Email người thao tác",
-      "Nghiệp vụ",
-      "Phân hệ",
-      "Đối tượng",
-      "Trạng thái",
-      "Ghi chú & Căn cứ"
-    ];
-
-    const escapeCsv = (val?: string | null) => {
-      if (!val) return '""';
-      const str = String(val).replace(/"/g, '""');
-      return `"${str}"`;
-    };
-
-    const domainLabelMap: Record<string, string> = {
-      TUTOR_PROFILES: "Hồ sơ gia sư",
-      TEACHING_REGISTRATION: "Đăng ký dạy",
-      CLASS_ROOMS: "Lớp học",
-      DISPUTES: "Khiếu nại",
-      TERMINATIONS: "Thanh lý hợp đồng"
-    };
-
-    const rows = filteredActivities.map((act) => [
-      escapeCsv(fmt(act.at)),
-      escapeCsv(act.actorName || act.actor || ""),
-      escapeCsv(act.actor || ""),
-      escapeCsv(act.type),
-      escapeCsv(domainLabelMap[act.domain] || act.domain),
-      escapeCsv(act.target),
-      escapeCsv(act.status),
-      escapeCsv(act.note || "")
-    ]);
-
-    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map((r) => r.join(","))].join("\r\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    const dateStr = new Date().toISOString().slice(0, 10);
-    link.setAttribute("download", `bao-cao-van-hanh-trang-${activityPage + 1}-${dateStr}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const handleExportCsv = async () => {
+    setExporting(true);
+    setError("");
+    try {
+      const blob = await operationalReportsApi.exportCsv({
+        domain: domainFilter, outcome: outcomeFilter, staff: selectedStaffEmail,
+        search: searchKeyword.trim() || undefined, from: dateRange.from, to: dateRange.to
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `bao-cao-van-hanh-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err?.message || "Không thể xuất toàn bộ báo cáo theo bộ lọc.");
+    } finally {
+      setExporting(false);
+    }
   };
 
   return (
@@ -302,12 +269,12 @@ export function StaffReportsPage() {
           <button
             type="button"
             onClick={handleExportCsv}
-            disabled={filteredActivities.length === 0}
+            disabled={activityTotal === 0 || exporting}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 hover:border-[#073554] hover:text-[#073554] transition-all disabled:opacity-50 shadow-2xs"
-            title="Xuất các bản ghi đang hiển thị trên trang hiện tại"
+            title="Xuất toàn bộ kết quả phù hợp với bộ lọc hiện tại (tối đa 10.000 dòng)"
           >
             <Download className="h-4 w-4 text-slate-500" />
-            Xuất trang hiện tại
+            {exporting ? "Đang xuất..." : "Xuất toàn bộ kết quả"}
           </button>
           <button
             type="button"
@@ -327,6 +294,12 @@ export function StaffReportsPage() {
           <AlertTriangle className="h-4 w-4 shrink-0" />
           <span>{error}</span>
           </div>
+          <button type="button" onClick={load} className="shrink-0 underline underline-offset-2">Thử lại</button>
+        </div>
+      )}
+      {!error && partialErrors.length > 0 && (
+        <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800 shadow-sm">
+          <span>Dữ liệu tải một phần. Chưa thể tải: {partialErrors.join(", ")}.</span>
           <button type="button" onClick={load} className="shrink-0 underline underline-offset-2">Thử lại</button>
         </div>
       )}
@@ -415,7 +388,6 @@ export function StaffReportsPage() {
               <option value="ALL">Tất cả kết quả</option>
               <option value="APPROVED">Đã phê duyệt / Đề xuất</option>
               <option value="REJECTED">Từ chối / Bác bỏ</option>
-              <option value="PENDING">Chờ xử lý / Đang mở</option>
             </select>
           </div>
 
@@ -478,7 +450,7 @@ export function StaffReportsPage() {
       </section>
 
       {/* Staff Evaluation Table (Shown for Admin or when Multiple Staff exist) */}
-      {false && isAdmin && staffEvaluationList.length > 0 && (
+      {isAdmin && staffEvaluationList.length > 0 && (
         <section className="mb-6 rounded-2xl border border-[#d7dde6] bg-white p-5 shadow-sm space-y-4">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
@@ -512,7 +484,8 @@ export function StaffReportsPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {staffEvaluationList.map((st) => {
-                  const rate = st.total > 0 ? Math.round((st.approved / st.total) * 100) : 0;
+                  const decided = st.approved + st.rejected;
+                  const rate = decided > 0 ? `${Math.round((st.approved / decided) * 100)}%` : "--";
                   return (
                     <tr key={st.email} className="hover:bg-slate-50 transition-colors">
                       <td className="py-3.5 px-3">
@@ -524,7 +497,7 @@ export function StaffReportsPage() {
                       <td className="py-3.5 px-3 text-center font-black text-rose-700">{st.rejected}</td>
                       <td className="py-3.5 px-3 text-center">
                         <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-black text-slate-800">
-                          {rate}%
+                          {rate}
                         </span>
                       </td>
                       <td className="py-3.5 px-3 text-center font-bold text-slate-700">{st.tutorCount}</td>
@@ -556,12 +529,12 @@ export function StaffReportsPage() {
             <button
               type="button"
               onClick={handleExportCsv}
-              disabled={filteredActivities.length === 0}
+              disabled={activityTotal === 0 || exporting}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-2xs hover:border-[#073554] hover:text-[#073554] disabled:opacity-50 transition-colors"
-              title="Xuất các bản ghi đang hiển thị trên trang hiện tại"
+              title="Xuất toàn bộ kết quả phù hợp với bộ lọc hiện tại (tối đa 10.000 dòng)"
             >
               <Download className="h-3.5 w-3.5" />
-              Xuất trang
+              {exporting ? "Đang xuất..." : "Xuất toàn bộ"}
             </button>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-black text-slate-600">
               Hiển thị {filteredActivities.length}/{activityTotal} thao tác

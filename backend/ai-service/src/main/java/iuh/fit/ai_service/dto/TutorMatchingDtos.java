@@ -1,6 +1,7 @@
 package iuh.fit.ai_service.dto;
 
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.TimeOfDayHint;
+import iuh.fit.ai_service.dto.RequirementAnalysisDtos.ConstraintMode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMin;
@@ -95,8 +96,22 @@ public final class TutorMatchingDtos {
             List<@Size(max = 120, message = "weakTopics item is too long") String> weakTopics,
 
             @Size(max = 12, message = "tutorPreferences supports at most 12 items")
-            List<@Size(max = 120, message = "tutorPreferences item is too long") String> tutorPreferences
+            List<@Size(max = 120, message = "tutorPreferences item is too long") String> tutorPreferences,
+
+            ConstraintMode scheduleConstraintMode,
+
+            ConstraintMode budgetConstraintMode
     ) {
+        public TutorMatchingRequest(
+                Long subjectId, Long levelId, TeachingMode teachingMode, BigDecimal budgetMin,
+                BigDecimal budgetMax, String provinceCode, String communeCode,
+                List<PreferredScheduleRequest> preferredSchedules, String learningGoal,
+                List<String> weakTopics, List<String> tutorPreferences
+        ) {
+            this(subjectId, levelId, teachingMode, budgetMin, budgetMax, provinceCode, communeCode,
+                    preferredSchedules, learningGoal, weakTopics, tutorPreferences, null, null);
+        }
+
         @AssertTrue(message = "budgetMin must be less than or equal to budgetMax")
         public boolean isBudgetRangeValid() {
             return budgetMin == null || budgetMax == null || budgetMin.compareTo(budgetMax) <= 0;
@@ -113,7 +128,24 @@ public final class TutorMatchingDtos {
             int totalCandidates,
             int eligibleCandidates,
             List<String> relaxedCriteria,
-            List<TutorMatchResult> results
+            List<TutorMatchResult> results,
+            ConstraintFilteringSummary constraintFiltering
+    ) {
+        public TutorMatchingResponse(
+                MatchingInputEcho input, int totalCandidates, int eligibleCandidates,
+                List<String> relaxedCriteria, List<TutorMatchResult> results
+        ) {
+            this(input, totalCandidates, eligibleCandidates, relaxedCriteria, results, null);
+        }
+    }
+
+    public record ConstraintFilteringSummary(
+            ConstraintMode scheduleMode,
+            ConstraintMode budgetMode,
+            int scheduleExcludedCandidates,
+            int budgetExcludedCandidates,
+            List<String> exclusionReasons,
+            List<String> relaxationSuggestions
     ) {
     }
 
@@ -128,8 +160,19 @@ public final class TutorMatchingDtos {
             List<PreferredScheduleRequest> preferredSchedules,
             String learningGoal,
             List<String> weakTopics,
-            List<String> tutorPreferences
+            List<String> tutorPreferences,
+            ConstraintMode scheduleConstraintMode,
+            ConstraintMode budgetConstraintMode
     ) {
+        public MatchingInputEcho(
+                Long subjectId, Long levelId, TeachingMode teachingMode, BigDecimal budgetMin,
+                BigDecimal budgetMax, String provinceCode, String communeCode,
+                List<PreferredScheduleRequest> preferredSchedules, String learningGoal,
+                List<String> weakTopics, List<String> tutorPreferences
+        ) {
+            this(subjectId, levelId, teachingMode, budgetMin, budgetMax, provinceCode, communeCode,
+                    preferredSchedules, learningGoal, weakTopics, tutorPreferences, null, null);
+        }
     }
 
     public record TutorMatchResult(
@@ -197,8 +240,27 @@ public final class TutorMatchingDtos {
             BigDecimal rawScore,
             Map<String, Integer> weights,
             List<CriterionScore> criteria,
-            BigDecimal totalWeight
+            BigDecimal totalWeight,
+            BigDecimal baseWeightSum,
+            BigDecimal normalizedWeightSum
     ) {
+        public ScoreBreakdown(
+                ScoreComponent schedule,
+                ScoreComponent budget,
+                ScoreComponent location,
+                ScoreComponent experience,
+                ScoreComponent ratingConfidence,
+                SemanticScoreComponent semantic,
+                BigDecimal rawScore,
+                Map<String, Integer> weights,
+                List<CriterionScore> criteria,
+                BigDecimal totalWeight
+        ) {
+            this(schedule, budget, location, experience, ratingConfidence, semantic, rawScore, weights, criteria,
+                    totalWeight, totalWeight, BigDecimal.valueOf(weights == null
+                            ? 0L
+                            : weights.values().stream().mapToLong(Integer::longValue).sum()));
+        }
     }
 
     public record CriterionScore(
@@ -219,8 +281,18 @@ public final class TutorMatchingDtos {
             boolean used,
             Double normalizedSignal,
             BigDecimal rankBoost,
-            String policy
+            String policy,
+            String status
     ) {
+        public SemanticScoreComponent(
+                boolean applicable,
+                boolean used,
+                Double normalizedSignal,
+                BigDecimal rankBoost,
+                String policy
+        ) {
+            this(applicable, used, normalizedSignal, rankBoost, policy, applicable ? "APPLICABLE" : "NO_CONTEXT");
+        }
     }
 
     public record ScoreComponent(

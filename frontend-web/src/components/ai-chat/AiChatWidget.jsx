@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, ChevronDown, ChevronRight, Loader2, MessageCircle, Send, Sparkles, Star, X } from 'lucide-react';
+import { AlertTriangle, Bot, ChevronDown, ChevronRight, Loader2, MessageCircle, RotateCcw, Send, Sparkles, Star, X } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { sendChatMessage } from '../../api/chatbot';
+import { getChatKnowledgeStatus, sendChatMessage } from '../../api/chatbot';
 import { useAuth } from '../../hooks/useAuth';
 import {
   clearLegacyAiChatHistory,
@@ -61,6 +61,8 @@ export function AiChatWidget() {
   const [messages, setMessages] = useState([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [lastFailedMessage, setLastFailedMessage] = useState('');
+  const [knowledgeStatus, setKnowledgeStatus] = useState(null);
   const scrollRef = useRef(null);
   const storageKey = useMemo(() => getAiChatStorageKey({
     authenticated,
@@ -79,6 +81,24 @@ export function AiChatWidget() {
     const container = scrollRef.current;
     container.scrollTop = container.scrollHeight;
   }, [messages, sending, open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    let active = true;
+    const refresh = () => getChatKnowledgeStatus()
+      .then((status) => {
+        if (active) setKnowledgeStatus(status);
+      })
+      .catch(() => {
+        if (active) setKnowledgeStatus({ state: 'FAILED', available: false, syncInProgress: false });
+      });
+    refresh();
+    const timer = window.setInterval(refresh, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [open]);
 
   useEffect(() => {
     function openAssistant() {
@@ -110,7 +130,7 @@ export function AiChatWidget() {
     .slice(-MAX_HISTORY_ITEMS)
     .map((item) => ({ role: item.role, content: item.content }));
 
-  async function submitMessage(rawMessage = input) {
+  async function submitMessage(rawMessage = input, { retry = false } = {}) {
     const trimmed = rawMessage.trim();
     if (!trimmed || sending) return;
 
@@ -121,9 +141,12 @@ export function AiChatWidget() {
       content: safeMessage
     };
 
-    setMessages((current) => [...current, userMessage]);
+    if (!retry) {
+      setMessages((current) => [...current, userMessage]);
+    }
     setInput('');
     setError('');
+    setLastFailedMessage('');
     setSending(true);
     const requestStorageKey = storageKey;
     const requestConversation = conversationForRequest;
@@ -147,9 +170,11 @@ export function AiChatWidget() {
           toolResult: response?.toolResult || null
         }
       ]);
+      setLastFailedMessage('');
     } catch (requestError) {
       if (storageKeyRef.current !== requestStorageKey) return;
       setError(requestError?.message || 'Không thể kết nối trợ lý EduConnect. Vui lòng thử lại sau.');
+      setLastFailedMessage(safeMessage);
       setMessages((current) => [
         ...current,
         {
@@ -209,7 +234,13 @@ export function AiChatWidget() {
               </div>
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-black leading-5 text-slate-950">Trợ lý EduConnect</h2>
-                <p className="text-[11px] font-bold leading-4 text-blue-600">Sẵn sàng hỗ trợ</p>
+                <p className={`text-[11px] font-bold leading-4 ${knowledgeStatus?.state === 'READY' ? 'text-emerald-600' : 'text-amber-600'}`}>
+                  {knowledgeStatus?.state === 'INDEXING'
+                    ? 'Đang đồng bộ tri thức'
+                    : knowledgeStatus?.state === 'READY'
+                      ? 'Sẵn sàng hỗ trợ'
+                      : 'Hỗ trợ giới hạn'}
+                </p>
               </div>
             </div>
             <button
@@ -226,6 +257,18 @@ export function AiChatWidget() {
             ref={scrollRef}
             className="custom-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain bg-slate-50/80 px-4 py-3.5 [scrollbar-width:thin] [scrollbar-color:#cbd5e1_transparent] sm:py-4"
           >
+            {knowledgeStatus && knowledgeStatus.state !== 'READY' && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] font-semibold leading-4 text-amber-800">
+                {knowledgeStatus.state === 'INDEXING'
+                  ? <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin" />
+                  : <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                <span>
+                  {knowledgeStatus.state === 'INDEXING'
+                    ? 'Kho tri thức EduConnect đang được cập nhật. Các câu hỏi dữ liệu cá nhân vẫn hoạt động.'
+                    : 'Kho tri thức tạm thời chưa sẵn sàng. Trợ lý sẽ không suy diễn thông tin khi thiếu nguồn.'}
+                </span>
+              </div>
+            )}
             {messages.length === 0 && (
               <div className="rounded-[18px] border border-slate-200 bg-white p-3.5 shadow-sm">
                 <div className="mb-2 flex items-center gap-2 text-sm font-black text-slate-900">
@@ -272,9 +315,19 @@ export function AiChatWidget() {
 
           <footer className="shrink-0 border-t border-slate-100 bg-white p-3">
             {error && (
-              <p className="mb-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">
-                {error}
-              </p>
+              <div className="mb-2 flex items-center justify-between gap-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-600">
+                <span>{error}</span>
+                {lastFailedMessage && (
+                  <button
+                    type="button"
+                    onClick={() => submitMessage(lastFailedMessage, { retry: true })}
+                    disabled={sending}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-white px-2 py-1 font-black text-red-700 shadow-sm disabled:opacity-60"
+                  >
+                    <RotateCcw className="h-3 w-3" /> Thử lại
+                  </button>
+                )}
+              </div>
             )}
             <div className="flex min-h-12 items-end gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 transition focus-within:border-primary/60 focus-within:bg-white focus-within:ring-2 focus-within:ring-primary/10">
               <textarea
@@ -330,7 +383,9 @@ function ChatMessageBubble({ message, onAction, onToolAction }) {
               : 'border border-slate-200 bg-white text-slate-700'
         ].join(' ')}
       >
-        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        {isUser
+          ? <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          : <SafeMarkdown content={message.content} />}
         {!isUser && message.toolResult && (
           isMatchingToolResult(message.toolResult)
             ? <MatchingToolResult result={message.toolResult} onToolAction={onToolAction} />
@@ -381,6 +436,73 @@ function ChatMessageBubble({ message, onAction, onToolAction }) {
       </div>
     </div>
   );
+}
+
+function SafeMarkdown({ content }) {
+  const lines = String(content || '').split(/\r?\n/);
+  const nodes = [];
+  let codeLines = null;
+
+  lines.forEach((line, index) => {
+    if (line.trim().startsWith('```')) {
+      if (codeLines === null) {
+        codeLines = [];
+      } else {
+        nodes.push(
+          <pre key={`code-${index}`} className="my-2 overflow-x-auto rounded-xl bg-slate-950 px-3 py-2 text-[11px] leading-4 text-slate-100">
+            <code>{codeLines.join('\n')}</code>
+          </pre>
+        );
+        codeLines = null;
+      }
+      return;
+    }
+    if (codeLines !== null) {
+      codeLines.push(line);
+      return;
+    }
+    if (!line.trim()) {
+      nodes.push(<span key={`space-${index}`} className="block h-1.5" />);
+      return;
+    }
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      nodes.push(<p key={`heading-${index}`} className="mt-1 font-black text-slate-900">{renderInlineMarkdown(heading[2])}</p>);
+      return;
+    }
+    const bullet = line.match(/^\s*[-*]\s+(.+)$/);
+    if (bullet) {
+      nodes.push(<div key={`bullet-${index}`} className="flex gap-2"><span aria-hidden="true">•</span><span>{renderInlineMarkdown(bullet[1])}</span></div>);
+      return;
+    }
+    const numbered = line.match(/^\s*(\d+)\.\s+(.+)$/);
+    if (numbered) {
+      nodes.push(<div key={`number-${index}`} className="flex gap-2"><span>{numbered[1]}.</span><span>{renderInlineMarkdown(numbered[2])}</span></div>);
+      return;
+    }
+    nodes.push(<p key={`paragraph-${index}`} className="break-words">{renderInlineMarkdown(line)}</p>);
+  });
+
+  if (codeLines !== null) {
+    nodes.push(
+      <pre key="code-open" className="my-2 overflow-x-auto rounded-xl bg-slate-950 px-3 py-2 text-[11px] leading-4 text-slate-100">
+        <code>{codeLines.join('\n')}</code>
+      </pre>
+    );
+  }
+  return <div className="space-y-0.5">{nodes}</div>;
+}
+
+function renderInlineMarkdown(value) {
+  return String(value || '').split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean).map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={`${part}-${index}`} className="font-black text-slate-900">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return <code key={`${part}-${index}`} className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[11px] text-slate-800">{part.slice(1, -1)}</code>;
+    }
+    return part;
+  });
 }
 
 function isMatchingToolResult(result) {
@@ -535,8 +657,8 @@ function TutorMatchCard({ item, onToolAction }) {
           </p>
         </div>
         {Number.isFinite(Number(item.matchPercentage)) && (
-          <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-emerald-700">
-            {Math.round(Number(item.matchPercentage))}%
+          <span title="Điểm tương thích, không phải xác suất" className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-emerald-700">
+            {Math.round(Number(item.matchPercentage))}% tương thích
           </span>
         )}
       </div>

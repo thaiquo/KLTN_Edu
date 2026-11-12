@@ -30,20 +30,23 @@ type AuditItem = {
 
 const pageItems = (value: any) => Array.isArray(value) ? value : (Array.isArray(value?.content) ? value.content : []);
 const fmt = (value?: string | null) => value ? new Date(value).toLocaleString("vi-VN") : "--";
+const metric = (value: number | null) => value == null ? "Không khả dụng" : value;
 export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: string) => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [sourceErrors, setSourceErrors] = useState<string[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [finance, setFinance] = useState<any>(null);
   const [recentActivities, setRecentActivities] = useState<AuditItem[]>([]);
+  const [reportSummary, setReportSummary] = useState<any>(null);
   const [selectedAudit, setSelectedAudit] = useState<AuditItem | null>(null);
   const [summaryTotals, setSummaryTotals] = useState({
-    staff: 0,
-    activeStaff: 0,
-    openDisputes: 0,
-    pendingTerminations: 0,
-    failedTransactions: 0,
-    pendingSettlements: 0,
+    staff: null as number | null,
+    activeStaff: null as number | null,
+    openDisputes: null as number | null,
+    pendingTerminations: null as number | null,
+    failedTransactions: null as number | null,
+    pendingSettlements: null as number | null,
   });
 
   const load = async (opts?: boolean | unknown) => {
@@ -52,29 +55,52 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
       setLoading(true);
     }
     setError("");
+    setSourceErrors([]);
     try {
-      const [userRows, financialOverview, recentActivityPage, staffPage, activeStaffPage, openDisputesPage, pendingTerminationsPage, failedTransactionsPage, pendingSettlementsPage] = await Promise.all([
-        adminUsersApi.list({ page: 0, size: 50 }).catch(() => ({ content: [] })),
-        contractsApi.getAdminFinancialOverview().catch(() => null),
+      const results = await Promise.allSettled([
+        adminUsersApi.list({ page: 0, size: 50 }),
+        contractsApi.getAdminFinancialOverview(),
         operationalReportsApi.activities({ page: 0, size: 10 }),
-        adminUsersApi.list({ role: "STAFF", page: 0, size: 1 }).catch(() => ({ totalElements: 0 })),
-        adminUsersApi.list({ role: "STAFF", status: "ACTIVE", page: 0, size: 1 }).catch(() => ({ totalElements: 0 })),
-        contractsApi.listDisputes({ page: 0, size: 1, statusGroup: "PENDING" }).catch(() => ({ totalElements: 0 })),
-        terminationsApi.page({ page: 0, size: 1, statusGroup: "PENDING" }).catch(() => ({ totalElements: 0 })),
-        contractsApi.listAllTransactions({ page: 0, size: 1, statusGroup: "FAILED" }).catch(() => ({ totalElements: 0 })),
-        contractsApi.listAdminSettlements({ page: 0, size: 1, statusGroup: "PENDING" }).catch(() => ({ totalElements: 0 }))
+        operationalReportsApi.summary({}),
+        adminUsersApi.list({ role: "STAFF", page: 0, size: 1 }),
+        adminUsersApi.list({ role: "STAFF", status: "ACTIVE", page: 0, size: 1 }),
+        contractsApi.listDisputes({ page: 0, size: 1, statusGroup: "PENDING" }),
+        terminationsApi.page({ page: 0, size: 1, statusGroup: "PENDING" }),
+        contractsApi.listAllTransactions({ page: 0, size: 1, statusGroup: "FAILED" }),
+        contractsApi.listAdminSettlements({ page: 0, size: 1, statusGroup: "PENDING" })
       ]);
+      const [usersResult, financeResult, recentResult, reportSummaryResult, staffResult, activeStaffResult,
+        disputesResult, terminationsResult, transactionsResult, settlementsResult] = results;
+      const errors: string[] = [];
+      const value = (result: PromiseSettledResult<any>, label: string) => {
+        if (result.status === "fulfilled") return result.value;
+        errors.push(label);
+        return null;
+      };
+      const userRows = value(usersResult, "danh bạ người dùng");
+      const financialOverview = value(financeResult, "tổng quan tài chính");
+      const recentActivityPage = value(recentResult, "hoạt động gần đây");
+      const allReportSummary = value(reportSummaryResult, "hiệu suất Staff");
+      const staffPage = value(staffResult, "tổng Staff");
+      const activeStaffPage = value(activeStaffResult, "Staff hoạt động");
+      const openDisputesPage = value(disputesResult, "khiếu nại");
+      const pendingTerminationsPage = value(terminationsResult, "thanh lý");
+      const failedTransactionsPage = value(transactionsResult, "giao dịch lỗi");
+      const pendingSettlementsPage = value(settlementsResult, "settlement");
       setUsers(pageItems(userRows));
       setFinance(financialOverview);
       setRecentActivities(pageItems(recentActivityPage));
+      setReportSummary(allReportSummary);
       setSummaryTotals({
-        staff: Number(staffPage?.totalElements || 0),
-        activeStaff: Number(activeStaffPage?.totalElements || 0),
-        openDisputes: Number(openDisputesPage?.totalElements || 0),
-        pendingTerminations: Number(pendingTerminationsPage?.totalElements || 0),
-        failedTransactions: Number(failedTransactionsPage?.totalElements || 0),
-        pendingSettlements: Number(pendingSettlementsPage?.totalElements || 0),
+        staff: staffPage ? Number(staffPage.totalElements ?? 0) : null,
+        activeStaff: activeStaffPage ? Number(activeStaffPage.totalElements ?? 0) : null,
+        openDisputes: openDisputesPage ? Number(openDisputesPage.totalElements ?? 0) : null,
+        pendingTerminations: pendingTerminationsPage ? Number(pendingTerminationsPage.totalElements ?? 0) : null,
+        failedTransactions: failedTransactionsPage ? Number(failedTransactionsPage.totalElements ?? 0) : null,
+        pendingSettlements: pendingSettlementsPage ? Number(pendingSettlementsPage.totalElements ?? 0) : null,
       });
+      setSourceErrors(errors);
+      if (recentResult.status === "rejected") setError("Không thể tải nhật ký hoạt động gần đây.");
     } catch (err: any) {
       setRecentActivities([]);
       setError(err?.message || "Không thể tải bảng điều hành Admin.");
@@ -122,22 +148,15 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
     actorName: actorName(item.actor)
   })), [recentActivities, users]);
 
-  const staffBoard = useMemo(() => {
-    const map = new Map<string, { email: string; total: number; approved: number; rejected: number; disputes: number; terminations: number; last?: string | null }>();
-    for (const item of audit) {
-      if (!item.actor) continue;
-      const key = item.actor.toLowerCase();
-      const row = map.get(key) || { email: item.actor, total: 0, approved: 0, rejected: 0, disputes: 0, terminations: 0, last: item.at };
-      row.total += 1;
-      if (["APPROVED", "APPROVE", "FORCE_APPROVE"].includes(item.status)) row.approved += 1;
-      if (["REJECTED", "REJECT"].includes(item.status)) row.rejected += 1;
-      if (item.id.startsWith("dispute-")) row.disputes += 1;
-      if (item.id.startsWith("termination-")) row.terminations += 1;
-      if (new Date(item.at || 0).getTime() > new Date(row.last || 0).getTime()) row.last = item.at;
-      map.set(key, row);
-    }
-    return [...map.values()].sort((a, b) => b.total - a.total).slice(0, 8);
-  }, [audit]);
+  const staffBoard = useMemo(() => (reportSummary?.staffPerformance || []).slice(0, 8).map((row: any) => ({
+    email: row.email,
+    total: row.total,
+    approved: row.approved,
+    rejected: row.rejected,
+    disputes: row.disputeCount,
+    terminations: row.terminationCount,
+    last: row.lastActivityAt
+  })), [reportSummary]);
 
   return (
     <div className="min-h-[calc(100vh-96px)] bg-[#f3f6f9] p-0 text-slate-900">
@@ -159,14 +178,20 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
           <AlertTriangle className="h-4 w-4" /> {error}
         </div>
       )}
+      {!error && sourceErrors.length > 0 && (
+        <div className="mb-4 flex items-center justify-between gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+          <span>Dữ liệu tải một phần. Chưa thể tải: {sourceErrors.join(", ")}.</span>
+          <button type="button" onClick={load} className="shrink-0 underline underline-offset-2">Thử lại</button>
+        </div>
+      )}
 
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Metric icon={Users} label="Staff hoạt động" value={loading ? "..." : `${summaryTotals.activeStaff}/${summaryTotals.staff}`} />
-        <Metric icon={WalletCards} label="Escrow đang khóa" value={loading ? "..." : `$${Number(finance?.totalEscrowLockedUsdc || 0).toFixed(2)}`} tone="indigo" />
-        <Metric icon={ShieldAlert} label="Khiếu nại mở" value={loading ? "..." : summaryTotals.openDisputes} tone="amber" />
-        <Metric icon={ShieldCheck} label="Thanh lý chờ" value={loading ? "..." : summaryTotals.pendingTerminations} tone="rose" />
-        <Metric icon={Activity} label="Tx lỗi" value={loading ? "..." : summaryTotals.failedTransactions} tone="rose" />
-        <Metric icon={CheckCircle2} label="Settlement chờ" value={loading ? "..." : summaryTotals.pendingSettlements} tone="emerald" />
+        <Metric icon={Users} label="Staff hoạt động" value={loading ? "..." : summaryTotals.activeStaff == null || summaryTotals.staff == null ? "Không khả dụng" : `${summaryTotals.activeStaff}/${summaryTotals.staff}`} />
+        <Metric icon={WalletCards} label="Escrow đang khóa" value={loading ? "..." : finance == null ? "Không khả dụng" : `$${Number(finance.totalEscrowLockedUsdc ?? 0).toFixed(2)}`} tone="indigo" />
+        <Metric icon={ShieldAlert} label="Khiếu nại mở" value={loading ? "..." : metric(summaryTotals.openDisputes)} tone="amber" />
+        <Metric icon={ShieldCheck} label="Thanh lý chờ" value={loading ? "..." : metric(summaryTotals.pendingTerminations)} tone="rose" />
+        <Metric icon={Activity} label="Tx lỗi" value={loading ? "..." : metric(summaryTotals.failedTransactions)} tone="rose" />
+        <Metric icon={CheckCircle2} label="Settlement chờ" value={loading ? "..." : metric(summaryTotals.pendingSettlements)} tone="emerald" />
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
@@ -174,14 +199,16 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
           <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
               <h2 className="text-lg font-black">Bảng giám sát Staff</h2>
-              <p className="mt-1 text-xs font-semibold text-slate-500">Tổng hợp từ 10 thao tác Staff/Admin mới nhất.</p>
+              <p className="mt-1 text-xs font-semibold text-slate-500">Tổng hợp toàn bộ thao tác Staff/Admin trong dữ liệu báo cáo hiện tại.</p>
             </div>
             <button type="button" onClick={() => onNavigate?.("user-management")} className="text-xs font-black text-indigo-600 hover:text-indigo-800">Quản lý Staff</button>
           </div>
           {loading ? (
             <div className="h-40 animate-pulse bg-slate-100" />
           ) : staffBoard.length === 0 ? (
-            <div className="py-10 text-center text-sm font-bold text-slate-400">Chưa có lịch sử thao tác Staff/Admin.</div>
+            <div className="py-10 text-center text-sm font-bold text-slate-400">
+              {reportSummary == null ? "Không thể tải dữ liệu hiệu suất Staff." : "Chưa có lịch sử thao tác Staff/Admin."}
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs font-semibold text-slate-600">

@@ -1,0 +1,49 @@
+{
+  "version": "p5-annotation-guide-v1",
+  "status": "READY_FOR_HUMAN_ANNOTATION",
+  "packageFile": "annotation-package-v1.json",
+  "independentFiles": {
+    "annotatorA": "annotation-labels-a-v1.csv",
+    "annotatorB": "annotation-labels-b-v1.csv",
+    "adjudication": "annotation-labels-adjudicated-v1.csv"
+  },
+  "labels": {
+    "0": "Không phù hợp",
+    "1": "Phù hợp một phần",
+    "2": "Phù hợp cao"
+  },
+  "workflow": [
+    "Runtime candidate snapshot đã được API xác minh; chỉ chấm khi annotation package tiếp tục hiển thị READY_FOR_HUMAN_ANNOTATION.",
+    "Annotator A và B làm việc độc lập, không xem file của nhau và không xem thứ hạng hoặc điểm AI.",
+    "Điền label, evidence và note trong file riêng; không sửa các cột version, queryId, tutorId, hardViolation hoặc annotatorId.",
+    "HARD violation đã được đánh dấu riêng. Mọi pair vi phạm HARD nhận relevance label 0; evidence phải nêu constraint bị vi phạm.",
+    "Sau khi A và B hoàn tất, người adjudicate xem bất đồng và điền file ADJUDICATED.",
+    "Chạy evaluator với ba đường dẫn CSV phân tách bằng dấu chấm phẩy và truyền annotation package để kiểm tra completeness/provenance."
+  ],
+  "requiredEditableColumns": ["label", "evidence", "note"],
+  "immutableColumns": [
+    "datasetVersion",
+    "snapshotVersion",
+    "queryId",
+    "pseudonymousTutorId",
+    "hardViolation",
+    "annotatorId"
+  ],
+  "privacy": {
+    "prohibited": [
+      "Tên thật",
+      "Email",
+      "Số điện thoại",
+      "Địa chỉ chi tiết",
+      "JWT/cookie/password",
+      "KYC, hợp đồng hoặc tin nhắn cá nhân"
+    ],
+    "blindFields": [
+      "matchPercentage",
+      "structured score",
+      "semantic similarity/boost",
+      "B0-B4 rank",
+      "AI matchingReasons"
+    ]
+  }
+}

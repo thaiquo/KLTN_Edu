@@ -47,6 +47,7 @@ const PAGES_BY_ROLE = {
     "user-management",
     "subject-catalog",
     "staff-duty-management",
+    "chatbot-knowledge",
   ]),
 };
 

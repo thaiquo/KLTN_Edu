@@ -53,9 +53,11 @@ class HybridTutorMatchingServiceTest {
 
         assertThat(hybrid.results()).extracting("tutorId")
                 .containsExactlyElementsOf(v1.results().stream().map(result -> result.tutorId()).toList());
-        assertThat(hybrid.results()).allSatisfy(result ->
-                assertThat(result.scoreBreakdown().semantic().applicable()).isFalse()
-        );
+        assertThat(hybrid.results()).allSatisfy(result -> {
+            assertThat(result.scoreBreakdown().semantic().applicable()).isTrue();
+            assertThat(result.scoreBreakdown().semantic().used()).isFalse();
+            assertThat(result.scoreBreakdown().semantic().status()).isEqualTo("QDRANT_UNAVAILABLE");
+        });
     }
 
     @Test
@@ -123,6 +125,8 @@ class HybridTutorMatchingServiceTest {
         assertThat(v1.results()).extracting("tutorId").containsExactly(1L, 2L, 3L, 4L);
         assertThat(hybrid.results()).extracting("tutorId").containsExactly(3L, 1L, 2L, 4L);
         assertThat(hybrid.results().getFirst().scoreBreakdown().semantic().used()).isTrue();
+        assertThat(hybrid.results().getFirst().matchingReasons())
+                .anyMatch(reason -> reason.contains("Qdrant") && reason.contains("3.0000"));
         assertThat(hybrid.results()).allSatisfy(result ->
                 assertThat(result.scoreBreakdown().semantic().rankBoost())
                         .isBetween(BigDecimal.ZERO.setScale(4), BigDecimal.valueOf(3).setScale(4))

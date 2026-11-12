@@ -52,4 +52,21 @@ class ChatRagRetrieverTest {
         assertThat(results).isEmpty();
         verifyNoInteractions(embeddingService, vectorStore);
     }
+
+    @Test
+    void studentAndTutorQueriesKeepPublicKnowledgeVisibility() {
+        EmbeddingVector vector = new EmbeddingVector(List.of(0.1f, 0.2f, 0.3f));
+        when(embeddingService.embed(any())).thenReturn(vector);
+        when(vectorStore.search(eq(vector), any(), anyInt(), anyDouble())).thenReturn(List.of());
+
+        retriever.retrieve("Hợp đồng hoạt động thế nào?",
+                new AiUserContext(1L, "student@example.com", "STUDENT", List.of("STUDENT"), true), 2);
+        retriever.retrieve("Làm sao đăng ký lịch rảnh?",
+                new AiUserContext(2L, "tutor@example.com", "TUTOR", List.of("TUTOR"), true), 2);
+
+        verify(vectorStore).search(eq(vector), org.mockito.ArgumentMatchers.argThat(roles ->
+                roles.contains("PUBLIC") && roles.contains("GUEST") && roles.contains("STUDENT")), eq(2), eq(0.35));
+        verify(vectorStore).search(eq(vector), org.mockito.ArgumentMatchers.argThat(roles ->
+                roles.contains("PUBLIC") && roles.contains("GUEST") && roles.contains("TUTOR")), eq(2), eq(0.35));
+    }
 }

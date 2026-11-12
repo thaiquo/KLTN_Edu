@@ -27,6 +27,11 @@ public final class RequirementAnalysisDtos {
         NIGHT
     }
 
+    public enum ConstraintMode {
+        HARD,
+        SOFT
+    }
+
     public record AnalyzeRequirementRequest(
             @NotBlank(message = "message is required")
             @Size(
@@ -55,8 +60,18 @@ public final class RequirementAnalysisDtos {
             String learningGoal,
             List<String> weakTopics,
             List<String> tutorPreferences,
-            String locationHint
+            String locationHint,
+            ConstraintMode scheduleConstraintMode,
+            ConstraintMode budgetConstraintMode
     ) {
+        public ExtractedRequirement(
+                String subjectHint, String levelHint, TeachingMode teachingMode, Budget budget,
+                List<PreferredSchedule> preferredSchedules, String learningGoal, List<String> weakTopics,
+                List<String> tutorPreferences, String locationHint
+        ) {
+            this(subjectHint, levelHint, teachingMode, budget, preferredSchedules, learningGoal, weakTopics,
+                    tutorPreferences, locationHint, null, null);
+        }
     }
 
     public record Budget(
@@ -88,7 +103,18 @@ public final class RequirementAnalysisDtos {
             List<String> weakTopics,
             List<String> tutorPreferences,
             String locationHint,
-            List<String> ambiguousFields
+            List<String> ambiguousFields,
+            ConstraintMode scheduleConstraintMode,
+            ConstraintMode budgetConstraintMode
     ) {
+        public GeminiRequirementExtraction(
+                Boolean tutorSearchRelevant, String subjectHint, String levelHint, TeachingMode teachingMode,
+                Budget budget, List<PreferredSchedule> preferredSchedules, String learningGoal,
+                List<String> weakTopics, List<String> tutorPreferences, String locationHint,
+                List<String> ambiguousFields
+        ) {
+            this(tutorSearchRelevant, subjectHint, levelHint, teachingMode, budget, preferredSchedules,
+                    learningGoal, weakTopics, tutorPreferences, locationHint, ambiguousFields, null, null);
+        }
     }
 }

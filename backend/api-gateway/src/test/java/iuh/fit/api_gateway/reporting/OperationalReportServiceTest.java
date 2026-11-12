@@ -50,6 +50,64 @@ class OperationalReportServiceTest {
     }
 
     @Test
+    void summarizesAllFilteredRowsAndGroupsStaffWithoutCountingFailuresAsRejections() {
+        var rows = List.of(new OperationalReportService.SourceResult("classes", 5, List.of(
+                new OperationalReportService.Activity("1", "2026-10-29T12:00:00Z", "staff-a@test.vn", "CLASS_ROOMS", "review", "A", "APPROVED", null, 0),
+                new OperationalReportService.Activity("2", "2026-10-29T11:00:00Z", "staff-a@test.vn", "CLASS_ROOMS", "review", "B", "REJECTED", null, 1),
+                new OperationalReportService.Activity("3", "2026-10-29T10:00:00Z", "staff-b@test.vn", "DISPUTES", "resolve", "C", "RESOLVED", null, 2),
+                new OperationalReportService.Activity("4", "2026-10-29T09:00:00Z", "staff-b@test.vn", "DISPUTES", "resolve", "D", "FAILED_RETRYABLE", null, 3),
+                new OperationalReportService.Activity("5", "2026-10-29T08:00:00Z", null, "TERMINATIONS", "system", "E", "PENDING", null, 4)
+        )));
+
+        var summary = service.summarize(rows);
+
+        assertEquals(5, summary.total());
+        assertEquals(2, summary.approved());
+        assertEquals(1, summary.rejected());
+        assertEquals(66.666, summary.approvalRate(), 0.01);
+        assertEquals(2, summary.staffPerformance().size());
+        assertEquals(2, summary.staffPerformance().getFirst().total());
+    }
+
+    @Test
+    void exportIncludesAllRowsAndNeutralizesSpreadsheetFormulaValues() throws Exception {
+        HttpServer server = server(exchange -> respond(exchange, 200,
+                "{\"content\":[{\"applicationId\":1,\"reviewedAt\":\"2026-10-29T12:00:00Z\","
+                        + "\"reviewedByEmail\":\"=unsafe\",\"status\":\"APPROVED\"}],\"totalElements\":1}"));
+        try {
+            OperationalReportService live = service(server);
+            byte[] bytes = live.exportCsv(new OperationalReportService.Query(
+                    0, 1, "TUTOR_PROFILES", "ALL", "ALL", null, null, null), null, null)
+                    .block(Duration.ofSeconds(5));
+            String csv = new String(bytes, StandardCharsets.UTF_8);
+            assertTrue(csv.startsWith("\uFEFFThời gian"));
+            assertTrue(csv.contains("\"'=unsafe\""));
+            assertTrue(csv.contains("APPROVED"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void aggregateLimitFailsAfterPreflightWithoutDownloadingEveryPage() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        HttpServer server = server(exchange -> {
+            calls.incrementAndGet();
+            respond(exchange, 200, "{\"content\":[],\"totalElements\":10001}");
+        });
+        try {
+            OperationalReportService live = service(server);
+            assertThrows(OperationalReportService.ReportLimitExceededException.class, () ->
+                    live.summary(new OperationalReportService.Query(
+                                    0, 1, "TUTOR_PROFILES", "ALL", "ALL", null, null, null), null, null)
+                            .block(Duration.ofSeconds(5)));
+            assertEquals(1, calls.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void usesDomainAndSourceRankAsDeterministicTimestampTieBreaker() {
         String at = "2026-10-29T10:00:00Z";
         var tutors = new OperationalReportService.SourceResult("tutors", 2, List.of(

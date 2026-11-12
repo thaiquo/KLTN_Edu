@@ -15,6 +15,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -27,6 +28,7 @@ import java.util.function.Function;
 public class OperationalReportService {
     static final int SOURCE_PAGE_SIZE = 50;
     static final int MAX_GLOBAL_PAGE = 1_000;
+    static final int MAX_AGGREGATE_ROWS = 10_000;
 
     private final WebClient account;
     private final WebClient learning;
@@ -62,6 +64,32 @@ public class OperationalReportService {
                 .map(results -> merge(results, page, size));
     }
 
+    public Mono<ReportSummary> summary(Query query, String cookie, String authorization) {
+        return aggregate(query, cookie, authorization).map(this::summarize);
+    }
+
+    public Mono<byte[]> exportCsv(Query query, String cookie, String authorization) {
+        return aggregate(query, cookie, authorization).map(this::toCsv);
+    }
+
+    private Mono<List<SourceResult>> aggregate(Query query, String cookie, String authorization) {
+        List<SourceRequest> requestedSources = sources(query, cookie, authorization);
+        if (requestedSources.isEmpty()) return Mono.just(List.of());
+        return Flux.fromIterable(requestedSources)
+                .flatMap(source -> fetchPage(source, 0, SOURCE_PAGE_SIZE)
+                        .map(first -> new SourceSeed(source, first)), requestedSources.size())
+                .collectList()
+                .flatMap(seeds -> {
+                    long total = seeds.stream().mapToLong(seed -> seed.first().totalElements()).sum();
+                    if (total > MAX_AGGREGATE_ROWS) {
+                        return Mono.error(new ReportLimitExceededException(total, MAX_AGGREGATE_ROWS));
+                    }
+                    return Flux.fromIterable(seeds)
+                            .flatMap(seed -> fetchAll(seed.source(), seed.first()), seeds.size())
+                            .collectList();
+                });
+    }
+
     ReportPage merge(List<SourceResult> sources, int page, int size) {
         List<Activity> all = sources.stream().flatMap(source -> source.items().stream()).sorted(ACTIVITY_ORDER).toList();
         int from = Math.min(page * size, all.size());
@@ -93,6 +121,85 @@ public class OperationalReportService {
                         return new SourceResult(source.name(), first.totalElements(), rank(items, 0));
                     });
         });
+    }
+
+    private Mono<SourceResult> fetchAll(SourceRequest source, SourcePage first) {
+        return Mono.defer(() -> {
+            int pageCount = first.totalElements() == 0
+                    ? 0
+                    : (int) Math.ceil((double) first.totalElements() / SOURCE_PAGE_SIZE);
+            if (pageCount <= 1) {
+                return Mono.just(new SourceResult(source.name(), first.items().size(), rank(first.items(), 0)));
+            }
+            return Flux.range(1, pageCount - 1)
+                    .concatMap(index -> fetchPage(source, index, SOURCE_PAGE_SIZE))
+                    .map(SourcePage::items)
+                    .startWith(first.items())
+                    .collectList()
+                    .map(pages -> {
+                        List<Activity> items = pages.stream().flatMap(List::stream).toList();
+                        return new SourceResult(source.name(), items.size(), rank(items, 0));
+                    });
+        });
+    }
+
+    ReportSummary summarize(List<SourceResult> sources) {
+        List<Activity> activities = sources.stream()
+                .flatMap(source -> source.items().stream())
+                .sorted(ACTIVITY_ORDER)
+                .toList();
+        long approved = activities.stream().filter(activity -> isApproved(activity.status())).count();
+        long rejected = activities.stream().filter(activity -> isRejected(activity.status())).count();
+        long decided = approved + rejected;
+        Double approvalRate = decided == 0 ? null : approved * 100.0 / decided;
+
+        Map<String, MutableStaffPerformance> staff = new LinkedHashMap<>();
+        for (Activity activity : activities) {
+            if (!StringUtils.hasText(activity.actor())) continue;
+            String key = activity.actor().trim().toLowerCase(Locale.ROOT);
+            staff.computeIfAbsent(key, ignored -> new MutableStaffPerformance(activity.actor())).accept(activity);
+        }
+        List<StaffPerformance> performance = staff.values().stream()
+                .map(MutableStaffPerformance::toRecord)
+                .sorted(Comparator.comparingLong(StaffPerformance::total).reversed()
+                        .thenComparing(StaffPerformance::email))
+                .toList();
+        Map<String, Long> totals = new LinkedHashMap<>();
+        sources.forEach(source -> totals.put(source.name(), (long) source.items().size()));
+        return new ReportSummary(activities.size(), approved, rejected, approvalRate, totals, performance);
+    }
+
+    private byte[] toCsv(List<SourceResult> sources) {
+        List<Activity> activities = sources.stream()
+                .flatMap(source -> source.items().stream())
+                .sorted(ACTIVITY_ORDER)
+                .toList();
+        StringBuilder csv = new StringBuilder("\uFEFFThời gian,Email người thao tác,Nghiệp vụ,Phân hệ,Đối tượng,Trạng thái,Ghi chú & Căn cứ\r\n");
+        for (Activity activity : activities) {
+            csv.append(csv(activity.at())).append(',')
+                    .append(csv(activity.actor())).append(',')
+                    .append(csv(activity.type())).append(',')
+                    .append(csv(activity.domain())).append(',')
+                    .append(csv(activity.target())).append(',')
+                    .append(csv(activity.status())).append(',')
+                    .append(csv(activity.note())).append("\r\n");
+        }
+        return csv.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private String csv(String value) {
+        String safe = value == null ? "" : value.replace("\r", " ").replace("\n", " ");
+        if (!safe.isEmpty() && "=+-@".indexOf(safe.charAt(0)) >= 0) safe = "'" + safe;
+        return "\"" + safe.replace("\"", "\"\"") + "\"";
+    }
+
+    private boolean isApproved(String status) {
+        return List.of("APPROVED", "APPROVE", "FORCE_APPROVE", "RESOLVED", "ACCEPTED_BY_ADMIN")
+                .contains(normalize(status));
+    }
+
+    private boolean isRejected(String status) {
+        return List.of("REJECTED", "REJECT").contains(normalize(status));
     }
 
     private List<Activity> rank(List<Activity> items, int start) {
@@ -306,8 +413,53 @@ public class OperationalReportService {
         }
     }
 
+    public record ReportSummary(long total, long approved, long rejected, Double approvalRate,
+                                Map<String, Long> sourceTotals, List<StaffPerformance> staffPerformance) { }
+
+    public record StaffPerformance(String email, long total, long approved, long rejected,
+                                   long tutorCount, long classCount, long disputeCount,
+                                   long terminationCount, String lastActivityAt) { }
+
+    public static final class ReportLimitExceededException extends RuntimeException {
+        ReportLimitExceededException(long actual, int limit) {
+            super("Filtered report contains " + actual + " rows; narrow the filters below the " + limit + " row export limit");
+        }
+    }
+
+    private static final class MutableStaffPerformance {
+        private final String email;
+        private long total;
+        private long approved;
+        private long rejected;
+        private long tutorCount;
+        private long classCount;
+        private long disputeCount;
+        private long terminationCount;
+        private String lastActivityAt;
+
+        private MutableStaffPerformance(String email) { this.email = email; }
+
+        private void accept(Activity activity) {
+            total++;
+            String status = activity.status() == null ? "" : activity.status().trim().toUpperCase(Locale.ROOT);
+            if (List.of("APPROVED", "APPROVE", "FORCE_APPROVE", "RESOLVED", "ACCEPTED_BY_ADMIN").contains(status)) approved++;
+            if (List.of("REJECTED", "REJECT").contains(status)) rejected++;
+            if ("TUTOR_PROFILES".equals(activity.domain()) || "TEACHING_REGISTRATION".equals(activity.domain())) tutorCount++;
+            if ("CLASS_ROOMS".equals(activity.domain())) classCount++;
+            if ("DISPUTES".equals(activity.domain())) disputeCount++;
+            if ("TERMINATIONS".equals(activity.domain())) terminationCount++;
+            if (lastActivityAt == null || instant(activity.at()).isAfter(instant(lastActivityAt))) lastActivityAt = activity.at();
+        }
+
+        private StaffPerformance toRecord() {
+            return new StaffPerformance(email, total, approved, rejected, tutorCount, classCount,
+                    disputeCount, terminationCount, lastActivityAt);
+        }
+    }
+
     record SourceRequest(String name, WebClient client, Function<UriBuilder, UriBuilder> uri,
                          String cookie, String authorization, Function<JsonNode, Activity> mapper) { }
     record SourcePage(long totalElements, List<Activity> items) { }
+    record SourceSeed(SourceRequest source, SourcePage first) { }
     record SourceResult(String name, long totalElements, List<Activity> items) { }
 }

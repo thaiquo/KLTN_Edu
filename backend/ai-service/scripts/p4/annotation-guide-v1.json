@@ -1,0 +1,34 @@
+{
+  "version": "p4-annotation-guide-v1",
+  "status": "WAITING_FOR_HUMAN_LABELS",
+  "labels": {
+    "0": "Không phù hợp",
+    "1": "Phù hợp một phần",
+    "2": "Phù hợp cao"
+  },
+  "mandatoryRules": [
+    "Chỉ đánh giá trên hồ sơ bằng chứng đã khử định danh.",
+    "Sai môn, cấp độ, hình thức học hoặc vi phạm HARD constraint phải nhận nhãn 0.",
+    "Không suy đoán chuyên môn, kinh nghiệm hoặc phong cách không có trong evidence.",
+    "Đánh giá topic/mục tiêu, kinh nghiệm/phong cách có bằng chứng và SOFT preferences.",
+    "Thiếu dữ liệu phải được ghi vào note và không được nâng nhãn dựa trên suy đoán.",
+    "Không xem matchPercentage, cosine similarity, semantic boost hoặc thứ hạng B0-B4 khi gán nhãn."
+  ],
+  "protocol": {
+    "minimumIndependentAnnotators": 2,
+    "recommendedIndependentAnnotators": 3,
+    "blindToBaselineRanking": true,
+    "adjudicationRequiredForDisagreement": true,
+    "agreementMetric": "weighted Cohen kappa cho hai annotator hoặc Krippendorff alpha cho từ ba annotator",
+    "codexMayActAsAnnotator": false
+  },
+  "requiredColumns": [
+    "queryId",
+    "pseudonymousTutorId",
+    "label",
+    "evidence",
+    "annotatorId",
+    "note"
+  ]
+}
+

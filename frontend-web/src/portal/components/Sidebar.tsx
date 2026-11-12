@@ -18,7 +18,8 @@ import {
   Users,
   WalletCards,
   Layers3,
-  Newspaper
+  Newspaper,
+  Database
 } from "lucide-react";
 import { UserRole } from "../types";
 import { canAccessPortalPage } from "../portalAccess";
@@ -85,6 +86,7 @@ export function Sidebar({
           { id: "subject-catalog", label: "Quản lý môn học", icon: Layers3 },
           { id: "reports", label: "Báo cáo nghiệp vụ", icon: BarChart3 },
           { id: "staff-duty-management", label: "Điều phối lịch trực", icon: Calendar },
+          { id: "chatbot-knowledge", label: "Tri thức AI Chatbot", icon: Database },
           { id: "settings", label: "Cài đặt hệ thống", icon: Settings },
         ];
       case "staff":

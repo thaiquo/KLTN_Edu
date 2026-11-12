@@ -269,7 +269,9 @@ public class ChatTutorMatchingAdapter {
                 toPreferredSchedules(requirement.preferredSchedules()),
                 requirement.learningGoal(),
                 safeList(requirement.weakTopics()),
-                safeList(requirement.tutorPreferences())
+                safeList(requirement.tutorPreferences()),
+                requirement.scheduleConstraintMode(),
+                requirement.budgetConstraintMode()
         );
     }
 
@@ -316,7 +318,9 @@ public class ChatTutorMatchingAdapter {
                 requirement == null ? null : requirement.learningGoal(),
                 requirement == null ? List.of() : safeList(requirement.weakTopics()),
                 tutorPreferences,
-                requirement == null ? null : requirement.locationHint()
+                requirement == null ? null : requirement.locationHint(),
+                requirement == null ? null : requirement.scheduleConstraintMode(),
+                requirement == null ? null : requirement.budgetConstraintMode()
         );
     }
 
@@ -395,7 +399,9 @@ public class ChatTutorMatchingAdapter {
                 toPreferredSchedules(requirement.preferredSchedules()),
                 requirement.learningGoal(),
                 safeList(requirement.weakTopics()),
-                safeList(requirement.tutorPreferences())
+                safeList(requirement.tutorPreferences()),
+                requirement.scheduleConstraintMode(),
+                requirement.budgetConstraintMode()
         );
     }
 

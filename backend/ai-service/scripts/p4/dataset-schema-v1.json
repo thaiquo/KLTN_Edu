@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "educonnect://ai-matching/p4/dataset-schema-v1",
+  "title": "EduConnect P4 Tutor Matching Evaluation Query",
+  "type": "array",
+  "minItems": 60,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "queryId",
+      "naturalLanguageRequest",
+      "groundedSubject",
+      "groundedLevel",
+      "teachingMode",
+      "learningGoal",
+      "weakTopics",
+      "tutorPreferences",
+      "preferredSchedules",
+      "budgetMin",
+      "budgetMax",
+      "scheduleMode",
+      "budgetMode",
+      "candidateSnapshot",
+      "evaluationStratum",
+      "rankingEligibility",
+      "expectedEmpty",
+      "snapshotVersion",
+      "syntheticDevelopmentQuery"
+    ],
+    "properties": {
+      "queryId": { "type": "string", "pattern": "^P4-[RA][0-9]{3}$" },
+      "naturalLanguageRequest": { "type": "string", "minLength": 1 },
+      "groundedSubject": { "$ref": "#/$defs/catalogItemOrNull" },
+      "groundedLevel": { "$ref": "#/$defs/catalogItemOrNull" },
+      "teachingMode": { "type": ["string", "null"], "enum": ["ONLINE", "OFFLINE", null] },
+      "learningGoal": { "type": ["string", "null"] },
+      "weakTopics": { "type": "array", "items": { "type": "string" } },
+      "tutorPreferences": { "type": "array", "items": { "type": "string" } },
+      "preferredSchedules": { "type": "array", "items": { "$ref": "#/$defs/schedule" } },
+      "budgetMin": { "type": ["number", "null"], "minimum": 0 },
+      "budgetMax": { "type": ["number", "null"], "minimum": 0 },
+      "scheduleMode": { "type": ["string", "null"], "enum": ["HARD", "SOFT", null] },
+      "budgetMode": { "type": ["string", "null"], "enum": ["HARD", "SOFT", null] },
+      "candidateSnapshot": {
+        "oneOf": [
+          { "type": "null" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["version", "scope"],
+            "properties": {
+              "version": { "type": "string" },
+              "scope": { "type": "string" }
+            }
+          }
+        ]
+      },
+      "evaluationStratum": { "type": "string" },
+      "rankingEligibility": { "enum": ["RANKABLE", "ANALYSIS_ONLY"] },
+      "expectedEmpty": { "type": "boolean" },
+      "snapshotVersion": { "type": "string" },
+      "syntheticDevelopmentQuery": { "const": true }
+    }
+  },
+  "$defs": {
+    "catalogItemOrNull": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "name"],
+          "properties": {
+            "id": { "type": "integer", "minimum": 1 },
+            "name": { "type": "string", "minLength": 1 }
+          }
+        }
+      ]
+    },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dayOfWeek", "startTime", "endTime"],
+      "properties": {
+        "dayOfWeek": { "type": "integer", "minimum": 2, "maximum": 8 },
+        "startTime": { "type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$" },
+        "endTime": { "type": "string", "pattern": "^[0-2][0-9]:[0-5][0-9]$" }
+      }
+    }
+  }
+}
+

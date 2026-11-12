@@ -47,6 +47,8 @@ import { fetchUserDirectory, getUserDisplayName, UserSummary } from '../../utils
 import { Loader2 } from 'lucide-react';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import { Pager } from '../../portal/components/OperationalUi';
+import { useStaffDutyAccess } from '../../portal/hooks/useStaffDutyAccess';
+import { StaffDutyReadOnlyBanner } from '../../portal/components/staff/StaffDutyReadOnlyBanner';
 
 export interface DisputeItem {
   id: string | number;
@@ -153,6 +155,7 @@ export function DisputeManagementPanel({
   userEmail = '',
 }: DisputeManagementPanelProps) {
   const activeChainId = DEFAULT_CHAIN_ID;
+  const duty = useStaffDutyAccess();
   const requestedSessionId = useMemo(() => {
     const value = new URLSearchParams(window.location.search).get('sessionId');
     const parsed = Number(value);
@@ -477,11 +480,16 @@ export function DisputeManagementPanel({
   const canStaffResolve = useCallback((dispute: DisputeDto) => {
     if (activeRole === 'admin') return true;
     if (activeRole !== 'staff') return false;
+    if (!duty.writeAllowed) return false;
     if (!dispute.classroomReviewerEmail || !userEmail) return false;
     return dispute.classroomReviewerEmail.trim().toLowerCase() === userEmail.trim().toLowerCase();
-  }, [activeRole, userEmail]);
+  }, [activeRole, duty.writeAllowed, userEmail]);
 
   const handleResolve = async (dispute: DisputeDto, approved: boolean, customReason?: string) => {
+    if (activeRole === 'staff' && !duty.writeAllowed) {
+      setActionError('Bạn đang ngoài ca trực hoặc chưa xác minh được ca. Trang hiện ở chế độ chỉ xem.');
+      return;
+    }
     const reason = customReason ?? '';
     if (!reason.trim()) {
       setActionError('Vui lòng nhập lý do phân xử để đảm bảo tính minh bạch trên hệ thống.');
@@ -896,6 +904,10 @@ export function DisputeManagementPanel({
           </button>
         )}
       </div>
+
+      {activeRole === 'staff' && (
+        <StaffDutyReadOnlyBanner loading={duty.loading} error={duty.error} writeAllowed={duty.writeAllowed} onRetry={duty.refresh} />
+      )}
 
       {/* Notifications */}
       {actionSuccess && (

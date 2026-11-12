@@ -11,6 +11,8 @@ import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSea
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSearchResult;
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSearchStatus;
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticTutorCandidate;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.ReadinessStatus;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.VectorStoreHealth;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.client.RestClientException;
@@ -47,7 +49,7 @@ public class StudentSemanticSearchService {
         int topK = requestedTopK(request);
         if (!hasMeaningfulSemanticContext(request)) {
             return new SemanticSearchResult(
-                    SemanticSearchStatus.NOT_APPLICABLE,
+                    SemanticSearchStatus.NO_CONTEXT,
                     null,
                     topK,
                     0,
@@ -57,7 +59,6 @@ public class StudentSemanticSearchService {
             );
         }
         validateHardScope(request);
-        vectorStore.initializeCollection();
         String query = queryBuilder.build(new StudentSemanticQueryInput(
                 request.subjectName(),
                 request.levelName(),
@@ -65,13 +66,39 @@ public class StudentSemanticSearchService {
                 request.weakTopics(),
                 request.tutorPreferences()
         ));
-        EmbeddingVector vector = embeddingService.embed(query);
         int qdrantLimit = qdrantCandidateLimit(topK);
-        List<SemanticSearchHit> hits = vectorStore.search(
-                vector,
-                new SemanticSearchFilter(request.subjectId(), request.levelId(), request.teachingMode()),
-                qdrantLimit
-        );
+        String queryHash = SemanticHash.sha256(query);
+        try {
+            vectorStore.initializeCollection();
+            VectorStoreHealth health = vectorStore.health();
+            if (health.status() == ReadinessStatus.UNAVAILABLE) {
+                return emptyResult(SemanticSearchStatus.QDRANT_UNAVAILABLE, queryHash, topK, qdrantLimit);
+            }
+            if (health.pointCount() == 0 || health.status() == ReadinessStatus.DEGRADED_EMPTY) {
+                return emptyResult(SemanticSearchStatus.INDEX_EMPTY, queryHash, topK, qdrantLimit);
+            }
+        } catch (RuntimeException exception) {
+            return emptyResult(SemanticSearchStatus.QDRANT_UNAVAILABLE, queryHash, topK, qdrantLimit);
+        }
+        EmbeddingVector vector;
+        try {
+            vector = embeddingService.embed(query);
+        } catch (RuntimeException exception) {
+            return emptyResult(SemanticSearchStatus.EMBEDDING_FAILURE, queryHash, topK, qdrantLimit);
+        }
+        List<SemanticSearchHit> hits;
+        try {
+            hits = vectorStore.search(
+                    vector,
+                    new SemanticSearchFilter(request.subjectId(), request.levelId(), request.teachingMode()),
+                    qdrantLimit
+            );
+        } catch (RuntimeException exception) {
+            return emptyResult(SemanticSearchStatus.QDRANT_UNAVAILABLE, queryHash, topK, qdrantLimit);
+        }
+        if (hits == null || hits.isEmpty()) {
+            return emptyResult(SemanticSearchStatus.NO_VALID_SEMANTIC_HITS, queryHash, topK, qdrantLimit);
+        }
         List<TutorCandidate> authoritativeCandidates = findAuthoritativeCandidates(request);
         Map<Long, TutorCandidate> authoritativeByTutorId = new LinkedHashMap<>();
         for (TutorCandidate candidate : authoritativeCandidates) {
@@ -80,15 +107,27 @@ public class StudentSemanticSearchService {
             }
         }
         DeduplicationResult deduplicated = deduplicateValidCandidates(request, hits, authoritativeByTutorId);
+        SemanticSearchStatus status = deduplicated.candidates().isEmpty()
+                ? SemanticSearchStatus.NO_VALID_SEMANTIC_HITS
+                : SemanticSearchStatus.APPLICABLE;
         return new SemanticSearchResult(
-                SemanticSearchStatus.APPLICABLE,
-                SemanticHash.sha256(query),
+                status,
+                queryHash,
                 topK,
                 qdrantLimit,
                 hits.size(),
                 hits.size() - deduplicated.validHitCount(),
                 deduplicated.candidates()
         );
+    }
+
+    private SemanticSearchResult emptyResult(
+            SemanticSearchStatus status,
+            String queryHash,
+            int topK,
+            int qdrantLimit
+    ) {
+        return new SemanticSearchResult(status, queryHash, topK, qdrantLimit, 0, 0, List.of());
     }
 
     private int requestedTopK(SemanticSearchRequest request) {

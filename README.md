@@ -248,7 +248,9 @@ cd backend/account-service
 
 ```bash
 cd backend/learning-service
-./run-local.sh
+
+
+
 ```
 
 ```bash

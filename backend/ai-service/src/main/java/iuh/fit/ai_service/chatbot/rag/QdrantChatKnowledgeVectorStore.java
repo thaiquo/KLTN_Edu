@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import iuh.fit.ai_service.chatbot.rag.ChatKnowledgeModels.KnowledgeChunk;
 import iuh.fit.ai_service.chatbot.rag.ChatKnowledgeModels.KnowledgeSearchHit;
+import iuh.fit.ai_service.chatbot.rag.ChatKnowledgeModels.IndexedChunk;
 import iuh.fit.ai_service.service.embedding.EmbeddingVector;
 import iuh.fit.ai_service.service.semantic.QdrantProperties;
 import iuh.fit.ai_service.service.semantic.SemanticVectorStoreException;
@@ -15,6 +16,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -44,9 +46,10 @@ public class QdrantChatKnowledgeVectorStore implements ChatKnowledgeVectorStore 
     }
 
     @Override
-    public void recreateCollection() {
-        deleteCollectionIfExists();
-        createCollection();
+    public void ensureCollection() {
+        if (!collectionExists()) {
+            createCollection();
+        }
         createPayloadIndexes();
     }
 
@@ -104,6 +107,28 @@ public class QdrantChatKnowledgeVectorStore implements ChatKnowledgeVectorStore 
     }
 
     @Override
+    public Map<String, IndexedChunk> indexedChunks() {
+        if (!collectionExists()) {
+            return Map.of();
+        }
+        Map<String, IndexedChunk> chunks = new LinkedHashMap<>();
+        for (Map<String, Object> point : scrollAllPoints()) {
+            Map<String, Object> payload = asMap(point.get("payload"));
+            String pointId = asString(point.get("id"));
+            if (pointId.isBlank()) {
+                continue;
+            }
+            chunks.put(pointId, new IndexedChunk(
+                    pointId,
+                    asString(payload.get("documentId")),
+                    asString(payload.get("contentHash")),
+                    asInteger(payload.get("version"))
+            ));
+        }
+        return Map.copyOf(chunks);
+    }
+
+    @Override
     public void upsert(String pointId, EmbeddingVector vector, KnowledgeChunk chunk, int documentVersion) {
         validateVector(vector);
         Map<String, Object> point = new LinkedHashMap<>();
@@ -113,6 +138,21 @@ public class QdrantChatKnowledgeVectorStore implements ChatKnowledgeVectorStore 
         request("upsert point", () -> restClient.put()
                 .uri("/collections/{collection}/points?wait=true", collection())
                 .body(Map.of("points", List.of(point)))
+                .retrieve()
+                .body(mapType()));
+    }
+
+    @Override
+    public void deletePoints(Collection<String> pointIds) {
+        List<String> ids = pointIds == null
+                ? List.of()
+                : pointIds.stream().filter(id -> id != null && !id.isBlank()).distinct().toList();
+        if (ids.isEmpty()) {
+            return;
+        }
+        request("delete stale points", () -> restClient.post()
+                .uri("/collections/{collection}/points/delete?wait=true", collection())
+                .body(Map.of("points", ids))
                 .retrieve()
                 .body(mapType()));
     }
@@ -157,23 +197,23 @@ public class QdrantChatKnowledgeVectorStore implements ChatKnowledgeVectorStore 
         }
     }
 
-    private void deleteCollectionIfExists() {
-        if (!collectionExists()) {
-            return;
-        }
-        request("delete collection", () -> restClient.delete()
-                .uri("/collections/{collection}?timeout=30", collection())
-                .retrieve()
-                .body(mapType()));
-    }
-
     private void createCollection() {
         Map<String, Object> vectors = Map.of("size", properties.vectorSize(), "distance", DISTANCE);
-        request("create collection", () -> restClient.put()
-                .uri("/collections/{collection}", collection())
-                .body(Map.of("vectors", vectors))
-                .retrieve()
-                .body(mapType()));
+        try {
+            restClient.put()
+                    .uri("/collections/{collection}", collection())
+                    .body(Map.of("vectors", vectors))
+                    .retrieve()
+                    .body(mapType());
+        } catch (HttpClientErrorException exception) {
+            if (exception.getStatusCode() != HttpStatus.CONFLICT) {
+                throw new SemanticVectorStoreException("Qdrant chatbot create collection failed: "
+                        + safeMessage(exception), exception);
+            }
+        } catch (RestClientException exception) {
+            throw new SemanticVectorStoreException("Qdrant chatbot create collection failed: "
+                    + safeMessage(exception), exception);
+        }
     }
 
     private void createPayloadIndexes() {
@@ -189,6 +229,12 @@ public class QdrantChatKnowledgeVectorStore implements ChatKnowledgeVectorStore 
                     .body(Map.of("field_name", fieldName, "field_schema", schema))
                     .retrieve()
                     .body(mapType());
+        } catch (HttpClientErrorException exception) {
+            if (exception.getStatusCode() == HttpStatus.CONFLICT) {
+                return;
+            }
+            throw new SemanticVectorStoreException("Qdrant chatbot payload index creation failed for " + fieldName
+                    + ": " + safeMessage(exception), exception);
         } catch (RestClientException exception) {
             String message = safeMessage(exception).toLowerCase(Locale.ROOT);
             if (!message.contains("already exists")) {
@@ -196,6 +242,35 @@ public class QdrantChatKnowledgeVectorStore implements ChatKnowledgeVectorStore 
                         + ": " + safeMessage(exception), exception);
             }
         }
+    }
+
+    private List<Map<String, Object>> scrollAllPoints() {
+        List<Map<String, Object>> points = new ArrayList<>();
+        Object offset = null;
+        do {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("limit", 100);
+            body.put("with_payload", true);
+            body.put("with_vector", false);
+            if (offset != null) {
+                body.put("offset", offset);
+            }
+            Map<String, Object> response = request("scroll points", () -> restClient.post()
+                    .uri("/collections/{collection}/points/scroll", collection())
+                    .body(body)
+                    .retrieve()
+                    .body(mapType()));
+            Map<String, Object> result = asMap(response == null ? null : response.get("result"));
+            Object rawPoints = result.get("points");
+            if (rawPoints instanceof List<?> rawList) {
+                rawList.stream()
+                        .filter(Map.class::isInstance)
+                        .map(item -> objectMapper.convertValue(item, new TypeReference<Map<String, Object>>() {}))
+                        .forEach(points::add);
+            }
+            offset = result.get("next_page_offset");
+        } while (offset != null);
+        return points;
     }
 
     private Map<String, Object> payload(KnowledgeChunk chunk, int documentVersion) {
@@ -275,6 +350,17 @@ public class QdrantChatKnowledgeVectorStore implements ChatKnowledgeVectorStore 
 
     private double asDouble(Object value) {
         return value instanceof Number number ? number.doubleValue() : 0.0;
+    }
+
+    private int asInteger(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        try {
+            return value == null ? 0 : Integer.parseInt(String.valueOf(value));
+        } catch (NumberFormatException exception) {
+            return 0;
+        }
     }
 
     private String asString(Object value) {

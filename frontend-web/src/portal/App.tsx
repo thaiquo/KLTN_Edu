@@ -63,6 +63,7 @@ import { DisputeEscalationPage } from "./components/staff/DisputeEscalationPage"
 import { CommunityModerationPage } from "./components/staff/CommunityModerationPage";
 import { StaffMyDutyRosterView } from "./components/staff/StaffMyDutyRosterView";
 import { AdminStaffDutyManagement } from "./components/admin/AdminStaffDutyManagement";
+import { ChatbotKnowledgeManagement } from "./components/admin/ChatbotKnowledgeManagement";
 import { canAccessPortalPage, resolvePortalPage } from "./portalAccess";
 
 // High Resolution course and avatar placeholders
@@ -361,6 +362,9 @@ export default function App({ user, onLogout }: AppProps) {
 
       case "staff-duty-management":
         return activeRole === "admin" ? <AdminStaffDutyManagement /> : null;
+
+      case "chatbot-knowledge":
+        return activeRole === "admin" ? <ChatbotKnowledgeManagement /> : null;
 
       case "user-management":
         return <AdminPortal />;

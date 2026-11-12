@@ -2,6 +2,7 @@ package iuh.fit.ai_service.service;
 
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.AnalyzeRequirementRequest;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.Budget;
+import iuh.fit.ai_service.dto.RequirementAnalysisDtos.ConstraintMode;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.ExtractionStatus;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.GeminiRequirementExtraction;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.PreferredSchedule;
@@ -28,6 +29,17 @@ class NaturalLanguageRequirementAnalyzerTest {
         assertThat(response.requirement().budget().target()).isEqualByComparingTo("250000");
         assertThat(response.requirement().preferredSchedules()).hasSize(2);
         assertThat(response.requirement().learningGoal()).isNotBlank();
+        assertThat(response.requirement().scheduleConstraintMode()).isEqualTo(ConstraintMode.SOFT);
+        assertThat(response.requirement().budgetConstraintMode()).isEqualTo(ConstraintMode.SOFT);
+    }
+
+    @Test
+    void explicitMandatoryLanguageRecoversHardModesWhenExtractorOmitsThem() {
+        var response = analyzer(completeExtraction()).analyze(new AnalyzeRequirementRequest(
+                "Em chi co the hoc thu 2 tu 19:00 den 21:00, ngan sach toi da 200000, Toan lop 12 online."));
+
+        assertThat(response.requirement().scheduleConstraintMode()).isEqualTo(ConstraintMode.HARD);
+        assertThat(response.requirement().budgetConstraintMode()).isEqualTo(ConstraintMode.HARD);
     }
 
     @Test
@@ -131,6 +143,113 @@ class NaturalLanguageRequirementAnalyzerTest {
         assertThat(response.requirement().preferredSchedules())
                 .extracting(PreferredSchedule::dayOfWeek)
                 .containsExactly(2, 4);
+    }
+
+    @Test
+    void explicitSourceRangeIsRecoveredForEveryExtractedDay() {
+        var extraction = completeExtraction().withSchedules(List.of(
+                new PreferredSchedule(2, null, null, TimeOfDayHint.EVENING),
+                new PreferredSchedule(4, null, null, TimeOfDayHint.EVENING),
+                new PreferredSchedule(6, null, null, TimeOfDayHint.EVENING)
+        ));
+
+        var response = analyzer(extraction).analyze(new AnalyzeRequirementRequest(
+                "Học thứ 2, 4, 6 từ 19:00 đến 21:00, môn Toán lớp 12 online."));
+
+        assertThat(response.requirement().preferredSchedules())
+                .allSatisfy(schedule -> {
+                    assertThat(schedule.startTime()).isEqualTo("19:00");
+                    assertThat(schedule.endTime()).isEqualTo("21:00");
+                });
+    }
+
+    @Test
+    void vietnameseHourRangeIsConvertedToTwentyFourHourTime() {
+        var extraction = completeExtraction().withSchedules(List.of(
+                new PreferredSchedule(2, null, null, TimeOfDayHint.EVENING)
+        ));
+
+        var response = analyzer(extraction).analyze(new AnalyzeRequirementRequest(
+                "Tôi học thứ 2 từ 7 giờ tối đến 9 giờ tối."));
+
+        assertThat(response.requirement().preferredSchedules().getFirst().startTime()).isEqualTo("19:00");
+        assertThat(response.requirement().preferredSchedules().getFirst().endTime()).isEqualTo("21:00");
+    }
+
+    @Test
+    void compactVietnameseHourRangeIsRecovered() {
+        var extraction = completeExtraction().withSchedules(List.of(
+                new PreferredSchedule(2, null, null, TimeOfDayHint.EVENING)
+        ));
+
+        var response = analyzer(extraction).analyze(new AnalyzeRequirementRequest(
+                "Học thứ 2 lúc 19h-21h."));
+
+        assertThat(response.requirement().preferredSchedules().getFirst().startTime()).isEqualTo("19:00");
+        assertThat(response.requirement().preferredSchedules().getFirst().endTime()).isEqualTo("21:00");
+    }
+
+    @Test
+    void dayOnlyOrApproximateEveningDoesNotInventExactRange() {
+        var extraction = completeExtraction().withSchedules(List.of(
+                new PreferredSchedule(2, null, null, TimeOfDayHint.EVENING)
+        ));
+
+        var response = analyzer(extraction).analyze(new AnalyzeRequirementRequest("Chỉ học thứ 2 vào buổi tối."));
+
+        assertThat(response.requirement().preferredSchedules().getFirst().startTime()).isNull();
+        assertThat(response.requirement().preferredSchedules().getFirst().endTime()).isNull();
+    }
+
+    @Test
+    void conflictingSourceRangesAreNotAppliedToEveryDay() {
+        var extraction = completeExtraction().withSchedules(List.of(
+                new PreferredSchedule(2, null, null, TimeOfDayHint.EVENING),
+                new PreferredSchedule(4, null, null, TimeOfDayHint.EVENING)
+        ));
+
+        var response = analyzer(extraction).analyze(new AnalyzeRequirementRequest(
+                "Thứ 2 học 19h-21h, thứ 4 học 20h-22h."));
+
+        assertThat(response.requirement().preferredSchedules())
+                .allSatisfy(schedule -> {
+                    assertThat(schedule.startTime()).isNull();
+                    assertThat(schedule.endTime()).isNull();
+                });
+    }
+
+    @Test
+    void explicitToeicTargetRecoversMissingLevelHint() {
+        var extraction = completeExtraction()
+                .withSubject("TOEIC")
+                .withLevel(null)
+                .withLearningGoal("Mục tiêu đạt 650 điểm");
+
+        for (String message : List.of(
+                "Tìm gia sư TOEIC để đạt 650 điểm, học offline.",
+                "Tôi cần gia sư TOEIC mục tiêu 650+, học offline.",
+                "Em muốn học TOEIC 650+, học offline.",
+                "Em muốn ôn TOEIC band 650 học offline."
+        )) {
+            var response = analyzer(extraction).analyze(new AnalyzeRequirementRequest(message));
+
+            assertThat(response.requirement().levelHint()).as(message).isEqualTo("650+");
+            assertThat(response.missingRequiredFields()).as(message).doesNotContain("level");
+        }
+    }
+
+    @Test
+    void toeicBudgetNumberIsNotMisreadAsTargetLevel() {
+        var extraction = completeExtraction()
+                .withSubject("TOEIC")
+                .withLevel(null)
+                .withLearningGoal(null);
+
+        var response = analyzer(extraction).analyze(new AnalyzeRequirementRequest(
+                "Tìm gia sư TOEIC, ngân sách 200.000 đồng mỗi buổi."));
+
+        assertThat(response.requirement().levelHint()).isNull();
+        assertThat(response.missingRequiredFields()).contains("level");
     }
 
     @Test
