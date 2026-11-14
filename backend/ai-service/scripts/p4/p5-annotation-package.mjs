@@ -4,6 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rankingQueries, DATASET_VERSION, SNAPSHOT_VERSION } from './dataset-v1.mjs';
+import { candidateScopeKey, canonicalCandidateSnapshot } from './candidate-snapshot.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outputDir = resolve(process.env.P5_ANNOTATION_OUTPUT_DIR || here);
@@ -126,7 +127,7 @@ function csv(rows) {
 const profiles = loadProfiles();
 const scopes = new Map();
 for (const query of rankingQueries) {
-  const scope = `${query.groundedSubject.id}:${query.groundedLevel.id}:${query.teachingMode}`;
+  const scope = candidateScopeKey(query);
   if (scopes.has(scope)) continue;
   const candidates = profiles.filter(profile => profile.teachingModes.includes(query.teachingMode)
     && profile.capabilities.some(capability => Number(capability.subjectId) === Number(query.groundedSubject.id)
@@ -134,9 +135,9 @@ for (const query of rankingQueries) {
   scopes.set(scope, candidates);
 }
 
-const candidateSnapshot = [...scopes.entries()].map(([scope, candidates]) => ({
+const candidateSnapshot = canonicalCandidateSnapshot(new Map([...scopes.entries()].map(([scope, candidates]) => [
   scope,
-  candidates: candidates.map(candidate => ({
+  candidates.map(candidate => ({
     pseudonymousTutorId: pseudonym(candidate.tutorProfileId),
     approved: true,
     teachingModes: [...candidate.teachingModes].sort(),
@@ -157,7 +158,7 @@ const candidateSnapshot = [...scopes.entries()].map(([scope, candidates]) => ({
     averageRating: Number(candidate.averageRating || 0),
     reviewCount: Number(candidate.reviewCount || 0)
   })).sort((a, b) => a.pseudonymousTutorId.localeCompare(b.pseudonymousTutorId))
-})).sort((a, b) => a.scope.localeCompare(b.scope));
+])));
 
 const candidateSnapshotHash = hash(candidateSnapshot);
 const frozenSnapshotMatched = candidateSnapshotHash === manifest.candidateSnapshotHash;
@@ -168,7 +169,7 @@ const annotationSnapshotVersion = frozenSnapshotMatched ? SNAPSHOT_VERSION : 'p5
 const tutors = new Map();
 const pairs = [];
 for (const query of rankingQueries) {
-  const scope = `${query.groundedSubject.id}:${query.groundedLevel.id}:${query.teachingMode}`;
+  const scope = candidateScopeKey(query);
   for (const profile of scopes.get(scope)) {
     const capability = profile.capabilities.find(item => Number(item.subjectId) === Number(query.groundedSubject.id)
       && item.levels.some(level => Number(level.levelId) === Number(query.groundedLevel.id)));

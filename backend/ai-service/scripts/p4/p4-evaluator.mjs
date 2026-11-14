@@ -4,6 +4,10 @@ import { bootstrapMeanCI, mean, mrrAtK, ndcgAtK, precisionAtK, recallAtK, weight
 const runPath = process.env.P4_RUN_PATH;
 const labelPath = process.env.P4_LABELS_PATH;
 const annotationPackagePath = process.env.P4_ANNOTATION_PACKAGE_PATH;
+const labelMode = (process.env.P4_LABEL_MODE || 'HUMAN_INDEPENDENT').trim().toUpperCase();
+if (!['HUMAN_INDEPENDENT', 'AUTOMATED_SINGLE'].includes(labelMode)) {
+  throw new Error(`Unsupported P4_LABEL_MODE: ${labelMode}`);
+}
 if (!runPath) throw new Error('P4_RUN_PATH is required');
 const run = JSON.parse(await readFile(runPath, 'utf8'));
 
@@ -43,29 +47,47 @@ for (const row of labels) {
 }
 
 const groups = Map.groupBy(labels, row => `${row.queryId}|${row.pseudonymousTutorId}`);
-const humanAnnotatorIds = [...new Set(labels.filter(row => row.annotatorId !== 'ADJUDICATED').map(row => row.annotatorId))].sort();
-if (humanAnnotatorIds.length !== 2) throw new Error('Exactly two independent human annotator IDs are required');
-for (const [key, rows] of groups) {
-  const annotatorIds = rows.map(row => row.annotatorId);
-  if (new Set(annotatorIds).size !== annotatorIds.length) throw new Error(`${key} contains a duplicate annotator row`);
-  const humans = new Set(rows.filter(row => row.annotatorId !== 'ADJUDICATED').map(row => row.annotatorId));
-  const adjudicated = rows.filter(row => row.annotatorId === 'ADJUDICATED');
-  if (humans.size < 2 || adjudicated.length !== 1) throw new Error(`${key} requires >=2 independent annotators and exactly one ADJUDICATED row`);
+let finalLabelRows;
+let agreement;
+if (labelMode === 'AUTOMATED_SINGLE') {
+  const annotatorIds = [...new Set(labels.map(row => row.annotatorId))].sort();
+  if (annotatorIds.length !== 1 || annotatorIds[0] === 'ADJUDICATED') {
+    throw new Error('AUTOMATED_SINGLE requires exactly one non-ADJUDICATED automated annotator ID');
+  }
+  for (const [key, rows] of groups) {
+    if (rows.length !== 1) throw new Error(`${key} requires exactly one automated label row`);
+  }
+  finalLabelRows = labels;
+  agreement = {
+    status: 'NOT_APPLICABLE',
+    reason: 'Single automated judge labels; no independent human annotator agreement was computed',
+    annotatorId: annotatorIds[0]
+  };
+} else {
+  const humanAnnotatorIds = [...new Set(labels.filter(row => row.annotatorId !== 'ADJUDICATED').map(row => row.annotatorId))].sort();
+  if (humanAnnotatorIds.length !== 2) throw new Error('Exactly two independent human annotator IDs are required');
+  for (const [key, rows] of groups) {
+    const annotatorIds = rows.map(row => row.annotatorId);
+    if (new Set(annotatorIds).size !== annotatorIds.length) throw new Error(`${key} contains a duplicate annotator row`);
+    const humans = new Set(rows.filter(row => row.annotatorId !== 'ADJUDICATED').map(row => row.annotatorId));
+    const adjudicated = rows.filter(row => row.annotatorId === 'ADJUDICATED');
+    if (humans.size < 2 || adjudicated.length !== 1) throw new Error(`${key} requires >=2 independent annotators and exactly one ADJUDICATED row`);
+  }
+  const agreementPairs = [...groups.entries()].map(([key, rows]) => ({
+    key,
+    left: Number(rows.find(row => row.annotatorId === humanAnnotatorIds[0]).label),
+    right: Number(rows.find(row => row.annotatorId === humanAnnotatorIds[1]).label)
+  }));
+  agreement = {
+    method: 'quadratic-weighted-Cohen-kappa',
+    annotatorIds: humanAnnotatorIds,
+    pairCount: agreementPairs.length,
+    kappa: weightedCohenKappa(agreementPairs.map(pair => pair.left), agreementPairs.map(pair => pair.right)),
+    disagreementCount: agreementPairs.filter(pair => pair.left !== pair.right).length,
+    disagreementPairs: agreementPairs.filter(pair => pair.left !== pair.right).map(pair => pair.key)
+  };
+  finalLabelRows = labels.filter(row => row.annotatorId === 'ADJUDICATED');
 }
-
-const agreementPairs = [...groups.entries()].map(([key, rows]) => ({
-  key,
-  left: Number(rows.find(row => row.annotatorId === humanAnnotatorIds[0]).label),
-  right: Number(rows.find(row => row.annotatorId === humanAnnotatorIds[1]).label)
-}));
-const agreement = {
-  method: 'quadratic-weighted-Cohen-kappa',
-  annotatorIds: humanAnnotatorIds,
-  pairCount: agreementPairs.length,
-  kappa: weightedCohenKappa(agreementPairs.map(pair => pair.left), agreementPairs.map(pair => pair.right)),
-  disagreementCount: agreementPairs.filter(pair => pair.left !== pair.right).length,
-  disagreementPairs: agreementPairs.filter(pair => pair.left !== pair.right).map(pair => pair.key)
-};
 
 if (annotationPackagePath) {
   const annotationPackage = JSON.parse(await readFile(annotationPackagePath, 'utf8'));
@@ -82,6 +104,7 @@ if (annotationPackagePath) {
     `${pair.queryId}|${pair.pseudonymousTutorId}`,
     pair.hardViolations?.join('|') || 'NONE'
   ]));
+  if (expected.size !== annotationPackage.pairs.length) throw new Error('Annotation package contains duplicate query-tutor pairs');
   for (const [key, expectedHardViolation] of expected) {
     if (!groups.has(key)) throw new Error(`Missing labels for ${key}`);
     for (const row of groups.get(key)) {
@@ -95,14 +118,29 @@ if (annotationPackagePath) {
 }
 
 const finalLabels = {};
-for (const row of labels.filter(row => row.annotatorId === 'ADJUDICATED')) {
+for (const row of finalLabelRows) {
   finalLabels[row.queryId] ||= {};
   finalLabels[row.queryId][row.pseudonymousTutorId] = Number(row.label);
 }
 
 const baselines = ['B0', 'B1', 'B2', 'B3', 'B4'];
 const metricNames = ['p5', 'p10', 'r5', 'r10', 'n5', 'n10', 'mrr10'];
-const labeledCases = run.cases.filter(item => finalLabels[item.queryId]);
+if (!Array.isArray(run.cases)) throw new Error('Run detail is required; rerun with P4_DETAIL=true');
+if (new Set(run.cases.map(item => item.queryId)).size !== run.cases.length) throw new Error('Run contains duplicate query IDs');
+for (const item of run.cases) {
+  const truth = finalLabels[item.queryId];
+  if (!truth) throw new Error(`Missing labels for run query ${item.queryId}`);
+  for (const baseline of baselines) {
+    if (!Array.isArray(item.rankings?.[baseline])) throw new Error(`Missing ${baseline} ranking for ${item.queryId}`);
+    for (const tutorId of item.rankings[baseline]) {
+      if (!Object.hasOwn(truth, tutorId)) throw new Error(`Missing label for ranked pair ${item.queryId}|${tutorId}`);
+    }
+  }
+}
+const labeledCases = run.cases;
+const noRelevantLabelQueryIds = labeledCases
+  .filter(item => !Object.values(finalLabels[item.queryId]).some(label => Number(label) >= 1))
+  .map(item => item.queryId);
 const output = {};
 const perQuery = {};
 for (const baseline of baselines) {
@@ -133,6 +171,28 @@ const pairedDifferencesB4 = Object.fromEntries(baselines.filter(name => name !==
   }))
 ]));
 
+const pairedOutcomesB4 = Object.fromEntries(baselines.filter(name => name !== 'B4').map(baseline => [baseline,
+  Object.fromEntries(metricNames.map(metric => {
+    const comparisons = perQuery.B4.map((item, index) => {
+      const reference = perQuery[baseline][index];
+      return Number.isFinite(item[metric]) && Number.isFinite(reference[metric])
+        ? { queryId: item.queryId, difference: item[metric] - reference[metric] }
+        : null;
+    }).filter(Boolean);
+    const better = comparisons.filter(item => item.difference > 1e-12).map(item => item.queryId);
+    const equal = comparisons.filter(item => Math.abs(item.difference) <= 1e-12).map(item => item.queryId);
+    const worse = comparisons.filter(item => item.difference < -1e-12).map(item => item.queryId);
+    return [metric, {
+      sampleSize: comparisons.length,
+      betterCount: better.length,
+      equalCount: equal.length,
+      worseCount: worse.length,
+      betterQueryIds: better,
+      worseQueryIds: worse
+    }];
+  }))
+]));
+
 const strata = Object.fromEntries(Object.entries(Object.groupBy(labeledCases, item => item.stratum || 'UNSPECIFIED')).map(([name, cases]) => {
   const metrics = cases.map(item => {
     const ranking = item.rankings.B4;
@@ -151,11 +211,16 @@ const strata = Object.fromEntries(Object.entries(Object.groupBy(labeledCases, it
 const candidateCounts = Object.fromEntries(baselines.map(baseline => [baseline, {
   fewerThan5: labeledCases.filter(item => item.rankings[baseline].length < 5).length,
   fewerThan10: labeledCases.filter(item => item.rankings[baseline].length < 10).length,
-  empty: labeledCases.filter(item => item.rankings[baseline].length === 0).length
+  empty: labeledCases.filter(item => item.rankings[baseline].length === 0).length,
+  emptyQueryIds: labeledCases.filter(item => item.rankings[baseline].length === 0).map(item => item.queryId)
 }]));
 console.log(JSON.stringify({
-  status: 'VERIFIED_INDEPENDENT_LABELS', relevantThreshold: 1,
+  status: labelMode === 'AUTOMATED_SINGLE' ? 'VERIFIED_AUTOMATED_LABELS' : 'VERIFIED_INDEPENDENT_LABELS',
+  labelMode, relevantThreshold: 1,
   gradedGain: '2^relevance-1', labeledQueries: Object.keys(finalLabels).length,
   precisionDenominator: 'fixed K; unfilled ranks are non-relevant',
-  agreement, candidateCounts, metrics: output, pairedDifferencesB4, strata
+  undefinedWhenNoRelevantLabels: ['recall', 'ndcg'],
+  noRelevantLabelQueryCount: noRelevantLabelQueryIds.length,
+  noRelevantLabelQueryIds,
+  agreement, candidateCounts, metrics: output, pairedDifferencesB4, pairedOutcomesB4, strata
 }));

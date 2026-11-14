@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { dataset, rankingQueries, analysisQueries, DATASET_VERSION, SNAPSHOT_VERSION } from './dataset-v1.mjs';
 import { jaccardAtK, mean } from './p4-metrics.mjs';
+import {
+  candidatePseudonym, candidateScopeKey, canonicalCandidateSnapshot, normalizeCandidate
+} from './candidate-snapshot.mjs';
 
 const gateway = process.env.BENCHMARK_GATEWAY_URL || 'http://localhost:8080';
 const qdrant = process.env.BENCHMARK_QDRANT_URL || 'http://localhost:6333';
@@ -13,7 +16,7 @@ if (![studentEmail, studentPassword, staffEmail, staffPassword].every(Boolean)) 
 
 const manifest = JSON.parse(await readFile(new URL('./reproducibility-manifest-v1.json', import.meta.url), 'utf8'));
 const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
-const pseudonym = id => `T-${hash(`${SNAPSHOT_VERSION}|${id}`).slice(0, 12)}`;
+const pseudonym = id => candidatePseudonym(id, SNAPSHOT_VERSION);
 
 async function http(url, options = {}) {
   const started = performance.now();
@@ -109,27 +112,6 @@ function hardViolations(query, result) {
   return violations;
 }
 
-function safeCandidate(candidate) {
-  const capabilities = (candidate.subjects || []).map(capability => ({
-    subjectId: capability.subjectId,
-    levelIds: (capability.levels || []).map(level => level.levelId).sort((a, b) => a - b),
-    experienceYears: capability.experienceYears ?? null,
-    tuitionMin: capability.tuitionMin ?? null,
-    tuitionMax: capability.tuitionMax ?? null,
-    descriptionHash: hash(capability.description || '')
-  })).sort((a, b) => a.subjectId - b.subjectId);
-  return {
-    pseudonymousTutorId: pseudonym(candidate.tutorId ?? candidate.tutorProfileId),
-    approved: candidate.approvedOrVerified ?? null,
-    teachingModes: [...(candidate.teachingModes || [])].sort(),
-    capabilities,
-    availability: (candidate.availability || []).map(slot => ({ dayOfWeek: slot.dayOfWeek, startTime: slot.startTime, endTime: slot.endTime }))
-      .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime)),
-    averageRating: candidate.averageRating ?? null,
-    reviewCount: candidate.reviewCount ?? null
-  };
-}
-
 function percentile(values, ratio) {
   const ordered = values.filter(Number.isFinite).sort((a, b) => a - b);
   return ordered.length ? ordered[Math.max(0, Math.ceil(ratio * ordered.length) - 1)] : null;
@@ -144,13 +126,14 @@ if (qdrantBefore.count !== manifest.qdrant.expectedPointCount || qdrantBefore.ha
 
 const coreByScope = new Map();
 for (const query of rankingQueries) {
-  const key = `${query.groundedSubject.id}|${query.groundedLevel.id}|${query.teachingMode}`;
+  const key = candidateScopeKey(query);
   if (!coreByScope.has(key)) coreByScope.set(key, await http(manualUrl(query)));
 }
-const candidateSnapshot = [...coreByScope.entries()].map(([scope, response]) => ({
+const candidateSnapshot = canonicalCandidateSnapshot(new Map([...coreByScope.entries()].map(([scope, response]) => [
   scope,
-  candidates: (response.body.content || []).map(safeCandidate).sort((a, b) => a.pseudonymousTutorId.localeCompare(b.pseudonymousTutorId))
-})).sort((a, b) => a.scope.localeCompare(b.scope));
+  (response.body.content || []).map(candidate => normalizeCandidate(candidate, SNAPSHOT_VERSION))
+    .sort((a, b) => a.pseudonymousTutorId.localeCompare(b.pseudonymousTutorId))
+])));
 const candidateSnapshotHash = hash(candidateSnapshot);
 const expectedCandidateSnapshotHash = process.env.P4_EXPECTED_CANDIDATE_SNAPSHOT_HASH || manifest.candidateSnapshotHash;
 if (expectedCandidateSnapshotHash && expectedCandidateSnapshotHash !== candidateSnapshotHash) {
@@ -159,7 +142,7 @@ if (expectedCandidateSnapshotHash && expectedCandidateSnapshotHash !== candidate
 
 const cases = [];
 for (const query of rankingQueries) {
-  const key = `${query.groundedSubject.id}|${query.groundedLevel.id}|${query.teachingMode}`;
+  const key = candidateScopeKey(query);
   const manual = coreByScope.get(key);
   const hybrid = await post('/api/ai/matching/tutors', requestBody(query), studentToken);
   const eligibleRaw = hybrid.body.results || [];
