@@ -318,7 +318,7 @@ resolve transaction per disputed student agreement.
   - `src/web3/escrowContractService.ts`: Type-safe methods for USDC `approve`, Escrow `fundAgreement`, dispute opening (`openTutorFraudDispute`), and dispute resolution (`resolveTutorFraudDispute`).
 - UI Components:
   - `src/components/common/EtherscanLink.tsx`: Formatted blockchain address / transaction link with `lucide-react` `ExternalLink` icon linking to Sepolia Etherscan.
-  - `src/components/common/WalletConnectButton.tsx`: Interactive navigation header component showing wallet address, ETH & USDC balance, chain switcher badge, and disconnect options.
+  - `src/components/common/WalletConnectButton.tsx` (historical): the P5 handoff included this navigation wallet control. It was later unmounted and removed during dead-code cleanup; current wallet surfaces consume `useWeb3Wallet` directly, primarily through `MyWalletView.tsx` and contract dialogs.
   - `src/components/contract/EscrowPaymentModal.tsx`: 2-step student payment dialog (`Approve USDC` -> `Fund Escrow Deposit` with tx confirmation and Etherscan link).
   - `src/components/contract/DisputeManagementPanel.tsx`: Student dispute opening modal with SHA-256 evidence hashing, and Staff/Admin dispute resolution actions with reviewer email validation.
   - `src/components/contract/ContractAuditTimeline.tsx`: Blockchain timeline stepper visualizing contract milestones and block/transaction proof.
