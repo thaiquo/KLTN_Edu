@@ -5,5 +5,6 @@ public enum ShiftAssignmentStatus {
     ASSIGNED,
     CHECKED_IN,
     COMPLETED,
-    ABSENT
+    ABSENT,
+    SKIPPED
 }

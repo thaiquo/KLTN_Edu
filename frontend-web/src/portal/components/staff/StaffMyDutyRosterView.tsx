@@ -33,6 +33,7 @@ const statusMeta: Record<ShiftStatus, { label: string; className: string }> = {
   CHECKED_IN: { label: "Đang trực", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
   COMPLETED: { label: "Hoàn thành", className: "border-slate-200 bg-slate-50 text-slate-600" },
   ABSENT: { label: "Vắng mặt", className: "border-rose-200 bg-rose-50 text-rose-700" },
+  SKIPPED: { label: "Đã bỏ qua", className: "border-slate-200 bg-slate-50 text-slate-500" },
 };
 
 function localIso(date: Date) {

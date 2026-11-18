@@ -8,5 +8,6 @@ public enum ShiftAuditAction {
     REASSIGNED,
     CHECKED_IN,
     COMPLETED,
-    ABSENT
+    ABSENT,
+    AUTO_SKIPPED
 }

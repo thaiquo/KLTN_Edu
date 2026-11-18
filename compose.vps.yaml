@@ -115,6 +115,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}
       S3_KEY_PREFIX: ${S3_KEY_PREFIX:-production}
       STAFF_DUTY_ENFORCEMENT_ENABLED: ${STAFF_DUTY_ENFORCEMENT_ENABLED:-true}
+      STAFF_DUTY_AUTO_SCHEDULING_ENABLED: ${STAFF_DUTY_AUTO_SCHEDULING_ENABLED:-true}
     depends_on:
       postgres:
         condition: service_healthy

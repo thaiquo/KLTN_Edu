@@ -204,6 +204,81 @@ class StaffDutyRosterServiceTest {
     }
 
     @Test
+    void automaticCoverageUsesVotesThenBalancesAndPublishesWithoutAdmin() {
+        LocalDate monday = LocalDate.of(2026, 11, 9);
+        List<User> staff = List.of(
+                user(1L, "staff1@edu.vn", "Staff 1"),
+                user(2L, "staff2@edu.vn", "Staff 2"),
+                user(3L, "staff3@edu.vn", "Staff 3"));
+        List<StaffShiftAssignment> assignments = assignments(monday);
+        List<StaffAvailability> votes = new ArrayList<>();
+        for (StaffShiftAssignment assignment : assignments) {
+            User voter = assignment.getShiftCode() == ShiftCode.MORNING ? staff.get(0) : staff.get(1);
+            StaffAvailability vote = new StaffAvailability();
+            vote.setStaff(voter);
+            vote.setWorkDate(assignment.getWorkDate());
+            vote.setShiftCode(assignment.getShiftCode());
+            votes.add(vote);
+        }
+
+        when(userRoleRepository.findUsersByRoleAndAccountStatus(Role.STAFF, AccountStatus.ACTIVE))
+                .thenReturn(staff);
+        when(assignmentRepository.findByWorkDateBetweenOrderByWorkDateAscShiftCodeAsc(
+                monday, monday.plusDays(5))).thenReturn(assignments);
+        when(assignmentRepository.findWeekForUpdate(monday, monday.plusDays(5))).thenReturn(assignments);
+        when(availabilityRepository.findByWorkDateBetween(monday, monday.plusDays(5))).thenReturn(votes);
+        when(assignmentRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var roster = service.ensureAutomaticCoverage();
+
+        assertThat(roster.published()).isTrue();
+        assertThat(assignments).allMatch(assignment ->
+                assignment.getStatus() == ShiftAssignmentStatus.ASSIGNED
+                        && assignment.getPublishedAt().equals(clock.instant()));
+        assertThat(assignments.stream().filter(a -> a.getShiftCode() == ShiftCode.MORNING))
+                .allMatch(a -> a.getStaff().getId().equals(1L));
+        assertThat(assignments.stream().filter(a -> a.getShiftCode() == ShiftCode.EVENING))
+                .allMatch(a -> a.getStaff().getId().equals(2L));
+        verify(eventPublisher, times(2)).publishStaffRosterPublished(any());
+    }
+
+    @Test
+    void currentWeekRecoverySkipsExpiredDraftsAndPublishesRemainingShifts() {
+        Clock wednesdayClock = Clock.fixed(
+                Instant.parse("2026-11-11T09:00:00Z"), ZoneId.of("Asia/Bangkok"));
+        StaffDutyRosterService recoveryService = new StaffDutyRosterService(
+                availabilityRepository, assignmentRepository, auditRepository,
+                userRepository, userRoleRepository, eventPublisher, wednesdayClock, true);
+        LocalDate monday = LocalDate.of(2026, 11, 9);
+        User admin = user(99L, "admin@edu.vn", "Admin");
+        List<User> staff = List.of(
+                user(1L, "staff1@edu.vn", "Staff 1"),
+                user(2L, "staff2@edu.vn", "Staff 2"),
+                user(3L, "staff3@edu.vn", "Staff 3"));
+        List<StaffShiftAssignment> assignments = assignments(monday);
+
+        when(userRepository.findByEmailIgnoreCase(admin.getEmail())).thenReturn(Optional.of(admin));
+        when(userRoleRepository.findUsersByRoleAndAccountStatus(Role.STAFF, AccountStatus.ACTIVE))
+                .thenReturn(staff);
+        when(assignmentRepository.findByWorkDateBetweenOrderByWorkDateAscShiftCodeAsc(
+                monday, monday.plusDays(5))).thenReturn(assignments);
+        when(assignmentRepository.findWeekForUpdate(monday, monday.plusDays(5))).thenReturn(assignments);
+        when(availabilityRepository.findByWorkDateBetween(monday, monday.plusDays(5))).thenReturn(List.of());
+        when(assignmentRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        var roster = recoveryService.recoverCurrentWeek(admin.getEmail());
+
+        assertThat(roster.published()).isTrue();
+        assertThat(assignments.stream().filter(a -> a.getStatus() == ShiftAssignmentStatus.SKIPPED))
+                .hasSize(5)
+                .allMatch(a -> a.getStaff() == null && a.getCompletedAt().equals(wednesdayClock.instant()));
+        assertThat(assignments.stream().filter(a -> a.getStatus() == ShiftAssignmentStatus.ASSIGNED))
+                .hasSize(7)
+                .allMatch(a -> a.getPublishedAt().equals(wednesdayClock.instant()));
+        verify(eventPublisher, times(3)).publishStaffRosterPublished(any());
+    }
+
+    @Test
     void createDraftAllowsAdminToStartWithoutAnyAvailabilityVotes() {
         LocalDate monday = LocalDate.of(2026, 11, 9);
         User admin = user(99L, "admin@edu.vn", "Admin");
