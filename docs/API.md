@@ -10,6 +10,52 @@
 - Internal service endpoints must be treated as service-token protected even when the Spring route itself is not a normal user-facing route.
 - Do not document a standalone `/matching` product route. AI Matching is part of Tutor Marketplace, Class Marketplace and chatbot flows.
 
+## Operational Work Items V1
+
+`GET /api/operational-work-items/v1?page=0&size=10` provides a read-only, partial-source-safe projection for
+Admin/Staff operational queues. The response uses `contractVersion: "V1"`; each item contains `source`,
+`resourceId`, `workflowRevision`, `title`, `status`, `priority`, `assignee`, `createdAt`, `age`, nullable `dueAt`,
+`actionUrl`, `claimable`, `sourceStatus`, `slaState`, `remainingMinutes`, `overdueByMinutes`, `slaPolicyId`,
+`slaPaused`, and `slaPauseReason`. Source health contains `status` (`SUCCESS`, `DEGRADED`, or `UNAVAILABLE`),
+`latencyMs`, process-lifetime `lastSuccessfulRefresh`, `checkedAt`, nullable `itemCount`, a short `errorCode`,
+and a safe `errorSummary`. Owner services remain authoritative for access and mutations.
+
+`GET /api/operational-work-items/v1/summary` returns queue-health counts for `NORMAL`, `DUE_SOON`,
+`OVERDUE`, and `NOT_APPLICABLE`, plus per-source health and truncation. An unavailable source is explicit and
+its source counts are unknown rather than zero. SLA policy and new configurable defaults are documented in
+`ADMIN_STAFF_M3_SLA_POLICY.md`.
+
+`GET /api/operations/health/v1` is an Admin-only diagnostic view over the same source-health and SLA summary.
+It does not expose service URLs, tokens, stack traces, database details, or source payloads.
+
+A configurable Gateway background scheduler evaluates the same bounded Work Item/SLA policy without requiring
+Admin or Staff to open Action Center. It publishes best-effort persistent Bell alerts for `DUE_SOON` and
+`OVERDUE`. The event identity is stable per source/resource/workflow revision/SLA state; Notification Service
+remains the durable idempotency boundary. Shared items notify Admin, while assigned items notify Admin plus the
+matching active Staff assignee. Source or Bell publication failure is isolated from the read API and later runs.
+
+Account Service exposes `POST /api/support/tickets/{id}/reassign` to Admin. The request supplies the new active
+Staff assignee and a reason; closed/resolved tickets and no-op reassignment are rejected. Pessimistic locking and
+support-ticket history preserve previous/new assignee IDs and actor metadata.
+
+The queue policy and identity rules are documented in `ADMIN_STAFF_M3_SCOPE_MATRIX.md`.
+
+## Admin Analytics Dashboard V1
+
+`GET /api/operations/dashboard/v1?rangeDays=30|90` is an Admin-only, partial-source-safe aggregate for the
+Admin Dashboard charts. Its `operational` section reuses Operational Work Item V1 to return authoritative open
+counts by business source, backend SLA counts, and bounded Staff assignment workload. Its `financial` section
+proxies the Contract-owned trend without exposing wallet addresses, transaction hashes, service URLs, or tokens.
+Each section has an independent `SUCCESS`, `PARTIAL`, or `UNAVAILABLE` status; an unavailable Contract source
+does not turn operational counts into zero.
+
+`GET /api/contracts/admin/financial-trend?rangeDays=30|90` is the Contract-owned Admin-only read endpoint. It
+uses fixed aggregate SQL grouped by day for 30 days and week for 90 days, separated by token symbol/decimals.
+`releasedAmount` is the finalized Tutor plus platform distribution from `SETTLED` sessions; `pendingAmount` is
+the settlement amount in the real open settlement states; `refundAmount` combines finalized session refunds and
+completed termination refunds; `contractValue` is the face value of agreements created in the selected period.
+No currency conversion is performed and legacy-quarantined records are excluded.
+
 ## 2. Ownership Summary
 
 | API family | Owning service |
@@ -259,6 +305,20 @@ Response shape at high level:
 The chatbot may use RAG, public lookup/count, Tutor/Class matching, and authenticated Student/Tutor read-only tools. It does not use Notification Service chat tables and does not use `/ws/chat`.
 
 Admin knowledge maintenance currently exists under `/api/ai/admin/chatbot-knowledge/reindex` and `/api/ai/admin/chatbot-knowledge/status`.
+
+## 11A. Tutor Statistics API
+
+`GET /api/tutor-statistics/v1?rangeDays=7|30|90` is the browser-facing Tutor dashboard contract owned by API Gateway.
+
+- Authentication: JWT cookie/Bearer is accepted by the existing Gateway authorizer, but assigned role and `activeRole` must both be `TUTOR`.
+- Identity: the caller cannot select a Tutor ID. Learning and Contract derive Tutor identity from the authenticated principal; extra identity query parameters are ignored.
+- Learning source: `GET /api/tutor/statistics/source`, owned by Learning Service, provides class/session/student workload and public review aggregates.
+- Income source: `GET /api/contracts/tutor/statistics/source`, owned by Contract Service, provides settlement-derived released and pending Tutor amounts. Legacy-excluded agreements are omitted.
+- Partial failure: each source is returned as `SUCCESS` or `UNAVAILABLE`. An unavailable source has `data: null`; the Gateway does not substitute financial or academic zeros.
+- `completedClasses` is currently `null` because the Learning class lifecycle has no authoritative `COMPLETED` state. Completed sessions remain supported.
+- Responses are bounded to recent class/review/session rows; this endpoint does not return unbounded history.
+
+The two source endpoints are implementation-facing aggregation sources and enforce the same active Tutor identity. Frontend code should call the Gateway endpoint, not join owner-service data itself.
 
 ## 12. Internal APIs
 

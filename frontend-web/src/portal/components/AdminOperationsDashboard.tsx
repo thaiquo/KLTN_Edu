@@ -14,8 +14,10 @@ import {
 import { adminUsersApi } from "../../api/adminUsers";
 import { contractsApi } from "../../api/contractsApi";
 import { terminationsApi } from "../../api/terminationsApi";
-import { operationalReportsApi } from "../../api/operationalReports";
+import { adminAnalyticsApi, operationalReportsApi, operationalWorkItemsApi } from "../../api/operationalReports";
 import { useRealtimeRefresh } from "../../realtime/useRealtimeRefresh";
+import { projectAdminSlaMetrics } from "./staff/actionCenterState";
+import { AdminAnalyticsCharts } from "./AdminAnalyticsCharts";
 
 type AuditItem = {
   id: string;
@@ -39,6 +41,10 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
   const [finance, setFinance] = useState<any>(null);
   const [recentActivities, setRecentActivities] = useState<AuditItem[]>([]);
   const [reportSummary, setReportSummary] = useState<any>(null);
+  const [slaSummary, setSlaSummary] = useState<any>(null);
+  const [sourceHealth, setSourceHealth] = useState<any[]>([]);
+  const [analytics, setAnalytics] = useState<any>(null);
+  const [financialRange, setFinancialRange] = useState(30);
   const [selectedAudit, setSelectedAudit] = useState<AuditItem | null>(null);
   const [summaryTotals, setSummaryTotals] = useState({
     staff: null as number | null,
@@ -62,15 +68,18 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
         contractsApi.getAdminFinancialOverview(),
         operationalReportsApi.activities({ page: 0, size: 10 }),
         operationalReportsApi.summary({}),
+        operationalWorkItemsApi.summary(),
         adminUsersApi.list({ role: "STAFF", page: 0, size: 1 }),
         adminUsersApi.list({ role: "STAFF", status: "ACTIVE", page: 0, size: 1 }),
         contractsApi.listDisputes({ page: 0, size: 1, statusGroup: "PENDING" }),
         terminationsApi.page({ page: 0, size: 1, statusGroup: "PENDING" }),
         contractsApi.listAllTransactions({ page: 0, size: 1, statusGroup: "FAILED" }),
-        contractsApi.listAdminSettlements({ page: 0, size: 1, statusGroup: "PENDING" })
+        contractsApi.listAdminSettlements({ page: 0, size: 1, statusGroup: "PENDING" }),
+        operationalWorkItemsApi.health(),
+        adminAnalyticsApi.dashboard({ rangeDays: financialRange })
       ]);
-      const [usersResult, financeResult, recentResult, reportSummaryResult, staffResult, activeStaffResult,
-        disputesResult, terminationsResult, transactionsResult, settlementsResult] = results;
+      const [usersResult, financeResult, recentResult, reportSummaryResult, slaSummaryResult, staffResult, activeStaffResult,
+        disputesResult, terminationsResult, transactionsResult, settlementsResult, healthResult, analyticsResult] = results;
       const errors: string[] = [];
       const value = (result: PromiseSettledResult<any>, label: string) => {
         if (result.status === "fulfilled") return result.value;
@@ -81,16 +90,34 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
       const financialOverview = value(financeResult, "tổng quan tài chính");
       const recentActivityPage = value(recentResult, "hoạt động gần đây");
       const allReportSummary = value(reportSummaryResult, "hiệu suất Staff");
+      const operationalSla = value(slaSummaryResult, "SLA tác nghiệp");
+      if (Array.isArray(allReportSummary?.sources)) {
+        allReportSummary.sources
+          .filter((source: any) => source.status !== "SUCCESS")
+          .forEach((source: any) => errors.push(`báo cáo ${source.source}`));
+      }
       const staffPage = value(staffResult, "tổng Staff");
       const activeStaffPage = value(activeStaffResult, "Staff hoạt động");
       const openDisputesPage = value(disputesResult, "khiếu nại");
       const pendingTerminationsPage = value(terminationsResult, "thanh lý");
       const failedTransactionsPage = value(transactionsResult, "giao dịch lỗi");
       const pendingSettlementsPage = value(settlementsResult, "settlement");
+      const healthDiagnostics = value(healthResult, "chẩn đoán nguồn tác nghiệp");
+      const dashboardAnalytics = value(analyticsResult, "analytics dashboard");
       setUsers(pageItems(userRows));
       setFinance(financialOverview);
       setRecentActivities(pageItems(recentActivityPage));
+      if (Array.isArray(operationalSla?.sources)) {
+        operationalSla.sources
+          .filter((source: any) => source.status !== "SUCCESS")
+          .forEach((source: any) => errors.push(`SLA ${source.source}`));
+      }
       setReportSummary(allReportSummary);
+      setSlaSummary(operationalSla);
+      setSourceHealth(Array.isArray(healthDiagnostics?.operational?.sources) ? healthDiagnostics.operational.sources : []);
+      setAnalytics(dashboardAnalytics);
+      if (dashboardAnalytics?.operational?.status === "UNAVAILABLE") errors.push("analytics tác nghiệp");
+      if (dashboardAnalytics?.financial?.status === "UNAVAILABLE") errors.push("xu hướng tài chính");
       setSummaryTotals({
         staff: staffPage ? Number(staffPage.totalElements ?? 0) : null,
         activeStaff: activeStaffPage ? Number(activeStaffPage.totalElements ?? 0) : null,
@@ -113,7 +140,7 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
 
   useEffect(() => {
     load(false);
-  }, []);
+  }, [financialRange]);
 
   useRealtimeRefresh(
     [
@@ -157,6 +184,14 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
     terminations: row.terminationCount,
     last: row.lastActivityAt
   })), [reportSummary]);
+  const slaMetrics = useMemo(() => projectAdminSlaMetrics(slaSummary), [slaSummary]);
+  const workload = useMemo(() => {
+    const rows = new Map<string, { assignee: string; open: number; dueSoon: number; overdue: number; escalated: number }>();
+    (analytics?.operational?.data?.staffWorkload || []).forEach((item: any) => {
+      rows.set(item.assignee, { assignee: item.assignee, open: item.assigned, dueSoon: item.dueSoon, overdue: item.overdue, escalated: item.normal + item.notApplicable });
+    });
+    return Array.from(rows.values());
+  }, [analytics]);
 
   return (
     <div className="min-h-[calc(100vh-96px)] bg-[#f3f6f9] p-0 text-slate-900">
@@ -185,7 +220,9 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div data-testid="admin-sla-summary" className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
+        <Metric icon={AlertTriangle} label="SLA quá hạn" value={loading ? "..." : metric(slaMetrics.overdue)} tone="rose" />
+        <Metric icon={Activity} label="SLA sắp hạn" value={loading ? "..." : metric(slaMetrics.dueSoon)} tone="amber" />
         <Metric icon={Users} label="Staff hoạt động" value={loading ? "..." : summaryTotals.activeStaff == null || summaryTotals.staff == null ? "Không khả dụng" : `${summaryTotals.activeStaff}/${summaryTotals.staff}`} />
         <Metric icon={WalletCards} label="Escrow đang khóa" value={loading ? "..." : finance == null ? "Không khả dụng" : `$${Number(finance.totalEscrowLockedUsdc ?? 0).toFixed(2)}`} tone="indigo" />
         <Metric icon={ShieldAlert} label="Khiếu nại mở" value={loading ? "..." : metric(summaryTotals.openDisputes)} tone="amber" />
@@ -193,6 +230,8 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
         <Metric icon={Activity} label="Tx lỗi" value={loading ? "..." : metric(summaryTotals.failedTransactions)} tone="rose" />
         <Metric icon={CheckCircle2} label="Settlement chờ" value={loading ? "..." : metric(summaryTotals.pendingSettlements)} tone="emerald" />
       </div>
+
+      <AdminAnalyticsCharts dashboard={analytics} loading={loading} rangeDays={financialRange} onRangeChange={setFinancialRange} />
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
         <section className="border border-slate-200 bg-white p-5 shadow-sm">
@@ -252,6 +291,19 @@ export function AdminOperationsDashboard({ onNavigate }: { onNavigate?: (page: s
             <Shortcut icon={ShieldAlert} title="Phân xử khiếu nại" subtitle="Admin xử lý toàn bộ, Staff xử lý lớp phụ trách" onClick={() => onNavigate?.("complaints")} />
             <Shortcut icon={FileText} title="Duyệt hồ sơ & lớp học" subtitle="Admin thao tác như Staff khi cần giảm tải" onClick={() => onNavigate?.("tutor-approval")} />
           </div>
+        </section>
+      </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+        <section data-testid="admin-source-health" className="border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-black">Sức khỏe nguồn tác nghiệp</h2>
+          <p className="mt-1 text-xs font-semibold text-slate-500">Độ trễ, lần kiểm tra và lần thành công gần nhất; không hiển thị URL hoặc lỗi nội bộ nhạy cảm.</p>
+          <div className="mt-4 space-y-2">{sourceHealth.length === 0 ? <p className="py-6 text-center text-sm font-bold text-slate-400">Chưa có dữ liệu chẩn đoán.</p> : sourceHealth.map((source: any) => <div key={source.source} className="grid gap-2 border border-slate-100 p-3 text-xs sm:grid-cols-[1fr_auto_auto]"><div><p className="font-black text-slate-900">{source.source}</p><p className="mt-1 text-slate-500">{source.errorSummary || `Lần thành công: ${fmt(source.lastSuccessfulRefresh)}`}</p></div><span className={`h-fit rounded-full px-2 py-1 text-[10px] font-black ${source.status === "SUCCESS" ? "bg-emerald-50 text-emerald-700" : source.status === "DEGRADED" ? "bg-amber-50 text-amber-700" : "bg-rose-50 text-rose-700"}`}>{source.status}</span><div className="text-right font-bold text-slate-500"><p>{source.latencyMs} ms</p><p>{source.itemCount == null ? "Không xác định" : `${source.itemCount} việc`}</p></div></div>)}</div>
+        </section>
+        <section data-testid="admin-workload" className="border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-black">Khối lượng đang mở</h2>
+          <p className="mt-1 text-xs font-semibold text-slate-500">Snapshot assignment bounded từ backend; không phải điểm xếp hạng Staff.</p>
+          <div className="mt-4 overflow-x-auto"><table className="w-full text-left text-xs"><thead className="border-b border-slate-100 text-[10px] font-black uppercase text-slate-400"><tr><th className="py-2">Phụ trách</th><th>Được giao</th><th>Sắp hạn</th><th>Quá hạn</th><th>Bình thường/N.A.</th></tr></thead><tbody className="divide-y divide-slate-100">{workload.map(row => <tr key={row.assignee}><td className="max-w-[220px] py-3 pr-2 font-bold text-slate-900"><span className="block truncate" title={row.assignee}>{row.assignee}</span></td><td>{row.open}</td><td className="text-amber-700">{row.dueSoon}</td><td className="text-rose-700">{row.overdue}</td><td>{row.escalated}</td></tr>)}</tbody></table>{workload.length === 0 && <p className="py-8 text-center text-sm font-bold text-slate-400">Không có assignment trong snapshot hiện tại.</p>}</div>
         </section>
       </div>
 

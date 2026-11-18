@@ -144,4 +144,35 @@ class JwtAuthenticationFilterTest {
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
         verify(chain).doFilter(request, response);
     }
+
+    @Test
+    void operationalReadRequiresScopedGatewayServiceToken() throws Exception {
+        JwtService jwtService = mock(JwtService.class);
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtService, mock(CustomUserDetailsService.class));
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/internal/operational-work-items/support-tickets");
+        request.addHeader("X-Service-Token", "scoped-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+        when(jwtService.isServiceTokenValid("scoped-token", "api-gateway", "operational-read")).thenReturn(true);
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities())
+                .extracting("authority").contains("ROLE_INTERNAL_OPERATIONAL", "ROLE_ADMIN");
+        verify(chain).doFilter(request, response);
+    }
+
+    @Test
+    void userCookieCannotCallOperationalInternalEndpoint() throws Exception {
+        JwtService jwtService = mock(JwtService.class);
+        JwtAuthenticationFilter filter = new JwtAuthenticationFilter(jwtService, mock(CustomUserDetailsService.class));
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/internal/operational-work-items/support-tickets");
+        request.addHeader("X-Service-Token", "user-token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, mock(FilterChain.class));
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
 }

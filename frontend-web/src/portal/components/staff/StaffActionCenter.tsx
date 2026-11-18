@@ -9,6 +9,7 @@ import {
   GraduationCap,
   History,
   Layers,
+  MessageSquareWarning,
   RefreshCw,
   Scale,
   ShieldAlert,
@@ -26,7 +27,8 @@ import { terminationsApi, TerminationView } from "../../../api/terminationsApi";
 import { useAuth } from "../../../hooks/useAuth";
 import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
 import { fetchUserDirectory, getUserDisplayName, UserSummary } from "../../../utils/userDisplay";
-import { buildActionQueueSnapshot } from "./actionCenterState";
+import { buildActionQueueSnapshot, projectAdditionalWorkItemQueues, projectSlaPresentation } from "./actionCenterState";
+import { operationalWorkItemsApi } from "../../../api/operationalReports";
 
 interface StaffActionCenterProps {
   onNavigate: (page: string, subtab?: string) => void;
@@ -34,7 +36,7 @@ interface StaffActionCenterProps {
 
 interface UrgentItem {
   id: string;
-  domain: "TUTOR_PROFILE" | "TEACHING_REGISTRATION" | "CLASS_ROOM" | "DISPUTE" | "TERMINATION";
+  domain: "TUTOR_PROFILE" | "TEACHING_REGISTRATION" | "CLASS_ROOM" | "DISPUTE" | "TERMINATION" | "COMMUNITY_MODERATION" | "SUPPORT_TICKET";
   domainLabel: string;
   title: string;
   subtitle: string;
@@ -46,10 +48,28 @@ interface UrgentItem {
   urgencyTone: "rose" | "amber" | "blue";
   targetPage: string;
   targetSubtab?: string;
+  dueAt?: string | null;
+  slaState?: "NORMAL" | "DUE_SOON" | "OVERDUE" | "NOT_APPLICABLE";
 }
 
-type QueueKey = "tutors" | "teaching" | "classes" | "disputes" | "terminations";
+type QueueKey = "tutors" | "teaching" | "classes" | "disputes" | "terminations" | "community" | "support";
 type QueueTotals = Record<QueueKey, number | null>;
+
+interface OperationalWorkItem {
+  source: "COMMUNITY_MODERATION" | "SUPPORT_TICKET" | string;
+  resourceId: string;
+  title: string;
+  status: string;
+  priority: "HIGH" | "MEDIUM" | "NORMAL";
+  assignee?: string | null;
+  createdAt?: string | null;
+  claimable: boolean;
+  dueAt?: string | null;
+  slaState: "NORMAL" | "DUE_SOON" | "OVERDUE" | "NOT_APPLICABLE";
+  remainingMinutes?: number | null;
+  overdueByMinutes?: number | null;
+  slaPolicyId?: string | null;
+}
 
 export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
   const { user } = useAuth();
@@ -60,7 +80,8 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
   const [error, setError] = useState("");
   const [queueErrors, setQueueErrors] = useState<Partial<Record<QueueKey, string>>>({});
   const [queueTotals, setQueueTotals] = useState<QueueTotals>({
-    tutors: null, teaching: null, classes: null, disputes: null, terminations: null
+    tutors: null, teaching: null, classes: null, disputes: null, terminations: null,
+    community: null, support: null
   });
   const [users, setUsers] = useState<UserSummary[]>([]);
 
@@ -70,6 +91,8 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
   const [classes, setClasses] = useState<any[]>([]);
   const [disputes, setDisputes] = useState<DisputeDto[]>([]);
   const [terminations, setTerminations] = useState<TerminationView[]>([]);
+  const [additionalWorkItems, setAdditionalWorkItems] = useState<OperationalWorkItem[]>([]);
+  const [allWorkItems, setAllWorkItems] = useState<OperationalWorkItem[]>([]);
 
   const loadAll = async (opts?: boolean | unknown) => {
     const isSilent = opts === true;
@@ -84,9 +107,10 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         teachingRegistrationApi.adminPending({ page: 0, size: 10 }),
         classApi.adminGetAllClasses({ page: 0, size: 10, status: "PENDING_APPROVAL" }),
         contractsApi.listDisputes({ statusGroup: "PENDING", page: 0, size: 10 }),
-        terminationsApi.page({ page: 0, size: 10, statusGroup: "PENDING" })
+        terminationsApi.page({ page: 0, size: 10, statusGroup: "PENDING" }),
+        operationalWorkItemsApi.page({ page: 0, size: 50 })
       ]);
-      const [usersResult, tutorsResult, teachingResult, classesResult, disputesResult, terminationsResult] = results;
+      const [usersResult, tutorsResult, teachingResult, classesResult, disputesResult, terminationsResult, workItemsResult] = results;
       setUsers(usersResult.status === "fulfilled" && Array.isArray(usersResult.value) ? usersResult.value : []);
 
       const snapshot = buildActionQueueSnapshot([
@@ -97,9 +121,24 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
       setClasses(snapshot.items.classes);
       setDisputes(snapshot.items.disputes);
       setTerminations(snapshot.items.terminations);
-      setQueueTotals(snapshot.totals as QueueTotals);
-      setQueueErrors(snapshot.errors);
-      if (Object.keys(snapshot.errors).length === 5) setError("Không thể tải các hàng đợi tác nghiệp. Vui lòng thử lại.");
+      const totals: QueueTotals = { ...(snapshot.totals as Omit<QueueTotals, "community" | "support">), community: null, support: null };
+      const errors: Partial<Record<QueueKey, string>> = { ...snapshot.errors };
+      if (workItemsResult.status === "fulfilled") {
+        const projected = projectAdditionalWorkItemQueues(workItemsResult.value);
+        totals.community = projected.totals.community;
+        totals.support = projected.totals.support;
+        Object.assign(errors, projected.errors);
+        setAdditionalWorkItems(projected.items);
+        setAllWorkItems(Array.isArray(workItemsResult.value?.content) ? workItemsResult.value.content : []);
+      } else {
+        errors.community = "Không thể tải nguồn Community";
+        errors.support = "Không thể tải nguồn Help Desk";
+        setAdditionalWorkItems([]);
+        setAllWorkItems([]);
+      }
+      setQueueTotals(totals);
+      setQueueErrors(errors);
+      if (Object.keys(errors).length === 7) setError("Không thể tải các hàng đợi tác nghiệp. Vui lòng thử lại.");
     } catch (err: any) {
       setError(err?.message || "Không thể tải dữ liệu Trung tâm tác nghiệp.");
     } finally {
@@ -160,14 +199,10 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
   // Build urgent prioritized queue
   const urgentQueue = useMemo<UrgentItem[]>(() => {
     const list: UrgentItem[] = [];
-    const now = Date.now();
 
     // 1. Disputes
     activeDisputes.forEach((d) => {
-      const deadlineMs = d.tutorResponseDeadline ? new Date(d.tutorResponseDeadline).getTime() : 0;
-      const isUrgentDeadline = deadlineMs > 0 && deadlineMs - now < 24 * 3600 * 1000 && deadlineMs > now;
-      const isExpiredResponse = deadlineMs > 0 && now >= deadlineMs;
-      const isReady = d.readyForResolution || isExpiredResponse || Boolean(d.tutorResponse);
+      const isReady = d.readyForResolution || Boolean(d.tutorResponse);
 
       let urgency: UrgentItem["urgency"] = "NORMAL";
       let urgencyLabel = "Khiếu nại đang mở";
@@ -177,10 +212,6 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         urgency = "HIGH";
         urgencyLabel = "Sẵn sàng phân xử";
         urgencyTone = "rose";
-      } else if (isUrgentDeadline) {
-        urgency = "MEDIUM";
-        urgencyLabel = "Hạn trả lời < 24h";
-        urgencyTone = "amber";
       }
 
       const complainant = getUserDisplayName(d.studentEmail, users, d.studentName || "Học viên");
@@ -281,20 +312,64 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
       });
     });
 
-    // Sort: HIGH first, then MEDIUM, then NORMAL; tie-breaker: newest first
+    additionalWorkItems.forEach((workItem) => {
+      const community = workItem.source === "COMMUNITY_MODERATION";
+      list.push({
+        id: `${workItem.source}-${workItem.resourceId}`,
+        domain: workItem.source,
+        domainLabel: community ? "Kiểm duyệt Community" : "Help Desk",
+        title: workItem.title,
+        subtitle: community
+          ? `Trạng thái kiểm duyệt: ${workItem.status}`
+          : `${workItem.claimable ? "Chưa có người tiếp nhận" : `Phụ trách: ${workItem.assignee || "đã phân công"}`} · ${workItem.status}`,
+        createdAt: workItem.createdAt || undefined,
+        urgency: workItem.priority,
+        urgencyLabel: workItem.priority === "HIGH" ? "Cần xử lý sớm" : community ? "Chờ kiểm duyệt" : "Yêu cầu hỗ trợ",
+        urgencyTone: workItem.priority === "HIGH" ? "rose" : workItem.priority === "MEDIUM" ? "amber" : "blue",
+        targetPage: community ? "community-moderation" : "help"
+      });
+    });
+
+    const sourcePrefix: Record<string, string> = {
+      TUTOR_APPLICATION: "tutor",
+      TEACHING_REGISTRATION: "teach",
+      CLASS_APPROVAL: "class",
+      DISPUTE: "dispute",
+      TERMINATION: "term"
+    };
+    const slaByItemId = new Map<string, OperationalWorkItem>();
+    allWorkItems.forEach((workItem) => {
+      const prefix = sourcePrefix[workItem.source];
+      if (prefix) slaByItemId.set(`${prefix}-${workItem.resourceId}`, workItem);
+      slaByItemId.set(`${workItem.source}-${workItem.resourceId}`, workItem);
+    });
+    const withServerSla = list.map((item) => {
+      const sla = slaByItemId.get(item.id);
+      if (!sla) return item;
+      return { ...item, ...projectSlaPresentation(sla, {
+        urgency: item.urgency,
+        urgencyTone: item.urgencyTone,
+        urgencyLabel: item.urgencyLabel
+      }) };
+    });
+
+    // Backend SLA is authoritative; priority remains the tie-breaker for equal SLA states.
     const urgencyWeight = { HIGH: 3, MEDIUM: 2, NORMAL: 1 };
-    return list.sort((a, b) => {
+    const slaWeight = { OVERDUE: 4, DUE_SOON: 3, NORMAL: 2, NOT_APPLICABLE: 1 };
+    return withServerSla.sort((a, b) => {
+      const slaDiff = slaWeight[b.slaState || "NOT_APPLICABLE"] - slaWeight[a.slaState || "NOT_APPLICABLE"];
+      if (slaDiff !== 0) return slaDiff;
       const weightDiff = urgencyWeight[b.urgency] - urgencyWeight[a.urgency];
       if (weightDiff !== 0) return weightDiff;
       return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
     });
-  }, [activeDisputes, pendingClasses, pendingTeaching, pendingTerminations, pendingTutors, users]);
+  }, [activeDisputes, additionalWorkItems, allWorkItems, pendingClasses, pendingTeaching, pendingTerminations, pendingTutors, users]);
 
   const knownPendingWork = Object.values(queueTotals).reduce<number>((sum, value) => sum + (value ?? 0), 0);
   const hasUnavailableQueue = Object.values(queueTotals).some((value) => value == null);
 
   return (
-    <div className="min-h-[calc(100vh-96px)] bg-[#f3f6f9] p-0 font-sans text-[#073554]">
+    <div data-testid="staff-action-center" className="min-h-[calc(100vh-96px)] bg-[#f3f6f9] p-0 font-sans text-[#073554]">
       {/* Header Banner */}
       <header className="mb-5 flex flex-col gap-4 border border-[#d7dde6] bg-white px-6 py-5 shadow-sm xl:flex-row xl:items-center xl:justify-between">
         <div>
@@ -312,7 +387,7 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
             Xin chào <strong className="text-[#073554]">{user?.fullName || staffEmail}</strong>. Bạn hiện có{" "}
             <strong className="text-rose-600">
               {loading ? "..." : hasUnavailableQueue ? `ít nhất ${knownPendingWork} việc` : `${knownPendingWork} việc`}
-            </strong> đang chờ xử lý trên 5 nghiệp vụ.
+            </strong> đang chờ xử lý trên 7 nghiệp vụ.
           </p>
         </div>
 
@@ -337,13 +412,13 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
       )}
       {!error && Object.keys(queueErrors).length > 0 && (
         <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800 shadow-sm">
-          <span>Dữ liệu tải một phần: {Object.keys(queueErrors).length}/5 nguồn chưa khả dụng. Các tổng còn lại vẫn là số liệu thật.</span>
+          <span>Dữ liệu tải một phần: {Object.keys(queueErrors).length}/7 nguồn chưa khả dụng. Các tổng còn lại vẫn là số liệu thật.</span>
           <button type="button" onClick={loadAll} className="shrink-0 underline underline-offset-2">Thử lại</button>
         </div>
       )}
 
       {/* 5 Core Action Hub Cards */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {/* 1. Tutor Profiles */}
         <ActionHubCard
           icon={UserCheck}
@@ -413,6 +488,32 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
           onClick={() => onNavigate("contracts")}
           loading={loading}
         />
+
+        <ActionHubCard
+          icon={ShieldAlert}
+          title="Kiểm duyệt Community"
+          count={queueTotals.community}
+          error={queueErrors.community}
+          countLabel="bài viết cần xem xét"
+          description="Xử lý bài bị báo cáo hoặc AI chuyển sang kiểm duyệt thủ công. Hàng đợi dùng chung, không tự gán người."
+          badgeTone="amber"
+          actionLabel="Mở kiểm duyệt"
+          onClick={() => onNavigate("community-moderation")}
+          loading={loading}
+        />
+
+        <ActionHubCard
+          icon={MessageSquareWarning}
+          title="Yêu cầu hỗ trợ"
+          count={queueTotals.support}
+          error={queueErrors.support}
+          countLabel="ticket đang mở"
+          description="Tiếp nhận ticket chưa có người phụ trách hoặc tiếp tục xử lý ticket đã được gán cho bạn."
+          badgeTone="blue"
+          actionLabel="Mở Help Desk"
+          onClick={() => onNavigate("help")}
+          loading={loading}
+        />
       </div>
 
       {/* Main Content Layout: Urgent Items (Left) + Performance & Shortcuts (Right) */}
@@ -474,6 +575,11 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
                           <span className="text-[11px] text-slate-400 font-semibold flex items-center gap-1">
                             <Clock className="h-3 w-3" />
                             {new Date(item.createdAt).toLocaleString("vi-VN")}
+                          </span>
+                        )}
+                        {item.dueAt && (
+                          <span className="text-[11px] font-bold text-slate-500">
+                            Hạn: {new Date(item.dueAt).toLocaleString("vi-VN")}
                           </span>
                         )}
                       </div>

@@ -2,10 +2,13 @@ package iuh.fit.account_service.service;
 
 import iuh.fit.account_service.config.security.ActiveRoleAuthenticationDetails;
 import iuh.fit.account_service.dto.support.SupportTicketDtos.CreateRequest;
+import iuh.fit.account_service.dto.support.SupportTicketDtos.ReassignRequest;
 import iuh.fit.account_service.entity.SupportTicket;
+import iuh.fit.account_service.entity.SupportTicketHistory;
 import iuh.fit.account_service.entity.User;
 import iuh.fit.account_service.enums.SupportTicketCategory;
 import iuh.fit.account_service.enums.SupportTicketStatus;
+import iuh.fit.account_service.enums.Role;
 import iuh.fit.account_service.exception.ConflictException;
 import iuh.fit.account_service.exception.ForbiddenException;
 import iuh.fit.account_service.repository.*;
@@ -27,11 +30,11 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class SupportTicketServiceTest {
     @Mock SupportTicketRepository tickets; @Mock SupportTicketMessageRepository messages;
-    @Mock SupportTicketHistoryRepository history; @Mock UserRepository users;
+    @Mock SupportTicketHistoryRepository history; @Mock UserRepository users; @Mock UserRoleRepository userRoles;
     SupportTicketService service;
 
     @BeforeEach void setUp() {
-        service = new SupportTicketService(tickets, messages, history, users);
+        service = new SupportTicketService(tickets, messages, history, users, userRoles);
         lenient().when(messages.findByTicketIdOrderByCreatedAtAscIdAsc(nullable(Long.class))).thenReturn(List.of());
         lenient().when(history.findByTicketIdOrderByCreatedAtAscIdAsc(nullable(Long.class))).thenReturn(List.of());
     }
@@ -62,6 +65,36 @@ class SupportTicketServiceTest {
         when(tickets.findByPublicIdForUpdate(ticket.getPublicId())).thenReturn(Optional.of(ticket));
         assertThatThrownBy(() -> service.claim(ticket.getPublicId(), auth(other, "STAFF")))
                 .isInstanceOf(ConflictException.class);
+    }
+
+    @Test void adminReassignsOpenTicketToActiveStaffWithBeforeAfterAudit() {
+        User owner = user(20L, "owner@test.vn", "Owner");
+        User admin = user(1L, "admin@test.vn", "Admin");
+        User previous = user(30L, "previous@test.vn", "Previous");
+        User next = user(31L, "next@test.vn", "Next");
+        SupportTicket ticket = ticket(owner); ticket.setAssignee(previous); ticket.setStatus(SupportTicketStatus.ASSIGNED);
+        when(tickets.findByPublicIdForUpdate(ticket.getPublicId())).thenReturn(Optional.of(ticket));
+        when(users.findById(next.getId())).thenReturn(Optional.of(next));
+        when(userRoles.existsByUserIdAndRole(next.getId(), Role.STAFF)).thenReturn(true);
+
+        var result = service.reassign(ticket.getPublicId(), new ReassignRequest(next.getId(), "Cân bằng tải"), auth(admin, "ADMIN"));
+
+        assertThat(result.summary().assigneeId()).isEqualTo(next.getId());
+        var audit = org.mockito.ArgumentCaptor.forClass(SupportTicketHistory.class);
+        verify(history).save(audit.capture());
+        assertThat(audit.getValue().getAction()).isEqualTo("REASSIGNED");
+        assertThat(audit.getValue().getPreviousAssignee().getId()).isEqualTo(previous.getId());
+        assertThat(audit.getValue().getNewAssignee().getId()).isEqualTo(next.getId());
+        assertThat(audit.getValue().getReason()).isEqualTo("Cân bằng tải");
+    }
+
+    @Test void staffCannotReassignTicket() {
+        User owner = user(20L, "owner@test.vn", "Owner");
+        User staff = user(30L, "staff@test.vn", "Staff");
+        SupportTicket ticket = ticket(owner);
+        assertThatThrownBy(() -> service.reassign(ticket.getPublicId(),
+                new ReassignRequest(31L, "Không có quyền"), auth(staff, "STAFF")))
+                .isInstanceOf(ForbiddenException.class);
     }
 
     private SupportTicket ticket(User owner) {

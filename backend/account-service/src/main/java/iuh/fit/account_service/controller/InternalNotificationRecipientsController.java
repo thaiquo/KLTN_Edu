@@ -1,6 +1,7 @@
 package iuh.fit.account_service.controller;
 
 import iuh.fit.account_service.repository.UserRoleRepository;
+import iuh.fit.account_service.repository.SupportTicketRepository;
 import iuh.fit.account_service.enums.Role;
 import iuh.fit.account_service.enums.AccountStatus;
 import io.jsonwebtoken.Jwts;
@@ -16,9 +17,12 @@ import javax.crypto.SecretKey;
 @RestController
 public class InternalNotificationRecipientsController {
     private final UserRoleRepository roles;
+    private final SupportTicketRepository tickets;
     private final SecretKey key;
-    public InternalNotificationRecipientsController(UserRoleRepository roles, @Value("${jwt.secret}") String secret) {
+    public InternalNotificationRecipientsController(UserRoleRepository roles, SupportTicketRepository tickets,
+                                                    @Value("${jwt.secret}") String secret) {
         this.roles = roles;
+        this.tickets = tickets;
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
     public record Recipient(Long recipientId, String targetRole) {}
@@ -26,21 +30,26 @@ public class InternalNotificationRecipientsController {
     @GetMapping("/api/internal/notification-reviewers")
     @Transactional(readOnly = true)
     public List<Recipient> reviewers(@RequestHeader(value = "X-Service-Token", required = false) String token,
-                                    @RequestParam(defaultValue = "") String reviewerEmail) {
+                                    @RequestParam(defaultValue = "") String reviewerEmail,
+                                    @RequestParam(required = false) UUID supportTicketId) {
         try {
             var claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
-            if (!"contract-service".equals(claims.getSubject())
+            if (!Set.of("contract-service", "api-gateway").contains(claims.getSubject())
                     || !"notification-recipients".equals(claims.get("serviceScope", String.class))
                     || claims.getExpiration() == null) throw new IllegalArgumentException();
         } catch (Exception e) {
             throw new UnauthorizedException("Service authentication required");
         }
+        Long assignedUserId = supportTicketId == null ? null : tickets.findByPublicId(supportTicketId)
+                .map(ticket -> ticket.getAssignee() == null ? null : ticket.getAssignee().getId())
+                .orElse(null);
         Map<Long, Recipient> result = new LinkedHashMap<>();
         for (var row : roles.findByRoleIn(List.of(Role.ADMIN, Role.STAFF))) {
             var user = row.getUser();
             if (user.getAccountStatus() != AccountStatus.ACTIVE) continue;
             if (row.getRole() == Role.ADMIN) result.put(user.getId(), new Recipient(user.getId(), "ADMIN"));
-            else if (user.getEmail().equalsIgnoreCase(reviewerEmail.trim()))
+            else if (Objects.equals(user.getId(), assignedUserId)
+                    || user.getEmail().equalsIgnoreCase(reviewerEmail.trim()))
                 result.putIfAbsent(user.getId(), new Recipient(user.getId(), "STAFF"));
         }
         return List.copyOf(result.values());

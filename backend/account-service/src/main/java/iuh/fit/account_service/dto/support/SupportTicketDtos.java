@@ -18,11 +18,13 @@ public final class SupportTicketDtos {
     public record MessageRequest(@NotBlank @Size(max = 5000) String message) {}
     public record StatusRequest(@NotNull SupportTicketStatus status, @Size(max = 2000) String reason) {}
     public record EscalateRequest(@NotBlank @Size(max = 2000) String reason) {}
+    public record ReassignRequest(@NotNull Long assigneeUserId, @NotBlank @Size(max = 2000) String reason) {}
     public record Summary(UUID id, SupportTicketCategory category, String subject, SupportTicketStatus status,
             Long creatorId, String creatorName, String creatorRole, Long assigneeId, String assigneeName,
             LocalDateTime escalatedAt, LocalDateTime createdAt, LocalDateTime updatedAt, Long version) {}
     public record Message(Long id, Long actorId, String actorName, String actorRole, String message, LocalDateTime createdAt) {}
     public record History(Long id, Long actorId, String actorName, String actorRole, String action,
-            String fromStatus, String toStatus, String reason, LocalDateTime createdAt) {}
+            String fromStatus, String toStatus, Long previousAssigneeId, String previousAssigneeName,
+            Long newAssigneeId, String newAssigneeName, String reason, LocalDateTime createdAt) {}
     public record Detail(Summary summary, String description, List<Message> messages, List<History> history) {}
 }

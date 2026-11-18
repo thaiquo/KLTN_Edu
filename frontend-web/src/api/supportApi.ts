@@ -12,7 +12,7 @@ export interface TicketDetail {
   summary: TicketSummary;
   description: string;
   messages: Array<{ id: number; actorId: number; actorName: string; actorRole: string; message: string; createdAt: string }>;
-  history: Array<{ id: number; actorId: number; actorName: string; actorRole: string; action: string; fromStatus: string | null; toStatus: string | null; reason: string | null; createdAt: string }>;
+  history: Array<{ id: number; actorId: number; actorName: string; actorRole: string; action: string; fromStatus: string | null; toStatus: string | null; previousAssigneeId?: number | null; previousAssigneeName?: string | null; newAssigneeId?: number | null; newAssigneeName?: string | null; reason: string | null; createdAt: string }>;
 }
 
 const supportApi = {
@@ -26,6 +26,9 @@ const supportApi = {
     return apiRequest("/api/support/tickets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   },
   claim(id: string): Promise<TicketDetail> { return apiRequest(`/api/support/tickets/${id}/claim`, { method: "POST" }); },
+  reassign(id: string, assigneeUserId: number, reason: string): Promise<TicketDetail> {
+    return apiRequest(`/api/support/tickets/${id}/reassign`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assigneeUserId, reason }) });
+  },
   reply(id: string, message: string): Promise<TicketDetail> {
     return apiRequest(`/api/support/tickets/${id}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message }) });
   },

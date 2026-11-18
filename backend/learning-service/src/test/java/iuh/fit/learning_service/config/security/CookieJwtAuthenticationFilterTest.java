@@ -246,6 +246,30 @@ class CookieJwtAuthenticationFilterTest {
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
+    @Test
+    void operationalQueueAcceptsOnlyScopedGatewayToken() throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/community/moderation/queue");
+        request.addHeader("X-Service-Token", serviceToken("api-gateway", "operational-read"));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities())
+                .extracting("authority").contains("ROLE_INTERNAL_OPERATIONAL", "ROLE_ADMIN");
+    }
+
+    @Test
+    void operationalQueueRejectsUserJwtInServiceHeader() throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/community/moderation/queue");
+        request.addHeader("X-Service-Token", tutorToken(Date.from(Instant.now().plusSeconds(60))));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(401);
+    }
+
     private String tutorToken(Date expiration) {
         return tutorToken(expiration, "APPROVED");
     }
@@ -265,9 +289,13 @@ class CookieJwtAuthenticationFilterTest {
     }
 
     private String serviceToken(String scope) {
+        return serviceToken("contract-service", scope);
+    }
+
+    private String serviceToken(String subject, String scope) {
         SecretKey secretKey = Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8));
         return Jwts.builder()
-                .subject("contract-service")
+                .subject(subject)
                 .claim("serviceScope", scope)
                 .issuedAt(new Date())
                 .expiration(Date.from(Instant.now().plusSeconds(60)))

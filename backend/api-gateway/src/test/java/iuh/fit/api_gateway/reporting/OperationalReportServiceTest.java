@@ -80,7 +80,9 @@ class OperationalReportServiceTest {
                     0, 1, "TUTOR_PROFILES", "ALL", "ALL", null, null, null), null, null)
                     .block(Duration.ofSeconds(5));
             String csv = new String(bytes, StandardCharsets.UTF_8);
-            assertTrue(csv.startsWith("\uFEFFThời gian"));
+            assertTrue(csv.startsWith("\uFEFFPhạm vi dữ liệu"));
+            assertTrue(csv.contains("Nguồn thành công"));
+            assertTrue(csv.contains("Nguồn không khả dụng"));
             assertTrue(csv.contains("\"'=unsafe\""));
             assertTrue(csv.contains("APPROVED"));
         } finally {
@@ -164,7 +166,7 @@ class OperationalReportServiceTest {
     }
 
     @Test
-    void sourceFailureFailsTheWholeReportInsteadOfReturningPartialData() throws Exception {
+    void sourceFailureReturnsSuccessfulSourcesAndMarksUnavailableSource() throws Exception {
         HttpServer server = server(exchange -> {
             if (exchange.getRequestURI().getPath().contains("tutor-subject-registrations")) {
                 respond(exchange, 503, "{\"message\":\"source unavailable\"}");
@@ -174,9 +176,16 @@ class OperationalReportServiceTest {
         });
         try {
             OperationalReportService live = service(server);
-            assertThrows(RuntimeException.class, () -> live.page(
+            var result = live.page(
                     new OperationalReportService.Query(0, 10, "ALL", "ALL", "ALL", null, null, null),
-                    null, null).block(Duration.ofSeconds(5)));
+                    null, null).block(Duration.ofSeconds(5));
+            assertEquals(0, result.totalElements());
+            assertTrue(result.sources().stream().anyMatch(source -> source.source().equals("teaching")
+                    && source.status() == OperationalReportService.SourceAvailability.UNAVAILABLE
+                    && "HTTP_503".equals(source.errorCode())));
+            assertTrue(result.sources().stream().anyMatch(source -> source.source().equals("tutors")
+                    && source.status() == OperationalReportService.SourceAvailability.SUCCESS));
+            assertEquals(null, result.sourceTotals().get("teaching"));
         } finally {
             server.stop(0);
         }

@@ -1,12 +1,14 @@
-# ADMIN/STAFF M3 PROPOSED PLAN
+# ADMIN/STAFF M3 DELIVERY PLAN
 
-> **Status:** PROPOSED - NOT APPROVED - NOT IMPLEMENTED  
-> **Date:** 2026-11-11  
+> **Status:** M3.1 BACKEND-VERIFIED UNDER USER-ACCEPTED OFF-HOURS GATE; M3.2-M3.4 AND M4 IMPLEMENTED, TESTED, AND RUNTIME-VERIFIED LOCALLY; USER BROWSER WALKTHROUGH PENDING
+> **Updated:** 2026-11-18
 > **Scope:** Admin/Staff operations only. This is not the existing Mobile M3 milestone.
 
 ## 1. Context and objective
 
-The repository does not currently define an official Admin/Staff M3. M1 establishes role and resource authorization; M2 provides operational review/escalation workflows; Staff Duty Roster adds time-based write eligibility. The proposed M3 should improve operational governance and observability without changing domain ownership, financial authority, blockchain flows, or Student/Tutor business rules.
+M1 establishes role and resource authorization; M2 provides operational review/escalation workflows; Staff Duty Roster adds time-based write eligibility. M3 improves operational governance and observability without changing domain ownership, financial authority, blockchain flows, or Student/Tutor business rules.
+
+Current local delivery evidence is documented by `ADMIN_STAFF_M3_SCOPE_MATRIX.md` and `ADMIN_STAFF_M3_SLA_POLICY.md`. The user explicitly accepted backend source/test evidence for the duty gate because acceptance ran outside the configured shift window. Scope enforcement remains covered by service tests; no blockchain dispute/termination fixture was created. Isolated Support Ticket fixtures were used for SLA and Bell runtime verification and were removed afterward.
 
 Objective: give Admin and Staff a measurable, auditable operational workflow with clear ownership, service-level visibility, and safe recovery when a downstream service is unavailable.
 
@@ -89,6 +91,17 @@ Acceptance:
 - Export respects filters, authorization and row limits.
 - Audit entries link back to source records without copying sensitive payloads.
 - Full Account/Learning/Contract/Gateway/frontend regression passes.
+
+Local closeout evidence on 2026-11-18:
+
+- Gateway records per-source SUCCESS/DEGRADED/UNAVAILABLE, latency, checked time, process-lifetime last success,
+  safe error summary and item count; Admin has a separate health endpoint.
+- A configurable background scheduler uses scoped service tokens and the existing stable work-item/SLA identity.
+- Repeated scheduler runs produced no duplicate same-state Bell; DUE_SOON to OVERDUE produced one new event.
+- Support Ticket Admin reassignment uses pessimistic locking and records actor, reason, previous/new assignee.
+- Full regression passed: Gateway 27, Account 205, Learning 354, Notification 82, Contract 318 plus 8 Anvil skip;
+  frontend utility suites 21 and production build passed.
+- UI browser walkthrough is intentionally left to user acceptance and is not counted as automated browser PASS.
 
 ## 5. Expected implementation surfaces
 

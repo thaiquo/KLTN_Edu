@@ -60,6 +60,15 @@ type ReportSummary = {
     terminationCount: number;
     lastActivityAt?: string | null;
   }>;
+  sources?: SourceHealth[];
+};
+
+type SourceHealth = {
+  source: string;
+  status: "SUCCESS" | "UNAVAILABLE";
+  latencyMs: number;
+  lastSuccessfulRefresh?: string | null;
+  errorCode?: string | null;
 };
 
 const fmt = (value?: string | null) => (value ? new Date(value).toLocaleString("vi-VN") : "--");
@@ -78,7 +87,8 @@ export function StaffReportsPage() {
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [activityTotal, setActivityTotal] = useState(0);
   const [activityPages, setActivityPages] = useState(0);
-  const [sourceTotals, setSourceTotals] = useState({ tutors: 0, teaching: 0, classes: 0, disputes: 0, terminations: 0 });
+  const [sourceTotals, setSourceTotals] = useState<Record<string, number | null>>({ tutors: 0, teaching: 0, classes: 0, disputes: 0, terminations: 0 });
+  const [reportSources, setReportSources] = useState<SourceHealth[]>([]);
   const [summary, setSummary] = useState<ReportSummary | null>(null);
   const [openDisputesTotal, setOpenDisputesTotal] = useState<number | null>(null);
   const [pendingTerminationsTotal, setPendingTerminationsTotal] = useState<number | null>(null);
@@ -135,16 +145,18 @@ export function StaffReportsPage() {
         setActivityTotal(report.totalElements);
         setActivityPages(report.totalPages);
         setSourceTotals({
-          tutors: report.sourceTotals.tutors || 0,
-          teaching: report.sourceTotals.teaching || 0,
-          classes: report.sourceTotals.classes || 0,
-          disputes: report.sourceTotals.disputes || 0,
-          terminations: report.sourceTotals.terminations || 0
+          tutors: report.sourceTotals.tutors ?? null,
+          teaching: report.sourceTotals.teaching ?? null,
+          classes: report.sourceTotals.classes ?? null,
+          disputes: report.sourceTotals.disputes ?? null,
+          terminations: report.sourceTotals.terminations ?? null
         });
+        setReportSources(report.sources || []);
       } else {
         setActivities([]);
         setActivityTotal(0);
         setActivityPages(0);
+        setReportSources([]);
         errors.push("nhật ký thao tác");
       }
       if (summaryResult.status === "fulfilled") setSummary(summaryResult.value as ReportSummary);
@@ -198,7 +210,7 @@ export function StaffReportsPage() {
       approvalRate: summary ? (summary.approvalRate == null ? "Chưa có quyết định" : `${summary.approvalRate.toFixed(1)}%`) : "Không khả dụng",
       openDisputes: openDisputesTotal,
       pendingTerminations: pendingTerminationsTotal,
-      classesCount: sourceTotals.classes,
+      classesCount: sourceTotals.classes ?? "Không khả dụng",
     };
   }, [openDisputesTotal, pendingTerminationsTotal, sourceTotals, summary]);
 
@@ -301,6 +313,14 @@ export function StaffReportsPage() {
         <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800 shadow-sm">
           <span>Dữ liệu tải một phần. Chưa thể tải: {partialErrors.join(", ")}.</span>
           <button type="button" onClick={load} className="shrink-0 underline underline-offset-2">Thử lại</button>
+        </div>
+      )}
+      {!error && reportSources.some(source => source.status !== "SUCCESS") && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800">
+          <span>
+            Báo cáo đang hiển thị dữ liệu một phần. Không khả dụng: {reportSources.filter(source => source.status !== "SUCCESS").map(source => `${source.source} (${source.errorCode || "UNKNOWN"})`).join(", ")}.
+          </span>
+          <span>CSV sẽ ghi rõ phạm vi nguồn thành công và nguồn lỗi.</span>
         </div>
       )}
 

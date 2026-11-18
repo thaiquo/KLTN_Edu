@@ -17,3 +17,13 @@ test("Student and Tutor behavior is not changed by the Staff duty gate", () => {
   assert.equal(canWriteForDuty("STUDENT", null), true);
   assert.equal(canWriteForDuty("TUTOR", null), true);
 });
+
+test("an open Staff portal follows ON_DUTY to OFF_DUTY transitions fail-closed", () => {
+  const states = [{ writeAllowed: true }, { writeAllowed: false }];
+  assert.deepEqual(states.map(status => canWriteForDuty("STAFF", status)), [true, false]);
+});
+
+test("an open Staff portal follows OFF_DUTY to ON_DUTY transitions", () => {
+  const states = [{ writeAllowed: false }, { writeAllowed: true }];
+  assert.deepEqual(states.map(status => canWriteForDuty("STAFF", status)), [false, true]);
+});
