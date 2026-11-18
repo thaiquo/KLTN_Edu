@@ -50,6 +50,11 @@ public class AdminStaffDutyController {
         return service.publish(weekStartDate, authentication.getName());
     }
 
+    @PostMapping("/recover-current-week")
+    public WeeklyRoster recoverCurrentWeek(Authentication authentication) {
+        return service.recoverCurrentWeek(authentication.getName());
+    }
+
     @PostMapping("/assignments/{id}/replace")
     public AssignmentView replace(
             @PathVariable Long id,

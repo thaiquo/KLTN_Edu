@@ -1,7 +1,7 @@
 import { apiRequest } from "./client";
 
 export type ShiftCode = "MORNING" | "EVENING";
-export type ShiftStatus = "DRAFT" | "ASSIGNED" | "CHECKED_IN" | "COMPLETED" | "ABSENT";
+export type ShiftStatus = "DRAFT" | "ASSIGNED" | "CHECKED_IN" | "COMPLETED" | "ABSENT" | "SKIPPED";
 
 export interface DutySlot {
   workDate: string;
@@ -69,6 +69,8 @@ export const staffDutyApi = {
     }),
   publish: (weekStartDate: string): Promise<WeeklyRoster> =>
     apiRequest(`/api/admin/staff-duty/publish?${query(weekStartDate)}`, { method: "POST" }),
+  recoverCurrentWeek: (): Promise<WeeklyRoster> =>
+    apiRequest("/api/admin/staff-duty/recover-current-week", { method: "POST" }),
   replace: (assignmentId: number, newStaffId: number, reason: string): Promise<DutyAssignment> =>
     apiRequest(`/api/admin/staff-duty/assignments/${assignmentId}/replace`, {
       method: "POST",

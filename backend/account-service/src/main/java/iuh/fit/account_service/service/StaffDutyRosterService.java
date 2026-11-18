@@ -148,6 +148,9 @@ public class StaffDutyRosterService {
         if (assignment.getStatus() != ShiftAssignmentStatus.DRAFT) {
             throw new ConflictException("Chỉ được sửa tay lịch chưa công bố");
         }
+        if (!clock.instant().isBefore(shiftEnd(assignment))) {
+            throw new ConflictException("Không thể phân công ca đã kết thúc");
+        }
         User next = requireActiveStaff(staffId);
         ensureNoOtherShiftSameDay(next.getId(), assignment);
         User previous = assignment.getStaff();
@@ -198,6 +201,34 @@ public class StaffDutyRosterService {
                         LocalDateTime.ofInstant(now, StaffDutyTimeConfig.DUTY_ZONE)
                 )));
         return adminRoster(weekStart);
+    }
+
+    /** Recover and publish every remaining shift of the current week. */
+    @Transactional
+    public WeeklyRoster recoverCurrentWeek(String adminEmail) {
+        User admin = requireUser(adminEmail);
+        LocalDate currentWeek = currentWeekStart();
+        if (LocalDate.now(clock).getDayOfWeek() == DayOfWeek.SUNDAY) {
+            throw new ConflictException("Tuần trực đã kết thúc; hãy chuẩn bị lịch cho tuần tới");
+        }
+        return automaticallyFillAndPublish(currentWeek, admin,
+                "Admin kích hoạt phục hồi lịch tuần hiện tại");
+    }
+
+    /**
+     * Sunday protects next week after voting closes. Monday-Saturday catches
+     * up a missing current-week roster, including after service downtime.
+     */
+    @Transactional
+    public WeeklyRoster ensureAutomaticCoverage() {
+        LocalDate today = LocalDate.now(clock);
+        LocalDate target = today.getDayOfWeek() == DayOfWeek.SUNDAY
+                ? today.with(TemporalAdjusters.next(DayOfWeek.MONDAY))
+                : currentWeekStart();
+        return automaticallyFillAndPublish(target, null,
+                today.getDayOfWeek() == DayOfWeek.SUNDAY
+                        ? "Hệ thống tự phân ca do Admin chưa công bố trước hạn"
+                        : "Hệ thống tự phục hồi các ca còn lại của tuần");
     }
 
     @Transactional
@@ -392,6 +423,113 @@ public class StaffDutyRosterService {
                 saveAudit(assignment, ShiftAuditAction.CREATED, null, null, null, null));
     }
 
+    private WeeklyRoster automaticallyFillAndPublish(LocalDate weekStart, User actor, String reason) {
+        requireMonday(weekStart);
+        LocalDate weekEnd = weekStart.plusDays(5);
+        ensureTwelveDraftSlots(weekStart);
+        List<StaffShiftAssignment> assignments = assignmentRepository.findWeekForUpdate(weekStart, weekEnd);
+        if (isPublished(assignments)) return adminRoster(weekStart);
+
+        List<User> activeStaff = activeStaff();
+        if (activeStaff.size() < 2) {
+            throw new ConflictException("Cần ít nhất 2 Staff đang hoạt động để phủ 2 ca mỗi ngày");
+        }
+        Set<Long> activeIds = activeStaff.stream().map(User::getId).collect(Collectors.toSet());
+        List<StaffAvailability> availabilityRows = availabilityRepository.findByWorkDateBetween(weekStart, weekEnd);
+        Set<String> availableSlots = availabilityRows.stream()
+                .map(a -> slotKey(a.getStaff().getId(), a.getWorkDate(), a.getShiftCode()))
+                .collect(Collectors.toSet());
+        Set<Long> responders = availabilityRows.stream()
+                .map(a -> a.getStaff().getId())
+                .collect(Collectors.toSet());
+
+        Instant now = clock.instant();
+        Map<Long, Integer> counts = new HashMap<>();
+        Set<String> occupiedDays = new HashSet<>();
+        for (StaffShiftAssignment assignment : assignments) {
+            if (assignment.getStatus() == ShiftAssignmentStatus.DRAFT && !now.isBefore(shiftEnd(assignment))) {
+                User previous = assignment.getStaff();
+                assignment.setStaff(null);
+                assignment.setStatus(ShiftAssignmentStatus.SKIPPED);
+                assignment.setCompletedAt(now);
+                saveAudit(assignment, ShiftAuditAction.AUTO_SKIPPED, previous, null, actor,
+                        "Ca đã kết thúc trước khi lịch được phục hồi");
+                continue;
+            }
+            User assigned = assignment.getStaff();
+            if (assigned != null && activeIds.contains(assigned.getId())
+                    && assignment.getStatus() != ShiftAssignmentStatus.SKIPPED) {
+                counts.merge(assigned.getId(), 1, Integer::sum);
+                occupiedDays.add(dayKey(assigned.getId(), assignment.getWorkDate()));
+            } else if (assignment.getStatus() == ShiftAssignmentStatus.DRAFT) {
+                assignment.setStaff(null);
+            }
+        }
+
+        for (StaffShiftAssignment assignment : assignments) {
+            if (assignment.getStatus() != ShiftAssignmentStatus.DRAFT || assignment.getStaff() != null) continue;
+            User selected = activeStaff.stream()
+                    .filter(staff -> !occupiedDays.contains(dayKey(staff.getId(), assignment.getWorkDate())))
+                    .min(Comparator
+                            .<User>comparingInt(staff -> preferenceRank(
+                                    staff.getId(), assignment, availableSlots, responders))
+                            .thenComparingInt(staff -> counts.getOrDefault(staff.getId(), 0))
+                            .thenComparing(User::getId))
+                    .orElse(null);
+            if (selected == null) continue;
+            assignment.setStaff(selected);
+            counts.merge(selected.getId(), 1, Integer::sum);
+            occupiedDays.add(dayKey(selected.getId(), assignment.getWorkDate()));
+            int rank = preferenceRank(selected.getId(), assignment, availableSlots, responders);
+            saveAudit(assignment, ShiftAuditAction.AUTO_ASSIGNED, null, selected, actor,
+                    rank == 0 ? "Ưu tiên ca rảnh Staff đã bình chọn"
+                            : rank == 1 ? "Staff chưa gửi bình chọn; phân theo tải công việc"
+                            : "Không đủ người rảnh; override nguyện vọng để phủ ca");
+        }
+
+        boolean incomplete = assignments.stream().anyMatch(a ->
+                a.getStatus() == ShiftAssignmentStatus.DRAFT && a.getStaff() == null);
+        if (incomplete) {
+            throw new ConflictException("Không đủ Staff hợp lệ để phủ các ca còn lại; lịch chưa được công bố");
+        }
+
+        for (StaffShiftAssignment assignment : assignments) {
+            if (assignment.getStatus() != ShiftAssignmentStatus.DRAFT) continue;
+            assignment.setStatus(ShiftAssignmentStatus.ASSIGNED);
+            assignment.setPublishedAt(now);
+            saveAudit(assignment, ShiftAuditAction.PUBLISHED,
+                    assignment.getStaff(), assignment.getStaff(), actor, reason);
+        }
+        assignmentRepository.saveAll(assignments);
+        publishRosterEvents(assignments, weekStart, weekEnd, now);
+        return adminRoster(weekStart);
+    }
+
+    private int preferenceRank(Long staffId, StaffShiftAssignment assignment,
+                               Set<String> availableSlots, Set<Long> responders) {
+        if (availableSlots.contains(slotKey(staffId, assignment.getWorkDate(), assignment.getShiftCode()))) return 0;
+        return responders.contains(staffId) ? 2 : 1;
+    }
+
+    private void publishRosterEvents(List<StaffShiftAssignment> assignments,
+                                     LocalDate weekStart, LocalDate weekEnd, Instant now) {
+        assignments.stream()
+                .filter(a -> a.getPublishedAt() != null)
+                .map(StaffShiftAssignment::getStaff)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toMap(User::getId, Function.identity(), (left, right) -> left))
+                .values()
+                .forEach(staff -> eventPublisher.publishStaffRosterPublished(new StaffRosterPublishedEvent(
+                        "staff-roster-published:" + weekStart + ":" + staff.getId(),
+                        staff.getId(), weekStart, weekEnd,
+                        LocalDateTime.ofInstant(now, StaffDutyTimeConfig.DUTY_ZONE)
+                )));
+    }
+
+    private LocalDate currentWeekStart() {
+        return LocalDate.now(clock).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+    }
+
     private void validateNextWeek(LocalDate weekStart) {
         requireMonday(weekStart);
         LocalDate expected = LocalDate.now(clock).with(TemporalAdjusters.next(DayOfWeek.MONDAY));
@@ -464,7 +602,8 @@ public class StaffDutyRosterService {
     }
 
     private boolean isPublished(List<StaffShiftAssignment> assignments) {
-        return assignments.size() == 12 && assignments.stream().allMatch(a -> a.getPublishedAt() != null);
+        return assignments.size() == 12 && assignments.stream().allMatch(a ->
+                a.getPublishedAt() != null || a.getStatus() == ShiftAssignmentStatus.SKIPPED);
     }
 
     private Instant shiftStart(StaffShiftAssignment assignment) {

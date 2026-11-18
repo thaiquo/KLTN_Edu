@@ -27,6 +27,7 @@ const statusMeta: Record<ShiftStatus, { label: string; className: string }> = {
   CHECKED_IN: { label: "Đang trực", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
   COMPLETED: { label: "Hoàn thành", className: "border-slate-200 bg-slate-50 text-slate-600" },
   ABSENT: { label: "Vắng mặt", className: "border-rose-200 bg-rose-50 text-rose-700" },
+  SKIPPED: { label: "Đã bỏ qua", className: "border-slate-200 bg-slate-50 text-slate-500" },
 };
 
 const actionLabels: Record<string, string> = {
@@ -38,6 +39,7 @@ const actionLabels: Record<string, string> = {
   CHECKED_IN: "Staff nhận ca",
   COMPLETED: "Hoàn thành ca",
   ABSENT: "Ghi nhận vắng",
+  AUTO_SKIPPED: "Bỏ qua ca đã kết thúc",
 };
 
 function localIso(date: Date) {
@@ -114,9 +116,12 @@ export function AdminStaffDutyManagement() {
   }, [assignments]);
 
   const assignedCount = assignments.filter(item => item.staffId).length;
-  const vacantCount = Math.max(0, 12 - assignedCount);
+  const skippedCount = assignments.filter(item => item.status === "SKIPPED").length;
+  const missingSlotCount = Math.max(0, 12 - assignments.length);
+  const vacantCount = assignments.filter(item => item.status === "DRAFT" && !item.staffId).length + missingSlotCount;
   const respondingStaffCount = new Set(staffAvailability.map(item => item.staffId)).size;
   const canPrepare = week > currentWeek && !roster?.published;
+  const canRecover = week === currentWeek && !roster?.published;
 
   const run = async (action: () => Promise<WeeklyRoster>, success: string) => {
     setBusy(true);
@@ -141,6 +146,21 @@ export function AdminStaffDutyManagement() {
       variant: "default",
     });
     if (confirmed) await run(() => staffDutyApi.publish(week), "Đã công bố lịch trực và gửi thông báo cho Staff được phân công.");
+  };
+
+  const recoverCurrentWeek = async () => {
+    const confirmed = await feedback.confirm({
+      title: "Phân ca cho tuần này ngay?",
+      message: "Hệ thống sẽ bỏ qua các ca đã kết thúc, ưu tiên bình chọn ca rảnh, tự phân và công bố toàn bộ ca còn lại. Bạn vẫn có thể dùng Thay người cho ca chưa nhận.",
+      confirmText: "Phân ca ngay",
+      variant: "default",
+    });
+    if (confirmed) {
+      await run(
+        () => staffDutyApi.recoverCurrentWeek(),
+        "Đã phân và công bố các ca còn lại của tuần này. Các ca đã kết thúc được giữ lại dưới trạng thái Đã bỏ qua.",
+      );
+    }
   };
 
   const openAssignment = (assignment: DutyAssignment) => {
@@ -205,7 +225,7 @@ export function AdminStaffDutyManagement() {
           <p className="text-xs font-black uppercase tracking-[0.18em] text-indigo-600">Admin Operations</p>
           <h1 className="mt-1 text-2xl font-black text-slate-950">Điều phối lịch trực Staff</h1>
           <p className="mt-1 max-w-3xl text-sm font-semibold text-slate-500">
-            Thuật toán chỉ tạo gợi ý từ ca rảnh và tải công việc. Admin kiểm tra, điều chỉnh và là người duy nhất công bố lịch.
+            Hệ thống tự bảo vệ lịch khi Admin quên: ưu tiên bình chọn ca rảnh, cân bằng tải và tự công bố sau hạn. Admin vẫn có thể điều chỉnh hoặc thay người.
           </p>
         </div>
         <button type="button" disabled={busy} onClick={() => load()} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 shadow-xs hover:border-indigo-300 disabled:opacity-50">
@@ -215,9 +235,13 @@ export function AdminStaffDutyManagement() {
 
       {message && <div className={`rounded-xl border px-4 py-3 text-sm font-bold ${message.tone === "success" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-700"}`}>{message.text}</div>}
 
+      <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-xs font-semibold text-indigo-900">
+        <span className="font-black">Tự động phân ca:</span> Chủ nhật hệ thống hoàn tất tuần tới nếu chưa được công bố. Thứ tự ưu tiên là đúng ca đã bình chọn → Staff chưa gửi bình chọn → override người không chọn ca (chỉ khi cần phủ ca), sau đó cân bằng tổng số ca và không xếp hai ca cùng ngày.
+      </div>
+
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard icon={<CalendarDays className="h-5 w-5" />} label="Tổng ca trong tuần" value="12 ca" tone="blue" />
-        <SummaryCard icon={<UserCheck className="h-5 w-5" />} label="Đã phân công" value={`${assignedCount}/12 ca`} tone="emerald" />
+        <SummaryCard icon={<CalendarDays className="h-5 w-5" />} label="Tổng ca trong tuần" value={skippedCount ? `${12 - skippedCount} hiệu lực · ${skippedCount} đã qua` : "12 ca"} tone="blue" />
+        <SummaryCard icon={<UserCheck className="h-5 w-5" />} label="Đã phân công" value={`${assignedCount}/${12 - skippedCount} ca hiệu lực`} tone="emerald" />
         <SummaryCard icon={<AlertTriangle className="h-5 w-5" />} label="Còn trống" value={`${vacantCount} ca`} tone={vacantCount ? "rose" : "slate"} />
         <SummaryCard icon={<Users className="h-5 w-5" />} label="Staff đã khai báo rảnh" value={`${respondingStaffCount}/${activeStaff.length} người`} tone="indigo" />
       </section>
@@ -243,6 +267,9 @@ export function AdminStaffDutyManagement() {
             <button type="button" disabled={busy || assignments.length > 0 || !canPrepare} onClick={() => run(() => staffDutyApi.createDraft(week), "Đã tạo 12 ca trống để Admin phân công.")} className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"><FilePlus2 className="h-4 w-4" /> Tạo lịch trống</button>
             <button type="button" disabled={busy || roster?.published || assignments.length === 0 || !canPrepare} onClick={() => run(() => staffDutyApi.autoAssign(week), "Đã cập nhật gợi ý xếp lịch. Admin hãy kiểm tra trước khi công bố.")} className="inline-flex items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40"><Sparkles className="h-4 w-4" /> Gợi ý xếp lịch</button>
             <button type="button" disabled={busy || roster?.published || assignedCount !== 12 || !canPrepare} onClick={publish} className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-black text-white shadow-xs hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"><CheckCircle2 className="h-4 w-4" /> Công bố</button>
+            {week === currentWeek && (
+              <button type="button" disabled={busy || !canRecover} onClick={recoverCurrentWeek} className="inline-flex items-center gap-2 rounded-xl bg-amber-500 px-3 py-2 text-xs font-black text-white shadow-xs hover:bg-amber-600 disabled:cursor-not-allowed disabled:bg-slate-300"><AlertTriangle className="h-4 w-4" /> Phân ca tuần này ngay</button>
+            )}
           </div>
         </div>
 

@@ -45,6 +45,23 @@
 
 Tutor/account related APIs include `/api/tutors`, `/api/tutors/search-v2`, `/api/tutors/{tutorProfileId}/detail-v2`, `/api/tutor-applications/**`, `/api/staff/tutor-applications/**`, `/api/staff/tutors/**`, and admin user management under `/api/admin/users`, `/api/users/admin`, `/api/staff/users`.
 
+Staff Duty Roster APIs:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/account/staff/duty/my-roster?weekStartDate=...` | Staff xem lịch/availability của mình. |
+| `POST` | `/api/account/staff/duty/availability` | Staff lưu bình chọn ca rảnh tuần tới. |
+| `POST` | `/api/account/staff/duty/start-shift` | Staff nhận ca đã công bố. |
+| `GET` | `/api/account/staff/duty/status` | Trạng thái duty/write hiện tại. |
+| `GET` | `/api/admin/staff-duty/roster?weekStartDate=...` | Admin xem ma trận lịch. |
+| `POST` | `/api/admin/staff-duty/draft?weekStartDate=...` | Tạo 12 slot bản nháp. |
+| `POST` | `/api/admin/staff-duty/auto-assign?weekStartDate=...` | Tạo gợi ý theo availability, chưa công bố. |
+| `POST` | `/api/admin/staff-duty/publish?weekStartDate=...` | Admin công bố thủ công tuần chưa bắt đầu. |
+| `POST` | `/api/admin/staff-duty/recover-current-week` | Phân/công bố các ca còn lại; ca đã kết thúc thành `SKIPPED`. |
+| `PUT` | `/api/admin/staff-duty/assignments/{id}` | Phân công thủ công ca draft. |
+| `POST` | `/api/admin/staff-duty/assignments/{id}/replace` | Thay người ca đã công bố, chưa nhận/chưa kết thúc. |
+| `GET` | `/api/admin/staff-duty/audits` | Xem audit điều phối. |
+
 ## 4. Learning Catalog and Tutor APIs
 
 | Method | Endpoint | Purpose |
@@ -269,6 +286,7 @@ Admin knowledge maintenance currently exists under `/api/ai/admin/chatbot-knowle
 | `POST` | `/api/learning/internal/enrollment-requests/activate` | Learning | Contract | Internal lifecycle call. |
 | `POST` | `/api/learning/internal/enrollment-requests/expire` | Learning | Contract | Internal lifecycle call. |
 | `POST` | `/api/learning/internal/termination` | Learning | Contract | Internal termination/cutoff synchronization. |
+| `GET` | `/api/internal/staff-duty/write-access?staffEmail=...` | Account | Learning/Contract | Service JWT, scope `staff-duty-check`; fail closed. |
 
 These are not frontend/public APIs. Document service-token or internal caller expectations whenever adding similar routes.
 

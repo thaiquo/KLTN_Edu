@@ -143,7 +143,7 @@ Each service owns its data model even when local development uses the same Postg
 
 | Service | Current migration baseline | Representative data |
 | --- | --- | --- |
-| Account | Compact V1..V5 | users, roles, refresh sessions, OTP, students, tutors, tutor profiles, tutor applications/documents, wallet challenges, support tickets và Staff duty roster. V5 hiện ở feature branch, chưa deploy production. |
+| Account | Compact V1..V6 | users, roles, refresh sessions, OTP, students, tutors, tutor profiles, tutor applications/documents, wallet challenges, support tickets và Staff duty roster. V6 bổ sung auto-scheduling/catch-up và trạng thái `SKIPPED`; hiện ở feature branch, chưa deploy production. |
 | Learning | Compact V1..V18 | legacy compatibility, normalized catalog, tutor registrations, classrooms, sessions/homework/materials, reviews, Community/Tutor Follow, Tutor profile reference normalization, public share UUIDs, AI community moderation, catalog subject mapping, trial policy metadata, absence governance safety, and command inbox class cancelled (V18). |
 | Contract | Continuous V1..V22 | agreements, acceptances, artifacts, escrow payments, settlements, disputes/evidence, blockchain transactions/events, termination governance/outbox, escrow trial policy, and tutor absence governance (V22). |
 | Notification | V1..V6 | notifications, direct conversations, text/media messages, child attachments and structured Class/Post share references. |

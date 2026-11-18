@@ -1,6 +1,6 @@
 # KẾ HOẠCH CHỐT — ĐIỀU PHỐI LỊCH TRỰC STAFF VÀ QUYỀN GHI THEO CA
 
-> **Mã phân hệ:** `STAFF_DUTY_ROSTER_V1`
+> **Mã phân hệ:** `STAFF_DUTY_ROSTER_V2`
 > **Kiến trúc:** EduConnect Service-Based Architecture
 > **Owner dữ liệu:** `backend/account-service`
 > **Các nơi thực thi quyền:** `account-service`, `learning-service`, `contract-service`, `frontend-web`
@@ -13,8 +13,8 @@
 
 1. Staff đăng ký các ca rảnh cho tuần kế tiếp. Đây là dữ liệu nguyện vọng để hỗ trợ xếp lịch, không phải quyền tự chọn ca.
 2. Admin có thể tạo ngay một lịch trống và tự phân công toàn bộ, kể cả khi chưa Staff nào đăng ký lịch rảnh.
-3. Thuật toán có thể gợi ý lịch dựa trên lịch rảnh, tránh trùng ca cùng ngày và cân bằng số ca. Kết quả chỉ là bản nháp, không tự công bố và không thay thế quyết định của Admin.
-4. Admin xem đề xuất, sửa bất kỳ ca nào và là người duy nhất công bố lịch chính thức.
+3. Trong cửa sổ chuẩn bị, thuật toán **Gợi ý xếp lịch** vẫn chỉ tạo bản nháp để Admin kiểm tra. Sau khi hết hạn bình chọn vào Chủ nhật, nếu Admin chưa công bố thì scheduler tự hoàn tất và công bố để không bỏ trống tuần kế tiếp.
+4. Admin xem đề xuất, sửa bất kỳ ca nào và là người duy nhất công bố thủ công; scheduler chỉ công bố tự động tại deadline/catch-up đã quy định.
 5. Admin chỉ được công bố khi đủ 12 ca và mỗi ca đã có một Staff active.
 6. Đến ca, Staff bấm **Bắt đầu ca trực** để nhận ca.
 7. Chỉ Staff đã nhận đúng ca và ca vẫn đang diễn ra mới được thực hiện thao tác ghi thuộc quyền Staff.
@@ -29,7 +29,7 @@
 - Input gồm lịch rảnh Staff đã đăng ký, Staff active, ca đã phân và ràng buộc không xếp hai ca cùng ngày.
 - Output chỉ là bản nháp đề xuất. Admin có thể chấp nhận, sửa hoặc bỏ toàn bộ đề xuất.
 - Admin được gán Staff ngoài lịch rảnh khi đã trao đổi thực tế; UI phải cảnh báo đây là override và audit vẫn ghi người thực hiện.
-- Hệ thống tuyệt đối không tự công bố lịch và không tự thay người khi có ca vắng.
+- Hệ thống tự công bố duy nhất trong luồng bảo vệ lịch quá hạn/catch-up. Hệ thống không tự thay người của ca đã công bố; Admin vẫn quyết định thay người và nhập lý do.
 
 ### 1.3. Giới hạn quyền bắt buộc
 
@@ -83,6 +83,8 @@ Nếu không thỏa, API ghi trả `403 STAFF_OFF_DUTY_READ_ONLY`. Admin không 
 ### 2.2. Flyway V5
 
 File: `backend/account-service/src/main/resources/db/migration/V5__staff_duty_roster.sql`
+
+Flyway V6 (`V6__staff_duty_auto_scheduling.sql`) mở rộng trạng thái assignment với `SKIPPED` và audit action `AUTO_SKIPPED` để phục hồi giữa tuần mà không tạo bản ghi vắng mặt giả cho ca chưa từng được phân.
 
 #### `staff_availability`
 
@@ -171,6 +173,14 @@ Với từng slot theo thứ tự ngày, rồi `MORNING`, `EVENING`:
 Auto-assign phải idempotent và chỉ cập nhật slot `DRAFT`; không sửa assignment đã công bố.
 Tên hiển thị sản phẩm là **Gợi ý xếp lịch**. Đây là thuật toán nghiệp vụ, không phải chức năng AI và không phải lịch chính thức.
 
+### 3.2.1. Auto-scheduling khi Admin quên
+
+- Scheduler chạy idempotent theo nhịp 5 phút. Chủ nhật, sau khi cửa sổ availability đóng, scheduler bảo vệ tuần kế tiếp; Thứ Hai–Thứ Bảy scheduler catch-up tuần hiện tại nếu chưa có lịch chính thức.
+- Xếp theo ba tầng ưu tiên: (1) Staff chọn đúng slot; (2) Staff chưa gửi bình chọn tuần đó; (3) Staff đã phản hồi nhưng không chọn slot, chỉ dùng như fallback để phủ ca.
+- Trong từng tầng, chọn người có tổng số ca ít nhất, hòa thì `staffId` nhỏ hơn; luôn loại người đã có ca khác cùng ngày.
+- Cần tối thiểu 2 Staff active. Nếu không thể phủ hết ca còn lại, transaction rollback và không công bố lịch nửa vời; scheduler sẽ thử lại ở nhịp sau.
+- Auto publish và fallback đều ghi audit với `changed_by = null`; notification dùng event id ổn định nên retry không gửi trùng.
+
 ### 3.3. Sửa và công bố
 
 - Admin có thể tạo 12 slot `DRAFT` trống rồi tự phân công, không phụ thuộc availability và không bắt buộc chạy auto-assign.
@@ -179,7 +189,7 @@ Tên hiển thị sản phẩm là **Gợi ý xếp lịch**. Đây là thuật 
 - Admin được override availability trước publish nhưng UI phải cảnh báo và audit `MANUAL_ASSIGNED`.
 - Publish chỉ thành công khi có đúng 12 slot, không slot nào trống và tất cả người được gán vẫn active.
 - Publish chạy lặp lại phải idempotent và không gửi thông báo trùng.
-- Không cho công bố hồi tố khi ca đầu tiên của tuần đã bắt đầu. Khi rollout giữa tuần, tuần hiện tại không được tạo lịch giả cho các ca đã qua; bắt đầu áp dụng từ tuần chưa diễn ra kế tiếp.
+- Công bố thủ công chuẩn vẫn không cho hồi tố. Riêng lệnh **Phân ca tuần này ngay** và scheduler catch-up được phép phục hồi: ca đã kết thúc thành `SKIPPED`, ca đang diễn ra/chưa bắt đầu được phân và công bố. Ca `SKIPPED` không có Staff và không bị tính là `ABSENT`.
 
 ### 3.4. Bắt đầu ca
 
@@ -229,6 +239,7 @@ Gateway rewrite các URL trên thành `/api/staff/duty/**` tại Account Service
 - `POST /api/admin/staff-duty/auto-assign?weekStartDate=...`
 - `PUT /api/admin/staff-duty/assignments/{id}`
 - `POST /api/admin/staff-duty/publish?weekStartDate=...`
+- `POST /api/admin/staff-duty/recover-current-week`
 - `POST /api/admin/staff-duty/assignments/{id}/replace`
 - `GET /api/admin/staff-duty/audits?page=...&size=...`
 - `GET /api/admin/staff-duty/summary?month=...&year=...`
@@ -269,6 +280,7 @@ Mọi mutation nghiệp vụ Staff khác trong Account, Learning và Contract ph
 - **Tạo lịch trống** cho luồng Admin tự phân công hoàn toàn.
 - **Gợi ý xếp lịch** đọc availability, tránh trùng ngày và cân bằng ca; Admin được chỉnh tay, nhận cảnh báo override availability rồi publish.
 - Không cho publish khi còn ô trống.
+- Nút **Phân ca tuần này ngay** để Admin kích hoạt catch-up tức thời; các ca đã kết thúc hiển thị **Đã bỏ qua**.
 - Thay người có lý do bắt buộc.
 - Audit timeline.
 - Chỉ hiển thị thống kê gọn trên cùng trang; không tạo hệ thống chấm công riêng.
@@ -347,7 +359,7 @@ Ký hiệu: `[x]` đã hiện thực và có kiểm chứng bước tương ứn
 3. Giữ nguyên các flag trial/tutor-absence hiện hành; release roster không được tự chuyển tutor-absence sang `ENFORCE` hoặc thay đổi chính sách trial.
 4. Chạy full regression roster + quyền Staff + các luồng Student/Tutor trọng yếu.
 5. Mở PR từ `feature/quocthai` vào `main` theo branch protection.
-6. Trước deploy, Admin tạo, chỉnh và công bố lịch cho tuần chưa bắt đầu kế tiếp; không backfill tuần đang chạy.
+6. Trước deploy, ưu tiên để Admin tạo, chỉnh và công bố lịch cho tuần kế tiếp. Nếu rollout giữa tuần khi lịch đang trống, dùng **Phân ca tuần này ngay** và xác nhận các ca đã qua chuyển `SKIPPED` trước khi bật duty gate.
 7. Deploy code/schema/UI với `STAFF_DUTY_ENFORCEMENT_ENABLED=true` đồng nhất ở Account/Learning/Contract.
 8. Smoke test trạng thái lịch, start shift, thao tác duyệt trong ca và phản hồi chỉ xem ngoài ca.
 9. Theo dõi 403/503 và audit trong tuần đầu; nếu có sự cố, đặt cờ `false` ở cả ba service để rollback quyền ghi trong khi giữ nguyên dữ liệu lịch.
