@@ -63,7 +63,10 @@ public class AgreementRegistrationWorkflowService {
 
     @Transactional
     public BlockchainTransactionIntentResult initiateRegistration(UUID agreementId) {
-        ContractAgreement agreement = agreementRepository.findById(agreementId)
+        // Serialize the after-commit trigger and scheduler recovery for the same
+        // agreement. The idempotency-key lookup alone cannot prevent both
+        // transactions from observing an empty result before either inserts.
+        ContractAgreement agreement = agreementRepository.lockById(agreementId)
                 .orElseThrow(() -> new IllegalArgumentException("Contract agreement not found: " + agreementId));
 
         if (agreement.getStatus() != ContractAgreementStatus.PREPARING_BLOCKCHAIN) {
