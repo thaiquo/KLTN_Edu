@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Bot, Eye, Flag, Search, ShieldCheck, ShieldX, X } from "lucide-react";
 import communityApi from "../../../api/community";
 import { useFeedback } from "../../../components/feedback/useFeedback";
+import { useStaffDutyAccess } from "../../../hooks/useStaffDutyAccess";
 import { EmptyState, ErrorState, ListSkeleton, MetricStrip, OperationsHeader, Pager, StatusBadge } from "../OperationalUi";
+import { StaffReadOnlyNotice } from "./StaffReadOnlyNotice";
 
 const MODERATION_STATUS: Record<string, { label: string; tone: "slate" | "amber" | "blue" | "green" | "red" }> = {
   NOT_CHECKED: { label: "Chưa kiểm tra", tone: "slate" }, MODERATING: { label: "AI đang xử lý", tone: "blue" },
@@ -16,8 +18,9 @@ const MODERATION_SOURCE: Record<string, string> = {
   AI_REVISION_REVIEW: "Bản chỉnh sửa chờ duyệt",
 };
 
-export function CommunityModerationPage() {
+export function CommunityModerationPage({ activeRole }: { activeRole: string }) {
   const feedback = useFeedback();
+  const { staffReadOnly, dutyLoading } = useStaffDutyAccess(activeRole);
   const [items, setItems] = useState<any[]>([]); const [page, setPage] = useState(0); const [pages, setPages] = useState(1); const [total, setTotal] = useState(0);
   const [keywordInput, setKeywordInput] = useState(""); const [keyword, setKeyword] = useState("");
   const [reportedOnly, setReportedOnly] = useState(false); const [status, setStatus] = useState("");
@@ -46,6 +49,10 @@ export function CommunityModerationPage() {
     catch (e: any) { feedback.error(e?.message || "Không thể mở bài viết."); }
   };
   const decide = async (action: "APPROVE" | "REJECT" | "HIDE" | "RESTORE") => {
+    if (staffReadOnly) {
+      feedback.warning("Bạn đang ngoài ca trực. Hãy nhận ca hợp lệ trước khi kiểm duyệt nội dung.");
+      return;
+    }
     if (!reason.trim()) { feedback.warning("Lý do xử lý là bắt buộc."); return; }
     const actionLabel = { APPROVE: "duyệt nội dung", REJECT: "từ chối nội dung", HIDE: "ẩn nội dung", RESTORE: "khôi phục nội dung" }[action];
     const confirmed = await feedback.confirm({ title: "Xác nhận kiểm duyệt", message: `Bạn có chắc muốn ${actionLabel}? Quyết định và lý do sẽ được lưu vào lịch sử.`, confirmText: "Xác nhận", variant: ["REJECT", "HIDE"].includes(action) ? "destructive" : "default" });
@@ -61,6 +68,7 @@ export function CommunityModerationPage() {
   const filtered = Boolean(keyword || status || reportedOnly);
   return <div className="space-y-5 pb-10">
     <OperationsHeader eyebrow="Community" title="Kiểm duyệt thủ công" description="Đánh giá nội dung bị báo cáo hoặc AI gắn cờ. Quyết định thủ công được lưu theo revision và không làm gián đoạn AI moderation." onRefresh={load} refreshing={loading} />
+    {staffReadOnly && <StaffReadOnlyNotice loading={dutyLoading} />}
     <MetricStrip metrics={[
       { label: "Tổng theo bộ lọc", value: total, icon: ShieldCheck },
       { label: "Báo cáo mở trên trang", value: pageStats.reports, icon: Flag, tone: "bg-amber-50 text-amber-700" },
@@ -94,7 +102,7 @@ export function CommunityModerationPage() {
         {detail.post.moderationReason && <p className="mt-4 border-l-2 border-amber-400 pl-3 text-xs leading-5 text-slate-600"><strong>Nhận định AI:</strong> {detail.post.moderationReason}</p>}
         <div className="mt-6 grid gap-6 border-t border-slate-100 pt-5 md:grid-cols-2"><section><h3 className="mb-3 text-xs font-black uppercase text-slate-500">Báo cáo ({detail.reports.length})</h3>{detail.reports.length === 0 ? <p className="text-sm text-slate-500">Không có báo cáo.</p> : <div className="space-y-3">{detail.reports.map((report: any) => <div key={report.id} className="border-l-2 border-amber-400 pl-3 text-xs"><p className="font-black text-brand-text">{report.reason}</p><p className="mt-1 text-slate-500">{report.reporterRole} · {new Date(report.createdAt).toLocaleString("vi-VN")}</p>{report.details && <p className="mt-1 text-slate-700">{report.details}</p>}</div>)}</div>}</section><section><h3 className="mb-3 text-xs font-black uppercase text-slate-500">Lịch sử quyết định</h3>{detail.history.length === 0 ? <p className="text-sm text-slate-500">Chưa có quyết định thủ công.</p> : <div className="space-y-3">{detail.history.map((item: any) => <div key={item.id} className="border-l-2 border-brand-primary/30 pl-3 text-xs"><p className="font-black text-brand-text">{item.action}</p><p className="mt-1 text-slate-500">{item.actorEmail} · {new Date(item.createdAt).toLocaleString("vi-VN")}</p><p className="mt-1 text-slate-700">{item.reason}</p></div>)}</div>}</section></div>
       </div>
-      <footer className="border-t border-slate-200 bg-slate-50 p-4"><label className="text-xs font-black text-slate-600">Lý do quyết định</label><textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={2000} placeholder="Bắt buộc và sẽ được lưu vào lịch sử" className="mt-2 w-full rounded-md border border-slate-200 bg-white p-3 text-sm outline-none focus:border-brand-primary" /><div className="mt-3 flex flex-wrap justify-end gap-2"><button disabled={acting || !reason.trim()} onClick={() => decide("APPROVE")} className="inline-flex items-center gap-2 rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-bold text-emerald-700 disabled:opacity-40"><ShieldCheck className="h-4 w-4" />{detail.post.source === "AI_REVISION_REVIEW" ? "Duyệt bản chỉnh sửa" : "Cho phép đăng"}</button><button disabled={acting || !reason.trim()} onClick={() => decide("REJECT")} className="inline-flex items-center gap-2 rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-bold text-rose-700 disabled:opacity-40"><ShieldX className="h-4 w-4" />Từ chối</button>{detail.post.source !== "AI_REVISION_REVIEW" && (detail.post.postStatus === "HIDDEN" ? <button disabled={acting || !reason.trim()} onClick={() => decide("RESTORE")} className="rounded-md bg-brand-primary px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Khôi phục</button> : <button disabled={acting || !reason.trim()} onClick={() => decide("HIDE")} className="rounded-md bg-rose-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Ẩn bài</button>)}</div></footer>
+      <footer className="border-t border-slate-200 bg-slate-50 p-4"><label className="text-xs font-black text-slate-600">Lý do quyết định</label><textarea disabled={staffReadOnly} value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={2000} placeholder="Bắt buộc và sẽ được lưu vào lịch sử" className="mt-2 w-full rounded-md border border-slate-200 bg-white p-3 text-sm outline-none focus:border-brand-primary disabled:cursor-not-allowed disabled:bg-slate-100" /><div className="mt-3 flex flex-wrap justify-end gap-2"><button disabled={staffReadOnly || acting || !reason.trim()} onClick={() => decide("APPROVE")} className="inline-flex items-center gap-2 rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-bold text-emerald-700 disabled:opacity-40"><ShieldCheck className="h-4 w-4" />{detail.post.source === "AI_REVISION_REVIEW" ? "Duyệt bản chỉnh sửa" : "Cho phép đăng"}</button><button disabled={staffReadOnly || acting || !reason.trim()} onClick={() => decide("REJECT")} className="inline-flex items-center gap-2 rounded-md border border-rose-300 bg-white px-3 py-2 text-sm font-bold text-rose-700 disabled:opacity-40"><ShieldX className="h-4 w-4" />Từ chối</button>{detail.post.source !== "AI_REVISION_REVIEW" && (detail.post.postStatus === "HIDDEN" ? <button disabled={staffReadOnly || acting || !reason.trim()} onClick={() => decide("RESTORE")} className="rounded-md bg-brand-primary px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Khôi phục</button> : <button disabled={staffReadOnly || acting || !reason.trim()} onClick={() => decide("HIDE")} className="rounded-md bg-rose-600 px-3 py-2 text-sm font-bold text-white disabled:opacity-40">Ẩn bài</button>)}</div></footer>
     </div></div>}
   </div>;
 }

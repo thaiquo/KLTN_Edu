@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.ObjectMapper;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.time.Duration;
@@ -78,6 +79,10 @@ class OperationalReportServiceTest {
         AtomicReference<String> cookie = new AtomicReference<>();
         AtomicReference<String> authorization = new AtomicReference<>();
         HttpServer server = server(exchange -> {
+            if ("/api/users/me".equals(exchange.getRequestURI().getPath())) {
+                respond(exchange, 200, "{\"activeRole\":\"ADMIN\"}");
+                return;
+            }
             query.set(exchange.getRequestURI().getRawQuery());
             cookie.set(exchange.getRequestHeaders().getFirst("Cookie"));
             authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
@@ -108,7 +113,9 @@ class OperationalReportServiceTest {
     @Test
     void sourceFailureFailsTheWholeReportInsteadOfReturningPartialData() throws Exception {
         HttpServer server = server(exchange -> {
-            if (exchange.getRequestURI().getPath().contains("tutor-subject-registrations")) {
+            if ("/api/users/me".equals(exchange.getRequestURI().getPath())) {
+                respond(exchange, 200, "{\"activeRole\":\"ADMIN\"}");
+            } else if (exchange.getRequestURI().getPath().contains("tutor-subject-registrations")) {
                 respond(exchange, 503, "{\"message\":\"source unavailable\"}");
             } else {
                 respond(exchange, 200, "{\"content\":[],\"totalElements\":0}");
@@ -128,6 +135,10 @@ class OperationalReportServiceTest {
     void deepPageFetchesBoundedChunksAndStillReturnsRecordsBeyondFifty() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         HttpServer server = server(exchange -> {
+            if ("/api/users/me".equals(exchange.getRequestURI().getPath())) {
+                respond(exchange, 200, "{\"activeRole\":\"ADMIN\"}");
+                return;
+            }
             calls.incrementAndGet();
             var parameters = queryParameters(exchange.getRequestURI().getRawQuery());
             int page = Integer.parseInt(parameters.get("page"));
@@ -153,6 +164,30 @@ class OperationalReportServiceTest {
             assertEquals(10, result.content().size());
             assertEquals("tutor-270", result.content().getFirst().id());
             assertEquals(6, calls.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void staffActiveRoleCannotReadOperationalReports() throws Exception {
+        AtomicInteger sourceCalls = new AtomicInteger();
+        HttpServer server = server(exchange -> {
+            if ("/api/users/me".equals(exchange.getRequestURI().getPath())) {
+                respond(exchange, 200, "{\"activeRole\":\"STAFF\"}");
+                return;
+            }
+            sourceCalls.incrementAndGet();
+            respond(exchange, 200, "{\"content\":[],\"totalElements\":0}");
+        });
+        try {
+            OperationalReportService live = service(server);
+            ResponseStatusException error = assertThrows(ResponseStatusException.class, () -> live.page(
+                    new OperationalReportService.Query(0, 10, "ALL", "ALL", "ALL", null, null, null),
+                    "access_token=redacted", null).block(Duration.ofSeconds(5)));
+
+            assertEquals(403, error.getStatusCode().value());
+            assertEquals(0, sourceCalls.get());
         } finally {
             server.stop(0);
         }

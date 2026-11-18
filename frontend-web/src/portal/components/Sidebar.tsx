@@ -96,7 +96,6 @@ export function Sidebar({
           { id: "complaints", label: "Quản lý khiếu nại", icon: ShieldAlert },
           { id: "escalations", label: "Chuyển cấp Admin", icon: ShieldAlert },
           { id: "community-moderation", label: "Kiểm duyệt Community", icon: Globe },
-          { id: "reports", label: "Báo cáo nghiệp vụ", icon: BarChart3 },
           { id: "duty-roster", label: "Lịch trực của tôi", icon: Calendar },
         ];
       default:

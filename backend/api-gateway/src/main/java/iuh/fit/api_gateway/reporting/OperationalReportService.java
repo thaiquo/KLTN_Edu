@@ -4,9 +4,11 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.util.UriBuilder;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -53,13 +55,27 @@ public class OperationalReportService {
         int size = Math.min(50, Math.max(1, query.size()));
         int required = Math.multiplyExact(page + 1, size);
 
-        List<SourceRequest> sources = sources(query, cookie, authorization);
-        if (sources.isEmpty()) return Mono.just(ReportPage.empty(page, size));
+        return requireAdmin(cookie, authorization).then(Mono.defer(() -> {
+            List<SourceRequest> sources = sources(query, cookie, authorization);
+            if (sources.isEmpty()) return Mono.just(ReportPage.empty(page, size));
 
-        return Flux.fromIterable(sources)
-                .flatMap(source -> fetch(source, required), sources.size())
-                .collectList()
-                .map(results -> merge(results, page, size));
+            return Flux.fromIterable(sources)
+                    .flatMap(source -> fetch(source, required), sources.size())
+                    .collectList()
+                    .map(results -> merge(results, page, size));
+        }));
+    }
+
+    private Mono<Void> requireAdmin(String cookie, String authorization) {
+        return account.get()
+                .uri("/api/users/me")
+                .headers(headers -> forwardAuth(headers, cookie, authorization))
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .flatMap(profile -> "ADMIN".equalsIgnoreCase(profile.path("activeRole").asText())
+                        ? Mono.empty()
+                        : Mono.error(new ResponseStatusException(
+                                HttpStatus.FORBIDDEN, "Operational reports are restricted to Admin")));
     }
 
     ReportPage merge(List<SourceResult> sources, int page, int size) {

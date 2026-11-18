@@ -14,7 +14,7 @@ test("admin inherits every staff portal page", () => {
 });
 
 test("staff cannot open admin-only pages through a query parameter", () => {
-  for (const page of ["admin-finance", "user-management", "subject-catalog"]) {
+  for (const page of ["admin-finance", "user-management", "subject-catalog", "reports", "staff-duty-management"]) {
     assert.equal(canAccessPortalPage("staff", page), false, page);
     assert.equal(resolvePortalPage("staff", page), "tutor-approval", page);
   }

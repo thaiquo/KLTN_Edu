@@ -351,10 +351,10 @@ export default function App({ user, onLogout }: AppProps) {
 
       case "community-moderation":
         return (activeRole === "staff" || activeRole === "admin")
-          ? <CommunityModerationPage /> : null;
+          ? <CommunityModerationPage activeRole={activeRole} /> : null;
 
       case "reports":
-        return <StaffReportsPage />;
+        return activeRole === "admin" ? <StaffReportsPage /> : null;
 
       case "duty-roster":
         return activeRole === "staff" ? <StaffMyDutyRosterView /> : <AdminStaffDutyManagement />;

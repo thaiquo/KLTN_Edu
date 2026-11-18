@@ -47,6 +47,8 @@ import { fetchUserDirectory, getUserDisplayName, UserSummary } from '../../utils
 import { Loader2 } from 'lucide-react';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import { Pager } from '../../portal/components/OperationalUi';
+import { useStaffDutyAccess } from '../../hooks/useStaffDutyAccess';
+import { StaffReadOnlyNotice } from '../../portal/components/staff/StaffReadOnlyNotice';
 
 export interface DisputeItem {
   id: string | number;
@@ -152,6 +154,7 @@ export function DisputeManagementPanel({
   activeRole,
   userEmail = '',
 }: DisputeManagementPanelProps) {
+  const { staffReadOnly, dutyLoading } = useStaffDutyAccess(activeRole);
   const activeChainId = DEFAULT_CHAIN_ID;
   const requestedSessionId = useMemo(() => {
     const value = new URLSearchParams(window.location.search).get('sessionId');
@@ -477,11 +480,16 @@ export function DisputeManagementPanel({
   const canStaffResolve = useCallback((dispute: DisputeDto) => {
     if (activeRole === 'admin') return true;
     if (activeRole !== 'staff') return false;
+    if (staffReadOnly) return false;
     if (!dispute.classroomReviewerEmail || !userEmail) return false;
     return dispute.classroomReviewerEmail.trim().toLowerCase() === userEmail.trim().toLowerCase();
-  }, [activeRole, userEmail]);
+  }, [activeRole, staffReadOnly, userEmail]);
 
   const handleResolve = async (dispute: DisputeDto, approved: boolean, customReason?: string) => {
+    if (activeRole === 'staff' && staffReadOnly) {
+      setActionError('Bạn đang ngoài ca trực. Hãy nhận ca hợp lệ trước khi tiến hành phân xử.');
+      return;
+    }
     const reason = customReason ?? '';
     if (!reason.trim()) {
       setActionError('Vui lòng nhập lý do phân xử để đảm bảo tính minh bạch trên hệ thống.');
@@ -853,6 +861,7 @@ export function DisputeManagementPanel({
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
+      {activeRole === 'staff' && staffReadOnly && <StaffReadOnlyNotice loading={dutyLoading} />}
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-xs">
         <div className="flex items-center gap-4">
@@ -1382,13 +1391,13 @@ export function DisputeManagementPanel({
                               <strong className="text-white">{getUserDisplayName(group.classroomReviewerEmail, users).fullName}</strong>
                               <span className="font-mono text-amber-200/80 text-[10px]">({group.classroomReviewerEmail})</span>
                               {activeRole === 'staff' && (
-                                group.classroomReviewerEmail.trim().toLowerCase() === userEmail?.trim().toLowerCase() ? (
+                                group.classroomReviewerEmail.trim().toLowerCase() === userEmail?.trim().toLowerCase() && !staffReadOnly ? (
                                   <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-500 text-white border border-emerald-400 shadow-2xs">
                                     ✓ Bạn duyệt lớp này (Thẩm quyền phân xử)
                                   </span>
                                 ) : (
                                   <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-700 text-slate-300 border border-slate-600">
-                                    Staff khác duyệt (Quyền quan sát)
+                                    {staffReadOnly ? 'Ngoài ca trực (Quyền quan sát)' : 'Staff khác duyệt (Quyền quan sát)'}
                                   </span>
                                 )
                               )}
@@ -1580,7 +1589,7 @@ export function DisputeManagementPanel({
                                                   : `Gia sư đã gửi giải trình (${formatExactTime(dispute.tutorRespondedAt)})`}
                                               </span>
                                             </div>
-                                            {(activeRole === 'admin' || activeRole === 'staff') && (
+                                            {(activeRole === 'admin' || (activeRole === 'staff' && !staffReadOnly)) && (
                                               <div className="text-[11px] text-indigo-700 font-semibold pl-5">
                                                 ✨ Đã đủ hồ sơ đối chất. Admin/Staff có thể phân xử ngay.
                                               </div>
@@ -1655,7 +1664,7 @@ export function DisputeManagementPanel({
                                       {activeRole === 'staff' && dispute.status === 'OPEN' && !hasResolvePermission && (
                                         <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-semibold border border-slate-200">
                                           <Lock className="w-3.5 h-3.5 text-slate-400" />
-                                          <span>Staff khác duyệt (Chỉ xem)</span>
+                                          <span>{staffReadOnly ? 'Ngoài ca trực (Chỉ xem)' : 'Staff khác duyệt (Chỉ xem)'}</span>
                                         </span>
                                       )}
 
@@ -1902,6 +1911,10 @@ export function DisputeManagementPanel({
                           ) : canStaffResolve(selectedDisputeForDetail) ? (
                             <span className="text-emerald-800 font-semibold">
                               ✓ <strong>Bạn là nhân viên duyệt lớp này:</strong> Bạn có toàn quyền thẩm định hồ sơ, đối chiếu giải trình của gia sư và ra phán quyết on-chain.
+                            </span>
+                          ) : staffReadOnly ? (
+                            <span className="text-amber-800">
+                              🔒 <strong>Ngoài ca trực — chế độ chỉ xem:</strong> Bạn được xem hồ sơ và chứng cứ, nhưng cần nhận ca hợp lệ trước khi ra phán quyết on-chain.
                             </span>
                           ) : (
                             <span className="text-slate-600">
@@ -2718,10 +2731,13 @@ export function DisputeManagementPanel({
                     <div className="p-4 bg-slate-100 rounded-2xl border border-slate-200 text-slate-700 text-xs flex items-start gap-3">
                       <Lock className="w-5 h-5 text-slate-500 shrink-0 mt-0.5" />
                       <div>
-                        <div className="font-bold text-slate-900">Bạn đang ở chế độ xem tham khảo (Không phụ trách lớp này)</div>
+                        <div className="font-bold text-slate-900">{staffReadOnly ? 'Ngoài ca trực — chế độ chỉ xem' : 'Bạn đang ở chế độ xem tham khảo (Không phụ trách lớp này)'}</div>
                         <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">
-                          Lớp học này do nhân viên <strong>{getUserDisplayName(selectedDisputeForDetail.classroomReviewerEmail, users).fullName}</strong> ({selectedDisputeForDetail.classroomReviewerEmail || 'Chưa gán'}) duyệt.
-                          Theo quy chế giải quyết tranh chấp hệ thống, chỉ nhân viên duyệt lớp này hoặc Quản trị viên (Admin) mới có quyền ra phán quyết on-chain.
+                          {staffReadOnly ? (
+                            <>Bạn vẫn được xem toàn bộ hồ sơ và chứng cứ. Hãy nhận ca hợp lệ trước khi ra phán quyết on-chain.</>
+                          ) : (
+                            <>Lớp học này do nhân viên <strong>{getUserDisplayName(selectedDisputeForDetail.classroomReviewerEmail, users).fullName}</strong> ({selectedDisputeForDetail.classroomReviewerEmail || 'Chưa gán'}) duyệt. Theo quy chế giải quyết tranh chấp hệ thống, chỉ nhân viên duyệt lớp này hoặc Quản trị viên (Admin) mới có quyền ra phán quyết on-chain.</>
+                          )}
                         </p>
                       </div>
                     </div>
