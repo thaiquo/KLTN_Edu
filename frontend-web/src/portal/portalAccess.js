@@ -6,7 +6,6 @@ const STAFF_PAGES = [
   "complaints",
   "escalations",
   "community-moderation",
-  "reports",
   "duty-roster",
   "settings",
   "help",
@@ -43,6 +42,7 @@ const PAGES_BY_ROLE = {
   staff: new Set(STAFF_PAGES),
   admin: new Set([
     ...STAFF_PAGES,
+    "reports",
     "admin-finance",
     "user-management",
     "subject-catalog",

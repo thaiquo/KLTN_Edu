@@ -148,9 +148,6 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
     return terminations.filter((t) => t.request.status === "REQUESTED" || t.request.status === "HOLD_PENDING");
   }, [terminations]);
 
-  // Cross-service daily totals belong to the dedicated report, not capped queue pages.
-  const myReviewedToday: number | null = null;
-
   // Build urgent prioritized queue
   const urgentQueue = useMemo<UrgentItem[]>(() => {
     const list: UrgentItem[] = [];
@@ -502,9 +499,9 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-center">
-                <p className="text-[10px] font-black uppercase text-slate-400">Đã xử lý hôm nay</p>
-                <p className="mt-1 text-2xl font-black text-[#073554]">{myReviewedToday ?? "—"}</p>
-                <p className="text-[10px] text-slate-500 font-semibold mt-0.5">xem báo cáo chi tiết</p>
+                <p className="text-[10px] font-black uppercase text-slate-400">Việc ưu tiên</p>
+                <p className="mt-1 text-2xl font-black text-[#073554]">{urgentQueue.length}</p>
+                <p className="text-[10px] text-slate-500 font-semibold mt-0.5">trong phạm vi của bạn</p>
               </div>
 
               <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-center">
@@ -535,10 +532,10 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
 
             <button
               type="button"
-              onClick={() => onNavigate("reports")}
+              onClick={() => onNavigate("duty-roster")}
               className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 py-2.5 text-xs font-black text-[#073554] transition-all shadow-2xs"
             >
-              <span>Xem báo cáo thao tác chi tiết</span>
+              <span>Xem lịch trực của tôi</span>
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </section>

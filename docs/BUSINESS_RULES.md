@@ -56,6 +56,7 @@ Student và Tutor là hai vai trò nghiệp vụ chính trong quá trình kết 
 - Với thao tác ghi nghiệp vụ, Staff phải được phân đúng ca, đã bấm bắt đầu ca và ca vẫn đang diễn ra. Nút nhận ca mở từ 15 phút trước giờ bắt đầu và tiếp tục mở xuyên suốt đến ngay trước giờ kết thúc; nhận ca trễ không làm mất quyền của phần thời gian còn lại. Ngoài ca Staff chỉ được xem trong phạm vi hiện có.
 - Hàng chờ lớp `PENDING_APPROVAL` là hàng đợi dùng chung. Sau khi một Staff duyệt hoặc từ chối, backend tự giới hạn lớp, thống kê, hợp đồng, khiếu nại và hồ sơ chấm dứt liên quan theo email Staff phụ trách; phạm vi bảo mật không phụ thuộc frontend gửi `reviewedByMe`.
 - Trạng thái đang trực không mở rộng quyền: Staff vẫn không được làm nghiệp vụ Admin-only và vẫn chịu reviewer/assignee/ownership rule.
+- Báo cáo nghiệp vụ tổng hợp và nhật ký thao tác liên nhân viên là chức năng Admin-only. Staff chỉ xem hàng đợi, lịch trực và dữ liệu nghiệp vụ trong phạm vi được giao; không được theo dõi báo cáo hiệu suất của Staff khác.
 - Khi Admin thay người trực, lý do và lịch sử thay đổi phải được lưu; người cũ mất quyền ghi ngay, người mới phải nhận ca trước khi thao tác.
 
 ### Admin

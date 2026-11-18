@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock3, Eye, RotateCcw, Search, ShieldAlert, UserRoundCheck, X } from "lucide-react";
 import { contractsApi, DisputeDto, DisputeEscalationDto, DisputeHistoryDto } from "../../../api/contractsApi";
 import { useFeedback } from "../../../components/feedback/useFeedback";
+import { useStaffDutyAccess } from "../../../hooks/useStaffDutyAccess";
 import { EmptyState, ErrorState, ListSkeleton, MetricStrip, OperationsHeader, Pager, StatusBadge } from "../OperationalUi";
+import { StaffReadOnlyNotice } from "./StaffReadOnlyNotice";
 
 const STATUS: Record<string, { label: string; tone: "slate" | "amber" | "blue" | "green" | "red" }> = {
   NONE: { label: "Chưa chuyển cấp", tone: "slate" },
@@ -14,6 +16,7 @@ const STATUS: Record<string, { label: string; tone: "slate" | "amber" | "blue" |
 
 export function DisputeEscalationPage({ activeRole }: { activeRole: string }) {
   const admin = activeRole.toLowerCase() === "admin";
+  const { staffReadOnly, dutyLoading } = useStaffDutyAccess(activeRole);
   const feedback = useFeedback();
   const [items, setItems] = useState<Array<DisputeEscalationDto | DisputeDto>>([]);
   const [page, setPage] = useState(0); const [pages, setPages] = useState(1); const [total, setTotal] = useState(0);
@@ -46,6 +49,10 @@ export function DisputeEscalationPage({ activeRole }: { activeRole: string }) {
   };
 
   const act = async (action: "ESCALATE" | "ACCEPT" | "RETURN") => {
+    if (!admin && staffReadOnly) {
+      feedback.warning("Bạn đang ngoài ca trực. Hãy nhận ca hợp lệ trước khi chuyển cấp khiếu nại.");
+      return;
+    }
     if ((action === "ESCALATE" || action === "RETURN") && !reason.trim()) {
       feedback.warning("Vui lòng nhập lý do trước khi thực hiện."); return;
     }
@@ -79,6 +86,7 @@ export function DisputeEscalationPage({ activeRole }: { activeRole: string }) {
     <OperationsHeader eyebrow="Khiếu nại & tranh chấp" title={admin ? "Hàng đợi chuyển cấp Admin" : "Chuyển cấp lên Admin"}
       description={admin ? "Tiếp nhận hoặc trả lại Staff theo lịch sử xử lý; không tự động thay đổi escrow hay settlement." : "Chỉ các khiếu nại thuộc phạm vi bạn phụ trách mới có thể được chuyển cấp."}
       onRefresh={load} refreshing={loading} />
+    {!admin && staffReadOnly && <StaffReadOnlyNotice loading={dutyLoading} />}
     <MetricStrip metrics={metrics} />
 
     {admin && <form onSubmit={e => { e.preventDefault(); setPage(0); setKeyword(keywordInput.trim()); }} className="flex flex-col gap-3 border-y border-slate-200 bg-white py-4 xl:flex-row">
@@ -101,7 +109,7 @@ export function DisputeEscalationPage({ activeRole }: { activeRole: string }) {
     {selected && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 sm:p-6" onMouseDown={e => e.target === e.currentTarget && setSelected(null)}><div role="dialog" aria-modal="true" aria-labelledby="dispute-title" className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-md bg-white shadow-2xl">
       <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5"><div><p className="text-[11px] font-black uppercase text-brand-primary">Khiếu nại · Buổi #{selected.sessionId}</p><h2 id="dispute-title" className="mt-1 text-lg font-black text-brand-text">{selected.className || "Chi tiết chuyển cấp"}</h2></div><button title="Đóng" onClick={() => setSelected(null)} className="rounded-md p-2 text-slate-500 hover:bg-slate-100"><X size={18} /></button></header>
       <div className="custom-scrollbar flex-1 overflow-y-auto p-5"><div className="grid gap-4 md:grid-cols-[1.2fr_.8fr]"><section><h3 className="text-xs font-black uppercase text-slate-500">Nội dung khiếu nại</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{selected.reason || selected.disputeReason}</p>{selected.escalationReason && <><h3 className="mt-5 text-xs font-black uppercase text-slate-500">Lý do chuyển cấp</h3><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{selected.escalationReason}</p></>}</section><section className="border-l-0 border-slate-200 md:border-l md:pl-5"><h3 className="text-xs font-black uppercase text-slate-500">Lịch sử xử lý</h3><div className="mt-3 space-y-4">{history.length === 0 ? <p className="text-sm text-slate-500">Chưa có sự kiện chuyển cấp.</p> : history.map(h => <div key={h.id} className="border-l-2 border-brand-primary/30 pl-3 text-xs"><p className="font-black text-brand-text">{h.action}</p><p className="mt-1 text-slate-500">{h.actorEmail} ({h.actorRole})</p><p className="text-slate-500">{new Date(h.createdAt).toLocaleString("vi-VN")}</p>{h.reason && <p className="mt-1 text-slate-700">{h.reason}</p>}</div>)}</div></section></div></div>
-      <footer className="border-t border-slate-200 bg-slate-50 p-4"><label className="text-xs font-black text-slate-600">Lý do xử lý</label><textarea value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={2000} placeholder={admin ? "Nhập lý do tiếp nhận hoặc trả lại" : "Bắt buộc khi chuyển cấp"} className="mt-2 w-full rounded-md border border-slate-200 bg-white p-3 text-sm outline-none focus:border-brand-primary" /><div className="mt-3 flex flex-wrap justify-end gap-2">{admin ? <><button disabled={acting || selected.escalationStatus !== "PENDING_ADMIN"} onClick={() => act("ACCEPT")} className="rounded-md bg-brand-primary px-4 py-2 text-sm font-bold text-white disabled:opacity-40">Tiếp nhận</button><button disabled={acting || !["PENDING_ADMIN", "ACCEPTED_BY_ADMIN"].includes(selected.escalationStatus) || !reason.trim()} onClick={() => act("RETURN")} className="rounded-md border border-amber-400 px-4 py-2 text-sm font-bold text-amber-800 disabled:opacity-40">Trả Staff</button></> : <button disabled={acting || (selected.escalationStatus && !["NONE", "RETURNED_TO_STAFF"].includes(selected.escalationStatus)) || !reason.trim()} onClick={() => act("ESCALATE")} className="inline-flex items-center gap-2 rounded-md bg-brand-primary px-4 py-2 text-sm font-bold text-white disabled:opacity-40"><ShieldAlert className="h-4 w-4" />Chuyển Admin</button>}</div></footer>
+      <footer className="border-t border-slate-200 bg-slate-50 p-4"><label className="text-xs font-black text-slate-600">Lý do xử lý</label><textarea disabled={!admin && staffReadOnly} value={reason} onChange={e => setReason(e.target.value)} rows={3} maxLength={2000} placeholder={admin ? "Nhập lý do tiếp nhận hoặc trả lại" : "Bắt buộc khi chuyển cấp"} className="mt-2 w-full rounded-md border border-slate-200 bg-white p-3 text-sm outline-none focus:border-brand-primary disabled:cursor-not-allowed disabled:bg-slate-100" /><div className="mt-3 flex flex-wrap justify-end gap-2">{admin ? <><button disabled={acting || selected.escalationStatus !== "PENDING_ADMIN"} onClick={() => act("ACCEPT")} className="rounded-md bg-brand-primary px-4 py-2 text-sm font-bold text-white disabled:opacity-40">Tiếp nhận</button><button disabled={acting || !["PENDING_ADMIN", "ACCEPTED_BY_ADMIN"].includes(selected.escalationStatus) || !reason.trim()} onClick={() => act("RETURN")} className="rounded-md border border-amber-400 px-4 py-2 text-sm font-bold text-amber-800 disabled:opacity-40">Trả Staff</button></> : <button disabled={staffReadOnly || acting || (selected.escalationStatus && !["NONE", "RETURNED_TO_STAFF"].includes(selected.escalationStatus)) || !reason.trim()} onClick={() => act("ESCALATE")} className="inline-flex items-center gap-2 rounded-md bg-brand-primary px-4 py-2 text-sm font-bold text-white disabled:opacity-40"><ShieldAlert className="h-4 w-4" />Chuyển Admin</button>}</div></footer>
     </div></div>}
   </div>;
 }

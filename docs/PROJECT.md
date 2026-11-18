@@ -35,6 +35,7 @@ Luồng liên service hiện dùng kết hợp REST đồng bộ, RabbitMQ event
 - Student: tìm lớp/gia sư, gửi yêu cầu học, ký hợp đồng, ký quỹ, tham gia lớp, tự điểm danh, học/nộp bài, theo dõi ví và khiếu nại của chính mình.
 - Tutor: hoàn thiện hồ sơ xét duyệt, quản lý chuyên môn/lịch/lớp/yêu cầu học, cập nhật link lớp, tự điểm danh, giao/chấm bài, ký hợp đồng, theo dõi payout và phản hồi khiếu nại.
 - Staff: đăng ký lịch rảnh/nhận ca trực, xét duyệt và giám sát theo lớp/phạm vi được giao, xử lý khiếu nại thuộc phạm vi; ngoài ca chỉ đọc và trạng thái trực không mở rộng thành quyền Admin. Admin có thể tự phân công hoàn toàn. Nếu hết hạn mà Admin chưa công bố, scheduler tự hoàn tất và công bố lịch: ưu tiên bình chọn ca rảnh, cân bằng tải, không xếp hai ca cùng ngày và có fallback có audit để không bỏ trống ca. Tuần đang chạy được phép phục hồi các ca chưa kết thúc; ca đã kết thúc được đánh dấu `SKIPPED`, không ghi nhận Staff vắng. Phân ca Staff không dùng AI Service/Gemini.
+- Báo cáo nghiệp vụ tổng hợp và nhật ký thao tác liên nhân viên chỉ dành cho Admin; Staff không có menu, route hoặc API đọc báo cáo này.
 - Admin: quản trị toàn hệ thống, giám sát hợp đồng/giao dịch và phân xử toàn cục.
 
 Trình duyệt dùng JWT trong HttpOnly cookie; `activeRole` quyết định ngữ cảnh quyền hiện tại. Xem [AUTH_SECURITY.md](AUTH_SECURITY.md).

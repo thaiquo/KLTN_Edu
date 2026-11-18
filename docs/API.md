@@ -62,6 +62,12 @@ Staff Duty Roster APIs:
 | `POST` | `/api/admin/staff-duty/assignments/{id}/replace` | Thay người ca đã công bố, chưa nhận/chưa kết thúc. |
 | `GET` | `/api/admin/staff-duty/audits` | Xem audit điều phối. |
 
+Operational Reporting API:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/operational-reports/activities` | Admin-only: tổng hợp nhật ký nghiệp vụ liên nhân viên; Gateway xác minh active role trước khi đọc các service nguồn. |
+
 ## 4. Learning Catalog and Tutor APIs
 
 | Method | Endpoint | Purpose |
