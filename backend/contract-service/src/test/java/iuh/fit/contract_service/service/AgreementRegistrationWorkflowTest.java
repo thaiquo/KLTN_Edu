@@ -13,6 +13,7 @@ import iuh.fit.contract_service.enums.ContractAgreementStatus;
 import iuh.fit.contract_service.repository.ContractAgreementRepository;
 import iuh.fit.contract_service.repository.OutboxEventRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -29,6 +30,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -96,6 +100,44 @@ class AgreementRegistrationWorkflowTest {
         assertNotNull(result);
         assertTrue(result.created());
         assertEquals("REGISTER:" + CHAIN_ID + ":" + agreementId, result.idempotencyKey());
+    }
+
+    @RepeatedTest(5)
+    void concurrentRegistrationTriggersConvergeToOneIntent() throws Exception {
+        UUID agreementId = UUID.randomUUID();
+        String onchainAgreementId = Hash.sha3String("EDUCONNECT:AGREEMENT:" + agreementId);
+        String termsHash = Hash.sha3String("terms-v1");
+        insertAgreement(agreementId, onchainAgreementId, termsHash, "PREPARING_BLOCKCHAIN");
+
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<BlockchainTransactionIntentResult> first = executor.submit(() -> {
+                ready.countDown();
+                start.await();
+                return workflowService.initiateRegistration(agreementId);
+            });
+            Future<BlockchainTransactionIntentResult> second = executor.submit(() -> {
+                ready.countDown();
+                start.await();
+                return workflowService.initiateRegistration(agreementId);
+            });
+            ready.await();
+            start.countDown();
+
+            BlockchainTransactionIntentResult firstResult = first.get();
+            BlockchainTransactionIntentResult secondResult = second.get();
+            assertEquals(firstResult.transactionId(), secondResult.transactionId());
+            assertEquals(1, java.util.stream.Stream.of(firstResult, secondResult)
+                    .filter(BlockchainTransactionIntentResult::created)
+                    .count());
+        }
+
+        assertEquals(1L, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM blockchain_transaction", Long.class));
+        assertEquals(1L, jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM outbox_event WHERE event_type = 'blockchain.transaction.intent.created.v1'",
+                Long.class));
     }
 
     @Test
