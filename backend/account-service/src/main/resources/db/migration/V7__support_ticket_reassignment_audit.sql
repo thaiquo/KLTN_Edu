@@ -1,4 +1,3 @@
--- Version follows the staff-duty auto-scheduling V6 already present on main.
 ALTER TABLE support_ticket_history
     ADD COLUMN previous_assignee_user_id BIGINT REFERENCES users(id),
     ADD COLUMN new_assignee_user_id BIGINT REFERENCES users(id);

@@ -84,7 +84,7 @@ Nếu không thỏa, API ghi trả `403 STAFF_OFF_DUTY_READ_ONLY`. Admin không 
 
 File: `backend/account-service/src/main/resources/db/migration/V5__staff_duty_roster.sql`
 
-Flyway V6 (`V6__staff_duty_auto_scheduling.sql`) mở rộng trạng thái assignment với `SKIPPED` và audit action `AUTO_SKIPPED` để phục hồi giữa tuần mà không tạo bản ghi vắng mặt giả cho ca chưa từng được phân.
+Flyway V7 (`V7__staff_duty_auto_scheduling.sql`) mở rộng trạng thái assignment với `SKIPPED` và audit action `AUTO_SKIPPED` để phục hồi giữa tuần mà không tạo bản ghi vắng mặt giả cho ca chưa từng được phân.
 
 #### `staff_availability`
 
