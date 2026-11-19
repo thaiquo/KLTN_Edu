@@ -1,6 +1,9 @@
 package iuh.fit.ai_service.chatbot.controller;
 
 import iuh.fit.ai_service.chatbot.rag.ChatKnowledgeModels.KnowledgeSearchHit;
+import iuh.fit.ai_service.chatbot.rag.ChatKnowledgeIndexService;
+import iuh.fit.ai_service.chatbot.rag.ChatKnowledgeModels.IndexStatus;
+import iuh.fit.ai_service.chatbot.rag.ChatKnowledgeModels.KnowledgeState;
 import iuh.fit.ai_service.chatbot.rag.ChatRagRetriever;
 import iuh.fit.ai_service.chatbot.service.GeminiTextClient;
 import iuh.fit.ai_service.chatbot.service.private_tools.PrivateContractClient;
@@ -49,6 +52,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -81,6 +85,43 @@ class ChatbotControllerTest {
     @MockBean private ClassSemanticSearchService classSemanticSearchService;
     @MockBean private PrivateLearningClient privateLearningClient;
     @MockBean private PrivateContractClient privateContractClient;
+    @MockBean private ChatKnowledgeIndexService chatKnowledgeIndexService;
+
+    @Test
+    void publicKnowledgeStatusExposesOnlyAvailabilityFields() throws Exception {
+        when(chatKnowledgeIndexService.status()).thenReturn(knowledgeStatus());
+
+        mockMvc.perform(get("/api/ai/chat/knowledge-status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("READY"))
+                .andExpect(jsonPath("$.available").value(true))
+                .andExpect(jsonPath("$.syncInProgress").value(false))
+                .andExpect(jsonPath("$.pointCount").doesNotExist());
+    }
+
+    @Test
+    void adminKnowledgeStatusRequiresAuthentication() throws Exception {
+        mockMvc.perform(get("/api/ai/admin/chatbot-knowledge/status"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void studentCannotReadAdminKnowledgeStatus() throws Exception {
+        mockMvc.perform(get("/api/ai/admin/chatbot-knowledge/status")
+                        .cookie(accessToken(101L, "student@gmail.com", "STUDENT", List.of("STUDENT"))))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminCanReadKnowledgeStatus() throws Exception {
+        when(chatKnowledgeIndexService.status()).thenReturn(knowledgeStatus());
+
+        mockMvc.perform(get("/api/ai/admin/chatbot-knowledge/status")
+                        .cookie(accessToken(303L, "admin@gmail.com", "ADMIN", List.of("ADMIN"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("READY"))
+                .andExpect(jsonPath("$.pointCount").value(58));
+    }
 
     @Test
     void guestCanCallChatEndpoint() throws Exception {
@@ -657,6 +698,22 @@ class ChatbotControllerTest {
                 .signWith(key)
                 .compact();
         return new Cookie("access_token", token);
+    }
+
+    private IndexStatus knowledgeStatus() {
+        return new IndexStatus(
+                "educonnect_chatbot_knowledge_v1",
+                KnowledgeState.READY,
+                true,
+                58,
+                8,
+                8,
+                58,
+                Instant.now(),
+                Instant.now(),
+                null,
+                false
+        );
     }
 
     private LearningCatalogSnapshot catalogSnapshot() {

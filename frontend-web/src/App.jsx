@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider } from './store/AuthContext';
 import { RealtimeProvider } from './realtime/RealtimeProvider';
@@ -31,6 +31,16 @@ import { useTutorApplication } from './hooks/useTutorApplication';
 const DashboardPage = lazy(() =>
   import('./pages/DashboardPage').then((module) => ({ default: module.DashboardPage }))
 );
+
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [pathname]);
+
+  return null;
+}
 
 function defaultRouteFor(user) {
   if (user?.roles?.includes('STAFF') || user?.roles?.includes('ADMIN')) {
@@ -197,6 +207,7 @@ function ProtectedCompleteProfile() {
 export default function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <AuthProvider>
         <RealtimeProvider>
           <Routes>

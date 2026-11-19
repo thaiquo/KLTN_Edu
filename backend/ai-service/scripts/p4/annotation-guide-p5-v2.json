@@ -1,0 +1,65 @@
+{
+  "version": "p5-annotation-guide-v2",
+  "status": "READY_FOR_HUMAN_ANNOTATION",
+  "packageFile": "annotation-package-v2.json",
+  "independentFiles": {
+    "annotatorA": "annotation-labels-a-v2.csv",
+    "annotatorB": "annotation-labels-b-v2.csv",
+    "adjudication": "annotation-labels-adjudicated-v2.csv"
+  },
+  "encoding": "UTF-8 with BOM for Microsoft Excel on Windows",
+  "labels": {
+    "0": "Không phù hợp",
+    "1": "Phù hợp một phần",
+    "2": "Phù hợp cao"
+  },
+  "editableColumns": ["label", "evidence", "note"],
+  "immutableColumns": [
+    "datasetVersion",
+    "snapshotVersion",
+    "queryId",
+    "studentRequest",
+    "subject",
+    "level",
+    "teachingMode",
+    "learningGoal",
+    "weakTopics",
+    "scheduleConstraint",
+    "budgetConstraint",
+    "pseudonymousTutorId",
+    "tutorSubject",
+    "approvedLevels",
+    "experienceYears",
+    "tuitionRange",
+    "tutorTeachingModes",
+    "availability",
+    "professionalEvidence",
+    "hardViolation",
+    "annotatorId"
+  ],
+  "workflow": [
+    "Annotator A và B mở đúng file riêng, làm việc độc lập và không xem file của nhau.",
+    "Đọc toàn bộ evidence trên cùng row rồi điền label, evidence và note; không sửa các cột còn lại.",
+    "Nếu hardViolation khác NONE, label bắt buộc là 0 và evidence phải nêu điều kiện bị vi phạm.",
+    "Không suy đoán thông tin không xuất hiện trong evidence.",
+    "Sau khi A và B hoàn tất, người phụ trách xử lý mọi bất đồng và điền file ADJUDICATED.",
+    "Evaluator chỉ chạy khi đủ 300 rows A, 300 rows B và 300 rows ADJUDICATED."
+  ],
+  "privacy": {
+    "prohibited": [
+      "Tên thật",
+      "Email",
+      "Số điện thoại",
+      "Địa chỉ chi tiết",
+      "JWT/cookie/password",
+      "KYC, hợp đồng hoặc tin nhắn cá nhân"
+    ],
+    "blindFields": [
+      "matchPercentage",
+      "structured score",
+      "semantic similarity/boost",
+      "B0-B4 ranking",
+      "AI matchingReasons"
+    ]
+  }
+}

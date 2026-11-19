@@ -1,3 +1,5 @@
+import { getLoginProtectionMessage, parseRetryAfter } from '../utils/loginProtection.js';
+
 const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
 const configuredGatewayUrl = import.meta.env.VITE_API_GATEWAY_URL?.trim();
 // In development, keep browser requests same-origin and let Vite proxy /api.
@@ -10,7 +12,7 @@ const API_URL = (
 ).replace(/\/$/, '');
 
 export class ApiError extends Error {
-  constructor({ status, message, code, validationErrors, path, raw, cause }) {
+  constructor({ status, message, code, validationErrors, path, raw, cause, retryAfter }) {
     super(message || 'Yêu cầu không thành công.', { cause });
     this.name = 'ApiError';
     this.status = status;
@@ -19,6 +21,7 @@ export class ApiError extends Error {
     this.path = path;
     this.raw = raw;
     this.cause = cause;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -105,7 +108,7 @@ async function parseResponseBody(response) {
   return response.text().catch(() => '');
 }
 
-function parseErrorPayload(data, status) {
+export function parseErrorPayload(data, status) {
   let rawMessage = '';
   let code = undefined;
 
@@ -132,7 +135,9 @@ function parseErrorPayload(data, status) {
   let userMessage = rawMessage;
 
   if (code === 'INVALID_CREDENTIALS' || rawMessage === 'Invalid email or password' || rawMessage === 'Bad credentials') {
-    userMessage = 'Email hoặc mật khẩu không chính xác.';
+    userMessage = 'Email hoặc mật khẩu không đúng.';
+  } else if (getLoginProtectionMessage(code)) {
+    userMessage = getLoginProtectionMessage(code);
   } else if (code === 'STUDENT_PROFILE_NOT_FOUND') {
     userMessage = 'Tài khoản chưa đăng ký làm học viên.';
   } else if (code === 'TUTOR_PROFILE_NOT_FOUND') {
@@ -218,7 +223,8 @@ export async function apiRequest(path, options = {}) {
       message,
       validationErrors: normalizeValidationErrors(data),
       path: typeof data === 'object' ? data?.path : undefined,
-      raw: data
+      raw: data,
+      retryAfter: parseRetryAfter(response.headers.get('Retry-After'))
     });
   }
 

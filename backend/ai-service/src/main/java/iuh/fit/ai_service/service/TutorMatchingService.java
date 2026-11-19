@@ -2,6 +2,7 @@ package iuh.fit.ai_service.service;
 
 import iuh.fit.ai_service.client.TutorCandidateClient;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.AvailabilitySlot;
+import iuh.fit.ai_service.dto.TutorMatchingDtos.ConstraintFilteringSummary;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.CriterionScore;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.MatchedSubject;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.MatchingInputEcho;
@@ -16,6 +17,7 @@ import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorMatchResult;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorMatchingRequest;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorMatchingResponse;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.TimeOfDayHint;
+import iuh.fit.ai_service.dto.RequirementAnalysisDtos.ConstraintMode;
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSearchRequest;
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSearchResult;
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSearchStatus;
@@ -89,7 +91,14 @@ public class TutorMatchingService {
                 normalized.levelId(),
                 normalized.teachingMode()
         );
-        int maxExperienceYears = candidates.stream()
+        List<HardFilterDecision> hardFilterDecisions = candidates.stream()
+                .map(candidate -> hardFilterDecision(normalized, candidate))
+                .toList();
+        List<TutorCandidate> rankingCandidates = hardFilterDecisions.stream()
+                .filter(HardFilterDecision::accepted)
+                .map(HardFilterDecision::candidate)
+                .toList();
+        int maxExperienceYears = rankingCandidates.stream()
                 .map(candidate -> findMatchedCapability(normalized, candidate).orElse(null))
                 .filter(java.util.Objects::nonNull)
                 .map(SubjectCapability::experienceYears)
@@ -98,7 +107,7 @@ public class TutorMatchingService {
                 .max()
                 .orElse(0);
 
-        List<ScoredTutorMatch> structuredResults = candidates.stream()
+        List<ScoredTutorMatch> structuredResults = rankingCandidates.stream()
                 .map(candidate -> scoreCandidate(normalized, candidate, maxExperienceYears))
                 .flatMap(Optional::stream)
                 .sorted(resultComparator())
@@ -120,13 +129,87 @@ public class TutorMatchingService {
                         normalized.preferredSchedules(),
                         normalized.learningGoal(),
                         normalized.weakTopics(),
-                        normalized.tutorPreferences()
+                        normalized.tutorPreferences(),
+                        normalized.scheduleConstraintMode(),
+                        normalized.budgetConstraintMode()
                 ),
                 candidates.size(),
                 results.size(),
                 List.of(),
-                results
+                results,
+                constraintFilteringSummary(normalized, hardFilterDecisions)
         );
+    }
+
+    private HardFilterDecision hardFilterDecision(TutorMatchingRequest request, TutorCandidate candidate) {
+        if (!isEligible(request, candidate)) {
+            return new HardFilterDecision(candidate, true, false, false);
+        }
+        SubjectCapability capability = findMatchedCapability(request, candidate).orElse(null);
+        boolean scheduleExcluded = request.scheduleConstraintMode() == ConstraintMode.HARD
+                && hasSchedules(request)
+                && !hardScheduleMatches(request.preferredSchedules(), candidate.availability());
+        boolean budgetExcluded = request.budgetConstraintMode() == ConstraintMode.HARD
+                && hasBudget(request)
+                && !hardBudgetMatches(request.budgetMin(), request.budgetMax(), capability);
+        return new HardFilterDecision(candidate, !scheduleExcluded && !budgetExcluded, scheduleExcluded, budgetExcluded);
+    }
+
+    private boolean hardScheduleMatches(
+            List<PreferredScheduleRequest> requestedSchedules,
+            List<AvailabilitySlot> availability
+    ) {
+        if (availability == null || availability.isEmpty()) return false;
+        return safeList(requestedSchedules).stream().allMatch(requested ->
+                safeList(availability).stream().anyMatch(available -> hardScheduleSlotMatches(requested, available)));
+    }
+
+    private boolean hardScheduleSlotMatches(PreferredScheduleRequest requested, AvailabilitySlot available) {
+        if (requested == null || requested.dayOfWeek() == null || available == null
+                || !requested.dayOfWeek().equals(available.dayOfWeek())) return false;
+        LocalTime availableStart = parseTime(available.startTime());
+        LocalTime availableEnd = parseTime(available.endTime());
+        if (availableStart == null || availableEnd == null || !availableStart.isBefore(availableEnd)) return false;
+        if (StringUtils.hasText(requested.startTime()) && StringUtils.hasText(requested.endTime())) {
+            LocalTime requestedStart = parseTime(requested.startTime());
+            LocalTime requestedEnd = parseTime(requested.endTime());
+            return requestedStart != null && requestedEnd != null
+                    && !availableStart.isAfter(requestedStart) && !availableEnd.isBefore(requestedEnd);
+        }
+        return requested.timeOfDayHint() == null
+                || overlapsTimeOfDay(availableStart, availableEnd, requested.timeOfDayHint());
+    }
+
+    private boolean hardBudgetMatches(
+            BigDecimal budgetMin,
+            BigDecimal budgetMax,
+            SubjectCapability capability
+    ) {
+        if (capability == null || capability.tuitionMin() == null || capability.tuitionMax() == null) return false;
+        boolean belowMaximum = budgetMax == null || capability.tuitionMin().compareTo(budgetMax) <= 0;
+        boolean aboveMinimum = budgetMin == null || capability.tuitionMax().compareTo(budgetMin) >= 0;
+        return belowMaximum && aboveMinimum;
+    }
+
+    private ConstraintFilteringSummary constraintFilteringSummary(
+            TutorMatchingRequest request,
+            List<HardFilterDecision> decisions
+    ) {
+        int scheduleExcluded = (int) decisions.stream().filter(HardFilterDecision::scheduleExcluded).count();
+        int budgetExcluded = (int) decisions.stream().filter(HardFilterDecision::budgetExcluded).count();
+        List<String> reasons = new ArrayList<>();
+        List<String> suggestions = new ArrayList<>();
+        if (scheduleExcluded > 0) {
+            reasons.add(scheduleExcluded + " gia sư không bao phủ toàn bộ lịch bắt buộc.");
+            suggestions.add("Mở rộng ngày hoặc khung giờ bắt buộc.");
+        }
+        if (budgetExcluded > 0) {
+            reasons.add(budgetExcluded + " gia sư không có học phí giao với ngân sách bắt buộc.");
+            suggestions.add("Tăng ngân sách tối đa hoặc mở rộng khoảng ngân sách.");
+        }
+        return new ConstraintFilteringSummary(
+                request.scheduleConstraintMode(), request.budgetConstraintMode(),
+                scheduleExcluded, budgetExcluded, List.copyOf(reasons), List.copyOf(suggestions));
     }
 
     private Optional<ScoredTutorMatch> scoreCandidate(
@@ -286,20 +369,65 @@ public class TutorMatchingService {
         } catch (RuntimeException exception) {
             log.warn("Semantic tutor matching is unavailable; falling back to structured matching: {}",
                     exception.getClass().getSimpleName());
-            return structuredResults;
+            return applySemanticFallback(structuredResults, SemanticSearchStatus.QDRANT_UNAVAILABLE);
         }
         if (semanticResult == null || semanticResult.status() != SemanticSearchStatus.APPLICABLE) {
-            return structuredResults;
+            SemanticSearchStatus status = semanticResult == null
+                    ? SemanticSearchStatus.QDRANT_UNAVAILABLE
+                    : semanticResult.status();
+            return applySemanticFallback(structuredResults, status);
         }
         if (semanticResult.candidates() == null || semanticResult.candidates().isEmpty()) {
             log.warn("Semantic tutor index returned no candidates; falling back to structured matching.");
-            return structuredResults;
+            return applySemanticFallback(structuredResults, SemanticSearchStatus.NO_VALID_SEMANTIC_HITS);
         }
 
         Map<Long, SemanticCandidateRank> semanticByTutorId = semanticRanks(semanticResult.candidates());
         return structuredResults.stream()
                 .map(result -> applySemanticRankBoost(result, semanticByTutorId.get(result.result().tutorId())))
                 .toList();
+    }
+
+    private List<ScoredTutorMatch> applySemanticFallback(
+            List<ScoredTutorMatch> structuredResults,
+            SemanticSearchStatus status
+    ) {
+        String policy = switch (status) {
+            case NO_CONTEXT, NOT_APPLICABLE -> "Không có ngữ cảnh học tập đủ rõ để dùng truy hồi ngữ nghĩa; kết quả dùng điểm hồ sơ.";
+            case INDEX_EMPTY -> "Chỉ mục ngữ nghĩa đang trống; kết quả tạm thời dùng điểm hồ sơ có cấu trúc.";
+            case QDRANT_UNAVAILABLE -> "Kho vector ngữ nghĩa tạm thời không khả dụng; kết quả dùng điểm hồ sơ có cấu trúc.";
+            case EMBEDDING_FAILURE -> "Không thể tạo embedding cho yêu cầu này; kết quả dùng điểm hồ sơ có cấu trúc.";
+            case NO_VALID_SEMANTIC_HITS -> "Không có kết quả ngữ nghĩa hợp lệ sau kiểm tra hồ sơ; giữ nguyên điểm có cấu trúc.";
+            case APPLICABLE -> "Truy hồi ngữ nghĩa khả dụng.";
+        };
+        boolean applicable = status != SemanticSearchStatus.NO_CONTEXT && status != SemanticSearchStatus.NOT_APPLICABLE;
+        return structuredResults.stream()
+                .map(scored -> withSemanticComponent(scored, new SemanticScoreComponent(
+                        applicable,
+                        false,
+                        null,
+                        BigDecimal.ZERO.setScale(4, RoundingMode.HALF_UP),
+                        policy,
+                        status.name()
+                )))
+                .toList();
+    }
+
+    private ScoredTutorMatch withSemanticComponent(ScoredTutorMatch scored, SemanticScoreComponent semantic) {
+        TutorMatchResult current = scored.result();
+        ScoreBreakdown old = current.scoreBreakdown();
+        ScoreBreakdown breakdown = new ScoreBreakdown(
+                old.schedule(), old.budget(), old.location(), old.experience(), old.ratingConfidence(), semantic,
+                old.rawScore(), old.weights(), old.criteria(), old.totalWeight(), old.baseWeightSum(), old.normalizedWeightSum()
+        );
+        TutorMatchResult updated = new TutorMatchResult(
+                current.tutorId(), current.userId(), current.fullName(), current.avatarUrl(), current.bio(),
+                current.location(), current.teachingModes(), current.matchedSubject(), current.startingTuition(),
+                current.availability(), current.averageRating(), current.reviewCount(), current.publishedClassCount(),
+                current.matchPercentage(), breakdown, current.matchingReasons(), current.mismatchReasons(),
+                current.missingData(), current.relaxedCriteria()
+        );
+        return new ScoredTutorMatch(updated, scored.structuredScore(), scored.hybridScore(), scored.semanticSignal(), scored.semanticBoost());
     }
 
     private SemanticSearchRequest toSemanticRequest(TutorMatchingRequest request, List<ScoredTutorMatch> structuredResults) {
@@ -387,7 +515,13 @@ public class TutorMatchingService {
                 current.publishedClassCount(),
                 percentage(hybridScore),
                 breakdown,
-                current.matchingReasons(),
+                semantic.used()
+                        ? distinctLimited(java.util.stream.Stream.concat(
+                                current.matchingReasons().stream(),
+                                java.util.stream.Stream.of("Tìm kiếm ngữ nghĩa đã tham gia và cộng "
+                                        + semantic.rankBoost() + " điểm giới hạn từ bằng chứng Qdrant hợp lệ."))
+                                .toList(), 5)
+                        : current.matchingReasons(),
                 current.mismatchReasons(),
                 current.missingData(),
                 current.relaxedCriteria()
@@ -1132,7 +1266,9 @@ public class TutorMatchingService {
                 request.preferredSchedules() == null ? List.of() : request.preferredSchedules(),
                 trimToNull(request.learningGoal()),
                 cleanTextList(request.weakTopics()),
-                cleanTextList(request.tutorPreferences())
+                cleanTextList(request.tutorPreferences()),
+                request.scheduleConstraintMode() == null ? ConstraintMode.SOFT : request.scheduleConstraintMode(),
+                request.budgetConstraintMode() == null ? ConstraintMode.SOFT : request.budgetConstraintMode()
         );
     }
 
@@ -1249,6 +1385,14 @@ public class TutorMatchingService {
     }
 
     private record MatchExplanation(List<String> matchingReasons, List<String> mismatchReasons) {
+    }
+
+    private record HardFilterDecision(
+            TutorCandidate candidate,
+            boolean accepted,
+            boolean scheduleExcluded,
+            boolean budgetExcluded
+    ) {
     }
 
     private record CriterionDraft(

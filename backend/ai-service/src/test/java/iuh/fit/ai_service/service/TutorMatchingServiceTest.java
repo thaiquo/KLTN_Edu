@@ -11,6 +11,7 @@ import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorCandidate;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorMatchingRequest;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorMatchingResponse;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.TimeOfDayHint;
+import iuh.fit.ai_service.dto.RequirementAnalysisDtos.ConstraintMode;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -120,6 +121,79 @@ class TutorMatchingServiceTest {
         var result = service(List.of(candidate)).match(defaultRequest()).results().getFirst();
 
         assertThat(result.scoreBreakdown().budget().normalizedScore()).isEqualTo(0.05);
+    }
+
+    @Test
+    void omittedConstraintModesRemainSoftForBackwardCompatibility() {
+        TutorCandidate outsideBudget = candidateBuilder(1L)
+                .capability(capability(BigDecimal.valueOf(500_000), BigDecimal.valueOf(700_000)))
+                .availability(List.of(slot(3, "17:00", "21:00")))
+                .build();
+
+        TutorMatchingResponse response = service(List.of(outsideBudget)).match(defaultRequest());
+
+        assertThat(response.results()).hasSize(1);
+        assertThat(response.input().scheduleConstraintMode()).isEqualTo(ConstraintMode.SOFT);
+        assertThat(response.input().budgetConstraintMode()).isEqualTo(ConstraintMode.SOFT);
+    }
+
+    @Test
+    void hardScheduleRequiresEveryRequestedSlotBeforeRanking() {
+        TutorCandidate onlyMonday = candidateBuilder(1L)
+                .availability(List.of(slot(2, "17:00", "21:00")))
+                .build();
+        TutorMatchingRequest request = requestBuilder()
+                .preferredSchedules(List.of(schedule(2, "18:00", "20:00"), schedule(4, "18:00", "20:00")))
+                .scheduleConstraintMode(ConstraintMode.HARD)
+                .build();
+
+        TutorMatchingResponse response = service(List.of(onlyMonday)).match(request);
+
+        assertThat(response.results()).isEmpty();
+        assertThat(response.constraintFiltering().scheduleExcludedCandidates()).isEqualTo(1);
+        assertThat(response.constraintFiltering().relaxationSuggestions()).isNotEmpty();
+    }
+
+    @Test
+    void hardBudgetRejectsOutsideAndMissingTuitionEvidence() {
+        TutorCandidate outside = candidateBuilder(1L)
+                .capability(capability(BigDecimal.valueOf(500_000), BigDecimal.valueOf(700_000)))
+                .build();
+        TutorCandidate missing = candidateBuilder(2L)
+                .capability(capability(BigDecimal.valueOf(200_000), null))
+                .build();
+        TutorMatchingRequest request = requestBuilder().budgetConstraintMode(ConstraintMode.HARD).build();
+
+        TutorMatchingResponse response = service(List.of(outside, missing)).match(request);
+
+        assertThat(response.results()).isEmpty();
+        assertThat(response.constraintFiltering().budgetExcludedCandidates()).isEqualTo(2);
+        assertThat(response.relaxedCriteria()).isEmpty();
+    }
+
+    @Test
+    void combinedHardConstraintsKeepOnlyCandidatesMeetingEveryMandatoryCriterion() {
+        TutorCandidate accepted = candidateBuilder(1L)
+                .availability(List.of(slot(2, "17:00", "21:00"), slot(4, "17:00", "21:00")))
+                .build();
+        TutorCandidate scheduleConflict = candidateBuilder(2L)
+                .availability(List.of(slot(2, "17:00", "21:00")))
+                .build();
+        TutorCandidate budgetConflict = candidateBuilder(3L)
+                .availability(List.of(slot(2, "17:00", "21:00"), slot(4, "17:00", "21:00")))
+                .capability(capability(BigDecimal.valueOf(500_000), BigDecimal.valueOf(700_000)))
+                .build();
+        TutorMatchingRequest request = requestBuilder()
+                .preferredSchedules(List.of(schedule(2, "18:00", "20:00"), schedule(4, "18:00", "20:00")))
+                .scheduleConstraintMode(ConstraintMode.HARD)
+                .budgetConstraintMode(ConstraintMode.HARD)
+                .build();
+
+        TutorMatchingResponse response = service(List.of(accepted, scheduleConflict, budgetConflict)).match(request);
+
+        assertThat(response.results()).extracting("tutorId").containsExactly(1L);
+        assertThat(response.constraintFiltering().scheduleExcludedCandidates()).isEqualTo(1);
+        assertThat(response.constraintFiltering().budgetExcludedCandidates()).isEqualTo(1);
     }
 
     @Test
@@ -614,6 +688,8 @@ class TutorMatchingServiceTest {
         private String learningGoal = "Muốn học chắc kiến thức nền";
         private List<String> weakTopics = List.of();
         private List<String> tutorPreferences = List.of();
+        private ConstraintMode scheduleConstraintMode;
+        private ConstraintMode budgetConstraintMode;
 
         RequestBuilder teachingMode(TeachingMode teachingMode) {
             this.teachingMode = teachingMode;
@@ -660,6 +736,16 @@ class TutorMatchingServiceTest {
             return this;
         }
 
+        RequestBuilder scheduleConstraintMode(ConstraintMode scheduleConstraintMode) {
+            this.scheduleConstraintMode = scheduleConstraintMode;
+            return this;
+        }
+
+        RequestBuilder budgetConstraintMode(ConstraintMode budgetConstraintMode) {
+            this.budgetConstraintMode = budgetConstraintMode;
+            return this;
+        }
+
         TutorMatchingRequest build() {
             return new TutorMatchingRequest(
                     SUBJECT_ID,
@@ -672,7 +758,9 @@ class TutorMatchingServiceTest {
                     preferredSchedules,
                     learningGoal,
                     weakTopics,
-                    tutorPreferences
+                    tutorPreferences,
+                    scheduleConstraintMode,
+                    budgetConstraintMode
             );
         }
     }

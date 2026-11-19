@@ -85,8 +85,9 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> login(
             @Valid @RequestBody LoginRequest request,
+            HttpServletRequest servletRequest,
             HttpServletResponse response) {
-        LoginResult result = authService.login(request);
+        LoginResult result = authService.login(request, servletRequest.getRemoteAddr());
 
         authCookieService.addAccessTokenCookie(response, result.getToken());
         authCookieService.addRefreshTokenCookie(response, result.getRefreshToken());

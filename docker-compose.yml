@@ -51,6 +51,21 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7.4-alpine
+    container_name: kltn-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   gotenberg:
     image: gotenberg/gotenberg:8
     container_name: kltn-gotenberg
@@ -93,3 +108,4 @@ volumes:
   postgres_data:
   rabbitmq_data:
   qdrant_data:
+  redis_data:

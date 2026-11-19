@@ -47,8 +47,8 @@ import { fetchUserDirectory, getUserDisplayName, UserSummary } from '../../utils
 import { Loader2 } from 'lucide-react';
 import { useRealtimeRefresh } from '../../realtime/useRealtimeRefresh';
 import { Pager } from '../../portal/components/OperationalUi';
-import { useStaffDutyAccess } from '../../hooks/useStaffDutyAccess';
-import { StaffReadOnlyNotice } from '../../portal/components/staff/StaffReadOnlyNotice';
+import { useStaffDutyAccess } from '../../portal/hooks/useStaffDutyAccess';
+import { StaffDutyReadOnlyBanner } from '../../portal/components/staff/StaffDutyReadOnlyBanner';
 
 export interface DisputeItem {
   id: string | number;
@@ -154,8 +154,9 @@ export function DisputeManagementPanel({
   activeRole,
   userEmail = '',
 }: DisputeManagementPanelProps) {
-  const { staffReadOnly, dutyLoading } = useStaffDutyAccess(activeRole);
   const activeChainId = DEFAULT_CHAIN_ID;
+  const duty = useStaffDutyAccess();
+  const staffReadOnly = activeRole === 'staff' && !duty.writeAllowed;
   const requestedSessionId = useMemo(() => {
     const value = new URLSearchParams(window.location.search).get('sessionId');
     const parsed = Number(value);
@@ -480,14 +481,14 @@ export function DisputeManagementPanel({
   const canStaffResolve = useCallback((dispute: DisputeDto) => {
     if (activeRole === 'admin') return true;
     if (activeRole !== 'staff') return false;
-    if (staffReadOnly) return false;
+    if (!duty.writeAllowed) return false;
     if (!dispute.classroomReviewerEmail || !userEmail) return false;
     return dispute.classroomReviewerEmail.trim().toLowerCase() === userEmail.trim().toLowerCase();
-  }, [activeRole, staffReadOnly, userEmail]);
+  }, [activeRole, duty.writeAllowed, userEmail]);
 
   const handleResolve = async (dispute: DisputeDto, approved: boolean, customReason?: string) => {
-    if (activeRole === 'staff' && staffReadOnly) {
-      setActionError('Bạn đang ngoài ca trực. Hãy nhận ca hợp lệ trước khi tiến hành phân xử.');
+    if (activeRole === 'staff' && !duty.writeAllowed) {
+      setActionError('Bạn đang ngoài ca trực hoặc chưa xác minh được ca. Trang hiện ở chế độ chỉ xem.');
       return;
     }
     const reason = customReason ?? '';
@@ -861,7 +862,6 @@ export function DisputeManagementPanel({
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
-      {activeRole === 'staff' && staffReadOnly && <StaffReadOnlyNotice loading={dutyLoading} />}
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-xs">
         <div className="flex items-center gap-4">
@@ -905,6 +905,10 @@ export function DisputeManagementPanel({
           </button>
         )}
       </div>
+
+      {activeRole === 'staff' && (
+        <StaffDutyReadOnlyBanner loading={duty.loading} error={duty.error} writeAllowed={duty.writeAllowed} onRetry={duty.refresh} />
+      )}
 
       {/* Notifications */}
       {actionSuccess && (

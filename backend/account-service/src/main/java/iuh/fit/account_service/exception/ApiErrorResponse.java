@@ -8,6 +8,7 @@ public class ApiErrorResponse {
     private LocalDateTime timestamp;
     private int status;
     private String error;
+    private String code;
     private String message;
     private String path;
     private List<ValidationError> validationErrors;
@@ -21,7 +22,7 @@ public class ApiErrorResponse {
             String path,
             List<ValidationError> validationErrors
     ) {
-        this(timestamp, status, error, message, path, validationErrors, null);
+        this(timestamp, status, error, null, message, path, validationErrors, null);
     }
 
     public ApiErrorResponse(
@@ -33,9 +34,23 @@ public class ApiErrorResponse {
             List<ValidationError> validationErrors,
             List<String> missingItems
     ) {
+        this(timestamp, status, error, null, message, path, validationErrors, missingItems);
+    }
+
+    public ApiErrorResponse(
+            LocalDateTime timestamp,
+            int status,
+            String error,
+            String code,
+            String message,
+            String path,
+            List<ValidationError> validationErrors,
+            List<String> missingItems
+    ) {
         this.timestamp = timestamp;
         this.status = status;
         this.error = error;
+        this.code = code;
         this.message = message;
         this.path = path;
         this.validationErrors = validationErrors;
@@ -52,6 +67,10 @@ public class ApiErrorResponse {
 
     public String getError() {
         return error;
+    }
+
+    public String getCode() {
+        return code;
     }
 
     public String getMessage() {

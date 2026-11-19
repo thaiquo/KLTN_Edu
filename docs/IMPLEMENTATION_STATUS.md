@@ -79,11 +79,14 @@
 
 - IMPLEMENTED: register, verify/resend OTP, login, refresh, switch role, logout, forgot/reset password.
 - IMPLEMENTED: short-lived access token cookie and refresh cookie; CSRF handling for browser mutation requests.
+- IMPLEMENTED + LOCALLY VERIFIED (2026-11-19), NOT DEPLOYED: login abuse protection combines a Redis-backed Gateway IP limit (20 exact login POSTs/minute by default), an Account Service normalized-email failed-credential window (Turnstile required from the third failure), trusted-proxy-aware client IP resolution, fail-closed Redis/provider behavior, stable error codes, and a lazy Web Turnstile challenge. Real local cookie/CSRF runtime verified Student/Tutor/Staff login, shared Student/Tutor-mode email counting, a real Cloudflare test-widget callback, successful server-side Siteverify, `429`/numeric `Retry-After`, and browser countdown handling. Automated suites cover Admin-role-preserving AuthService behavior, Account/Gateway failure and concurrency paths. Native mobile challenge UI and production Cloudflare credentials/hostname remain deployment work; no production runtime claim is made.
 - IMPLEMENTED: multi-role account model with `activeRole`.
 - IMPLEMENTED: Student/Tutor profile, avatar, password and wallet update.
 - IMPLEMENTED: Tutor application identity evidence and Staff approval.
 - IMPLEMENTED + TESTED: internal active Staff/Admin notification recipient lookup for Contract termination notifications; requires scoped service JWT.
 - IMPLEMENTED + TESTED: Admin staff user provisioning (POST /api/admin/users/staff) with system-aligned 8+ character initial password, lock/unlock for non-Admin accounts, soft delete / account deactivation (DELETE /api/admin/users/{userId}), self-lock/Admin target protection, disabled-account restore protection and immediate refresh session revocation. Staff can self-change password through `/api/users/me/password` or self-reset through forgot/reset password. 158 PASS.
+- IMPLEMENTED LOCALLY + RUNTIME VERIFIED (2026-11-11), NOT DEPLOYED: Admin/Staff operational closeout now uses full-filter report aggregation and CSV export (10,000-row safety limit), Admin-only whole-system Staff performance, partial-source-safe Action Center/Admin Dashboard, and shared fail-closed off-duty UX across approval, Community, dispute/escalation and Help Desk mutations. Gateway runtime returned 114 report rows and CSV exported all 114 rows; Admin finance/global settlement access returned 200 while Staff returned 403; Student/Tutor retained own-transaction access only. PostgreSQL 16 concurrent roster publish/replace completed without duplicate publish audits or lost replacement audits. Browser automation was blocked by the local browser-access safety host, and the local database had no dispute/termination fixture for an authenticated on-duty out-of-scope canary, so those two checks remain explicit closeout gaps.
+- IMPLEMENTED + LOCALLY VERIFIED (2026-11-18), NOT DEPLOYED: Admin/Staff M3.2-M3.4 and M4 add the read-only Operational Work Item V1 aggregation across seven owner-service queues, centralized SLA evaluation, process-lifetime source health/latency/last-success diagnostics, Admin-only `/api/operations/health/v1`, and a configurable background SLA scheduler independent of Action Center. Stable event IDs and Notification's `(event_id, recipient_user_id)` uniqueness produced exactly one DUE_SOON Bell across repeated runs and one new OVERDUE Bell after the same isolated Support Ticket changed state; partial runtime with five unavailable owner sources still evaluated the healthy Account source and published Bell alerts. Account V6 adds Support Ticket reassignment audit; Admin reassignment was verified against local PostgreSQL. Security runtime verified Admin health HTTP 200, Staff health HTTP 403, user JWT denial on internal operational/recipient routes, and scheduler service-token access. Full regression: Gateway 27, Account 205, Learning 354, Notification 82 PASS; Contract 326 run = 318 PASS + 8 Anvil skip; frontend portal/pagination/operations tests 21 PASS and production build PASS. Browser UI walkthrough was explicitly deferred to user-run acceptance; no automated browser PASS is claimed. Per user acceptance, M3.1 duty behavior remains backend/source/test verified outside the configured shift window. See `docs/ADMIN_STAFF_M3_PLAN.md`, `docs/ADMIN_STAFF_M3_SCOPE_MATRIX.md`, and `docs/ADMIN_STAFF_M3_SLA_POLICY.md`.
 
 ## 5. Learning
 
@@ -156,6 +159,24 @@
   Sepolia RPC uses PublicNode so the backend Alchemy credential is not bundled
   into browser JavaScript. Production build PASS on 2026-10-14.
 - MERGE-FIX-C validation: frontend source integration PASS, utility tests 11 PASS, `npm run build` PASS.
+
+## 9A. Tutor Statistics Dashboard (M5 local implementation)
+
+- IMPLEMENTED + RUNTIME VERIFIED LOCALLY: unified Tutor dashboard through `GET /api/tutor-statistics/v1`, with Learning and Contract owner-service sources and Gateway partial-failure aggregation.
+- IMPLEMENTED: active classes/students, session progress, upcoming sessions, assignment/submission workload, average/recent reviews, settlement-derived released/pending income and per-class payout breakdown.
+- SECURITY VERIFIED: identity is derived from authenticated `TUTOR` principal; unauthenticated requests return 401 and authenticated Student/Staff/Admin requests return 403. No caller-controlled Tutor ID is used.
+- DATA INTEGRITY: released income includes only `SETTLED` Tutor amounts and excludes legacy agreements. Source failure returns `UNAVAILABLE` with `data=null`, never a fabricated zero.
+- INTENTIONALLY UNSUPPORTED: completed-class count remains unavailable because current Learning class status has no authoritative `COMPLETED` value. Completed-session count is available.
+- FRONTEND VERIFIED: populated, partial-source and mobile viewport Playwright cases pass; production build passes. Runtime verification used isolated local ports and a read-only PostgreSQL connection, with no test fixture or blockchain transaction created.
+
+## 9B. Admin Analytics Dashboard (M6 local implementation)
+
+- IMPLEMENTED AND LOCALLY VERIFIED: Admin-only `GET /api/operations/dashboard/v1` combines a bounded Operational Work Item V1 snapshot with a Contract-owned financial trend while preserving independent source status. Real cookie/CSRF requests verified `ADMIN=200`, `STAFF/TUTOR/STUDENT=403`, and unauthenticated access `=401`.
+- IMPLEMENTED: “Công việc cần xử lý theo chức năng” covers seven business sources; “Tình trạng xử lý công việc” uses backend SLA distribution; “Khối lượng công việc của nhân viên” uses assigned Staff workload; and “Tình hình tài chính theo thời gian” supports 30/90-day trends grouped by currency and token decimals.
+- FINANCIAL SEMANTICS: released is finalized Tutor plus platform distribution; pending is the amount in real open settlement states; refunds include finalized session and completed termination refunds; Contract Value remains a separate face-value metric. No exchange-rate conversion or cross-currency addition is performed.
+- SECURITY: Gateway and Contract endpoints both require active `ADMIN`; existing Staff operational reports remain unchanged. The chart contract excludes wallets, raw transactions, service URLs and tokens.
+- PARTIAL-SOURCE SAFE: runtime isolation verified that a Contract failure keeps the dashboard HTTP 200, preserves available operational data, marks affected operational sources partial, and marks only the financial section unavailable; unavailable values are not converted to zero.
+- FRONTEND VERIFIED: reuses Recharts already installed and provides populated, loading, empty, unavailable, partial and responsive mobile states without redesigning the existing Admin command center. M6 Playwright cases and the production build pass.
 
 ## 10. Current Post-Merge Validation
 

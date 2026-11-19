@@ -160,6 +160,27 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.TOO_MANY_REQUESTS, safeMessage(exception, "Too many requests"), request, null);
     }
 
+    @ExceptionHandler(LoginProtectionException.class)
+    public ResponseEntity<ApiErrorResponse> handleLoginProtection(
+            LoginProtectionException exception,
+            HttpServletRequest request
+    ) {
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(exception.getStatus());
+        if (exception.getRetryAfterSeconds() != null) {
+            response.header("Retry-After", Long.toString(exception.getRetryAfterSeconds()));
+        }
+        return response.body(new ApiErrorResponse(
+                LocalDateTime.now(),
+                exception.getStatus().value(),
+                exception.getStatus().getReasonPhrase(),
+                exception.getCode(),
+                exception.getMessage(),
+                request == null ? null : request.getRequestURI(),
+                null,
+                null
+        ));
+    }
+
     @ExceptionHandler(StorageException.class)
     public ResponseEntity<ApiErrorResponse> handleStorage(
             StorageException exception,

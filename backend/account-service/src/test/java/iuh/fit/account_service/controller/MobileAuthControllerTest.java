@@ -11,6 +11,7 @@ import iuh.fit.account_service.dto.auth.ForgotPasswordRequest;
 import iuh.fit.account_service.dto.auth.ResetPasswordRequest;
 import iuh.fit.account_service.service.AuthService;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,9 +28,11 @@ class MobileAuthControllerTest {
         request.setEmail("student@example.com");
         request.setPassword("password");
         when(jwt.getExpirationMillis()).thenReturn(900000L);
-        when(auth.login(request)).thenReturn(result("STUDENT", "access", "refresh"));
+        MockHttpServletRequest servletRequest = new MockHttpServletRequest();
+        servletRequest.setRemoteAddr("127.0.0.1");
+        when(auth.login(request, "127.0.0.1")).thenReturn(result("STUDENT", "access", "refresh"));
 
-        var response = controller.login(request);
+        var response = controller.login(request, servletRequest);
 
         assertThat(response.accessToken()).isEqualTo("access");
         assertThat(response.refreshToken()).isEqualTo("refresh");

@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @RestController
@@ -51,7 +52,7 @@ public class InternalNotificationController {
             @RequestBody InternalSendRequest request) {
         try {
             var claims = Jwts.parser().verifyWith(serviceKey).build().parseSignedClaims(serviceToken).getPayload();
-            if (!"contract-service".equals(claims.getSubject())
+            if (!Set.of("contract-service", "api-gateway").contains(claims.getSubject())
                     || !"notification-send".equals(claims.get("serviceScope", String.class))
                     || claims.getExpiration() == null) throw new IllegalArgumentException();
         } catch (Exception ex) {

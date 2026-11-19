@@ -4,6 +4,8 @@ import iuh.fit.account_service.config.security.ActiveRoleAuthenticationDetails;
 import iuh.fit.account_service.dto.support.SupportTicketDtos.*;
 import iuh.fit.account_service.entity.*;
 import iuh.fit.account_service.enums.SupportTicketStatus;
+import iuh.fit.account_service.enums.AccountStatus;
+import iuh.fit.account_service.enums.Role;
 import iuh.fit.account_service.exception.BadRequestException;
 import iuh.fit.account_service.exception.ConflictException;
 import iuh.fit.account_service.exception.ForbiddenException;
@@ -16,6 +18,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -25,14 +29,18 @@ import java.util.UUID;
 
 @Service
 public class SupportTicketService {
+    private static final Logger log = LoggerFactory.getLogger(SupportTicketService.class);
     private final SupportTicketRepository tickets;
     private final SupportTicketMessageRepository messages;
     private final SupportTicketHistoryRepository history;
     private final UserRepository users;
+    private final UserRoleRepository userRoles;
 
     public SupportTicketService(SupportTicketRepository tickets, SupportTicketMessageRepository messages,
-                                SupportTicketHistoryRepository history, UserRepository users) {
+                                SupportTicketHistoryRepository history, UserRepository users,
+                                UserRoleRepository userRoles) {
         this.tickets = tickets; this.messages = messages; this.history = history; this.users = users;
+        this.userRoles = userRoles;
     }
 
     @Transactional
@@ -74,6 +82,15 @@ public class SupportTicketService {
     }
 
     @Transactional(readOnly = true)
+    public Page<Summary> listOperational(Pageable pageable) {
+        Specification<SupportTicket> spec = (root, query, cb) -> root.get("status").in(
+                SupportTicketStatus.OPEN, SupportTicketStatus.ASSIGNED,
+                SupportTicketStatus.WAITING_USER, SupportTicketStatus.WAITING_STAFF,
+                SupportTicketStatus.ESCALATED);
+        return tickets.findAll(spec, pageable).map(this::summary);
+    }
+
+    @Transactional(readOnly = true)
     public Detail get(UUID id, Authentication authentication) {
         Actor actor = actor(authentication);
         SupportTicket ticket = tickets.findByPublicId(id).orElseThrow(this::notFound);
@@ -95,6 +112,34 @@ public class SupportTicketService {
         SupportTicketStatus from = ticket.getStatus();
         ticket.setAssignee(actor.user); ticket.setStatus(SupportTicketStatus.ASSIGNED);
         tickets.save(ticket); audit(ticket, actor, "CLAIMED", from, ticket.getStatus(), null);
+        log.info("Support ticket claimed ticketId={} actorUserId={}", ticket.getPublicId(), actor.user.getId());
+        return detail(ticket);
+    }
+
+    @Transactional
+    public Detail reassign(UUID id, ReassignRequest request, Authentication authentication) {
+        Actor actor = actor(authentication);
+        if (!actor.role.equals("ADMIN")) forbidden();
+        SupportTicket ticket = lock(id);
+        if (ticket.getStatus() == SupportTicketStatus.CLOSED || ticket.getStatus() == SupportTicketStatus.RESOLVED) {
+            throw conflict("Closed ticket cannot be reassigned");
+        }
+        User next = users.findById(request.assigneeUserId()).orElseThrow(this::notFound);
+        if (next.getAccountStatus() != AccountStatus.ACTIVE
+                || !userRoles.existsByUserIdAndRole(next.getId(), Role.STAFF)) {
+            throw new BadRequestException("Assignee must be an active Staff user");
+        }
+        User previous = ticket.getAssignee();
+        if (previous != null && previous.getId().equals(next.getId())) {
+            throw conflict("Ticket is already assigned to this Staff user");
+        }
+        SupportTicketStatus from = ticket.getStatus();
+        ticket.setAssignee(next);
+        if (ticket.getStatus() != SupportTicketStatus.ESCALATED) ticket.setStatus(SupportTicketStatus.ASSIGNED);
+        tickets.save(ticket);
+        audit(ticket, actor, "REASSIGNED", from, ticket.getStatus(), request.reason().trim(), previous, next);
+        log.info("Support ticket reassigned ticketId={} actorUserId={} previousAssigneeId={} newAssigneeId={}",
+                ticket.getPublicId(), actor.user.getId(), previous == null ? null : previous.getId(), next.getId());
         return detail(ticket);
     }
 
@@ -140,6 +185,7 @@ public class SupportTicketService {
         SupportTicketStatus from = ticket.getStatus();
         ticket.setStatus(SupportTicketStatus.ESCALATED); ticket.setEscalatedAt(LocalDateTime.now());
         tickets.save(ticket); audit(ticket, actor, "ESCALATED", from, ticket.getStatus(), request.reason().trim());
+        log.info("Support ticket escalated ticketId={} actorUserId={}", ticket.getPublicId(), actor.user.getId());
         return detail(ticket);
     }
 
@@ -174,16 +220,25 @@ public class SupportTicketService {
 
     private void audit(SupportTicket ticket, Actor actor, String action, SupportTicketStatus from,
                        SupportTicketStatus to, String reason) {
+        audit(ticket, actor, action, from, to, reason, null, null);
+    }
+    private void audit(SupportTicket ticket, Actor actor, String action, SupportTicketStatus from,
+                       SupportTicketStatus to, String reason, User previousAssignee, User newAssignee) {
         SupportTicketHistory row = new SupportTicketHistory();
         row.setTicket(ticket); row.setActor(actor.user); row.setActorRole(actor.role); row.setAction(action);
         row.setFromStatus(from == null ? null : from.name()); row.setToStatus(to == null ? null : to.name());
-        row.setReason(reason); history.save(row);
+        row.setReason(reason); row.setPreviousAssignee(previousAssignee); row.setNewAssignee(newAssignee); history.save(row);
     }
     private Detail detail(SupportTicket ticket) {
         var messageRows = messages.findByTicketIdOrderByCreatedAtAscIdAsc(ticket.getId()).stream()
                 .map(row -> new Message(row.getId(), row.getActor().getId(), row.getActor().getFullName(), row.getActorRole(), row.getMessage(), row.getCreatedAt())).toList();
         var historyRows = history.findByTicketIdOrderByCreatedAtAscIdAsc(ticket.getId()).stream()
-                .map(row -> new History(row.getId(), row.getActor().getId(), row.getActor().getFullName(), row.getActorRole(), row.getAction(), row.getFromStatus(), row.getToStatus(), row.getReason(), row.getCreatedAt())).toList();
+                .map(row -> new History(row.getId(), row.getActor().getId(), row.getActor().getFullName(), row.getActorRole(), row.getAction(), row.getFromStatus(), row.getToStatus(),
+                        row.getPreviousAssignee() == null ? null : row.getPreviousAssignee().getId(),
+                        row.getPreviousAssignee() == null ? null : row.getPreviousAssignee().getFullName(),
+                        row.getNewAssignee() == null ? null : row.getNewAssignee().getId(),
+                        row.getNewAssignee() == null ? null : row.getNewAssignee().getFullName(),
+                        row.getReason(), row.getCreatedAt())).toList();
         return new Detail(summary(ticket), ticket.getDescription(), messageRows, historyRows);
     }
     private Summary summary(SupportTicket t) {

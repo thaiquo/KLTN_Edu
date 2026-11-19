@@ -17,6 +17,7 @@ import { aiMatchingApi } from '../../api/aiMatching';
 import { ApiError } from '../../api/client';
 import { useAuth } from '../../hooks/useAuth';
 import { AiRequirementReviewLayout } from './AiRequirementReviewLayout';
+import { buildTutorMatchingPayload } from './aiTutorMatchingPayload';
 
 const INITIAL_MESSAGE = '';
 const EXAMPLE_PROMPT = 'Em đang học lớp 12, muốn tìm gia sư Toán online để ôn thi tốt nghiệp. Em yếu hình học, rảnh tối thứ 2 và thứ 4, ngân sách khoảng 250.000đ mỗi buổi.';
@@ -78,7 +79,14 @@ export function AiTutorMatchingModal({ onClose, onMatched }) {
     setStep('GROUNDING');
     try {
       const response = await aiMatchingApi.ground(nextRequirement);
-      setGrounding(response);
+      setGrounding({
+        ...response,
+        requirement: response?.requirement ? {
+          ...response.requirement,
+          scheduleConstraintMode: response.requirement.scheduleConstraintMode || 'SOFT',
+          budgetConstraintMode: response.requirement.budgetConstraintMode || 'SOFT'
+        } : response?.requirement
+      });
       setStep('REVIEW');
     } catch (groundError) {
       setStep('REVIEW');
@@ -119,7 +127,7 @@ export function AiTutorMatchingModal({ onClose, onMatched }) {
     setStep('MATCHING');
     try {
       const finalRequirement = mergeTutorOptionalEnrichment(requirement, optionalInputs);
-      const response = await aiMatchingApi.matchTutors(buildMatchingPayload(finalRequirement));
+      const response = await aiMatchingApi.matchTutors(buildTutorMatchingPayload(finalRequirement));
       onMatched?.(response, {
         requirement: finalRequirement,
         originalMessage: message.trim(),
@@ -130,6 +138,14 @@ export function AiTutorMatchingModal({ onClose, onMatched }) {
       setStep('REVIEW');
       setError(userFriendlyError(matchingError, 'matching'));
     }
+  }
+
+  function setConstraintMode(field, mode) {
+    setAnalyzedRequirement((current) => current ? ({ ...current, [field]: mode }) : current);
+    setGrounding((current) => current?.requirement ? ({
+      ...current,
+      requirement: { ...current.requirement, [field]: mode }
+    }) : current);
   }
 
   return (
@@ -181,6 +197,7 @@ export function AiTutorMatchingModal({ onClose, onMatched }) {
               onBack={() => setStep('INPUT')}
               error={error}
               matching={step === 'MATCHING'}
+              setConstraintMode={setConstraintMode}
             />
           )}
         </div>
@@ -263,7 +280,8 @@ function ReviewStep({
   profileLocationLabel,
   onBack,
   error,
-  matching
+  matching,
+  setConstraintMode
 }) {
   const missingOptionalFields = tutorMissingOptionalFields(requirement);
   const hasRightContent = blockingClarifications.length > 0 || optionalClarifications.length > 0 || missingOptionalFields.length > 0;
@@ -278,6 +296,7 @@ function ReviewStep({
           readyForMatching={readyForMatching}
           error={error}
           matching={matching}
+          setConstraintMode={setConstraintMode}
         />
       }
       rightTitle="Bổ sung nếu bạn muốn"
@@ -325,7 +344,7 @@ function ReviewStep({
   );
 }
 
-function TutorAiRequirementReview({ requirement, readyForMatching, error, matching }) {
+function TutorAiRequirementReview({ requirement, readyForMatching, error, matching, setConstraintMode }) {
   return (
     <>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -335,6 +354,21 @@ function TutorAiRequirementReview({ requirement, readyForMatching, error, matchi
         <ReviewItem icon={<WalletCards size={16} />} label="Ngân sách" value={budgetLabel(requirement?.budget)} />
         <ReviewItem icon={<Clock size={16} />} label="Thời gian" value={scheduleLabel(requirement?.preferredSchedules)} />
         <ReviewItem icon={<LocateFixed size={16} />} label="Khu vực" value={locationLabel(requirement)} />
+      </div>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <ConstraintModeControl
+          label="Ràng buộc lịch học"
+          value={requirement?.scheduleConstraintMode || 'SOFT'}
+          disabled={!requirement?.preferredSchedules?.length}
+          onChange={(mode) => setConstraintMode('scheduleConstraintMode', mode)}
+        />
+        <ConstraintModeControl
+          label="Ràng buộc ngân sách"
+          value={requirement?.budgetConstraintMode || 'SOFT'}
+          disabled={!requirement?.budget}
+          onChange={(mode) => setConstraintMode('budgetConstraintMode', mode)}
+        />
       </div>
 
       <div className="mt-5 grid gap-3">
@@ -347,6 +381,34 @@ function TutorAiRequirementReview({ requirement, readyForMatching, error, matchi
       {!readyForMatching && <InlineMessage tone="warning" text="Bạn cần trả lời các thông tin bắt buộc trước khi tìm gia sư phù hợp." />}
       {matching && <InlineMessage tone="info" icon={<Loader2 size={18} className="animate-spin" />} text="Đang tìm gia sư phù hợp..." />}
     </>
+  );
+}
+
+function ConstraintModeControl({ label, value, disabled, onChange }) {
+  return (
+    <fieldset disabled={disabled} className="rounded-[8px] border border-slate-200 bg-white p-3 disabled:opacity-50">
+      <legend className="px-1 text-xs font-black text-slate-700">{label}</legend>
+      <div className="mt-1 grid grid-cols-2 gap-2">
+        {[
+          ['SOFT', 'Ưu tiên'],
+          ['HARD', 'Bắt buộc']
+        ].map(([mode, text]) => (
+          <button
+            key={mode}
+            type="button"
+            onClick={() => onChange(mode)}
+            className={`min-h-10 rounded-[8px] border px-3 text-xs font-black ${value === mode
+              ? 'border-primary bg-blue-50 text-primary'
+              : 'border-slate-200 bg-slate-50 text-slate-600'}`}
+          >
+            {text}
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] font-semibold leading-5 text-slate-500">
+        {value === 'HARD' ? 'Gia sư không đáp ứng sẽ bị loại trước khi xếp hạng.' : 'Tiêu chí được dùng để tính điểm, không loại gia sư.'}
+      </p>
+    </fieldset>
   );
 }
 
@@ -521,31 +583,6 @@ function mergeTutorOptionalEnrichment(requirement, optionalInputs = {}) {
     next.tutorPreferences = tutorPreferences;
   }
   return next;
-}
-
-function buildMatchingPayload(requirement) {
-  const budget = requirement?.budget || {};
-  const target = budget.target ?? null;
-  return {
-    subjectId: requirement.subject.id,
-    levelId: requirement.level.id,
-    teachingMode: requirement.teachingMode,
-    budgetMin: budget.min ?? target,
-    budgetMax: budget.max ?? target,
-    provinceCode: requirement.teachingMode === 'OFFLINE' ? requirement.location?.provinceCode || null : null,
-    communeCode: requirement.teachingMode === 'OFFLINE' ? requirement.location?.communeCode || null : null,
-    preferredSchedules: (requirement.preferredSchedules || [])
-      .filter((slot) => slot?.dayOfWeek)
-      .map((slot) => ({
-        dayOfWeek: Number(slot.dayOfWeek),
-        startTime: slot.startTime || null,
-        endTime: slot.endTime || null,
-        timeOfDayHint: slot.timeOfDayHint || null
-      })),
-    learningGoal: requirement.learningGoal || null,
-    weakTopics: Array.isArray(requirement.weakTopics) ? requirement.weakTopics.filter(Boolean) : [],
-    tutorPreferences: Array.isArray(requirement.tutorPreferences) ? requirement.tutorPreferences.filter(Boolean) : []
-  };
 }
 
 function hasText(value) {

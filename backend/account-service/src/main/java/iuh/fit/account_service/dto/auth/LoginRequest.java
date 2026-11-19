@@ -2,6 +2,7 @@ package iuh.fit.account_service.dto.auth;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -17,6 +18,9 @@ public class LoginRequest {
     private String password;
 
     private Boolean tutorMode;
+
+    @Size(max = 2048, message = "Turnstile token is too long")
+    private String turnstileToken;
 
     public String getEmail() {
         return email;
@@ -40,5 +44,13 @@ public class LoginRequest {
 
     public void setTutorMode(Boolean tutorMode) {
         this.tutorMode = tutorMode;
+    }
+
+    public String getTurnstileToken() {
+        return turnstileToken;
+    }
+
+    public void setTurnstileToken(String turnstileToken) {
+        this.turnstileToken = turnstileToken;
     }
 }

@@ -12,6 +12,7 @@ import iuh.fit.account_service.dto.auth.MobileSessionResponse;
 import iuh.fit.account_service.dto.auth.SwitchRoleRequest;
 import iuh.fit.account_service.service.AuthService;
 import jakarta.validation.Valid;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -63,8 +64,8 @@ public class MobileAuthController {
     }
 
     @PostMapping("/login")
-    public MobileSessionResponse login(@Valid @RequestBody LoginRequest request) {
-        return response(authService.login(request));
+    public MobileSessionResponse login(@Valid @RequestBody LoginRequest request, HttpServletRequest servletRequest) {
+        return response(authService.login(request, servletRequest.getRemoteAddr()));
     }
 
     @PostMapping("/refresh")

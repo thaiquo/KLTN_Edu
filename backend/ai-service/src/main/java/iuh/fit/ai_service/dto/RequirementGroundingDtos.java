@@ -1,6 +1,7 @@
 package iuh.fit.ai_service.dto;
 
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.Budget;
+import iuh.fit.ai_service.dto.RequirementAnalysisDtos.ConstraintMode;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.ExtractedRequirement;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.PreferredSchedule;
 import iuh.fit.ai_service.dto.TutorMatchingDtos.TeachingMode;
@@ -61,8 +62,18 @@ public final class RequirementGroundingDtos {
             List<String> weakTopics,
             List<String> tutorPreferences,
             String locationHint,
-            GroundedLocation location
+            GroundedLocation location,
+            ConstraintMode scheduleConstraintMode,
+            ConstraintMode budgetConstraintMode
     ) {
+        public GroundedRequirement(
+                CatalogItem subject, CatalogItem level, TeachingMode teachingMode, Budget budget,
+                List<PreferredSchedule> preferredSchedules, String learningGoal, List<String> weakTopics,
+                List<String> tutorPreferences, String locationHint, GroundedLocation location
+        ) {
+            this(subject, level, teachingMode, budget, preferredSchedules, learningGoal, weakTopics,
+                    tutorPreferences, locationHint, location, null, null);
+        }
     }
 
     public record GroundedLocation(

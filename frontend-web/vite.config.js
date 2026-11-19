@@ -4,6 +4,7 @@ import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = fileURLToPath(new URL('..', import.meta.url));
+const localGatewayTarget = process.env.VITE_API_GATEWAY_URL || 'http://localhost:8080';
 
 export default defineConfig({
   // Keep one source of truth for local configuration. Vite exposes only VITE_*.
@@ -14,11 +15,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: localGatewayTarget,
         changeOrigin: true
       },
       '/ws': {
-        target: 'ws://localhost:8080',
+        target: localGatewayTarget.replace(/^http/, 'ws'),
         ws: true,
         changeOrigin: true
       }

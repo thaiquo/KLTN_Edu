@@ -9,6 +9,7 @@ import iuh.fit.account_service.service.AuthService;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.util.List;
@@ -32,7 +33,9 @@ class AuthControllerLoginTest {
         request.setEmail("test@gmail.com");
         request.setPassword("12345678");
         MockHttpServletResponse response = new MockHttpServletResponse();
-        when(authService.login(request)).thenReturn(new LoginResult(
+        MockHttpServletRequest servletRequest = new MockHttpServletRequest();
+        servletRequest.setRemoteAddr("127.0.0.1");
+        when(authService.login(request, "127.0.0.1")).thenReturn(new LoginResult(
                 1L,
                 "test@gmail.com",
                 "Test User",
@@ -45,7 +48,7 @@ class AuthControllerLoginTest {
                 "refresh-token"
         ));
 
-        var entity = controller.login(request, response);
+        var entity = controller.login(request, servletRequest, response);
 
         assertThat(entity.getBody()).isNotNull();
         assertThat(entity.getBody().getRoles()).containsExactly("STUDENT", "TUTOR");
