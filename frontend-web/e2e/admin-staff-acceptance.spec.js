@@ -182,7 +182,25 @@ async function mockPortal(page, options = {}) {
         description: 'Fixture acceptance M4', messages: [], history: []
       } });
     }
-    if (path.includes('/financial-overview')) return route.fulfill({ json: {} });
+    if (path === '/api/contracts/terminations/refunds') return route.fulfill({ json: [] });
+    if (path === '/api/chat/conversations') return route.fulfill({ json: [] });
+    if (path.includes('/financial-overview')) return route.fulfill({ json: {
+      totalEscrowFundedUsdc: 0,
+      totalTutorPaidUsdc: 0,
+      totalPlatformFeeUsdc: 0,
+      totalStudentRefundedUsdc: 0,
+      totalSessionRefundedUsdc: 0,
+      totalTerminationRefundedUsdc: 0,
+      totalEscrowLockedUsdc: 0,
+      totalActiveAgreements: 0,
+      totalSettledSessions: 0,
+      totalPendingSessions: 0,
+      totalDisputedSessions: 0,
+      totalCompletedTerminationItems: 0,
+      platformWallet: null,
+      escrowContractAddress: null,
+      chainId: null
+    } });
     return route.fulfill({ json: emptyPage });
   });
   return state;
@@ -211,6 +229,232 @@ test('E2E-03 browser back and forward cannot preserve an Admin-only tab', async 
   await expect(page).toHaveURL(/tab=reports/);
   await page.goForward();
   await expect(page).toHaveURL(/tab=tutor-approval/);
+});
+
+test('SIDEBAR-01 Admin overview starts collapsed and accordion keeps only one group open', async ({ page }) => {
+  test.setTimeout(60_000);
+  await mockPortal(page, { role: 'ADMIN' });
+  await page.goto('/dashboard?tab=dashboard');
+
+  const groups = page.locator('aside button[data-admin-group]');
+  await expect(groups).toHaveCount(5, { timeout: 20_000 });
+  const overview = page.getByRole('link', { name: 'Tổng quan giám sát', exact: true });
+  const typography = await page.locator('aside').evaluate((sidebar) => {
+    const overviewLink = sidebar.querySelector('a[aria-current="page"]');
+    const firstGroup = sidebar.querySelector('button[data-admin-group]');
+    const overviewLabel = overviewLink?.querySelector('span');
+    const groupLabel = firstGroup?.querySelector('span');
+    if (!overviewLink || !firstGroup || !overviewLabel || !groupLabel) return null;
+    const overviewStyle = getComputedStyle(overviewLabel);
+    const groupStyle = getComputedStyle(groupLabel);
+    return {
+      overview: [overviewStyle.fontSize, overviewStyle.lineHeight, overviewStyle.letterSpacing],
+      group: [groupStyle.fontSize, groupStyle.lineHeight, groupStyle.letterSpacing],
+      iconDelta: Math.abs(
+        overviewLink.querySelector('svg').getBoundingClientRect().left
+        - firstGroup.querySelector('svg').getBoundingClientRect().left
+      ),
+      labelDelta: Math.abs(overviewLabel.getBoundingClientRect().left - groupLabel.getBoundingClientRect().left),
+      labelFits: overviewLabel.scrollWidth <= overviewLabel.clientWidth,
+    };
+  });
+  expect(typography).not.toBeNull();
+  expect(typography.overview).toEqual(typography.group);
+  expect(typography.iconDelta).toBeLessThanOrEqual(1);
+  expect(typography.labelDelta).toBeLessThanOrEqual(1);
+  expect(typography.labelFits).toBe(true);
+  await expect(overview).toHaveClass(/bg-brand-text/);
+  await expect(overview).toHaveClass(/text-white/);
+  await expect(overview.locator('span.rounded-full')).toHaveCount(1);
+  for (const group of await groups.all()) {
+    await expect(group).toHaveAttribute('aria-expanded', 'false');
+  }
+
+  const users = page.locator('button[data-admin-group="users-academics"]');
+  const finance = page.locator('button[data-admin-group="finance-contracts"]');
+  await users.click();
+  await expect(users).toHaveAttribute('aria-expanded', 'true');
+  await finance.click();
+  await expect(users).toHaveAttribute('aria-expanded', 'false');
+  await expect(finance).toHaveAttribute('aria-expanded', 'true');
+});
+
+test('SIDEBAR-02 Admin child links cover all groups and history opens the exact containing group', async ({ page }) => {
+  test.setTimeout(90_000);
+  await mockPortal(page, { role: 'ADMIN' });
+  await page.goto('/dashboard?tab=dashboard');
+
+  const destinations = [
+    ['users-academics', 'Quản lý người dùng', 'user-management'],
+    ['finance-contracts', 'Tài chính & dòng tiền', 'admin-finance'],
+    ['moderation-disputes', 'Kiểm duyệt cộng đồng', 'community-moderation'],
+    ['operations', 'Điều phối lịch trực', 'staff-duty-management'],
+    ['ai-system', 'Tri thức AI Chatbot', 'chatbot-knowledge'],
+  ];
+
+  for (const [groupId, label, tab] of destinations) {
+    const group = page.locator(`button[data-admin-group="${groupId}"]`);
+    if (await group.getAttribute('aria-expanded') !== 'true') await group.click();
+    await page.getByRole('link', { name: label, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`tab=${tab}`));
+    await expect(group).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByRole('link', { name: label, exact: true })).toHaveAttribute('aria-current', 'page');
+  }
+
+  await page.goBack();
+  await expect(page).toHaveURL(/tab=staff-duty-management/);
+  await expect(page.locator('button[data-admin-group="operations"]')).toHaveAttribute('aria-expanded', 'true');
+  await page.goForward();
+  await expect(page).toHaveURL(/tab=chatbot-knowledge/);
+  await expect(page.locator('button[data-admin-group="ai-system"]')).toHaveAttribute('aria-expanded', 'true');
+
+  const activeGroup = page.locator('button[data-admin-group="ai-system"]');
+  await activeGroup.click();
+  await expect(activeGroup).toHaveAttribute('aria-expanded', 'false');
+  await expect(activeGroup.locator('xpath=..')).toHaveAttribute('data-contains-active', 'true');
+  await page.reload();
+  await expect(activeGroup).toHaveAttribute('aria-expanded', 'true');
+});
+
+test('SIDEBAR-03 Staff keeps the original flat menu without Admin groups', async ({ page }) => {
+  await mockPortal(page, { role: 'STAFF' });
+  await page.goto('/dashboard?tab=tutor-approval');
+
+  await expect(page.locator('aside button[data-admin-group]')).toHaveCount(0);
+  for (const label of [
+    'Tổng quan', 'Duyệt hồ sơ gia sư', 'Lớp / nội dung', 'Hợp đồng & Theo dõi',
+    'Quản lý khiếu nại', 'Chuyển cấp Admin', 'Kiểm duyệt Community', 'Lịch trực của tôi'
+  ]) {
+    await expect(page.locator('aside').getByRole('button', { name: label, exact: true })).toBeVisible();
+  }
+});
+
+test('SIDEBAR-04 mobile drawer keeps fixed actions visible while grouped menu scrolls', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 600 });
+  await mockPortal(page, { role: 'ADMIN' });
+  await page.goto('/dashboard?tab=dashboard');
+  await page.getByTitle('Mở menu').click();
+  await page.locator('button[data-admin-group="users-academics"]').click();
+
+  const sidebar = page.locator('aside');
+  await expect(sidebar).toBeVisible();
+  const overviewLabel = sidebar.getByRole('link', { name: 'Tổng quan giám sát', exact: true }).locator('span').first();
+  expect(await overviewLabel.evaluate((label) => label.scrollWidth <= label.clientWidth)).toBe(true);
+  await expect(sidebar.getByRole('button', { name: 'Trang chủ tra cứu', exact: true })).toBeVisible();
+  await expect(sidebar.getByRole('button', { name: 'Trợ giúp', exact: true })).toBeVisible();
+  await expect(sidebar.getByRole('button', { name: 'Đăng xuất', exact: true })).toBeVisible();
+
+  const footerBox = await sidebar.getByRole('button', { name: 'Đăng xuất', exact: true }).boundingBox();
+  expect(footerBox).not.toBeNull();
+  expect(footerBox.y + footerBox.height).toBeLessThanOrEqual(600);
+});
+
+test('TUTOR-SIDEBAR-01 overview starts collapsed, typography aligns, and only one group opens', async ({ page }) => {
+  test.setTimeout(60_000);
+  await mockPortal(page, { role: 'TUTOR' });
+  await page.goto('/dashboard?tab=dashboard');
+
+  const groups = page.locator('aside button[data-tutor-group]');
+  await expect(groups).toHaveCount(2, { timeout: 20_000 });
+  for (const group of await groups.all()) {
+    await expect(group).toHaveAttribute('aria-expanded', 'false');
+  }
+
+  const overview = page.locator('a[data-tutor-item="dashboard"]');
+  const typography = await page.locator('aside').evaluate((sidebar) => {
+    const overviewLink = sidebar.querySelector('a[data-tutor-item="dashboard"]');
+    const groupButton = sidebar.querySelector('button[data-tutor-group="teaching"]');
+    const overviewLabel = overviewLink?.querySelector('span');
+    const groupLabel = groupButton?.querySelector('span');
+    if (!overviewLink || !groupButton || !overviewLabel || !groupLabel) return null;
+    const overviewStyle = getComputedStyle(overviewLabel);
+    const groupStyle = getComputedStyle(groupLabel);
+    return {
+      overview: [overviewStyle.fontSize, overviewStyle.lineHeight, overviewStyle.letterSpacing],
+      group: [groupStyle.fontSize, groupStyle.lineHeight, groupStyle.letterSpacing],
+      iconDelta: Math.abs(overviewLink.querySelector('svg').getBoundingClientRect().left - groupButton.querySelector('svg').getBoundingClientRect().left),
+      labelDelta: Math.abs(overviewLabel.getBoundingClientRect().left - groupLabel.getBoundingClientRect().left),
+      labelFits: overviewLabel.scrollWidth <= overviewLabel.clientWidth,
+    };
+  });
+  expect(typography).not.toBeNull();
+  expect(typography.overview).toEqual(typography.group);
+  expect(typography.iconDelta).toBeLessThanOrEqual(1);
+  expect(typography.labelDelta).toBeLessThanOrEqual(1);
+  expect(typography.labelFits).toBe(true);
+  await expect(overview).toHaveClass(/bg-brand-secondary/);
+  await expect(overview).toHaveClass(/text-white/);
+  await expect(overview.locator('span.rounded-full')).toHaveCount(1);
+
+  const teaching = page.locator('button[data-tutor-group="teaching"]');
+  const payments = page.locator('button[data-tutor-group="contracts-payments"]');
+  await teaching.click();
+  await expect(teaching).toHaveAttribute('aria-expanded', 'true');
+  await payments.click();
+  await expect(teaching).toHaveAttribute('aria-expanded', 'false');
+  await expect(payments).toHaveAttribute('aria-expanded', 'true');
+});
+
+test('TUTOR-SIDEBAR-02 deep links, reload, history, and standalone routes preserve exact navigation', async ({ page }) => {
+  test.setTimeout(90_000);
+  await mockPortal(page, { role: 'TUTOR' });
+  await page.goto('/dashboard?tab=homework');
+
+  const teaching = page.locator('button[data-tutor-group="teaching"]');
+  const payments = page.locator('button[data-tutor-group="contracts-payments"]');
+  await expect(teaching).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('a[data-tutor-item="homework"]')).toHaveAttribute('aria-current', 'page');
+  await expect(payments).toHaveAttribute('aria-expanded', 'false');
+
+  await page.reload();
+  await expect(teaching).toHaveAttribute('aria-expanded', 'true');
+  await teaching.click();
+  await expect(teaching).toHaveAttribute('aria-expanded', 'false');
+  await expect(teaching.locator('xpath=..')).toHaveAttribute('data-contains-active', 'true');
+
+  await payments.click();
+  await page.locator('a[data-tutor-item="wallet"]').click();
+  await expect(page).toHaveURL(/tab=wallet/);
+  await expect(payments).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.locator('a[data-tutor-item="wallet"]')).toHaveAttribute('aria-current', 'page');
+
+  await page.goBack();
+  await expect(page).toHaveURL(/tab=homework/);
+  await expect(teaching).toHaveAttribute('aria-expanded', 'true');
+  await page.goForward();
+  await expect(page).toHaveURL(/tab=wallet/);
+  await expect(payments).toHaveAttribute('aria-expanded', 'true');
+
+  for (const [id, tab] of [['schedule', 'schedule'], ['requests', 'requests'], ['messages', 'messages']]) {
+    await page.locator(`a[data-tutor-item="${id}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`tab=${tab}`));
+    await expect(page.locator(`a[data-tutor-item="${id}"]`)).toHaveAttribute('aria-current', 'page');
+    await expect(teaching).toHaveAttribute('aria-expanded', 'false');
+    await expect(payments).toHaveAttribute('aria-expanded', 'false');
+  }
+});
+
+test('TUTOR-SIDEBAR-03 mobile drawer keeps labels readable and footer outside the scroll area', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 390, height: 600 });
+  await mockPortal(page, { role: 'TUTOR' });
+  await page.goto('/dashboard?tab=dashboard');
+  await page.getByTitle('Mở menu').click();
+  await page.locator('button[data-tutor-group="teaching"]').click();
+
+  const sidebar = page.locator('aside');
+  await expect(sidebar).toBeVisible();
+  const labelsFit = await sidebar.evaluate((element) =>
+    [...element.querySelectorAll('[data-tutor-item] span:first-of-type, [data-tutor-group] span:first-of-type')]
+      .every((label) => label.scrollWidth <= label.clientWidth)
+  );
+  expect(labelsFit).toBe(true);
+  for (const label of ['Tài khoản', 'Trợ giúp', 'Đăng xuất']) {
+    await expect(sidebar.getByRole('button', { name: label, exact: true })).toBeVisible();
+  }
+  const logoutBox = await sidebar.getByRole('button', { name: 'Đăng xuất', exact: true }).boundingBox();
+  expect(logoutBox).not.toBeNull();
+  expect(logoutBox.y + logoutBox.height).toBeLessThanOrEqual(600);
 });
 
 test('E2E-04 logout then Back does not restore protected Portal content', async ({ page }) => {
