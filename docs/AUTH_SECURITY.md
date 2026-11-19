@@ -23,7 +23,25 @@ Current Web authentication is cookie-oriented:
 
 Do not migrate browser auth to `localStorage`, `sessionStorage`, or Bearer-only token handling unless the user explicitly confirms a new security design.
 
-## 2.1 Refresh Session Model
+## 2.1 Login Abuse Protection
+
+Login is protected at two independent boundaries without changing the JWT cookie, `activeRole`, or CSRF model:
+
+- API Gateway applies a Redis-backed fixed-window limit to the exact `POST /api/auth/login` route. The default is 20 requests per resolved client IP per minute. The response is `429 LOGIN_RATE_LIMITED` with a numeric `Retry-After` header. Redis failure returns `503 LOGIN_PROTECTION_UNAVAILABLE` (fail closed).
+- Client IP resolution trusts `X-Forwarded-For` only when the direct peer is in `LOGIN_TRUSTED_PROXY_CIDRS`; untrusted headers and non-IP hostnames are ignored. Production must configure only the actual reverse-proxy/container CIDRs.
+- Account Service keeps a normalized-email failure counter in Redis. The default threshold is three failed credentials in a bounded ten-minute window. The counter is shared across Student/Tutor login mode and does not reveal whether an email exists.
+- At the threshold, login returns `401 LOGIN_CHALLENGE_REQUIRED`. The Web client then renders Cloudflare Turnstile. A valid token is verified server-side for the configured action and production hostname before authentication continues.
+- Only bad credentials increment the email counter. Missing/invalid Turnstile tokens, inactive/unverified account state, role eligibility failures, and provider failures do not increment it. A complete successful login clears it.
+- Concurrent verification uses a short Redis lease. Redis or Turnstile provider failures return `503 LOGIN_PROTECTION_UNAVAILABLE`; authentication is not silently bypassed.
+- Local development uses Cloudflare's documented test site/secret keys. Production configuration rejects missing/test secrets and requires an allowed hostname. Secrets must never be committed or logged.
+
+The Web Turnstile token is short-lived and single-use; the widget is reset after a failed submission. Native mobile receives the same Account Service protection but requires a native challenge UI before repeated-failure login can be considered feature-complete there.
+
+Runtime settings are documented in `.env.example`: `LOGIN_IP_RATE_LIMIT_ENABLED`, `LOGIN_IP_RATE_LIMIT_REQUESTS`, `LOGIN_IP_RATE_LIMIT_WINDOW`, `LOGIN_TRUSTED_PROXY_CIDRS`, `LOGIN_PROTECTION_ENABLED`, `LOGIN_FAILURE_THRESHOLD`, `LOGIN_FAILURE_WINDOW`, `LOGIN_ATTEMPT_LOCK_DURATION`, `TURNSTILE_ENABLED`, `TURNSTILE_SECRET_KEY`, `TURNSTILE_EXPECTED_ACTION`, `TURNSTILE_ALLOWED_HOSTNAMES`, and `VITE_TURNSTILE_SITE_KEY`. For local verification, start the dedicated Redis container with `docker compose up -d redis`, run Account Service and Gateway through their `run-local.sh` scripts so the root `.env` is loaded, and run the Web client normally. The checked-in example uses only Cloudflare's official always-pass test pair; production supplies a real secret and Web site key through deployment secrets/variables.
+
+Relevant regression commands are `backend/api-gateway/mvnw.cmd test`, `backend/account-service/mvnw.cmd test`, `node --test tests/*.test.js`, `npx playwright test e2e/login-protection.spec.js`, and `npm run build` from `frontend-web`.
+
+## 2.2 Refresh Session Model
 
 Refresh tokens are random high-entropy secrets. The raw refresh token only exists when generated and inside the browser cookie/request. The database stores a deterministic SHA-256 hash for lookup, not the raw token.
 

@@ -73,6 +73,7 @@
 
 - IMPLEMENTED: register, verify/resend OTP, login, refresh, switch role, logout, forgot/reset password.
 - IMPLEMENTED: short-lived access token cookie and refresh cookie; CSRF handling for browser mutation requests.
+- IMPLEMENTED + LOCALLY VERIFIED (2026-11-19), NOT DEPLOYED: login abuse protection combines a Redis-backed Gateway IP limit (20 exact login POSTs/minute by default), an Account Service normalized-email failed-credential window (Turnstile required from the third failure), trusted-proxy-aware client IP resolution, fail-closed Redis/provider behavior, stable error codes, and a lazy Web Turnstile challenge. Real local cookie/CSRF runtime verified Student/Tutor/Staff login, shared Student/Tutor-mode email counting, a real Cloudflare test-widget callback, successful server-side Siteverify, `429`/numeric `Retry-After`, and browser countdown handling. Automated suites cover Admin-role-preserving AuthService behavior, Account/Gateway failure and concurrency paths. Native mobile challenge UI and production Cloudflare credentials/hostname remain deployment work; no production runtime claim is made.
 - IMPLEMENTED: multi-role account model with `activeRole`.
 - IMPLEMENTED: Student/Tutor profile, avatar, password and wallet update.
 - IMPLEMENTED: Tutor application identity evidence and Staff approval.

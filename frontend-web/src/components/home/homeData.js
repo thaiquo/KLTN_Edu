@@ -61,63 +61,6 @@ export const pathways = [
   },
 ];
 
-export const featuredTutors = [
-  {
-    name: 'Nguyễn Mai Phương',
-    credential: 'ĐH Ngoại Thương - Chuyên Anh văn & IELTS',
-    tags: ['IELTS 8.5', 'SAT 1550'],
-    rate: '350.000đ',
-    rating: '4.9',
-    image: 'https://images.unsplash.com/photo-1656225725406-43779c174182?auto=format&fit=crop&w=900&q=82',
-    imageAlt: 'Sinh viên đang đọc sách trong thư viện',
-  },
-  {
-    name: 'Lê Minh Anh',
-    credential: 'ĐH Bách Khoa - Chuyên Toán & Vật lý',
-    tags: ['Toán nâng cao', 'Luyện thi ĐH'],
-    rate: '450.000đ',
-    rating: '5.0',
-    image: 'https://images.unsplash.com/photo-1699502877697-ad87f0af008b?auto=format&fit=crop&w=900&q=82',
-    imageAlt: 'Sinh viên nghiên cứu tài liệu',
-  },
-  {
-    name: 'Trần Thu Hà',
-    credential: 'RMIT - Kinh tế & Tài chính',
-    tags: ['Kế toán', 'Tài chính DN'],
-    rate: '500.000đ',
-    rating: '4.8',
-    image: 'https://images.unsplash.com/photo-1721441932984-93e1bf3a2e9f?auto=format&fit=crop&w=900&q=82',
-    imageAlt: 'Gia sư trong không gian thư viện',
-  },
-];
-
-export const classRequests = [
-  {
-    subject: 'Toán cao cấp 1',
-    icon: 'calculator',
-    title: 'Ôn thi học kỳ cho sinh viên kỹ thuật',
-    requirement: 'Sinh viên năm 3+, học online hoặc offline tại Hà Nội',
-    budget: '3.000.000đ',
-    duration: 'Trọn khóa 10 buổi',
-  },
-  {
-    subject: 'Khóa luận CNTT',
-    icon: 'code',
-    title: 'Tìm mentor đồng hành xây dựng sản phẩm tốt nghiệp',
-    requirement: 'Cần hỗ trợ React, Node.js và xây dựng tài liệu bảo vệ',
-    budget: '5.000.000đ',
-    duration: 'Trong 8 tuần',
-  },
-  {
-    subject: 'IELTS 7.0+',
-    icon: 'language',
-    title: 'Luyện Speaking & Writing theo mục tiêu cá nhân',
-    requirement: 'Lịch học buổi tối, ưu tiên gia sư có kinh nghiệm luyện thi',
-    budget: '280.000đ',
-    duration: 'Theo buổi',
-  },
-];
-
 export const trustFeatures = [
   {
     icon: 'contract',

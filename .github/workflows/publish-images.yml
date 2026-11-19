@@ -107,6 +107,7 @@ jobs:
           test -n "$VITE_USDC_CONTRACT_ADDRESS"
           test -n "$VITE_SEPOLIA_RPC_URL"
           test -n "$VITE_PROJECT_ID_WALLETCONNECT"
+          test -n "${{ vars.VITE_TURNSTILE_SITE_KEY }}"
           curl --fail --silent --show-error \
             --connect-timeout 5 \
             --max-time 15 \
@@ -140,6 +141,7 @@ jobs:
             VITE_USDC_CONTRACT_ADDRESS=${{ vars.VITE_USDC_CONTRACT_ADDRESS }}
             VITE_SEPOLIA_RPC_URL=${{ vars.VITE_SEPOLIA_RPC_URL }}
             VITE_PROJECT_ID_WALLETCONNECT=${{ env.VITE_PROJECT_ID_WALLETCONNECT }}
+            VITE_TURNSTILE_SITE_KEY=${{ vars.VITE_TURNSTILE_SITE_KEY }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 

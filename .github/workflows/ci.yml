@@ -85,6 +85,7 @@ jobs:
           VITE_API_GATEWAY_URL: https://educonnect.example.com
           VITE_REALTIME_URL: wss://educonnect.example.com
           VITE_DEFAULT_CHAIN_ID: "11155111"
+          VITE_TURNSTILE_SITE_KEY: 1x00000000000000000000AA
         run: npm run build
 
   compose-validation:

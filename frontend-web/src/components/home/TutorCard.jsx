@@ -1,53 +1,59 @@
-import { ArrowUpRight, Heart, Star } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ArrowUpRight, MapPin, Star, Video } from 'lucide-react';
 
 export function TutorCard({ tutor }) {
+  const subjects = (tutor.subjects || []).slice(0, 3);
+  const location = [tutor.location?.communeName, tutor.location?.provinceName].filter(Boolean).join(', ');
+  const hasReviews = Number(tutor.reviewCount || 0) > 0;
+
   return (
-    <article className="overflow-hidden border border-slate-200 rounded-[28px] bg-white shadow-[0_16px_36px_rgba(15,23,42,.04)] transition-[transform,box-shadow] duration-200 hover:-translate-y-1.5 hover:shadow-[0_26px_50px_rgba(15,23,42,.11)]">
-      <div className="relative aspect-[1.18] overflow-hidden m-3 rounded-[20px] bg-slate-200">
-        <img
-          src={tutor.image}
-          alt={tutor.imageAlt}
-          className="w-full h-full object-cover transition-transform duration-400 group-hover:scale-[1.04]"
-          loading="lazy"
-          decoding="async"
-        />
-        <span className="absolute left-3 bottom-3 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white/95 text-slate-900 text-[12px] font-extrabold shadow-[0_6px_14px_rgba(15,23,42,.1)]">
-          <Star size={14} fill="#f59e0b" stroke="#f59e0b" />
-          {tutor.rating}
+    <article className="group h-full overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_16px_36px_rgba(15,23,42,.04)] transition-[transform,box-shadow] duration-200 hover:-translate-y-1.5 hover:shadow-[0_26px_50px_rgba(15,23,42,.11)]">
+      <div className="relative m-3 grid aspect-[1.65] place-items-center overflow-hidden rounded-[20px] bg-gradient-to-br from-slate-900 via-slate-800 to-primary">
+        {tutor.avatarUrl ? (
+          <img src={tutor.avatarUrl} alt={`Ảnh đại diện ${tutor.fullName}`} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" decoding="async" />
+        ) : (
+          <span className="font-display text-4xl font-extrabold text-white">{getInitials(tutor.fullName)}</span>
+        )}
+        <span className={`absolute bottom-3 left-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[11px] font-extrabold shadow-sm ${hasReviews ? 'bg-white/95 text-amber-700' : 'bg-slate-900/80 text-slate-200'}`}>
+          <Star size={13} fill={hasReviews ? 'currentColor' : 'none'} />
+          {hasReviews ? `${Number(tutor.averageRating || 0).toFixed(1)} · ${tutor.reviewCount} đánh giá` : 'Chưa có đánh giá'}
         </span>
-        <button
-          className="absolute top-3 right-3 w-8 h-8 grid place-items-center rounded-[10px] bg-white/92 text-slate-800 border-0 hover:text-red-500 transition-colors"
-          type="button"
-          aria-label={`Lưu gia sư ${tutor.name}`}
-        >
-          <Heart size={16} />
-        </button>
       </div>
 
       <div className="px-6 pb-5 pt-1">
-        <h3 className="font-display font-extrabold text-[19px] tracking-tight text-slate-900">{tutor.name}</h3>
-        <p className="min-h-10 mt-1.5 text-slate-500 text-[12px] leading-[1.55]">{tutor.credential}</p>
-        <div className="flex flex-wrap gap-1.5 mt-3.5">
-          {tutor.tags.map((tag) => (
-            <span key={tag} className="px-2 py-1.5 rounded-lg bg-blue-50 text-primary-dark text-[9px] font-extrabold tracking-[.02em] uppercase">
-              {tag}
-            </span>
-          ))}
+        <h3 className="font-display text-[19px] font-extrabold tracking-tight text-slate-900">{tutor.fullName}</h3>
+        <div className="mt-2 flex min-h-10 flex-col gap-1 text-[12px] font-semibold text-slate-500">
+          {location && <span className="flex items-center gap-1.5"><MapPin size={13} /> {location}</span>}
+          <span className="flex items-center gap-1.5"><Video size={13} /> {formatTeachingModes(tutor.teachingModes)}</span>
         </div>
 
-        <div className="flex items-center justify-between gap-3 pt-4 mt-4 border-t border-slate-100">
-          <span className="text-primary">
-            <strong className="font-display font-extrabold text-[18px]">{tutor.rate}</strong>
-            <small className="ml-1 text-slate-400">/buổi</small>
-          </span>
-          <a
-            href="#trust"
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[10px] bg-slate-900 text-white text-[9px] font-extrabold hover:bg-primary transition-colors"
-          >
+        <div className="mt-3.5 flex min-h-14 flex-wrap content-start gap-1.5">
+          {subjects.length > 0 ? subjects.map((subject) => (
+            <span key={subject.registrationId || subject.subjectId} className="rounded-lg bg-blue-50 px-2 py-1.5 text-[9px] font-extrabold uppercase tracking-[.02em] text-primary-dark">{subject.subjectName}</span>
+          )) : <span className="text-xs font-bold text-slate-400">Chuyên môn đang cập nhật</span>}
+        </div>
+
+        <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
+          <span className="text-primary"><small className="block text-[10px] font-bold text-slate-400">Học phí từ</small><strong className="font-display text-[17px] font-extrabold">{formatMoney(tutor.startingTuition)}</strong></span>
+          <Link to={`/tutors/${tutor.tutorId}`} className="inline-flex items-center gap-1.5 rounded-[10px] bg-slate-900 px-3 py-2 text-[9px] font-extrabold text-white transition-colors hover:bg-primary">
             Xem hồ sơ <ArrowUpRight size={13} />
-          </a>
+          </Link>
         </div>
       </div>
     </article>
   );
+}
+
+function getInitials(value) {
+  return (value || 'Gia sư').trim().split(/\s+/).slice(-2).map((part) => part[0]).join('').toUpperCase();
+}
+
+function formatTeachingModes(modes = []) {
+  const labels = [...modes].map((mode) => mode === 'ONLINE' ? 'Online' : mode === 'OFFLINE' ? 'Trực tiếp' : mode);
+  return labels.length > 0 ? labels.join(' · ') : 'Hình thức linh hoạt';
+}
+
+function formatMoney(value) {
+  if (!value) return 'Liên hệ';
+  return `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 0 }).format(Number(value))}đ`;
 }

@@ -89,6 +89,12 @@ No currency conversion is performed and legacy-quarantined records are excluded.
 | `GET` | `/api/reference/provinces/{provinceCode}/communes` | Commune list. |
 | `GET` | `/api/reference/locations/snapshot` | Location snapshot for grounding/search. |
 
+### Login protection contract
+
+`POST /api/auth/login` keeps the existing credentialed cookie/CSRF flow and accepts an optional `turnstileToken`. Normal login does not require the field. After the Account Service email failure threshold is reached, the API returns `401` with `code: "LOGIN_CHALLENGE_REQUIRED"`; the client must obtain a Turnstile token and retry the same login request. Gateway IP throttling returns `429` with `code: "LOGIN_RATE_LIMITED"` and a numeric `Retry-After` header. Redis or Turnstile availability failures return `503` with `code: "LOGIN_PROTECTION_UNAVAILABLE"`. These codes are stable client contracts; messages are presentation text, not branching keys.
+
+The Gateway limit applies only to the exact login POST route. CSRF bootstrap, preflight requests, refresh, logout, and unrelated APIs are not counted. A successful login continues to set the existing HttpOnly auth cookies and does not return JWT values in the response body.
+
 Tutor/account related APIs include `/api/tutors`, `/api/tutors/search-v2`, `/api/tutors/{tutorProfileId}/detail-v2`, `/api/tutor-applications/**`, `/api/staff/tutor-applications/**`, `/api/staff/tutors/**`, and admin user management under `/api/admin/users`, `/api/users/admin`, `/api/staff/users`.
 
 ## 4. Learning Catalog and Tutor APIs
