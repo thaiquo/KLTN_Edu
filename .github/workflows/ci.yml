@@ -143,6 +143,7 @@ jobs:
           grep -q 'TUTOR_ABSENCE_GOVERNANCE_MODE: ENFORCE' <<< "$resolved"
           grep -q 'TUTOR_ABSENCE_GOVERNANCE_CLASSROOM_IDS: "42"' <<< "$resolved"
           jq -e '.services["learning-service"].environment.ACCOUNT_SERVICE_URL == "http://account-service:8081"' <<< "$resolved_json"
+          jq -e --arg secret "$JWT_SECRET" '.services["api-gateway"].environment.JWT_SECRET == $secret' <<< "$resolved_json"
 
   image-builds:
     name: Build image ${{ matrix.image }}
