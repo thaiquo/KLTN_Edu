@@ -42,11 +42,26 @@ jobs:
           cache: maven
           cache-dependency-path: backend/${{ matrix.service }}/pom.xml
 
+      # Cold runners download the Maven distribution independently. Retry that
+      # network-only bootstrap without hiding failures from the test suite.
+      - name: Bootstrap Maven Wrapper
+        run: |
+          chmod +x mvnw
+          for attempt in 1 2 3 4; do
+            if MVNW_VERBOSE=true ./mvnw -B --version; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 4 ]; then
+              echo "::error::Maven Wrapper download failed after 4 attempts"
+              exit 1
+            fi
+            sleep $((5 * attempt))
+          done
+
       - name: Run tests
         env:
           CHATBOT_KNOWLEDGE_DIRECTORY: ${{ github.workspace }}/docs/chatbot-knowledge
         run: |
-          chmod +x mvnw
           ./mvnw -B test
 
   frontend-build:
