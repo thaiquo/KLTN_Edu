@@ -16,9 +16,10 @@ concurrency:
 jobs:
   backend-tests:
     name: Test ${{ matrix.service }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
         service:
           - api-gateway
@@ -42,27 +43,16 @@ jobs:
           cache: maven
           cache-dependency-path: backend/${{ matrix.service }}/pom.xml
 
-      # Cold runners download the Maven distribution independently. Retry that
-      # network-only bootstrap without hiding failures from the test suite.
-      - name: Bootstrap Maven Wrapper
-        run: |
-          chmod +x mvnw
-          for attempt in 1 2 3 4; do
-            if MVNW_VERBOSE=true ./mvnw -B --version; then
-              exit 0
-            fi
-            if [ "$attempt" -eq 4 ]; then
-              echo "::error::Maven Wrapper download failed after 4 attempts"
-              exit 1
-            fi
-            sleep $((5 * attempt))
-          done
+      # The pinned runner already includes Maven; avoid a separate wrapper ZIP
+      # download from Maven Central for every matrix job.
+      - name: Verify runner Maven
+        run: mvn --version
 
       - name: Run tests
         env:
           CHATBOT_KNOWLEDGE_DIRECTORY: ${{ github.workspace }}/docs/chatbot-knowledge
         run: |
-          ./mvnw -B test
+          mvn -B -ntp test
 
   frontend-build:
     name: Build Web
