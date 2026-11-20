@@ -36,4 +36,10 @@ public class LoginProtectionException extends RuntimeException {
         return new LoginProtectionException(HttpStatus.TOO_MANY_REQUESTS, "LOGIN_ATTEMPT_IN_PROGRESS",
                 "Một yêu cầu đăng nhập khác đang được xử lý.", retryAfterSeconds);
     }
+
+    public static LoginProtectionException mobileRetryLater(long retryAfterSeconds) {
+        long seconds = Math.max(1, retryAfterSeconds);
+        return new LoginProtectionException(HttpStatus.TOO_MANY_REQUESTS, "LOGIN_MOBILE_RETRY_LATER",
+                "Đăng nhập sai quá nhiều lần. Vui lòng thử lại sau " + seconds + " giây.", seconds);
+    }
 }

@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 @Component
 public class RedisLoginAttemptStore implements LoginAttemptStore {
@@ -46,6 +47,12 @@ public class RedisLoginAttemptStore implements LoginAttemptStore {
         if (value == null) return 0;
         try { return Integer.parseInt(value); }
         catch (NumberFormatException exception) { throw new IllegalStateException("Invalid Redis login counter"); }
+    }
+
+    @Override
+    public long remainingFailureWindowSeconds(String normalizedEmail) {
+        Long remaining = redisTemplate.getExpire(failureKey(normalizedEmail), TimeUnit.SECONDS);
+        return remaining == null ? 0 : Math.max(0, remaining);
     }
 
     @Override

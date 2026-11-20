@@ -30,7 +30,7 @@ class MobileAuthControllerTest {
         when(jwt.getExpirationMillis()).thenReturn(900000L);
         MockHttpServletRequest servletRequest = new MockHttpServletRequest();
         servletRequest.setRemoteAddr("127.0.0.1");
-        when(auth.login(request, "127.0.0.1")).thenReturn(result("STUDENT", "access", "refresh"));
+        when(auth.loginMobile(request, "127.0.0.1")).thenReturn(result("STUDENT", "access", "refresh"));
 
         var response = controller.login(request, servletRequest);
 

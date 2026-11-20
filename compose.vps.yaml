@@ -71,7 +71,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a '$${REDIS_PASSWORD}' ping | grep PONG"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -312,6 +312,8 @@ services:
       LOGIN_IP_RATE_LIMIT_REQUESTS: ${LOGIN_IP_RATE_LIMIT_REQUESTS:-20}
       LOGIN_IP_RATE_LIMIT_WINDOW: ${LOGIN_IP_RATE_LIMIT_WINDOW:-1m}
       LOGIN_TRUSTED_PROXY_CIDRS: ${LOGIN_TRUSTED_PROXY_CIDRS:-172.16.0.0/12}
+      OPERATIONS_SLA_SCHEDULER_ENABLED: ${OPERATIONS_SLA_SCHEDULER_ENABLED:-false}
+      OPERATIONS_SLA_NOTIFICATIONS_ENABLED: ${OPERATIONS_SLA_NOTIFICATIONS_ENABLED:-false}
     depends_on:
       account-service:
         condition: service_started

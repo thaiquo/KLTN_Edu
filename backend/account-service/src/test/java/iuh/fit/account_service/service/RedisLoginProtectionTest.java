@@ -71,6 +71,28 @@ class RedisLoginProtectionTest {
     }
 
     @Test
+    void mobileLoginUsesTemporaryLockoutInsteadOfAnUnavailableCaptcha() {
+        var protection = protection((token, ip) -> TurnstileVerifier.VerificationResult.VALID);
+
+        for (int attempt = 0; attempt < 2; attempt++) {
+            assertThatThrownBy(() -> protection.executeMobile("mobile@example.com", "127.0.0.1", () -> {
+                throw new BadCredentialsException("invalid");
+            })).isInstanceOf(BadCredentialsException.class);
+        }
+        assertThatThrownBy(() -> protection.executeMobile("mobile@example.com", "127.0.0.1", () -> {
+            throw new BadCredentialsException("invalid");
+        })).isInstanceOf(LoginProtectionException.class)
+                .extracting("code").isEqualTo("LOGIN_MOBILE_RETRY_LATER");
+        assertThatThrownBy(() -> protection.executeMobile("mobile@example.com", "127.0.0.1", () -> "session"))
+                .isInstanceOf(LoginProtectionException.class)
+                .extracting("retryAfterSeconds").isEqualTo(600L);
+
+        store.clearFailures("mobile@example.com");
+        assertThat(protection.executeMobile("mobile@example.com", "127.0.0.1", () -> "session"))
+                .isEqualTo("session");
+    }
+
+    @Test
     void providerAndRedisFailuresFailClosedWithStableCode() {
         store.failures.put("user@example.com", 3);
         var unavailable = protection((token, ip) -> TurnstileVerifier.VerificationResult.UNAVAILABLE);
@@ -151,6 +173,11 @@ class RedisLoginProtectionTest {
         public int failureCount(String email) {
             if (failOnRead) throw new DataAccessResourceFailureException("redis unavailable");
             return failures.getOrDefault(email, 0);
+        }
+
+        @Override
+        public long remainingFailureWindowSeconds(String email) {
+            return failures.containsKey(email) ? 600 : 0;
         }
 
         @Override

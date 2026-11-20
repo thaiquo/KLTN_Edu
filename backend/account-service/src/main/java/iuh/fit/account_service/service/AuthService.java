@@ -271,6 +271,12 @@ public class AuthService {
                 () -> authenticateAndCreateSession(request, normalizedEmail));
     }
 
+    public LoginResult loginMobile(LoginRequest request, String remoteIp) {
+        String normalizedEmail = EmailNormalizer.normalize(request.getEmail());
+        return loginProtection.executeMobile(normalizedEmail, remoteIp,
+                () -> authenticateAndCreateSession(request, normalizedEmail));
+    }
+
     private LoginResult authenticateAndCreateSession(LoginRequest request, String normalizedEmail) {
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(

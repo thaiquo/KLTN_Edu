@@ -25,6 +25,16 @@ public class RedisLoginProtection implements LoginProtection {
     @Override
     public <T> T execute(String normalizedEmail, String turnstileToken, String remoteIp,
                          Supplier<T> authentication) {
+        return execute(normalizedEmail, turnstileToken, remoteIp, authentication, false);
+    }
+
+    @Override
+    public <T> T executeMobile(String normalizedEmail, String remoteIp, Supplier<T> authentication) {
+        return execute(normalizedEmail, null, remoteIp, authentication, true);
+    }
+
+    private <T> T execute(String normalizedEmail, String turnstileToken, String remoteIp,
+                          Supplier<T> authentication, boolean mobile) {
         if (!properties.isEnabled()) return authentication.get();
 
         String leaseToken;
@@ -39,7 +49,7 @@ public class RedisLoginProtection implements LoginProtection {
         }
 
         try {
-            enforceChallengeWhenRequired(normalizedEmail, turnstileToken, remoteIp);
+            enforceChallengeWhenRequired(normalizedEmail, turnstileToken, remoteIp, mobile);
             try {
                 T result = authentication.get();
                 attemptStore.clearFailures(normalizedEmail);
@@ -47,7 +57,8 @@ public class RedisLoginProtection implements LoginProtection {
             } catch (BadCredentialsException exception) {
                 int failures = attemptStore.recordFailure(normalizedEmail, properties.getFailureWindow());
                 if (failures >= properties.getFailureThreshold()) {
-                    throw LoginProtectionException.challengeRequired();
+                    throw mobile ? mobileRetryLater(normalizedEmail)
+                            : LoginProtectionException.challengeRequired();
                 }
                 throw exception;
             }
@@ -64,9 +75,10 @@ public class RedisLoginProtection implements LoginProtection {
         }
     }
 
-    private void enforceChallengeWhenRequired(String normalizedEmail, String token, String remoteIp) {
+    private void enforceChallengeWhenRequired(String normalizedEmail, String token, String remoteIp, boolean mobile) {
         int failures = attemptStore.failureCount(normalizedEmail);
         if (failures < properties.getFailureThreshold()) return;
+        if (mobile) throw mobileRetryLater(normalizedEmail);
         if (token == null || token.isBlank()) throw LoginProtectionException.challengeRequired();
 
         TurnstileVerifier.VerificationResult result = turnstileVerifier.verify(token, remoteIp);
@@ -76,6 +88,12 @@ public class RedisLoginProtection implements LoginProtection {
         if (result == TurnstileVerifier.VerificationResult.UNAVAILABLE) {
             throw LoginProtectionException.unavailable();
         }
+    }
+
+    private LoginProtectionException mobileRetryLater(String normalizedEmail) {
+        long remaining = attemptStore.remainingFailureWindowSeconds(normalizedEmail);
+        return LoginProtectionException.mobileRetryLater(remaining > 0
+                ? remaining : properties.getFailureWindow().toSeconds());
     }
 
     private LoginProtectionException unavailable(RuntimeException cause) {

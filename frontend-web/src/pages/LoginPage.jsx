@@ -216,7 +216,15 @@ export function LoginPage() {
                 setChallengeError(widgetError);
               }}
             />
-            {challengeError && <div className="error mb-4" role="alert">{challengeError}</div>}
+            {challengeError && (
+              <div className="error mb-4" role="alert">
+                {challengeError}{' '}
+                <button type="button" onClick={() => {
+                  setChallengeError('');
+                  setTurnstileResetKey((current) => current + 1);
+                }}>Thử tải lại</button>
+              </div>
+            )}
           </>
         )}
 

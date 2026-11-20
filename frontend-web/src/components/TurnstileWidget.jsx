@@ -89,6 +89,10 @@ function loadTurnstile() {
     script.onload = resolve;
     script.onerror = reject;
     document.head.appendChild(script);
+  }).catch((error) => {
+    document.getElementById(SCRIPT_ID)?.remove();
+    scriptPromise = null;
+    throw error;
   });
   return scriptPromise;
 }

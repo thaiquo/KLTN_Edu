@@ -37,7 +37,7 @@ Unavailable sources remain explicit in the source-health list. Their overdue/due
 
 ## Bell notification decision
 
-Implemented in M3.3 for `DUE_SOON` and `OVERDUE` work items. Evaluation is triggered when the bounded Action Center page is loaded; there is no background timer in Gateway. A shared/unassigned item targets active Admin recipients, while an assigned item targets active Admin recipients plus the matching active Staff assignee.
+Implemented in M3.3 for `DUE_SOON` and `OVERDUE` work items. The bounded Action Center page evaluates its visible items when loaded. Gateway also has a configurable background scheduler that starts after 30 seconds and polls every five minutes; an in-process guard skips an overlapping scan. On VPS, `OPERATIONS_SLA_SCHEDULER_ENABLED` and `OPERATIONS_SLA_NOTIFICATIONS_ENABLED` default to `false` for staged rollout; enable them after validating source health and notification delivery. A shared/unassigned item targets active Admin recipients, while an assigned item targets active Admin recipients plus the matching active Staff assignee.
 
 The durable deduplication identity is derived from `(source, resourceId, workflowRevision, slaState)` and hashed into an event ID shorter than the Notification schema limit. Repeated polling therefore reuses the same event ID. Notification Service persists at most one row per `(event_id, recipient_user_id)` through its existing unique constraint and `createIfAbsent` path. A new workflow revision or a transition from `DUE_SOON` to `OVERDUE` intentionally creates a new actionable notification.
 

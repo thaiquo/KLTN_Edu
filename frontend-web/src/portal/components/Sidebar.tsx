@@ -334,9 +334,7 @@ export function Sidebar({
           let activeClass = "";
 
           if (isActive) {
-            if (activeRole === "tutor") {
-              activeClass = "bg-brand-secondary text-white shadow-lg shadow-brand-secondary/10";
-            } else if (activeRole === "staff") {
+            if (activeRole === "staff") {
               activeClass = "bg-white/10 text-white border-l-4 border-[#ff695f]";
             } else {
               activeClass = "bg-brand-text text-white shadow-lg shadow-brand-text/10";

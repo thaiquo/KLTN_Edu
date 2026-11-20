@@ -147,6 +147,8 @@ Dispute/evidence áp dụng object-level authorization, không chỉ route-level
 
 Mobile currently uses credentialed API requests, but the CSRF flow is not as complete as Web and should be audited before expanding mobile mutating APIs.
 
+The mobile login endpoint issues a separate mobile session response. Because the mobile client has no Turnstile widget, its Redis-backed per-email failure threshold returns a temporary `429 LOGIN_MOBILE_RETRY_LATER` with `Retry-After`; it does not return a Web-only CAPTCHA challenge. Gateway IP rate limiting covers both Web and mobile login paths. This preserves the existing mobile login path while bounding repeated password guesses.
+
 ## 8. Security Guardrails
 
 Internal notification APIs (verified in source on 2026-10-02): Account reviewer lookup requires an expiring service JWT with subject `contract-service` and scope `notification-recipients`. Notification Service's internal send endpoint requires the same subject with scope `notification-send`; Contract's direct dispatcher and termination outbox both attach it. User cookie JWTs do not grant either service scope. Requests with missing/invalid service tokens return 401 after the updated services are loaded.

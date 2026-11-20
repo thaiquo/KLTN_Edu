@@ -77,6 +77,7 @@ jobs:
           node src/utils/scheduleUtils.test.js
           node src/utils/terminationState.test.js
           node src/components/ai-chat/aiChatHistoryStore.test.js
+          node --test tests/*.test.js
 
       - name: Build production assets
         working-directory: frontend-web
@@ -102,6 +103,7 @@ jobs:
           RELEASE_TAG: 0000000000000000000000000000000000000000
           POSTGRES_PASSWORD: validation-only
           RABBITMQ_PASSWORD: validation-only
+          REDIS_PASSWORD: validation-only
           JWT_SECRET: validation-only-validation-only-validation-only
           MAIL_USERNAME: validation@example.com
           MAIL_PASSWORD: validation-only
@@ -109,6 +111,7 @@ jobs:
           AWS_S3_BUCKET: validation-only
           AWS_ACCESS_KEY_ID: validation-only
           AWS_SECRET_ACCESS_KEY: validation-only
+          TURNSTILE_SECRET_KEY: validation-only
           BLOCKCHAIN_ENABLED: "true"
           BLOCKCHAIN_OPERATOR_ENABLED: "true"
           BLOCKCHAIN_OPERATOR_PRIVATE_KEY: validation-only-not-a-real-key

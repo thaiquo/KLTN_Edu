@@ -21,6 +21,7 @@ import java.util.Arrays;
 @Order(Ordered.HIGHEST_PRECEDENCE + 20)
 public class LoginRateLimitWebFilter implements WebFilter {
     private static final String LOGIN_PATH = "/api/auth/login";
+    private static final String MOBILE_LOGIN_PATH = "/api/auth/mobile/login";
     private final GatewayLoginRateLimiter rateLimiter;
     private final ClientIpResolver clientIpResolver;
     private final CorsConfiguration corsConfiguration;
@@ -41,7 +42,8 @@ public class LoginRateLimitWebFilter implements WebFilter {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         if (exchange.getRequest().getMethod() != HttpMethod.POST
-                || !LOGIN_PATH.equals(exchange.getRequest().getPath().value())) {
+                || !(LOGIN_PATH.equals(exchange.getRequest().getPath().value())
+                || MOBILE_LOGIN_PATH.equals(exchange.getRequest().getPath().value()))) {
             return chain.filter(exchange);
         }
 

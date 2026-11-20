@@ -13,6 +13,7 @@ Before the first release, configure these GitHub repository variables:
 - `VITE_ESCROW_CONTRACT_ADDRESS`
 - `VITE_USDC_CONTRACT_ADDRESS`
 - `VITE_SEPOLIA_RPC_URL`
+- `VITE_TURNSTILE_SITE_KEY` (public site key for the production login domain)
 
 The public Reown/WalletConnect Project ID is versioned in the Web publish job,
 not stored as a secret repository variable. When rotating it, update the job and
@@ -39,6 +40,17 @@ secrets/operator-keystore-password
 Create the VPS `.env` from `deploy/production.env.example`, fill every required
 value, and restrict it to the deployment identity. Never copy the repository's
 local development `.env` unchanged.
+
+Before merging a login-protection release, confirm that the VPS `.env` has a
+non-empty, unique `REDIS_PASSWORD` and the matching Cloudflare
+`TURNSTILE_SECRET_KEY`; the GitHub `VITE_TURNSTILE_SITE_KEY` must belong to the
+same Turnstile widget and allow the production domain. CI uses validation-only
+values and cannot check these production settings. A successful merge to `main`
+starts automatic image publishing and VPS deployment, so do not merge while any
+of these values is missing or unknown. Keep
+`OPERATIONS_SLA_SCHEDULER_ENABLED=false` and
+`OPERATIONS_SLA_NOTIFICATIONS_ENABLED=false` for the first rollout; activate
+them separately after checking the Action Center sources and notification flow.
 
 The base Compose file defaults blockchain operator writes to disabled. On the
 active VPS, the operator is enabled with a raw private key stored only in the

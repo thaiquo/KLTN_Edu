@@ -57,6 +57,21 @@ class LoginRateLimitWebFilterTest {
     }
 
     @Test
+    void mobileLoginUsesTheSameIpRateLimit() {
+        var properties = new LoginRateLimitProperties();
+        var resolver = new ClientIpResolver(properties);
+        GatewayLoginRateLimiter limiter = ip -> Mono.just(GatewayLoginRateLimiter.Decision.reject(17));
+        var exchange = exchange(HttpMethod.POST, "/api/auth/mobile/login", null);
+        var downstreamCalls = new AtomicInteger();
+
+        filter(limiter, resolver).filter(exchange, countingChain(downstreamCalls)).block();
+
+        assertThat(downstreamCalls).hasValue(0);
+        assertThat(exchange.getResponse().getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(exchange.getResponse().getHeaders().getFirst("Retry-After")).isEqualTo("17");
+    }
+
+    @Test
     void failsClosedWhenRedisLimiterIsUnavailable() {
         var properties = new LoginRateLimitProperties();
         var resolver = new ClientIpResolver(properties);

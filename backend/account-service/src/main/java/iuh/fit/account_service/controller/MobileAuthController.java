@@ -65,7 +65,7 @@ public class MobileAuthController {
 
     @PostMapping("/login")
     public MobileSessionResponse login(@Valid @RequestBody LoginRequest request, HttpServletRequest servletRequest) {
-        return response(authService.login(request, servletRequest.getRemoteAddr()));
+        return response(authService.loginMobile(request, servletRequest.getRemoteAddr()));
     }
 
     @PostMapping("/refresh")

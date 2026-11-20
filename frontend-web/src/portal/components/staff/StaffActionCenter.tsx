@@ -310,6 +310,7 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
     });
 
     additionalWorkItems.forEach((workItem) => {
+      if (workItem.source !== "COMMUNITY_MODERATION" && workItem.source !== "SUPPORT_TICKET") return;
       const community = workItem.source === "COMMUNITY_MODERATION";
       list.push({
         id: `${workItem.source}-${workItem.resourceId}`,
@@ -710,7 +711,7 @@ function ActionHubCard({
   count: number | null;
   countLabel: string;
   description: string;
-  badgeTone: "amber" | "indigo" | "emerald" | "rose" | "purple";
+  badgeTone: "amber" | "indigo" | "emerald" | "rose" | "purple" | "blue";
   actionLabel: string;
   onClick: () => void;
   loading: boolean;
@@ -721,7 +722,8 @@ function ActionHubCard({
     indigo: "border-indigo-200 bg-indigo-50/30 text-indigo-900 hover:border-indigo-400",
     emerald: "border-emerald-200 bg-emerald-50/30 text-emerald-900 hover:border-emerald-400",
     rose: "border-rose-200 bg-rose-50/30 text-rose-900 hover:border-rose-400",
-    purple: "border-purple-200 bg-purple-50/30 text-purple-900 hover:border-purple-400"
+    purple: "border-purple-200 bg-purple-50/30 text-purple-900 hover:border-purple-400",
+    blue: "border-blue-200 bg-blue-50/30 text-blue-900 hover:border-blue-400"
   }[badgeTone];
 
   const badgeClasses = {
@@ -729,7 +731,8 @@ function ActionHubCard({
     indigo: "bg-indigo-100 text-indigo-800",
     emerald: "bg-emerald-100 text-emerald-800",
     rose: "bg-rose-100 text-rose-800",
-    purple: "bg-purple-100 text-purple-800"
+    purple: "bg-purple-100 text-purple-800",
+    blue: "bg-blue-100 text-blue-800"
   }[badgeTone];
 
   return (
