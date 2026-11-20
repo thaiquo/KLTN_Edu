@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AuthLayout } from '../components/AuthLayout';
 import { FormField } from '../components/FormField';
+import { TurnstileWidget } from '../components/TurnstileWidget';
 import { useAuth } from '../hooks/useAuth';
 
 export function LoginPage() {
@@ -18,6 +19,19 @@ export function LoginPage() {
   const [error, setError] = useState('');
   const [showVerifyAction, setShowVerifyAction] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [challengeRequired, setChallengeRequired] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const [turnstileResetKey, setTurnstileResetKey] = useState(0);
+  const [challengeError, setChallengeError] = useState('');
+  const [retryAfter, setRetryAfter] = useState(0);
+
+  useEffect(() => {
+    if (retryAfter <= 0) return undefined;
+    const timer = window.setInterval(() => {
+      setRetryAfter((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [retryAfter]);
 
   function change(event) {
     const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value;
@@ -54,6 +68,19 @@ export function LoginPage() {
       return;
     }
 
+    if (loginError.code === 'LOGIN_CHALLENGE_REQUIRED') {
+      setChallengeRequired(true);
+      setTurnstileToken('');
+      setChallengeError('');
+      setTurnstileResetKey((current) => current + 1);
+      setError('Vui lòng xác minh để thử đăng nhập lại.');
+      return;
+    }
+
+    if (loginError.status === 429) {
+      setRetryAfter(Math.max(1, Number(loginError.retryAfter || 1)));
+    }
+
     const message = loginError.message || 'Đăng nhập không thành công.';
     setError(message);
     setShowVerifyAction(loginError.status === 403 && message.toLowerCase().includes('verify'));
@@ -70,6 +97,13 @@ export function LoginPage() {
       return;
     }
 
+    if (challengeRequired && !turnstileToken) {
+      setError('Vui lòng hoàn tất bước xác minh trước khi đăng nhập.');
+      return;
+    }
+
+    if (retryAfter > 0) return;
+
     setBusy(true);
     setError('');
     setShowVerifyAction(false);
@@ -79,7 +113,8 @@ export function LoginPage() {
       const currentUser = await login({
         email: form.email.trim().toLowerCase(),
         password: form.password,
-        tutorMode: Boolean(form.tutorMode)
+        tutorMode: Boolean(form.tutorMode),
+        turnstileToken: challengeRequired ? turnstileToken : undefined
       });
 
       const from = location.state?.from?.pathname;
@@ -162,8 +197,39 @@ export function LoginPage() {
             )}
           </div>
         )}
-        <button className="primary" disabled={busy}>
-          {busy ? 'Đang đăng nhập...' : 'Đăng nhập'}
+
+        {challengeRequired && (
+          <>
+            <TurnstileWidget
+              resetKey={turnstileResetKey}
+              onToken={(token) => {
+                setTurnstileToken(token);
+                setChallengeError('');
+                setError('');
+              }}
+              onExpired={() => {
+                setTurnstileToken('');
+                setChallengeError('Phiên xác minh đã hết hạn. Vui lòng xác minh lại.');
+              }}
+              onError={(widgetError) => {
+                setTurnstileToken('');
+                setChallengeError(widgetError);
+              }}
+            />
+            {challengeError && (
+              <div className="error mb-4" role="alert">
+                {challengeError}{' '}
+                <button type="button" onClick={() => {
+                  setChallengeError('');
+                  setTurnstileResetKey((current) => current + 1);
+                }}>Thử tải lại</button>
+              </div>
+            )}
+          </>
+        )}
+
+        <button className="primary" disabled={busy || retryAfter > 0 || (challengeRequired && !turnstileToken)}>
+          {busy ? 'Đang đăng nhập...' : retryAfter > 0 ? `Thử lại sau ${retryAfter} giây` : 'Đăng nhập'}
         </button>
       </form>
 

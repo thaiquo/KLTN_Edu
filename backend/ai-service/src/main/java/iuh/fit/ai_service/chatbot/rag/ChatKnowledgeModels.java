@@ -41,22 +41,47 @@ public final class ChatKnowledgeModels {
     ) {
     }
 
+    public record IndexedChunk(
+            String pointId,
+            String documentId,
+            String contentHash,
+            int documentVersion
+    ) {
+    }
+
+    public enum KnowledgeState {
+        READY,
+        INDEXING,
+        DEGRADED,
+        FAILED
+    }
+
     public record IndexResult(
             String collection,
             int filesLoaded,
             int chunksCreated,
             int pointsInserted,
+            int pointsSkipped,
+            int pointsDeleted,
             List<String> errors,
             Instant indexedAt,
-            long pointCount
+            long pointCount,
+            KnowledgeState state
     ) {
     }
 
     public record IndexStatus(
             String collection,
+            KnowledgeState state,
             boolean collectionExists,
             long pointCount,
-            int indexedDocumentCount
+            int indexedDocumentCount,
+            int sourceDocumentCount,
+            int sourceChunkCount,
+            Instant lastAttemptAt,
+            Instant lastSuccessfulSyncAt,
+            String lastError,
+            boolean syncInProgress
     ) {
     }
 }

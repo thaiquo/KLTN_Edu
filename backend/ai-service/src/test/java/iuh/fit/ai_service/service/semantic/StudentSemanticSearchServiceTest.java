@@ -8,6 +8,8 @@ import iuh.fit.ai_service.dto.TutorMatchingDtos.TutorCandidate;
 import iuh.fit.ai_service.service.embedding.EmbeddingVector;
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSearchRequest;
 import iuh.fit.ai_service.service.semantic.StudentSemanticSearchDtos.SemanticSearchStatus;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.ReadinessStatus;
+import iuh.fit.ai_service.service.semantic.TutorSemanticIndexDtos.VectorStoreHealth;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClientException;
 
@@ -38,7 +40,7 @@ class StudentSemanticSearchServiceTest {
                 7
         ));
 
-        assertThat(result.status()).isEqualTo(SemanticSearchStatus.NOT_APPLICABLE);
+        assertThat(result.status()).isEqualTo(SemanticSearchStatus.NO_CONTEXT);
         assertThat(result.requestedTopK()).isEqualTo(7);
         assertThat(result.candidates()).isEmpty();
         assertThat(embedding.calls).isZero();
@@ -113,6 +115,7 @@ class StudentSemanticSearchServiceTest {
         assertThat(result.qdrantHitCount()).isEqualTo(1);
         assertThat(result.rejectedHitCount()).isEqualTo(1);
         assertThat(result.candidates()).isEmpty();
+        assertThat(result.status()).isEqualTo(SemanticSearchStatus.NO_VALID_SEMANTIC_HITS);
     }
 
     @Test
@@ -161,24 +164,41 @@ class StudentSemanticSearchServiceTest {
     }
 
     @Test
-    void qdrantUnavailableIsNotFabricated() {
+    void qdrantUnavailableFallsBackWithExplicitStatus() {
         FakeStore store = new FakeStore();
         store.fail = true;
         StudentSemanticSearchService service = service(new FakeEmbeddingService(), store, new FakeTutorClient());
 
-        assertThatThrownBy(() -> service.search(semanticRequest(null)))
-                .isInstanceOf(SemanticVectorStoreException.class);
+        var result = service.search(semanticRequest(null));
+
+        assertThat(result.status()).isEqualTo(SemanticSearchStatus.QDRANT_UNAVAILABLE);
+        assertThat(result.candidates()).isEmpty();
     }
 
     @Test
-    void embeddingFailureIsNotFabricated() {
+    void embeddingFailureFallsBackWithExplicitStatus() {
         FakeEmbeddingService embedding = new FakeEmbeddingService();
         embedding.fail = true;
         StudentSemanticSearchService service = service(embedding, new FakeStore(), new FakeTutorClient());
 
-        assertThatThrownBy(() -> service.search(semanticRequest(null)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("embedding unavailable");
+        var result = service.search(semanticRequest(null));
+
+        assertThat(result.status()).isEqualTo(SemanticSearchStatus.EMBEDDING_FAILURE);
+        assertThat(result.candidates()).isEmpty();
+    }
+
+    @Test
+    void emptyIndexSkipsEmbeddingAndReturnsExplicitStatus() {
+        FakeEmbeddingService embedding = new FakeEmbeddingService();
+        FakeStore store = new FakeStore();
+        store.health = new VectorStoreHealth("tutor_capabilities_v1", true, 0, ReadinessStatus.DEGRADED_EMPTY);
+        StudentSemanticSearchService service = service(embedding, store, new FakeTutorClient());
+
+        var result = service.search(semanticRequest(null));
+
+        assertThat(result.status()).isEqualTo(SemanticSearchStatus.INDEX_EMPTY);
+        assertThat(embedding.calls).isZero();
+        assertThat(store.searchCalls).isZero();
     }
 
     @Test
@@ -313,6 +333,8 @@ class StudentSemanticSearchServiceTest {
         private boolean initialized;
         private boolean fail;
         private List<SemanticSearchHit> hits = List.of();
+        private VectorStoreHealth health = new VectorStoreHealth(
+                "tutor_capabilities_v1", true, 10, ReadinessStatus.READY);
 
         @Override
         public void initializeCollection() {
@@ -341,6 +363,11 @@ class StudentSemanticSearchServiceTest {
             this.filter = filter;
             this.limit = limit;
             return hits;
+        }
+
+        @Override
+        public VectorStoreHealth health() {
+            return health;
         }
     }
 }

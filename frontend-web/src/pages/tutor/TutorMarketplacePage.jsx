@@ -415,7 +415,7 @@ export function TutorMarketplacePage() {
                     ? `${aiMatchResult.results?.length || 0} gia sư phù hợp với nhu cầu của bạn`
                     : loading ? 'Đang tìm gia sư phù hợp...' : hasActiveFilters ? `${result.totalElements} gia sư phù hợp với tiêu chí của bạn` : `${result.totalElements} gia sư phù hợp`}
                 </h2>
-                {aiMatchResult && <p className="mt-1 text-sm font-semibold text-slate-500">Được sắp xếp theo điểm phù hợp EduConnect từ hệ thống gợi ý gia sư.</p>}
+                {aiMatchResult && <p className="mt-1 text-sm font-semibold text-slate-500">Được sắp xếp theo điểm phù hợp EduConnect; đây là điểm xếp hạng, không phải xác suất.</p>}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button type="button" onClick={() => setMobileFiltersOpen(true)} className="inline-flex min-h-10 items-center gap-2 rounded-[8px] border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 lg:hidden">
@@ -440,7 +440,7 @@ export function TutorMarketplacePage() {
                   ))}
                 </div>
               ) : (
-                <EmptyAiMatches onRetry={openMatchingModal} onShowAll={() => { setActiveMode('MANUAL'); setAiMatchResult(null); }} />
+                <EmptyAiMatches summary={aiMatchResult.constraintFiltering} onRetry={openMatchingModal} onShowAll={() => { setActiveMode('MANUAL'); setAiMatchResult(null); }} />
               )
             ) : error ? (
               <ErrorState message={error} onRetry={() => setFilters((current) => ({ ...current }))} />
@@ -605,6 +605,9 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiR
   const hasMatchPercentage = isAiResult && Number.isFinite(matchPercentage);
   const matchingReasons = Array.isArray(tutor.matchingReasons) ? tutor.matchingReasons.filter(Boolean) : [];
   const mismatchReasons = Array.isArray(tutor.mismatchReasons) ? tutor.mismatchReasons.filter(Boolean) : [];
+  const semanticStatus = tutor.scoreBreakdown?.semantic?.status;
+  const semanticFallback = isAiResult && semanticStatus
+    && !['APPLICABLE', 'NO_CONTEXT'].includes(semanticStatus);
   const canChat = canShowChatAction(tutor.userId);
   const startingChat = Number(startingTutorUserId) === Number(tutor.userId);
   const canFollow = authenticated
@@ -660,10 +663,15 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiR
         {hasMatchPercentage && (
           <div className="shrink-0 rounded-[8px] border border-blue-100 bg-blue-50 px-3 py-2 text-center">
             <strong className="block font-display text-2xl font-extrabold text-primary">{Math.round(matchPercentage)}%</strong>
-            <span className="text-[10px] font-black uppercase tracking-wider text-blue-700">Phù hợp</span>
+            <span className="text-[10px] font-black uppercase tracking-wider text-blue-700">Điểm tương thích</span>
           </div>
         )}
       </div>
+      {semanticFallback && (
+        <p className="mt-3 rounded-[8px] border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+          Semantic tạm thời chưa khả dụng; kết quả này đang dựa trên hồ sơ, lịch và học phí.
+        </p>
+      )}
       <div className="mt-5 flex-1 space-y-4">
         <section className="rounded-[8px] border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-start justify-between gap-3">
@@ -700,7 +708,7 @@ function TutorMarketplaceCard({ tutor, selectedSubjectId, selectedLevelId, isAiR
           <section className="rounded-[8px] border border-emerald-100 bg-emerald-50 p-3">
             <p className="mb-2 text-[10px] font-black uppercase tracking-wider text-emerald-700">Vì sao phù hợp</p>
             <ul className="space-y-2">
-              {matchingReasons.slice(0, 4).map((reason) => (
+              {matchingReasons.slice(0, 5).map((reason) => (
                 <li key={reason} className="flex items-start gap-2 text-xs font-extrabold leading-5 text-emerald-800">
                   <ShieldCheck size={14} className="mt-0.5 shrink-0" /> {reason}
                 </li>
@@ -804,7 +812,9 @@ function EmptyTutors({ hasActiveFilters, onReset }) {
   return <div className="grid place-items-center rounded-[8px] border border-dashed border-slate-300 bg-white px-6 py-14 text-center shadow-[0_14px_36px_rgba(15,23,42,.04)]"><span className="grid h-14 w-14 place-items-center rounded-[8px] bg-blue-50 text-primary"><UsersRound size={25} /></span><h3 className="mt-4 font-display text-2xl font-extrabold text-slate-950">{hasActiveFilters ? 'Chưa tìm thấy gia sư phù hợp' : 'Chưa có gia sư công khai'}</h3><p className="mt-2 max-w-md text-sm font-semibold leading-7 text-slate-500">{hasActiveFilters ? 'Chưa tìm thấy gia sư phù hợp với các tiêu chí đã chọn. Bạn có thể nới lỏng bộ lọc để xem thêm hồ sơ.' : 'Khi hồ sơ gia sư được xét duyệt và công khai, danh sách sẽ hiển thị tại đây.'}</p>{hasActiveFilters && <button type="button" onClick={onReset} className="mt-5 inline-flex items-center gap-2 rounded-[8px] bg-primary px-5 py-3 text-sm font-black text-white hover:bg-primary-dark"><RotateCcw size={16} /> Xóa bộ lọc</button>}</div>;
 }
 
-function EmptyAiMatches({ onRetry, onShowAll }) {
+function EmptyAiMatches({ summary, onRetry, onShowAll }) {
+  const reasons = Array.isArray(summary?.exclusionReasons) ? summary.exclusionReasons : [];
+  const suggestions = Array.isArray(summary?.relaxationSuggestions) ? summary.relaxationSuggestions : [];
   return (
     <div className="grid place-items-center rounded-[8px] border border-dashed border-slate-300 bg-white px-6 py-14 text-center shadow-[0_14px_36px_rgba(15,23,42,.04)]">
       <span className="grid h-14 w-14 place-items-center rounded-[8px] bg-blue-50 text-primary"><Sparkles size={25} /></span>
@@ -812,6 +822,14 @@ function EmptyAiMatches({ onRetry, onShowAll }) {
       <p className="mt-2 max-w-md text-sm font-semibold leading-7 text-slate-500">
         Bạn có thể thử mô tả nhu cầu khác hoặc xem toàn bộ gia sư đang công khai trên Marketplace.
       </p>
+      {reasons.length > 0 && (
+        <div className="mt-4 max-w-xl rounded-[8px] border border-amber-200 bg-amber-50 p-4 text-left text-sm font-semibold text-amber-900">
+          <p className="font-black">Ràng buộc bắt buộc đã loại các hồ sơ không đủ bằng chứng:</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5">{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+          {suggestions.length > 0 && <p className="mt-2">Bạn có thể: {suggestions.join(' ')}</p>}
+          <p className="mt-2 text-xs">EduConnect không tự đổi điều kiện bắt buộc thành ưu tiên.</p>
+        </div>
+      )}
       <div className="mt-5 flex flex-col gap-3 sm:flex-row">
         <button type="button" onClick={onRetry} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[8px] bg-slate-900 px-5 text-sm font-black text-white hover:bg-primary">
           <Sparkles size={16} /> Thử mô tả nhu cầu khác

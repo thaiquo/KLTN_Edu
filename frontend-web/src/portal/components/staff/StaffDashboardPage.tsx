@@ -9,7 +9,7 @@ import { ClassApprovalReview } from "./ClassApprovalReview";
 import { TutorProfileApprovalReview } from "./TutorProfileApprovalReview";
 import { teachingRegistrationApi } from "../../../api/teachingRegistrations";
 import { fetchUserDirectory, getUserDisplayName, UserSummary } from "../../../utils/userDisplay";
-import { DutyStatus, staffDutyApi } from "../../../api/staffDutyApi";
+import { useStaffDutyAccess } from "../../hooks/useStaffDutyAccess";
 
 export function StaffDashboardPage() {
   const { user } = useAuth();
@@ -21,24 +21,9 @@ export function StaffDashboardPage() {
   const [teachingPendingCount, setTeachingPendingCount] = useState(0);
   const [tutorProfilePendingCount, setTutorProfilePendingCount] = useState(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [dutyStatus, setDutyStatus] = useState<DutyStatus>();
-  const canWrite = isAdmin || dutyStatus?.writeAllowed === true;
-
-  useEffect(() => {
-    if (isAdmin) return;
-    let active = true;
-    const refreshDuty = () => staffDutyApi.status()
-      .then((status) => { if (active) setDutyStatus(status); })
-      .catch(() => { if (active) setDutyStatus(undefined); });
-    refreshDuty();
-    const timer = window.setInterval(refreshDuty, 30_000);
-    window.addEventListener("staff-duty:changed", refreshDuty);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-      window.removeEventListener("staff-duty:changed", refreshDuty);
-    };
-  }, [isAdmin]);
+  const duty = useStaffDutyAccess();
+  const dutyStatus = duty.status;
+  const canWrite = duty.writeAllowed;
 
   const subtabParam = searchParams.get("subtab");
   const initialTab: "TUTOR_PROFILES" | "TEACHING_REGISTRATION" | "CLASS_ROOMS" =

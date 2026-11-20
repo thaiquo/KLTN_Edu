@@ -57,6 +57,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/ai/health").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/ai/chat").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/ai/chat/knowledge-status").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/ai/internal/community/moderate").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/ai/internal/community/rewrite").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()

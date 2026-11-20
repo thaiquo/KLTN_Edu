@@ -84,7 +84,7 @@ Nếu không thỏa, API ghi trả `403 STAFF_OFF_DUTY_READ_ONLY`. Admin không 
 
 File: `backend/account-service/src/main/resources/db/migration/V5__staff_duty_roster.sql`
 
-Flyway V6 (`V6__staff_duty_auto_scheduling.sql`) mở rộng trạng thái assignment với `SKIPPED` và audit action `AUTO_SKIPPED` để phục hồi giữa tuần mà không tạo bản ghi vắng mặt giả cho ca chưa từng được phân.
+Flyway V7 (`V7__staff_duty_auto_scheduling.sql`) mở rộng trạng thái assignment với `SKIPPED` và audit action `AUTO_SKIPPED` để phục hồi giữa tuần mà không tạo bản ghi vắng mặt giả cho ca chưa từng được phân.
 
 #### `staff_availability`
 
@@ -336,17 +336,17 @@ Ký hiệu: `[x]` đã hiện thực và có kiểm chứng bước tương ứn
 - [x] D2. Trang Staff có calendar tuần, điều hướng tuần, trạng thái tiếng Việt, tab đăng ký ca rảnh theo mô hình chọn–chỉnh sửa–hủy–lưu và chỉ hiện nhận ca khi backend trả `canStart`.
 - [x] D3. Trang Admin có thẻ tổng quan, calendar tuần, tạo lịch trống, gợi ý xếp lịch, modal manual assign/replace, ưu tiên lịch rảnh, cảnh báo trùng ngày, publish confirmation và audit timeline tiếng Việt.
 - [x] D4. Tích hợp `App.tsx`, `Sidebar.tsx`, `portalAccess.js`.
-- [~] D5. Trang duty roster có badge/nhận ca; màn duyệt lớp, hồ sơ gia sư và quyền dạy đã đồng bộ banner chỉ xem và khóa nút theo `writeAllowed`. Các màn mutation Staff khác vẫn dựa vào backend 403 và cần tiếp tục đồng bộ UX khi chỉnh sửa từng phân hệ.
+- [x] D5. Portal dùng chung trạng thái duty fail-closed và tự refresh theo polling/focus/visibility. Các màn duyệt lớp, hồ sơ gia sư, quyền dạy, Community moderation, dispute/escalation và Help Desk đều hiển thị banner chỉ xem, khóa mutation theo `writeAllowed`; Admin không bị áp duty gate. Backend vẫn là lớp bảo vệ bắt buộc.
 
 ### Giai đoạn E — Nghiệm thu
 
 - [x] E1. 12 ca chia cân bằng khi availability cho phép.
 - [x] E2. Auto-assign/publish/start-shift/scheduler idempotent, không sinh audit nghiệp vụ trùng khi gọi lại.
 - [x] E3. Không publish slot trống; không publish Staff inactive và không gán Staff trùng ngày.
-- [~] E4. Publish khóa cả tuần, replace khóa assignment và thao tác gán khóa thêm bản ghi Staff để tuần tự hóa cập nhật, chống lost update/trùng người cùng ngày; còn cần PostgreSQL/browser concurrency E2E cho publish đồng thời replace.
+- [x] E4. Publish khóa cả tuần, replace khóa assignment và thao tác gán khóa thêm bản ghi Staff để tuần tự hóa cập nhật. Local PostgreSQL 16 runtime ngày 2026-11-11: hai publish đồng thời cùng HTTP 200 tạo đúng 12 assignment/12 audit `PUBLISHED`; hai replace đồng thời trên cùng assignment được tuần tự hóa, lưu đủ hai audit `REASSIGNED` và tăng version, không mất cập nhật.
 - [x] E5. Scheduler catch-up ca quá hạn từ ngày trước thành `ABSENT` hoặc `COMPLETED` và ghi audit.
 - [x] E6. Staff ngoài ca đọc được nhưng mọi mutation nghiệp vụ bị 403 ở ba service.
-- [~] E7. Duty gate chỉ là lớp quyền thứ hai và không thay thế reviewer/ownership hiện hữu; còn cần cross-service authenticated E2E chứng minh Staff đang trực vẫn bị giới hạn đúng scope.
+- [~] E7. Duty gate chỉ là lớp quyền thứ hai và không thay thế reviewer/ownership hiện hữu. Automated authorization tests và authenticated runtime đã chứng minh Staff ngoài ca đọc được nhưng mutation bị 403, Admin không bị gate; local database hiện không có dispute/termination nên cross-service runtime canary cho Staff đang trực nhưng ngoài reviewer/assignee scope vẫn còn thiếu.
 - [x] E8. Thay người làm quyền người cũ mất ngay; người mới phải start shift mới có quyền ghi.
 - [x] E9. Notification không trùng khi retry nhờ event id ổn định và unique `(event_id, recipient_user_id)`.
 - [x] E10. Full regression ngày 2026-11-07: Account 194 PASS; Notification 81 PASS; Learning 342 PASS; Contract 324 run = 316 PASS + 8 Anvil skip; frontend production build PASS. Tổng backend: 941 PASS, 8 skip, 0 failure/error.

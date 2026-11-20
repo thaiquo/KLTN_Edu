@@ -47,6 +47,12 @@ public class SupportTicketController {
         return service.claim(id, authentication);
     }
 
+    @PostMapping("/{id}/reassign")
+    public Detail reassign(@PathVariable UUID id, @Valid @RequestBody ReassignRequest request,
+                           Authentication authentication) {
+        return service.reassign(id, request, authentication);
+    }
+
     @PostMapping("/{id}/messages")
     public Detail message(@PathVariable UUID id, @Valid @RequestBody MessageRequest request,
                           Authentication authentication) {

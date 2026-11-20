@@ -1,0 +1,59 @@
+{
+  "manifestVersion": "p4-reproducibility-v1",
+  "createdAt": "2026-11-12T17:20:00+07:00",
+  "branch": "community-moderation-fix",
+  "head": "f0b9484b919f9eac7465d47555ac82f87ce43e95",
+  "datasetVersion": "p4-tutor-matching-v1",
+  "datasetHash": "110bc7c367acb0ba6a6516b1b442b457fd887117f26a4339570cdc973c09972e",
+  "snapshotVersion": "p4-runtime-2026-11-12",
+  "productionMatchingSourceHash": "0d4a1f5fa8406fb608d601ea0b1b0f7d0ed17f0b92596731b01224bf6ae2a671",
+  "queryCount": 70,
+  "rankableQueryCount": 60,
+  "analysisOnlyQueryCount": 10,
+  "developmentSyntheticData": true,
+  "independentLabels": "WAITING_FOR_HUMAN_LABELS",
+  "embedding": {
+    "provider": "gemini",
+    "model": "gemini-embedding-2",
+    "dimensions": 768,
+    "distance": "Cosine"
+  },
+  "qdrant": {
+    "version": "1.18.3",
+    "collection": "tutor_capabilities_v1",
+    "expectedPointCount": 107,
+    "expectedHash": "b62650c0c3449476b223f8d61384631ce3f2432c0835631dce33b000608da9c7"
+  },
+  "matching": {
+    "maxSemanticRankBoost": 3.0,
+    "weights": {
+      "subjectLevel": 22,
+      "schedule": 20,
+      "budget": 18,
+      "location": 14,
+      "experience": 16,
+      "ratingConfidence": 12,
+      "specialty": 34
+    },
+    "legacyMissingConstraintMode": "SOFT"
+  },
+  "runtimeDataCounts": {
+    "tutorProfiles": 30,
+    "approvedTutorSubjectRegistrations": 44,
+    "tutorAvailabilities": 95,
+    "subjects": 65,
+    "subjectLevels": 188
+  },
+  "environment": {
+    "java": "23",
+    "node": "22.13.0",
+    "postgres": "16",
+    "rabbitmq": "3.13-management"
+  },
+  "candidateSnapshotHash": "0157c1e2b6fd5e44cfd3782e536ef426e155c3796d55dbdf5fee8f26d2e44738",
+  "notes": [
+    "Candidate snapshot hash was frozen after the first successful P4 runner execution.",
+    "No relevance metric is valid until independent human labels pass provenance validation.",
+    "The runner aborts scientific aggregation when Qdrant changes during a run."
+  ]
+}

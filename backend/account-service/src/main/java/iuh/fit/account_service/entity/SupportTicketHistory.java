@@ -17,6 +17,8 @@ public class SupportTicketHistory {
     @Column(name = "from_status", length = 30) private String fromStatus;
     @Column(name = "to_status", length = 30) private String toStatus;
     @Column(columnDefinition = "TEXT") private String reason;
+    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "previous_assignee_user_id") private User previousAssignee;
+    @ManyToOne(fetch = FetchType.LAZY) @JoinColumn(name = "new_assignee_user_id") private User newAssignee;
     @Column(name = "created_at", nullable = false, updatable = false) private LocalDateTime createdAt;
     @PrePersist void create() { if (createdAt == null) createdAt = LocalDateTime.now(); }
 }

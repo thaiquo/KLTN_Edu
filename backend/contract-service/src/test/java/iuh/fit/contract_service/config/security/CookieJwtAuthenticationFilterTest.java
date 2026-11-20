@@ -93,4 +93,36 @@ class CookieJwtAuthenticationFilterTest {
         assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities())
                 .extracting("authority").containsExactly("ROLE_INTERNAL_LEARNING");
     }
+
+    @Test
+    void operationalQueueAcceptsScopedGatewayToken() throws Exception {
+        var request = new MockHttpServletRequest("GET", "/api/contracts/disputes");
+        request.addHeader("X-Service-Token", serviceToken("api-gateway", "operational-read"));
+        var response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal())
+                .isInstanceOf(ContractUserPrincipal.class);
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getAuthorities())
+                .extracting("authority").contains("ROLE_INTERNAL_OPERATIONAL", "ROLE_ADMIN");
+    }
+
+    @Test
+    void operationalQueueRejectsUserJwtInServiceHeader() throws Exception {
+        var request = new MockHttpServletRequest("GET", "/api/contracts/disputes");
+        request.addHeader("X-Service-Token", jwt(7L, "admin@example.com", "ADMIN", List.of("ADMIN")));
+        var response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        assertThat(response.getStatus()).isEqualTo(401);
+    }
+
+    private String serviceToken(String subject, String scope) {
+        return Jwts.builder().subject(subject).claim("serviceScope", scope)
+                .expiration(Date.from(Instant.now().plusSeconds(60)))
+                .signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8))).compact();
+    }
 }

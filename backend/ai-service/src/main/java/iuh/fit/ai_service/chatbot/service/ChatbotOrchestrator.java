@@ -119,6 +119,27 @@ public class ChatbotOrchestrator {
 
         if (isPrivateReadIntent(intent)) {
             ChatMatchingResult result = privateToolAdapter.respond(message, intent, userContext);
+            if (shouldCombinePrivateAndPublicKnowledge(message)) {
+                try {
+                    List<KnowledgeSearchHit> context = ragRetriever.retrieve(message, userContext, null);
+                    if (!context.isEmpty()) {
+                        String explanation = geminiTextClient.generateText(
+                                promptBuilder.systemInstruction(),
+                                promptBuilder.buildGroundedPrompt(message, request.conversation(), request.pageContext(), context),
+                                384
+                        );
+                        return new ChatResponse(
+                                result.message() + "\n\n" + explanation,
+                                intent,
+                                sources(context),
+                                result.actions(),
+                                result.toolResult()
+                        );
+                    }
+                } catch (EmbeddingException | SemanticVectorStoreException | GeminiUnavailableException ignored) {
+                    // The authorized private result remains useful when the optional public explanation is unavailable.
+                }
+            }
             return new ChatResponse(result.message(), intent, List.of(), result.actions(), result.toolResult());
         }
 
@@ -309,6 +330,20 @@ public class ChatbotOrchestrator {
                 && !normalized.contains("tutor")
                 && !normalized.contains("lop")
                 && !normalized.contains("class");
+    }
+
+    private boolean shouldCombinePrivateAndPublicKnowledge(String message) {
+        String normalized = normalize(message);
+        boolean asksOwnData = normalized.contains("cua toi")
+                || normalized.contains("toi co")
+                || normalized.contains("dang hoc")
+                || normalized.contains("dang day");
+        boolean asksExplanation = normalized.contains("la gi")
+                || normalized.contains("hoat dong")
+                || normalized.contains("quy dinh")
+                || normalized.contains("tai sao")
+                || normalized.contains("nhu the nao");
+        return asksOwnData && asksExplanation;
     }
 
     private List<SourceReference> sources(List<KnowledgeSearchHit> hits) {

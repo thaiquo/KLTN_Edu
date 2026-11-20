@@ -38,6 +38,29 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
+        if (isOperationalReadPath(request)) {
+            try {
+                Claims claims = Jwts.parser().verifyWith(secretKey).build()
+                        .parseSignedClaims(request.getHeader("X-Service-Token")).getPayload();
+                if (!"api-gateway".equals(claims.getSubject())
+                        || !"operational-read".equals(claims.get("serviceScope", String.class))
+                        || claims.getExpiration() == null
+                        || claims.getExpiration().before(new Date())) {
+                    throw new IllegalArgumentException("Invalid service identity");
+                }
+                var principal = new LearningUserPrincipal("api-gateway@internal", null, "ADMIN");
+                SecurityContextHolder.getContext().setAuthentication(
+                        new UsernamePasswordAuthenticationToken(principal, null,
+                                List.of(new SimpleGrantedAuthority("ROLE_INTERNAL_OPERATIONAL"),
+                                        new SimpleGrantedAuthority("ROLE_ADMIN"))));
+            } catch (Exception error) {
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                return;
+            }
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         if (request.getRequestURI().startsWith("/api/learning/internal/")) {
             try {
                 Claims claims = Jwts.parser().verifyWith(secretKey).build()
@@ -132,6 +155,15 @@ public class CookieJwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isOperationalReadPath(HttpServletRequest request) {
+        if (!"GET".equalsIgnoreCase(request.getMethod())
+                || request.getHeader("X-Service-Token") == null) return false;
+        String uri = request.getRequestURI();
+        return "/api/admin/tutor-subject-registrations".equals(uri)
+                || "/api/admin/classes".equals(uri)
+                || "/api/community/moderation/queue".equals(uri);
     }
 
     private String expectedServiceScope(String requestUri) {

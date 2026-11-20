@@ -47,7 +47,7 @@ public class TutorSemanticIndexService {
         this.vectorStore = vectorStore;
     }
 
-    public SyncResult sync(Integer maxCapabilities) {
+    public synchronized SyncResult sync(Integer maxCapabilities) {
         vectorStore.initializeCollection();
         List<TutorCandidate> tutors = sourceClient.findEligibleTutorsForSemanticIndexing();
         List<TutorSemanticCapability> capabilities = tutors.stream()

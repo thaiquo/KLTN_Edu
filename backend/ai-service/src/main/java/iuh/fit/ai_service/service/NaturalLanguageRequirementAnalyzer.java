@@ -3,6 +3,7 @@ package iuh.fit.ai_service.service;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.AnalyzeRequirementRequest;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.AnalyzeRequirementResponse;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.Budget;
+import iuh.fit.ai_service.dto.RequirementAnalysisDtos.ConstraintMode;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.ExtractedRequirement;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.ExtractionStatus;
 import iuh.fit.ai_service.dto.RequirementAnalysisDtos.GeminiRequirementExtraction;
@@ -18,6 +19,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class NaturalLanguageRequirementAnalyzer {
@@ -25,6 +28,14 @@ public class NaturalLanguageRequirementAnalyzer {
     private static final int MAX_LIST_ITEM_LENGTH = 120;
     private static final int MAX_LIST_ITEMS = 12;
     private static final BigDecimal MAX_REASONABLE_BUDGET = BigDecimal.valueOf(10_000_000);
+    private static final Pattern EXPLICIT_TIME_RANGE = Pattern.compile(
+            "(?iu)(?<!\\d)(\\d{1,2})(?:(:|h)\\s*(\\d{1,2})?)?\\s*(giờ)?\\s*(sáng|chiều|tối)?\\s*"
+                    + "(?:-|–|—|đến|tới)\\s*"
+                    + "(\\d{1,2})(?:(:|h)\\s*(\\d{1,2})?)?\\s*(giờ)?\\s*(sáng|chiều|tối)?"
+    );
+    private static final Pattern TOEIC_TARGET_SCORE = Pattern.compile(
+            "(?iu)(?:toeic\\s*|(?:mục\\s*tiêu|đạt|band)\\s*)(\\d{3})\\s*\\+?"
+    );
 
     private final RequirementExtractionClient extractionClient;
 
@@ -44,7 +55,7 @@ public class NaturalLanguageRequirementAnalyzer {
             );
         }
 
-        ExtractedRequirement requirement = normalizeRequirement(extraction);
+        ExtractedRequirement requirement = normalizeRequirement(extraction, message);
         List<String> missing = missingRequiredFields(requirement);
         ExtractionStatus status = missing.isEmpty() ? ExtractionStatus.EXTRACTED : ExtractionStatus.NEEDS_CLARIFICATION;
         return new AnalyzeRequirementResponse(
@@ -55,18 +66,115 @@ public class NaturalLanguageRequirementAnalyzer {
         );
     }
 
-    private ExtractedRequirement normalizeRequirement(GeminiRequirementExtraction extraction) {
+    private ExtractedRequirement normalizeRequirement(GeminiRequirementExtraction extraction, String sourceMessage) {
         return new ExtractedRequirement(
                 trimToNull(extraction.subjectHint()),
-                trimToNull(extraction.levelHint()),
+                normalizeLevelHint(extraction, sourceMessage),
                 extraction.teachingMode(),
                 normalizeBudget(extraction.budget()),
-                normalizeSchedules(extraction.preferredSchedules()),
+                enrichExplicitTimeRange(normalizeSchedules(extraction.preferredSchedules()), sourceMessage),
                 trimToNull(extraction.learningGoal()),
                 cleanList(extraction.weakTopics()),
                 cleanList(extraction.tutorPreferences()),
-                trimToNull(extraction.locationHint())
+                trimToNull(extraction.locationHint()),
+                normalizeScheduleMode(extraction.scheduleConstraintMode(), sourceMessage),
+                normalizeBudgetMode(extraction.budgetConstraintMode(), sourceMessage)
         );
+    }
+
+    private ConstraintMode normalizeScheduleMode(ConstraintMode extracted, String sourceMessage) {
+        if (extracted != null) return extracted;
+        String source = normalizeText(sourceMessage == null ? "" : sourceMessage);
+        if (source.matches(".*(?:chi co the|bat buoc|khong the).*hoc.*")) return ConstraintMode.HARD;
+        return ConstraintMode.SOFT;
+    }
+
+    private ConstraintMode normalizeBudgetMode(ConstraintMode extracted, String sourceMessage) {
+        if (extracted != null) return extracted;
+        String source = normalizeText(sourceMessage == null ? "" : sourceMessage);
+        if (source.matches(".*(?:ngan sach|hoc phi).*(?:toi da|khong qua|bat buoc).*")) return ConstraintMode.HARD;
+        if (source.matches(".*(?:toi da|khong qua).*(?:ngan sach|hoc phi).*")) return ConstraintMode.HARD;
+        return ConstraintMode.SOFT;
+    }
+
+    private String normalizeLevelHint(GeminiRequirementExtraction extraction, String sourceMessage) {
+        String extracted = trimToNull(extraction.levelHint());
+        if (extracted != null) {
+            return extracted;
+        }
+        String subject = trimToNull(extraction.subjectHint());
+        if (subject == null || !normalizeText(subject).contains("toeic") || !StringUtils.hasText(sourceMessage)) {
+            return null;
+        }
+        Matcher matcher = TOEIC_TARGET_SCORE.matcher(sourceMessage);
+        while (matcher.find()) {
+            int score;
+            try {
+                score = Integer.parseInt(matcher.group(1));
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+            if (score >= 100 && score <= 990) {
+                return score + "+";
+            }
+        }
+        return null;
+    }
+
+    private String normalizeText(String value) {
+        return java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}+", "")
+                .toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private List<PreferredSchedule> enrichExplicitTimeRange(List<PreferredSchedule> schedules, String sourceMessage) {
+        if (schedules.isEmpty() || !StringUtils.hasText(sourceMessage)) {
+            return schedules;
+        }
+        List<TimeRange> ranges = explicitTimeRanges(sourceMessage);
+        if (ranges.size() != 1) {
+            return schedules;
+        }
+        TimeRange range = ranges.getFirst();
+        return schedules.stream()
+                .map(schedule -> schedule.startTime() == null && schedule.endTime() == null
+                        ? new PreferredSchedule(schedule.dayOfWeek(), range.start(), range.end(), schedule.timeOfDayHint())
+                        : schedule)
+                .toList();
+    }
+
+    private List<TimeRange> explicitTimeRanges(String sourceMessage) {
+        Set<TimeRange> ranges = new LinkedHashSet<>();
+        Matcher matcher = EXPLICIT_TIME_RANGE.matcher(sourceMessage);
+        while (matcher.find()) {
+            boolean hasExplicitTimeMarker = matcher.group(2) != null || matcher.group(4) != null
+                    || matcher.group(7) != null || matcher.group(9) != null;
+            if (!hasExplicitTimeMarker) {
+                continue;
+            }
+            LocalTime start = parseVietnameseTime(matcher.group(1), matcher.group(3), matcher.group(5), matcher.group(10));
+            LocalTime end = parseVietnameseTime(matcher.group(6), matcher.group(8), matcher.group(10), matcher.group(5));
+            if (start != null && end != null && start.isBefore(end)) {
+                ranges.add(new TimeRange(start.toString(), end.toString()));
+            }
+        }
+        return List.copyOf(ranges);
+    }
+
+    private LocalTime parseVietnameseTime(String hourText, String minuteText, String ownPeriod, String sharedPeriod) {
+        try {
+            int hour = Integer.parseInt(hourText);
+            int minute = minuteText == null ? 0 : Integer.parseInt(minuteText);
+            String period = ownPeriod == null ? sharedPeriod : ownPeriod;
+            if (period != null && (period.equalsIgnoreCase("chiều") || period.equalsIgnoreCase("tối")) && hour < 12) {
+                hour += 12;
+            } else if (period != null && period.equalsIgnoreCase("sáng") && hour == 12) {
+                hour = 0;
+            }
+            return LocalTime.of(hour, minute);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     private Budget normalizeBudget(Budget budget) {
@@ -184,7 +292,8 @@ public class NaturalLanguageRequirementAnalyzer {
     }
 
     private ExtractedRequirement emptyRequirement() {
-        return new ExtractedRequirement(null, null, null, null, List.of(), null, List.of(), List.of(), null);
+        return new ExtractedRequirement(null, null, null, null, List.of(), null, List.of(), List.of(), null,
+                ConstraintMode.SOFT, ConstraintMode.SOFT);
     }
 
     private String trimToNull(String value) {
@@ -196,5 +305,8 @@ public class NaturalLanguageRequirementAnalyzer {
 
     private String limitLength(String value, int maxLength) {
         return value.length() <= maxLength ? value : value.substring(0, maxLength);
+    }
+
+    private record TimeRange(String start, String end) {
     }
 }

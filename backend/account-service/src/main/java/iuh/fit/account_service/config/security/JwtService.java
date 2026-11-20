@@ -111,6 +111,18 @@ public class JwtService {
         }
     }
 
+    public boolean isServiceTokenValid(String token, String subject, String scope) {
+        try {
+            Claims claims = getClaims(token);
+            return subject.equals(claims.getSubject())
+                    && scope.equals(claims.get("serviceScope", String.class))
+                    && claims.getExpiration() != null
+                    && claims.getExpiration().after(new Date());
+        } catch (Exception error) {
+            return false;
+        }
+    }
+
     public long getExpirationMillis() {
         return expiration;
     }

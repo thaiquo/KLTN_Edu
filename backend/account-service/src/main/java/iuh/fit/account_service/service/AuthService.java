@@ -34,6 +34,7 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -54,6 +55,36 @@ public class AuthService {
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    private final LoginProtection loginProtection;
+
+    @Autowired
+    public AuthService(
+            UserRepository userRepository,
+            UserRoleRepository userRoleRepository,
+            StudentRepository studentRepository,
+            TutorRepository tutorRepository,
+            TutorApplicationRepository tutorApplicationRepository,
+            OtpVerificationRepository otpRepository,
+            PasswordEncoder passwordEncoder,
+            OtpService otpService,
+            AuthenticationManager authenticationManager,
+            JwtService jwtService,
+            RefreshTokenService refreshTokenService,
+            LoginProtection loginProtection
+    ) {
+        this.userRepository = userRepository;
+        this.userRoleRepository = userRoleRepository;
+        this.studentRepository = studentRepository;
+        this.tutorRepository = tutorRepository;
+        this.tutorApplicationRepository = tutorApplicationRepository;
+        this.otpRepository = otpRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.otpService = otpService;
+        this.authenticationManager = authenticationManager;
+        this.jwtService = jwtService;
+        this.refreshTokenService = refreshTokenService;
+        this.loginProtection = loginProtection;
+    }
 
     public AuthService(
             UserRepository userRepository,
@@ -68,17 +99,9 @@ public class AuthService {
             JwtService jwtService,
             RefreshTokenService refreshTokenService
     ) {
-        this.userRepository = userRepository;
-        this.userRoleRepository = userRoleRepository;
-        this.studentRepository = studentRepository;
-        this.tutorRepository = tutorRepository;
-        this.tutorApplicationRepository = tutorApplicationRepository;
-        this.otpRepository = otpRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.otpService = otpService;
-        this.authenticationManager = authenticationManager;
-        this.jwtService = jwtService;
-        this.refreshTokenService = refreshTokenService;
+        this(userRepository, userRoleRepository, studentRepository, tutorRepository,
+                tutorApplicationRepository, otpRepository, passwordEncoder, otpService,
+                authenticationManager, jwtService, refreshTokenService, LoginProtection.disabled());
     }
 
     @Transactional
@@ -239,7 +262,29 @@ public class AuthService {
     }
 
     public LoginResult login(LoginRequest request) {
+        return login(request, null);
+    }
+
+    public LoginResult login(LoginRequest request, String remoteIp) {
         String normalizedEmail = EmailNormalizer.normalize(request.getEmail());
+        return loginProtection.execute(normalizedEmail, request.getTurnstileToken(), remoteIp,
+                () -> authenticateAndCreateSession(request, normalizedEmail));
+    }
+
+    public LoginResult loginMobile(LoginRequest request, String remoteIp) {
+        String normalizedEmail = EmailNormalizer.normalize(request.getEmail());
+        return loginProtection.executeMobile(normalizedEmail, remoteIp,
+                () -> authenticateAndCreateSession(request, normalizedEmail));
+    }
+
+    private LoginResult authenticateAndCreateSession(LoginRequest request, String normalizedEmail) {
+        authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(
+                        normalizedEmail,
+                        request.getPassword()
+                )
+        );
+
         User user = userRepository.findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
 
@@ -250,13 +295,6 @@ public class AuthService {
         if (user.getAccountStatus() != AccountStatus.ACTIVE) {
             throw new ForbiddenException("Account is not allowed to login");
         }
-
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        normalizedEmail,
-                        request.getPassword()
-                )
-        );
 
         List<UserRole> userRoles = userRoleRepository.findByUserId(user.getId());
         List<String> roles = userRoles.stream()

@@ -89,7 +89,9 @@ public class CatalogGroundingService {
                 input.weakTopics() == null ? List.of() : input.weakTopics(),
                 input.tutorPreferences() == null ? List.of() : input.tutorPreferences(),
                 input.teachingMode() == TeachingMode.ONLINE ? null : trimToNull(input.locationHint()),
-                locationResolution.location()
+                locationResolution.location(),
+                input.scheduleConstraintMode(),
+                input.budgetConstraintMode()
         );
 
         boolean coreReady = grounded.subject() != null && grounded.level() != null && grounded.teachingMode() != null;

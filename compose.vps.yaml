@@ -62,6 +62,27 @@ services:
       - no-new-privileges:true
     logging: *bounded-logging
 
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    networks:
+      - educonnect
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    mem_limit: ${REDIS_MEMORY_LIMIT:-256m}
+    security_opt:
+      - no-new-privileges:true
+    logging: *bounded-logging
+
   gotenberg:
     image: gotenberg/gotenberg:8
     restart: unless-stopped
@@ -116,10 +137,22 @@ services:
       S3_KEY_PREFIX: ${S3_KEY_PREFIX:-production}
       STAFF_DUTY_ENFORCEMENT_ENABLED: ${STAFF_DUTY_ENFORCEMENT_ENABLED:-true}
       STAFF_DUTY_AUTO_SCHEDULING_ENABLED: ${STAFF_DUTY_AUTO_SCHEDULING_ENABLED:-true}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      LOGIN_PROTECTION_ENABLED: "true"
+      LOGIN_FAILURE_THRESHOLD: ${LOGIN_FAILURE_THRESHOLD:-3}
+      LOGIN_FAILURE_WINDOW: ${LOGIN_FAILURE_WINDOW:-10m}
+      TURNSTILE_ENABLED: "true"
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:?TURNSTILE_SECRET_KEY is required}
+      TURNSTILE_EXPECTED_ACTION: login
+      TURNSTILE_ALLOWED_HOSTNAMES: ${DOMAIN:?DOMAIN is required}
     depends_on:
       postgres:
         condition: service_healthy
       rabbitmq:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     mem_limit: ${ACCOUNT_MEMORY_LIMIT:-640m}
 
@@ -272,6 +305,15 @@ services:
       LEARNING_SERVICE_WS_URL: ws://learning-service:8082
       NOTIFICATION_SERVICE_WS_URL: ws://notification-service:8084
       CORS_ALLOWED_ORIGIN_PATTERNS: https://${DOMAIN:?DOMAIN is required}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      LOGIN_IP_RATE_LIMIT_ENABLED: "true"
+      LOGIN_IP_RATE_LIMIT_REQUESTS: ${LOGIN_IP_RATE_LIMIT_REQUESTS:-20}
+      LOGIN_IP_RATE_LIMIT_WINDOW: ${LOGIN_IP_RATE_LIMIT_WINDOW:-1m}
+      LOGIN_TRUSTED_PROXY_CIDRS: ${LOGIN_TRUSTED_PROXY_CIDRS:-172.16.0.0/12}
+      OPERATIONS_SLA_SCHEDULER_ENABLED: ${OPERATIONS_SLA_SCHEDULER_ENABLED:-false}
+      OPERATIONS_SLA_NOTIFICATIONS_ENABLED: ${OPERATIONS_SLA_NOTIFICATIONS_ENABLED:-false}
     depends_on:
       account-service:
         condition: service_started
@@ -281,6 +323,8 @@ services:
         condition: service_started
       notification-service:
         condition: service_started
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/actuator/health || exit 1"]
       interval: 15s
@@ -377,5 +421,6 @@ volumes:
   postgres_data:
   rabbitmq_data:
   qdrant_data:
+  redis_data:
   caddy_data:
   caddy_config:

@@ -1,0 +1,48 @@
+{
+  "manifestVersion": "p5-reproducibility-v2",
+  "createdAt": "2026-11-13T01:15:00+07:00",
+  "branch": "community-moderation-fix",
+  "head": "f0b9484b919f9eac7465d47555ac82f87ce43e95",
+  "datasetVersion": "p4-tutor-matching-v1",
+  "datasetHash": "110bc7c367acb0ba6a6516b1b442b457fd887117f26a4339570cdc973c09972e",
+  "snapshotVersion": "p5-db-evidence-2026-11-13",
+  "candidateSnapshotHash": "ea5060eae20f86ed64cc37d732fcb6325a6999c0947dd85649b2cfb14586654e",
+  "qdrant": {
+    "version": "1.18.3",
+    "collection": "tutor_capabilities_v1",
+    "status": "green",
+    "pointCount": 107,
+    "dimensions": 768,
+    "distance": "Cosine",
+    "hash": "b62650c0c3449476b223f8d61384631ce3f2432c0835631dce33b000608da9c7"
+  },
+  "annotation": {
+    "packageVersion": "p5-annotation-package-v2",
+    "packageSha256": "6bd520059336a43a53337dcdc9b76abab44f7208019adfbd97d892e05994f6a2",
+    "annotatorASha256": "8aaec32cae5584bda600dcedf63faa02ff634807763a91c49dce6892c87fc1a3",
+    "annotatorBSha256": "200f2290ae9c8a230e831d23f2efe437a7d72957a0c4f566f03478c3ae871d3b",
+    "adjudicationSha256": "a17a743e55e4cc9b46c932ceb30a2fd7f771d8e7621b16dedf08bff9107cd500",
+    "queryCount": 60,
+    "pseudonymousTutorCount": 21,
+    "pairCount": 300,
+    "hardViolationPairCount": 80,
+    "completedHumanLabelRows": 0,
+    "status": "WAITING_FOR_HUMAN_LABELS"
+  },
+  "benchmark": {
+    "status": "AUTH_BLOCKED",
+    "requiredEnvironmentVariables": [
+      "BENCHMARK_STUDENT_EMAIL",
+      "BENCHMARK_STUDENT_PASSWORD",
+      "BENCHMARK_STAFF_EMAIL",
+      "BENCHMARK_STAFF_PASSWORD"
+    ],
+    "expectedCandidateSnapshotHash": "ea5060eae20f86ed64cc37d732fcb6325a6999c0947dd85649b2cfb14586654e",
+    "independentLabels": "WAITING_FOR_HUMAN_LABELS"
+  },
+  "notes": [
+    "Annotation v1 artifacts are preserved; v2 adds pair-level evidence and UTF-8 BOM without changing the frozen query or candidate snapshot.",
+    "No relevance metric may be reported until two independent human label sets and adjudication pass evaluator validation.",
+    "P4 functional benchmark results must not be mixed with this P5 candidate snapshot."
+  ]
+}

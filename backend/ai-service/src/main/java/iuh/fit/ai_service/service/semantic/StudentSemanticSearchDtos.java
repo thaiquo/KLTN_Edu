@@ -10,6 +10,13 @@ public final class StudentSemanticSearchDtos {
 
     public enum SemanticSearchStatus {
         APPLICABLE,
+        NO_CONTEXT,
+        INDEX_EMPTY,
+        QDRANT_UNAVAILABLE,
+        EMBEDDING_FAILURE,
+        NO_VALID_SEMANTIC_HITS,
+        /** @deprecated kept only for clients compiled against the earlier contract. */
+        @Deprecated
         NOT_APPLICABLE
     }
 

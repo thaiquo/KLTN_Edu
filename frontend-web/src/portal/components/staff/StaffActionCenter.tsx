@@ -9,6 +9,7 @@ import {
   GraduationCap,
   History,
   Layers,
+  MessageSquareWarning,
   RefreshCw,
   Scale,
   ShieldAlert,
@@ -26,6 +27,8 @@ import { terminationsApi, TerminationView } from "../../../api/terminationsApi";
 import { useAuth } from "../../../hooks/useAuth";
 import { useRealtimeRefresh } from "../../../realtime/useRealtimeRefresh";
 import { fetchUserDirectory, getUserDisplayName, UserSummary } from "../../../utils/userDisplay";
+import { buildActionQueueSnapshot, projectAdditionalWorkItemQueues, projectSlaPresentation } from "./actionCenterState";
+import { operationalWorkItemsApi } from "../../../api/operationalReports";
 
 interface StaffActionCenterProps {
   onNavigate: (page: string, subtab?: string) => void;
@@ -33,7 +36,7 @@ interface StaffActionCenterProps {
 
 interface UrgentItem {
   id: string;
-  domain: "TUTOR_PROFILE" | "TEACHING_REGISTRATION" | "CLASS_ROOM" | "DISPUTE" | "TERMINATION";
+  domain: "TUTOR_PROFILE" | "TEACHING_REGISTRATION" | "CLASS_ROOM" | "DISPUTE" | "TERMINATION" | "COMMUNITY_MODERATION" | "SUPPORT_TICKET";
   domainLabel: string;
   title: string;
   subtitle: string;
@@ -45,9 +48,28 @@ interface UrgentItem {
   urgencyTone: "rose" | "amber" | "blue";
   targetPage: string;
   targetSubtab?: string;
+  dueAt?: string | null;
+  slaState?: "NORMAL" | "DUE_SOON" | "OVERDUE" | "NOT_APPLICABLE";
 }
 
-const pageItems = (value: any) => Array.isArray(value?.content) ? value.content : Array.isArray(value) ? value : [];
+type QueueKey = "tutors" | "teaching" | "classes" | "disputes" | "terminations" | "community" | "support";
+type QueueTotals = Record<QueueKey, number | null>;
+
+interface OperationalWorkItem {
+  source: "COMMUNITY_MODERATION" | "SUPPORT_TICKET" | string;
+  resourceId: string;
+  title: string;
+  status: string;
+  priority: "HIGH" | "MEDIUM" | "NORMAL";
+  assignee?: string | null;
+  createdAt?: string | null;
+  claimable: boolean;
+  dueAt?: string | null;
+  slaState: "NORMAL" | "DUE_SOON" | "OVERDUE" | "NOT_APPLICABLE";
+  remainingMinutes?: number | null;
+  overdueByMinutes?: number | null;
+  slaPolicyId?: string | null;
+}
 
 export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
   const { user } = useAuth();
@@ -56,6 +78,11 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [queueErrors, setQueueErrors] = useState<Partial<Record<QueueKey, string>>>({});
+  const [queueTotals, setQueueTotals] = useState<QueueTotals>({
+    tutors: null, teaching: null, classes: null, disputes: null, terminations: null,
+    community: null, support: null
+  });
   const [users, setUsers] = useState<UserSummary[]>([]);
 
   // Raw pending lists
@@ -64,6 +91,8 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
   const [classes, setClasses] = useState<any[]>([]);
   const [disputes, setDisputes] = useState<DisputeDto[]>([]);
   const [terminations, setTerminations] = useState<TerminationView[]>([]);
+  const [additionalWorkItems, setAdditionalWorkItems] = useState<OperationalWorkItem[]>([]);
+  const [allWorkItems, setAllWorkItems] = useState<OperationalWorkItem[]>([]);
 
   const loadAll = async (opts?: boolean | unknown) => {
     const isSilent = opts === true;
@@ -72,28 +101,44 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
     }
     setError("");
     try {
-      const [
-        userList,
-        tutorPendingList,
-        teachingPendingList,
-        classList,
-        disputePage,
-        terminationPage
-      ] = await Promise.all([
+      const results = await Promise.allSettled([
         fetchUserDirectory(),
-        staffTutorApi.pending({ page: 0, size: 10 }).catch(() => ({ content: [] })),
-        teachingRegistrationApi.adminPending({ page: 0, size: 10 }).catch(() => ({ content: [] })),
-        classApi.adminGetAllClasses({ page: 0, size: 10, status: "PENDING_APPROVAL" }).catch(() => ({ content: [] })),
-        contractsApi.listDisputes({ statusGroup: "PENDING", page: 0, size: 10 }).catch(() => ({ content: [] })),
-        terminationsApi.page({ page: 0, size: 10 }).catch(() => ({ content: [] }))
+        staffTutorApi.pending({ page: 0, size: 10 }),
+        teachingRegistrationApi.adminPending({ page: 0, size: 10 }),
+        classApi.adminGetAllClasses({ page: 0, size: 10, status: "PENDING_APPROVAL" }),
+        contractsApi.listDisputes({ statusGroup: "PENDING", page: 0, size: 10 }),
+        terminationsApi.page({ page: 0, size: 10, statusGroup: "PENDING" }),
+        operationalWorkItemsApi.page({ page: 0, size: 50 })
       ]);
+      const [usersResult, tutorsResult, teachingResult, classesResult, disputesResult, terminationsResult, workItemsResult] = results;
+      setUsers(usersResult.status === "fulfilled" && Array.isArray(usersResult.value) ? usersResult.value : []);
 
-      setUsers(Array.isArray(userList) ? userList : []);
-      setPendingTutors(pageItems(tutorPendingList));
-      setPendingTeaching(pageItems(teachingPendingList));
-      setClasses(pageItems(classList));
-      setDisputes(Array.isArray(disputePage?.content) ? disputePage.content : Array.isArray(disputePage) ? disputePage : []);
-      setTerminations(pageItems(terminationPage));
+      const snapshot = buildActionQueueSnapshot([
+        tutorsResult, teachingResult, classesResult, disputesResult, terminationsResult
+      ]);
+      setPendingTutors(snapshot.items.tutors);
+      setPendingTeaching(snapshot.items.teaching);
+      setClasses(snapshot.items.classes);
+      setDisputes(snapshot.items.disputes);
+      setTerminations(snapshot.items.terminations);
+      const totals: QueueTotals = { ...(snapshot.totals as Omit<QueueTotals, "community" | "support">), community: null, support: null };
+      const errors: Partial<Record<QueueKey, string>> = { ...snapshot.errors };
+      if (workItemsResult.status === "fulfilled") {
+        const projected = projectAdditionalWorkItemQueues(workItemsResult.value);
+        totals.community = projected.totals.community;
+        totals.support = projected.totals.support;
+        Object.assign(errors, projected.errors);
+        setAdditionalWorkItems(projected.items);
+        setAllWorkItems(Array.isArray(workItemsResult.value?.content) ? workItemsResult.value.content : []);
+      } else {
+        errors.community = "Không thể tải nguồn Community";
+        errors.support = "Không thể tải nguồn Help Desk";
+        setAdditionalWorkItems([]);
+        setAllWorkItems([]);
+      }
+      setQueueTotals(totals);
+      setQueueErrors(errors);
+      if (Object.keys(errors).length === 7) setError("Không thể tải các hàng đợi tác nghiệp. Vui lòng thử lại.");
     } catch (err: any) {
       setError(err?.message || "Không thể tải dữ liệu Trung tâm tác nghiệp.");
     } finally {
@@ -151,14 +196,10 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
   // Build urgent prioritized queue
   const urgentQueue = useMemo<UrgentItem[]>(() => {
     const list: UrgentItem[] = [];
-    const now = Date.now();
 
     // 1. Disputes
     activeDisputes.forEach((d) => {
-      const deadlineMs = d.tutorResponseDeadline ? new Date(d.tutorResponseDeadline).getTime() : 0;
-      const isUrgentDeadline = deadlineMs > 0 && deadlineMs - now < 24 * 3600 * 1000 && deadlineMs > now;
-      const isExpiredResponse = deadlineMs > 0 && now >= deadlineMs;
-      const isReady = d.readyForResolution || isExpiredResponse || Boolean(d.tutorResponse);
+      const isReady = d.readyForResolution || Boolean(d.tutorResponse);
 
       let urgency: UrgentItem["urgency"] = "NORMAL";
       let urgencyLabel = "Khiếu nại đang mở";
@@ -168,10 +209,6 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         urgency = "HIGH";
         urgencyLabel = "Sẵn sàng phân xử";
         urgencyTone = "rose";
-      } else if (isUrgentDeadline) {
-        urgency = "MEDIUM";
-        urgencyLabel = "Hạn trả lời < 24h";
-        urgencyTone = "amber";
       }
 
       const complainant = getUserDisplayName(d.studentEmail, users, d.studentName || "Học viên");
@@ -272,19 +309,65 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
       });
     });
 
-    // Sort: HIGH first, then MEDIUM, then NORMAL; tie-breaker: newest first
+    additionalWorkItems.forEach((workItem) => {
+      if (workItem.source !== "COMMUNITY_MODERATION" && workItem.source !== "SUPPORT_TICKET") return;
+      const community = workItem.source === "COMMUNITY_MODERATION";
+      list.push({
+        id: `${workItem.source}-${workItem.resourceId}`,
+        domain: workItem.source,
+        domainLabel: community ? "Kiểm duyệt Community" : "Help Desk",
+        title: workItem.title,
+        subtitle: community
+          ? `Trạng thái kiểm duyệt: ${workItem.status}`
+          : `${workItem.claimable ? "Chưa có người tiếp nhận" : `Phụ trách: ${workItem.assignee || "đã phân công"}`} · ${workItem.status}`,
+        createdAt: workItem.createdAt || undefined,
+        urgency: workItem.priority,
+        urgencyLabel: workItem.priority === "HIGH" ? "Cần xử lý sớm" : community ? "Chờ kiểm duyệt" : "Yêu cầu hỗ trợ",
+        urgencyTone: workItem.priority === "HIGH" ? "rose" : workItem.priority === "MEDIUM" ? "amber" : "blue",
+        targetPage: community ? "community-moderation" : "help"
+      });
+    });
+
+    const sourcePrefix: Record<string, string> = {
+      TUTOR_APPLICATION: "tutor",
+      TEACHING_REGISTRATION: "teach",
+      CLASS_APPROVAL: "class",
+      DISPUTE: "dispute",
+      TERMINATION: "term"
+    };
+    const slaByItemId = new Map<string, OperationalWorkItem>();
+    allWorkItems.forEach((workItem) => {
+      const prefix = sourcePrefix[workItem.source];
+      if (prefix) slaByItemId.set(`${prefix}-${workItem.resourceId}`, workItem);
+      slaByItemId.set(`${workItem.source}-${workItem.resourceId}`, workItem);
+    });
+    const withServerSla = list.map((item) => {
+      const sla = slaByItemId.get(item.id);
+      if (!sla) return item;
+      return { ...item, ...projectSlaPresentation(sla, {
+        urgency: item.urgency,
+        urgencyTone: item.urgencyTone,
+        urgencyLabel: item.urgencyLabel
+      }) };
+    });
+
+    // Backend SLA is authoritative; priority remains the tie-breaker for equal SLA states.
     const urgencyWeight = { HIGH: 3, MEDIUM: 2, NORMAL: 1 };
-    return list.sort((a, b) => {
+    const slaWeight = { OVERDUE: 4, DUE_SOON: 3, NORMAL: 2, NOT_APPLICABLE: 1 };
+    return withServerSla.sort((a, b) => {
+      const slaDiff = slaWeight[b.slaState || "NOT_APPLICABLE"] - slaWeight[a.slaState || "NOT_APPLICABLE"];
+      if (slaDiff !== 0) return slaDiff;
       const weightDiff = urgencyWeight[b.urgency] - urgencyWeight[a.urgency];
       if (weightDiff !== 0) return weightDiff;
       return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
     });
-  }, [activeDisputes, pendingClasses, pendingTeaching, pendingTerminations, pendingTutors, users]);
+  }, [activeDisputes, additionalWorkItems, allWorkItems, pendingClasses, pendingTeaching, pendingTerminations, pendingTutors, users]);
 
-  const totalPendingWork = pendingTutors.length + pendingTeaching.length + pendingClasses.length + activeDisputes.length + pendingTerminations.length;
+  const knownPendingWork = Object.values(queueTotals).reduce<number>((sum, value) => sum + (value ?? 0), 0);
+  const hasUnavailableQueue = Object.values(queueTotals).some((value) => value == null);
 
   return (
-    <div className="min-h-[calc(100vh-96px)] bg-[#f3f6f9] p-0 font-sans text-[#073554]">
+    <div data-testid="staff-action-center" className="min-h-[calc(100vh-96px)] bg-[#f3f6f9] p-0 font-sans text-[#073554]">
       {/* Header Banner */}
       <header className="mb-5 flex flex-col gap-4 border border-[#d7dde6] bg-white px-6 py-5 shadow-sm xl:flex-row xl:items-center xl:justify-between">
         <div>
@@ -300,7 +383,9 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
           </h1>
           <p className="mt-1 text-xs font-semibold text-slate-500">
             Xin chào <strong className="text-[#073554]">{user?.fullName || staffEmail}</strong>. Bạn hiện có{" "}
-            <strong className="text-rose-600">{loading ? "..." : totalPendingWork} việc</strong> đang chờ xử lý trên 5 nghiệp vụ.
+            <strong className="text-rose-600">
+              {loading ? "..." : hasUnavailableQueue ? `ít nhất ${knownPendingWork} việc` : `${knownPendingWork} việc`}
+            </strong> đang chờ xử lý trên 7 nghiệp vụ.
           </p>
         </div>
 
@@ -323,14 +408,21 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
           <span>{error}</span>
         </div>
       )}
+      {!error && Object.keys(queueErrors).length > 0 && (
+        <div className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-bold text-amber-800 shadow-sm">
+          <span>Dữ liệu tải một phần: {Object.keys(queueErrors).length}/7 nguồn chưa khả dụng. Các tổng còn lại vẫn là số liệu thật.</span>
+          <button type="button" onClick={loadAll} className="shrink-0 underline underline-offset-2">Thử lại</button>
+        </div>
+      )}
 
       {/* 5 Core Action Hub Cards */}
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {/* 1. Tutor Profiles */}
         <ActionHubCard
           icon={UserCheck}
           title="Hồ sơ gia sư"
-          count={pendingTutors.length}
+          count={queueTotals.tutors}
+          error={queueErrors.tutors}
           countLabel="hồ sơ chờ duyệt"
           description="Kiểm tra CCCD, hộ chiếu và xác minh danh tính gia sư mới."
           badgeTone="amber"
@@ -343,7 +435,8 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         <ActionHubCard
           icon={BookOpen}
           title="Đăng ký môn dạy"
-          count={pendingTeaching.length}
+          count={queueTotals.teaching}
+          error={queueErrors.teaching}
           countLabel="yêu cầu chờ duyệt"
           description="Bằng cấp chuyên môn, kinh nghiệm và đề xuất môn học mới."
           badgeTone="indigo"
@@ -356,7 +449,8 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         <ActionHubCard
           icon={GraduationCap}
           title="Lớp học mới"
-          count={pendingClasses.length}
+          count={queueTotals.classes}
+          error={queueErrors.classes}
           countLabel="lớp chờ phê duyệt"
           description="Đối soát học phí, lộ trình giáo trình và lịch học trực tuyến/trực tiếp."
           badgeTone="emerald"
@@ -369,7 +463,8 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         <ActionHubCard
           icon={ShieldAlert}
           title="Quản lý khiếu nại"
-          count={activeDisputes.length}
+          count={queueTotals.disputes}
+          error={queueErrors.disputes}
           countLabel="khiếu nại đang mở"
           description="Xử lý tranh chấp buổi học, xem giải trình gia sư và phán quyết Escrow."
           badgeTone="rose"
@@ -382,12 +477,39 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
         <ActionHubCard
           icon={ShieldCheck}
           title="Hồ sơ dừng hợp đồng"
-          count={pendingTerminations.length}
+          count={queueTotals.terminations}
+          error={queueErrors.terminations}
           countLabel="hồ sơ đang theo dõi"
           description="Theo dõi hồ sơ chấm dứt của lớp được phân công; Admin trực tiếp xử lý và quyết định."
           badgeTone="purple"
           actionLabel="Xem hồ sơ"
           onClick={() => onNavigate("contracts")}
+          loading={loading}
+        />
+
+        <ActionHubCard
+          icon={ShieldAlert}
+          title="Kiểm duyệt Community"
+          count={queueTotals.community}
+          error={queueErrors.community}
+          countLabel="bài viết cần xem xét"
+          description="Xử lý bài bị báo cáo hoặc AI chuyển sang kiểm duyệt thủ công. Hàng đợi dùng chung, không tự gán người."
+          badgeTone="amber"
+          actionLabel="Mở kiểm duyệt"
+          onClick={() => onNavigate("community-moderation")}
+          loading={loading}
+        />
+
+        <ActionHubCard
+          icon={MessageSquareWarning}
+          title="Yêu cầu hỗ trợ"
+          count={queueTotals.support}
+          error={queueErrors.support}
+          countLabel="ticket đang mở"
+          description="Tiếp nhận ticket chưa có người phụ trách hoặc tiếp tục xử lý ticket đã được gán cho bạn."
+          badgeTone="blue"
+          actionLabel="Mở Help Desk"
+          onClick={() => onNavigate("help")}
           loading={loading}
         />
       </div>
@@ -453,6 +575,11 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
                             {new Date(item.createdAt).toLocaleString("vi-VN")}
                           </span>
                         )}
+                        {item.dueAt && (
+                          <span className="text-[11px] font-bold text-slate-500">
+                            Hạn: {new Date(item.dueAt).toLocaleString("vi-VN")}
+                          </span>
+                        )}
                       </div>
 
                       <p className="font-extrabold text-sm text-[#073554] truncate" title={item.title}>
@@ -506,27 +633,27 @@ export function StaffActionCenter({ onNavigate }: StaffActionCenterProps) {
 
               <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-center">
                 <p className="text-[10px] font-black uppercase text-slate-400">Tổng việc tồn</p>
-                <p className="mt-1 text-2xl font-black text-rose-600">{totalPendingWork}</p>
-                <p className="text-[10px] text-slate-500 font-semibold mt-0.5">cần giải quyết</p>
+                <p className="mt-1 text-2xl font-black text-rose-600">{hasUnavailableQueue ? `${knownPendingWork}+` : knownPendingWork}</p>
+                <p className="text-[10px] text-slate-500 font-semibold mt-0.5">{hasUnavailableQueue ? "một số nguồn chưa tải" : "cần giải quyết"}</p>
               </div>
             </div>
 
             <div className="pt-2 border-t border-slate-100 space-y-2 text-xs font-semibold text-slate-600">
               <div className="flex items-center justify-between">
                 <span>Hồ sơ CCCD chờ duyệt:</span>
-                <strong className="text-slate-900">{pendingTutors.length}</strong>
+                <strong className="text-slate-900">{queueTotals.tutors ?? "--"}</strong>
               </div>
               <div className="flex items-center justify-between">
                 <span>Lớp học chờ duyệt:</span>
-                <strong className="text-slate-900">{pendingClasses.length}</strong>
+                <strong className="text-slate-900">{queueTotals.classes ?? "--"}</strong>
               </div>
               <div className="flex items-center justify-between">
                 <span>Khiếu nại đang mở:</span>
-                <strong className="text-slate-900">{activeDisputes.length}</strong>
+                <strong className="text-slate-900">{queueTotals.disputes ?? "--"}</strong>
               </div>
               <div className="flex items-center justify-between">
                 <span>Thanh lý đang theo dõi:</span>
-                <strong className="text-slate-900">{pendingTerminations.length}</strong>
+                <strong className="text-slate-900">{queueTotals.terminations ?? "--"}</strong>
               </div>
             </div>
 
@@ -576,24 +703,27 @@ function ActionHubCard({
   badgeTone,
   actionLabel,
   onClick,
-  loading
+  loading,
+  error
 }: {
   icon: any;
   title: string;
-  count: number;
+  count: number | null;
   countLabel: string;
   description: string;
-  badgeTone: "amber" | "indigo" | "emerald" | "rose" | "purple";
+  badgeTone: "amber" | "indigo" | "emerald" | "rose" | "purple" | "blue";
   actionLabel: string;
   onClick: () => void;
   loading: boolean;
+  error?: string;
 }) {
   const toneClasses = {
     amber: "border-amber-200 bg-amber-50/30 text-amber-900 hover:border-amber-400",
     indigo: "border-indigo-200 bg-indigo-50/30 text-indigo-900 hover:border-indigo-400",
     emerald: "border-emerald-200 bg-emerald-50/30 text-emerald-900 hover:border-emerald-400",
     rose: "border-rose-200 bg-rose-50/30 text-rose-900 hover:border-rose-400",
-    purple: "border-purple-200 bg-purple-50/30 text-purple-900 hover:border-purple-400"
+    purple: "border-purple-200 bg-purple-50/30 text-purple-900 hover:border-purple-400",
+    blue: "border-blue-200 bg-blue-50/30 text-blue-900 hover:border-blue-400"
   }[badgeTone];
 
   const badgeClasses = {
@@ -601,7 +731,8 @@ function ActionHubCard({
     indigo: "bg-indigo-100 text-indigo-800",
     emerald: "bg-emerald-100 text-emerald-800",
     rose: "bg-rose-100 text-rose-800",
-    purple: "bg-purple-100 text-purple-800"
+    purple: "bg-purple-100 text-purple-800",
+    blue: "bg-blue-100 text-blue-800"
   }[badgeTone];
 
   return (
@@ -612,13 +743,15 @@ function ActionHubCard({
             <Icon className="h-5 w-5" />
           </div>
           <span className={`rounded-full px-2.5 py-0.5 text-xs font-black ${badgeClasses}`}>
-            {loading ? "..." : count}
+            {loading ? "..." : error ? "!" : count ?? "--"}
           </span>
         </div>
 
         <div>
           <h3 className="font-extrabold text-sm text-[#073554]">{title}</h3>
-          <p className="text-[11px] font-bold text-slate-500 mt-0.5">{loading ? "Đang tải..." : `${count} ${countLabel}`}</p>
+          <p className={`text-[11px] font-bold mt-0.5 ${error ? "text-rose-600" : "text-slate-500"}`}>
+            {loading ? "Đang tải..." : error ? "Không thể tải số liệu" : `${count ?? 0} ${countLabel}`}
+          </p>
         </div>
 
         <p className="text-[11px] text-slate-500 font-medium leading-relaxed">

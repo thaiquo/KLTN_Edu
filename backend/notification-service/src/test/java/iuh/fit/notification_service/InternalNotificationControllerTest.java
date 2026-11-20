@@ -50,4 +50,16 @@ class InternalNotificationControllerTest {
                 .andExpect(status().isOk());
         verify(service).createIfAbsent(any());
     }
+
+    @Test void acceptsGatewayScopedServiceTokenForSlaAlerts() throws Exception {
+        var service = mock(NotificationService.class);
+        var notification = mock(Notification.class);
+        when(notification.getId()).thenReturn(10L);
+        when(service.createIfAbsent(any())).thenReturn(notification);
+        var mvc = MockMvcBuilders.standaloneSetup(new InternalNotificationController(service, SECRET)).build();
+        mvc.perform(post("/api/notifications/internal/send").contentType("application/json").content(BODY)
+                .header("X-Service-Token", token("api-gateway", "notification-send")))
+                .andExpect(status().isOk());
+        verify(service).createIfAbsent(any());
+    }
 }

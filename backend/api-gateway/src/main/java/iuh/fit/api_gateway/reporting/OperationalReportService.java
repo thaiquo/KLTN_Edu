@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.util.UriBuilder;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -17,6 +18,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -29,6 +31,7 @@ import java.util.function.Function;
 public class OperationalReportService {
     static final int SOURCE_PAGE_SIZE = 50;
     static final int MAX_GLOBAL_PAGE = 1_000;
+    static final int MAX_AGGREGATE_ROWS = 10_000;
 
     private final WebClient account;
     private final WebClient learning;
@@ -60,7 +63,7 @@ public class OperationalReportService {
             if (sources.isEmpty()) return Mono.just(ReportPage.empty(page, size));
 
             return Flux.fromIterable(sources)
-                    .flatMap(source -> fetch(source, required), sources.size())
+                    .flatMap(source -> fetchSafe(source, required), sources.size())
                     .collectList()
                     .map(results -> merge(results, page, size));
         }));
@@ -78,6 +81,38 @@ public class OperationalReportService {
                                 HttpStatus.FORBIDDEN, "Operational reports are restricted to Admin")));
     }
 
+    public Mono<ReportSummary> summary(Query query, String cookie, String authorization) {
+        return requireAdmin(cookie, authorization)
+                .then(aggregate(query, cookie, authorization).map(this::summarize));
+    }
+
+    public Mono<byte[]> exportCsv(Query query, String cookie, String authorization) {
+        return requireAdmin(cookie, authorization)
+                .then(aggregate(query, cookie, authorization).map(this::toCsv));
+    }
+
+    private Mono<List<SourceResult>> aggregate(Query query, String cookie, String authorization) {
+        List<SourceRequest> requestedSources = sources(query, cookie, authorization);
+        if (requestedSources.isEmpty()) return Mono.just(List.of());
+        return Flux.fromIterable(requestedSources)
+                .flatMap(this::seedSafe, requestedSources.size())
+                .collectList()
+                .flatMap(seeds -> {
+                    long total = seeds.stream()
+                            .filter(SourceSeed::available)
+                            .mapToLong(seed -> seed.first().totalElements())
+                            .sum();
+                    if (total > MAX_AGGREGATE_ROWS) {
+                        return Mono.error(new ReportLimitExceededException(total, MAX_AGGREGATE_ROWS));
+                    }
+                    return Flux.fromIterable(seeds)
+                            .flatMap(seed -> seed.available()
+                                    ? fetchAllSafe(seed)
+                                    : Mono.just(seed.failure()), seeds.size())
+                            .collectList();
+                });
+    }
+
     ReportPage merge(List<SourceResult> sources, int page, int size) {
         List<Activity> all = sources.stream().flatMap(source -> source.items().stream()).sorted(ACTIVITY_ORDER).toList();
         int from = Math.min(page * size, all.size());
@@ -85,10 +120,60 @@ public class OperationalReportService {
         long total = sources.stream().mapToLong(SourceResult::totalElements).sum();
         int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / size);
         Map<String, Long> totals = new LinkedHashMap<>();
-        sources.forEach(source -> totals.put(source.name(), source.totalElements()));
+        sources.forEach(source -> totals.put(source.name(), source.available() ? source.totalElements() : null));
         return new ReportPage(
                 all.subList(from, to), total, totalPages, page, size,
-                page == 0, page + 1 >= totalPages, from == to, totals);
+                page == 0, page + 1 >= totalPages, from == to, totals,
+                sources.stream().map(SourceResult::health).toList());
+    }
+
+    private Mono<SourceResult> fetchSafe(SourceRequest source, int required) {
+        long started = System.nanoTime();
+        return fetch(source, required)
+                .map(result -> result.withHealth(successHealth(source.name(), started)))
+                .onErrorResume(error -> authorizationFailure(error)
+                        ? Mono.error(error)
+                        : Mono.just(SourceResult.unavailable(source.name(), failureHealth(source.name(), started, error))));
+    }
+
+    private Mono<SourceSeed> seedSafe(SourceRequest source) {
+        long started = System.nanoTime();
+        return fetchPage(source, 0, SOURCE_PAGE_SIZE)
+                .map(first -> SourceSeed.available(source, first, started))
+                .onErrorResume(error -> authorizationFailure(error)
+                        ? Mono.error(error)
+                        : Mono.just(SourceSeed.unavailable(source,
+                                SourceResult.unavailable(source.name(), failureHealth(source.name(), started, error)))));
+    }
+
+    private Mono<SourceResult> fetchAllSafe(SourceSeed seed) {
+        return fetchAll(seed.source(), seed.first())
+                .map(result -> result.withHealth(successHealth(seed.source().name(), seed.startedNanos())))
+                .onErrorResume(error -> authorizationFailure(error)
+                        ? Mono.error(error)
+                        : Mono.just(SourceResult.unavailable(seed.source().name(),
+                                failureHealth(seed.source().name(), seed.startedNanos(), error))));
+    }
+
+    private boolean authorizationFailure(Throwable error) {
+        return error instanceof WebClientResponseException response
+                && (response.getStatusCode().value() == 401 || response.getStatusCode().value() == 403);
+    }
+
+    private SourceHealth successHealth(String source, long startedNanos) {
+        return new SourceHealth(source, SourceAvailability.SUCCESS, elapsedMillis(startedNanos),
+                Instant.now().toString(), null);
+    }
+
+    private SourceHealth failureHealth(String source, long startedNanos, Throwable error) {
+        String code = error instanceof WebClientResponseException response
+                ? "HTTP_" + response.getStatusCode().value()
+                : error.getClass().getSimpleName().toUpperCase(Locale.ROOT);
+        return new SourceHealth(source, SourceAvailability.UNAVAILABLE, elapsedMillis(startedNanos), null, code);
+    }
+
+    private long elapsedMillis(long startedNanos) {
+        return Math.max(0, (System.nanoTime() - startedNanos) / 1_000_000L);
     }
 
     private Mono<SourceResult> fetch(SourceRequest source, int required) {
@@ -109,6 +194,93 @@ public class OperationalReportService {
                         return new SourceResult(source.name(), first.totalElements(), rank(items, 0));
                     });
         });
+    }
+
+    private Mono<SourceResult> fetchAll(SourceRequest source, SourcePage first) {
+        return Mono.defer(() -> {
+            int pageCount = first.totalElements() == 0
+                    ? 0
+                    : (int) Math.ceil((double) first.totalElements() / SOURCE_PAGE_SIZE);
+            if (pageCount <= 1) {
+                return Mono.just(new SourceResult(source.name(), first.items().size(), rank(first.items(), 0)));
+            }
+            return Flux.range(1, pageCount - 1)
+                    .concatMap(index -> fetchPage(source, index, SOURCE_PAGE_SIZE))
+                    .map(SourcePage::items)
+                    .startWith(first.items())
+                    .collectList()
+                    .map(pages -> {
+                        List<Activity> items = pages.stream().flatMap(List::stream).toList();
+                        return new SourceResult(source.name(), items.size(), rank(items, 0));
+                    });
+        });
+    }
+
+    ReportSummary summarize(List<SourceResult> sources) {
+        List<Activity> activities = sources.stream()
+                .flatMap(source -> source.items().stream())
+                .sorted(ACTIVITY_ORDER)
+                .toList();
+        long approved = activities.stream().filter(activity -> isApproved(activity.status())).count();
+        long rejected = activities.stream().filter(activity -> isRejected(activity.status())).count();
+        long decided = approved + rejected;
+        Double approvalRate = decided == 0 ? null : approved * 100.0 / decided;
+
+        Map<String, MutableStaffPerformance> staff = new LinkedHashMap<>();
+        for (Activity activity : activities) {
+            if (!StringUtils.hasText(activity.actor())) continue;
+            String key = activity.actor().trim().toLowerCase(Locale.ROOT);
+            staff.computeIfAbsent(key, ignored -> new MutableStaffPerformance(activity.actor())).accept(activity);
+        }
+        List<StaffPerformance> performance = staff.values().stream()
+                .map(MutableStaffPerformance::toRecord)
+                .sorted(Comparator.comparingLong(StaffPerformance::total).reversed()
+                        .thenComparing(StaffPerformance::email))
+                .toList();
+        Map<String, Long> totals = new LinkedHashMap<>();
+        sources.forEach(source -> totals.put(source.name(), source.available() ? (long) source.items().size() : null));
+        return new ReportSummary(activities.size(), approved, rejected, approvalRate, totals, performance,
+                sources.stream().map(SourceResult::health).toList());
+    }
+
+    private byte[] toCsv(List<SourceResult> sources) {
+        List<Activity> activities = sources.stream()
+                .flatMap(source -> source.items().stream())
+                .sorted(ACTIVITY_ORDER)
+                .toList();
+        String successful = sources.stream().filter(SourceResult::available).map(SourceResult::name)
+                .reduce((left, right) -> left + "|" + right).orElse("NONE");
+        String unavailable = sources.stream().filter(source -> !source.available()).map(SourceResult::name)
+                .reduce((left, right) -> left + "|" + right).orElse("NONE");
+        StringBuilder csv = new StringBuilder("\uFEFFPhạm vi dữ liệu,Giá trị\r\n")
+                .append(csv("Nguồn thành công")).append(',').append(csv(successful)).append("\r\n")
+                .append(csv("Nguồn không khả dụng")).append(',').append(csv(unavailable)).append("\r\n\r\n")
+                .append("Thời gian,Email người thao tác,Nghiệp vụ,Phân hệ,Đối tượng,Trạng thái,Ghi chú & Căn cứ\r\n");
+        for (Activity activity : activities) {
+            csv.append(csv(activity.at())).append(',')
+                    .append(csv(activity.actor())).append(',')
+                    .append(csv(activity.type())).append(',')
+                    .append(csv(activity.domain())).append(',')
+                    .append(csv(activity.target())).append(',')
+                    .append(csv(activity.status())).append(',')
+                    .append(csv(activity.note())).append("\r\n");
+        }
+        return csv.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private String csv(String value) {
+        String safe = value == null ? "" : value.replace("\r", " ").replace("\n", " ");
+        if (!safe.isEmpty() && "=+-@".indexOf(safe.charAt(0)) >= 0) safe = "'" + safe;
+        return "\"" + safe.replace("\"", "\"\"") + "\"";
+    }
+
+    private boolean isApproved(String status) {
+        return List.of("APPROVED", "APPROVE", "FORCE_APPROVE", "RESOLVED", "ACCEPTED_BY_ADMIN")
+                .contains(normalize(status));
+    }
+
+    private boolean isRejected(String status) {
+        return List.of("REJECTED", "REJECT").contains(normalize(status));
     }
 
     private List<Activity> rank(List<Activity> items, int start) {
@@ -316,14 +488,84 @@ public class OperationalReportService {
     }
 
     public record ReportPage(List<Activity> content, long totalElements, int totalPages, int number, int size,
-                             boolean first, boolean last, boolean empty, Map<String, Long> sourceTotals) {
+                             boolean first, boolean last, boolean empty, Map<String, Long> sourceTotals,
+                             List<SourceHealth> sources) {
         static ReportPage empty(int page, int size) {
-            return new ReportPage(List.of(), 0, 0, page, size, page == 0, true, true, Map.of());
+            return new ReportPage(List.of(), 0, 0, page, size, page == 0, true, true, Map.of(), List.of());
+        }
+    }
+
+    public record ReportSummary(long total, long approved, long rejected, Double approvalRate,
+                                Map<String, Long> sourceTotals, List<StaffPerformance> staffPerformance,
+                                List<SourceHealth> sources) { }
+
+    public enum SourceAvailability { SUCCESS, UNAVAILABLE }
+
+    public record SourceHealth(String source, SourceAvailability status, long latencyMs,
+                               String lastSuccessfulRefresh, String errorCode) { }
+
+    public record StaffPerformance(String email, long total, long approved, long rejected,
+                                   long tutorCount, long classCount, long disputeCount,
+                                   long terminationCount, String lastActivityAt) { }
+
+    public static final class ReportLimitExceededException extends RuntimeException {
+        ReportLimitExceededException(long actual, int limit) {
+            super("Filtered report contains " + actual + " rows; narrow the filters below the " + limit + " row export limit");
+        }
+    }
+
+    private static final class MutableStaffPerformance {
+        private final String email;
+        private long total;
+        private long approved;
+        private long rejected;
+        private long tutorCount;
+        private long classCount;
+        private long disputeCount;
+        private long terminationCount;
+        private String lastActivityAt;
+
+        private MutableStaffPerformance(String email) { this.email = email; }
+
+        private void accept(Activity activity) {
+            total++;
+            String status = activity.status() == null ? "" : activity.status().trim().toUpperCase(Locale.ROOT);
+            if (List.of("APPROVED", "APPROVE", "FORCE_APPROVE", "RESOLVED", "ACCEPTED_BY_ADMIN").contains(status)) approved++;
+            if (List.of("REJECTED", "REJECT").contains(status)) rejected++;
+            if ("TUTOR_PROFILES".equals(activity.domain()) || "TEACHING_REGISTRATION".equals(activity.domain())) tutorCount++;
+            if ("CLASS_ROOMS".equals(activity.domain())) classCount++;
+            if ("DISPUTES".equals(activity.domain())) disputeCount++;
+            if ("TERMINATIONS".equals(activity.domain())) terminationCount++;
+            if (lastActivityAt == null || instant(activity.at()).isAfter(instant(lastActivityAt))) lastActivityAt = activity.at();
+        }
+
+        private StaffPerformance toRecord() {
+            return new StaffPerformance(email, total, approved, rejected, tutorCount, classCount,
+                    disputeCount, terminationCount, lastActivityAt);
         }
     }
 
     record SourceRequest(String name, WebClient client, Function<UriBuilder, UriBuilder> uri,
                          String cookie, String authorization, Function<JsonNode, Activity> mapper) { }
     record SourcePage(long totalElements, List<Activity> items) { }
-    record SourceResult(String name, long totalElements, List<Activity> items) { }
+    record SourceSeed(SourceRequest source, SourcePage first, SourceResult failure, long startedNanos) {
+        static SourceSeed available(SourceRequest source, SourcePage first, long startedNanos) {
+            return new SourceSeed(source, first, null, startedNanos);
+        }
+        static SourceSeed unavailable(SourceRequest source, SourceResult failure) {
+            return new SourceSeed(source, null, failure, 0);
+        }
+        boolean available() { return first != null; }
+    }
+    record SourceResult(String name, long totalElements, List<Activity> items, SourceHealth health) {
+        SourceResult(String name, long totalElements, List<Activity> items) {
+            this(name, totalElements, items,
+                    new SourceHealth(name, SourceAvailability.SUCCESS, 0, Instant.now().toString(), null));
+        }
+        static SourceResult unavailable(String name, SourceHealth health) {
+            return new SourceResult(name, 0, List.of(), health);
+        }
+        SourceResult withHealth(SourceHealth next) { return new SourceResult(name, totalElements, items, next); }
+        boolean available() { return health.status() == SourceAvailability.SUCCESS; }
+    }
 }
