@@ -64,11 +64,22 @@ public class LearningTerminationService {
             this(classroomId, studentId, agreementId, wholeClass, action, origin, requestedCutoffSession, effectiveRequestedAt, commandId, expectedHoldCommandId, releaseNotAfter, null);
         }
     }
-    public record Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart, Boolean classCancelled) {
+    public record Snapshot(
+            int cutoffSession,
+            List<Long> requiredSessions,
+            OffsetDateTime nextSessionStart,
+            Integer nextSessionSequence,
+            Boolean classCancelled) {
         public Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart) {
-            this(cutoffSession, requiredSessions, nextSessionStart, false);
+            this(cutoffSession, requiredSessions, nextSessionStart, null, false);
+        }
+
+        public Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart, Boolean classCancelled) {
+            this(cutoffSession, requiredSessions, nextSessionStart, null, classCancelled);
         }
     }
+
+    private record NextSessionSnapshot(Integer sequence, OffsetDateTime startAt) {}
     private static final ZoneId BUSINESS_ZONE = CanonicalSessionPlanner.BUSINESS_ZONE;
     private static final String TRIAL_OPT_OUT = "TRIAL_OPT_OUT";
     private static final String SYSTEM_LATE_FUNDING = "SYSTEM_LATE_FUNDING";
@@ -117,6 +128,7 @@ public class LearningTerminationService {
 
         var stop = stops.findById(command.agreementId()).orElse(null);
         if ("RELEASE".equals(command.action())) {
+            Integer releasedCutoff = stop != null ? stop.getCutoffSession() : command.requestedCutoffSession();
             if (command.releaseNotAfter() != null) {
                 OffsetDateTime nowUtc = OffsetDateTime.now(ZoneOffset.UTC);
                 if (!nowUtc.isBefore(command.releaseNotAfter())) {
@@ -142,7 +154,13 @@ public class LearningTerminationService {
             } else {
                 rollingSessions.createMissingAttendancesForEnrollment(enrollment);
             }
-            var releaseSnapshot = new Snapshot(0, List.of(), null, false);
+            var nextSession = findNextScheduledSession(rows, releasedCutoff);
+            var releaseSnapshot = new Snapshot(
+                    0,
+                    List.of(),
+                    nextSession == null ? null : nextSession.startAt(),
+                    nextSession == null ? null : nextSession.sequence(),
+                    false);
             recordInbox(command, releaseSnapshot);
             return releaseSnapshot;
         }
@@ -235,19 +253,33 @@ public class LearningTerminationService {
         final int cutoff = (command.wholeClass() && room.getTerminationCutoffSession() != null)
                 ? room.getTerminationCutoffSession()
                 : stop.getCutoffSession();
-        OffsetDateTime nextSessionStart = rows.stream()
-                .filter(s -> s.getStatus() != ClassSessionStatus.CANCELLED)
-                .filter(s -> s.getSequenceNumber() > cutoff)
-                .map(s -> LocalDateTime.of(s.getSessionDate(), LocalTime.parse(s.getStartTime())))
-                .filter(start -> start.isAfter(LocalDateTime.now(BUSINESS_ZONE)))
-                .min(LocalDateTime::compareTo)
-                .map(start -> start.atZone(BUSINESS_ZONE).toOffsetDateTime())
-                .orElse(null);
+        var nextSession = findNextScheduledSession(rows, cutoff);
         var snapshot = new Snapshot(cutoff, rows.stream()
                 .filter(s -> s.getSequenceNumber() <= cutoff && s.getStatus() != ClassSessionStatus.CANCELLED)
-                .map(s -> s.getSequenceNumber().longValue()).toList(), nextSessionStart, classCancelled);
+                .map(s -> s.getSequenceNumber().longValue()).toList(),
+                nextSession == null ? null : nextSession.startAt(),
+                nextSession == null ? null : nextSession.sequence(),
+                classCancelled);
         recordInbox(command, snapshot);
         return snapshot;
+    }
+
+    private NextSessionSnapshot findNextScheduledSession(List<ClassSession> rows, Integer afterSequence) {
+        LocalDateTime now = LocalDateTime.now(BUSINESS_ZONE);
+        return rows.stream()
+                .filter(session -> session.getStatus() != ClassSessionStatus.CANCELLED)
+                .filter(session -> session.getSequenceNumber() != null)
+                .filter(session -> afterSequence == null || session.getSequenceNumber() > afterSequence)
+                .map(session -> Map.entry(
+                        session,
+                        LocalDateTime.of(session.getSessionDate(), LocalTime.parse(session.getStartTime()))))
+                .filter(entry -> entry.getValue().isAfter(now))
+                .min(Comparator.<Map.Entry<ClassSession, LocalDateTime>, LocalDateTime>comparing(Map.Entry::getValue)
+                        .thenComparing(entry -> entry.getKey().getSequenceNumber()))
+                .map(entry -> new NextSessionSnapshot(
+                        entry.getKey().getSequenceNumber(),
+                        entry.getValue().atZone(BUSINESS_ZONE).toOffsetDateTime()))
+                .orElse(null);
     }
 
     private void validateExtendedCommand(

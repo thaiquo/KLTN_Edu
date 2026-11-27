@@ -52,20 +52,15 @@ public class TerminationSignals {
     }
 
     @Transactional
-    public void detectForClassroom(Long classroomId, Integer nextSessionSequence, OffsetDateTime nextSessionStartAt) {
-        if (classroomId == null) return;
+    public boolean detectForClassroom(Long classroomId, Integer nextSessionSequence, OffsetDateTime nextSessionStartAt) {
+        if (classroomId == null || attendanceSignals == null) return false;
         TutorAbsenceGovernanceProperties.Mode mode = governanceProperties != null
                 ? governanceProperties.getEffectiveMode(classroomId)
                 : TutorAbsenceGovernanceProperties.Mode.OFF;
 
-        if (mode == TutorAbsenceGovernanceProperties.Mode.OFF) {
-            log.debug("Tutor absence governance is OFF for classroom {}", classroomId);
-            return;
-        }
-
-        if (attendanceSignals == null) return;
-
-        // 1. Check active probation first
+        // An ACTIVE probation is an in-flight consequence of an explicit Admin
+        // continuation decision. Finish it even if rollout configuration changes;
+        // the mode still controls whether new three-absence cases may be opened.
         if (probations != null) {
             var activeProbationOpt = probations.findActiveByClassroomIdForUpdate(classroomId);
             if (activeProbationOpt.isPresent()) {
@@ -74,36 +69,30 @@ public class TerminationSignals {
                 if (probationSignalOpt.isPresent()) {
                     var probSignal = probationSignalOpt.get();
                     if ("TUTOR_ABSENT".equals(probSignal.getTutorAttendanceOutcome())) {
-                        if (mode == TutorAbsenceGovernanceProperties.Mode.ENFORCE) {
-                            log.warn("Tutor absence probation RELAPSE detected for classroom {} at sequence {}",
-                                    classroomId, probation.getSessionSequence());
-                            terminations.requestAbsenceGovernanceRelapse(classroomId, probation, probSignal);
-                        } else {
-                            log.info("[SHADOW] Tutor absence probation RELAPSE detected for classroom {} at sequence {}",
-                                    classroomId, probation.getSessionSequence());
-                        }
-                        return;
+                        log.warn("Tutor absence probation RELAPSE detected for classroom {} at sequence {}",
+                                classroomId, probation.getSessionSequence());
+                        terminations.requestAbsenceGovernanceRelapse(classroomId, probation, probSignal);
                     } else if ("TUTOR_PRESENT".equals(probSignal.getTutorAttendanceOutcome())) {
-                        if (mode == TutorAbsenceGovernanceProperties.Mode.ENFORCE) {
-                            probation.setStatus("PASSED");
-                            probation.setActiveClassroomGuard(null);
-                            probation.setResolvedAt(OffsetDateTime.now(ZoneOffset.UTC));
-                            probations.saveAndFlush(probation);
-                            log.info("Tutor absence probation PASSED for classroom {} sequence {}",
-                                    classroomId, probation.getSessionSequence());
-                        } else {
-                            log.info("[SHADOW] Tutor absence probation would PASS for classroom {} sequence {}",
-                                    classroomId, probation.getSessionSequence());
-                        }
-                        return;
+                        probation.setStatus("PASSED");
+                        probation.setActiveClassroomGuard(null);
+                        probation.setResolvedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                        probations.saveAndFlush(probation);
+                        log.info("Tutor absence probation PASSED for classroom {} sequence {}",
+                                classroomId, probation.getSessionSequence());
                     }
                 }
+                return true;
             }
         }
 
-        // 2. Check 3 consecutive absences at classroom level
+        if (mode == TutorAbsenceGovernanceProperties.Mode.OFF) {
+            log.debug("Tutor absence governance is OFF for classroom {}", classroomId);
+            return false;
+        }
+
+        // Check 3 consecutive absences at classroom level for new governance cases.
         var signals = attendanceSignals.findByClassroomIdOrderBySessionSequenceAsc(classroomId);
-        if (signals.size() < 3) return;
+        if (signals.size() < 3) return false;
 
         int consecutiveAbsences = 0;
         Integer lastSequence = null;
@@ -137,12 +126,12 @@ public class TerminationSignals {
                     || triggerSignal.getNextSessionStartAt() == null) {
                 log.info("Tutor absence candidate for classroom {} sequence {} has no real next-session snapshot; no governance case is opened",
                         classroomId, triggerSequence);
-                return;
+                return false;
             }
             if (hasContradictingSettlement(classroomId, triggerSequence)) {
                 log.warn("Tutor absence signal conflicts with settlement data for classroom {} sequence {}; keeping candidate in manual/shadow review",
                         classroomId, triggerSequence);
-                return;
+                return false;
             }
             if (mode == TutorAbsenceGovernanceProperties.Mode.ENFORCE) {
                 log.info("Triggering AUTO_TUTOR_ABSENCE governance for classroom {} at sequence {}",
@@ -157,6 +146,7 @@ public class TerminationSignals {
                         classroomId, triggerSequence);
             }
         }
+        return false;
     }
 
     private boolean hasContradictingSettlement(Long classroomId, int sequence) {
@@ -174,18 +164,15 @@ public class TerminationSignals {
     @Transactional
     public void detect() {
         Set<Long> processedClassrooms = new HashSet<>();
+        Set<Long> probationClassrooms = new HashSet<>();
         for (var a : agreements.findByStatus(ContractAgreementStatus.ACTIVE)) {
             if (a.isLegacyExcluded() || a.getTerminationCutoffSession() != null) continue;
             Long classroomId = a.getClassroomId();
 
             if (classroomId != null && processedClassrooms.add(classroomId)) {
-                TutorAbsenceGovernanceProperties.Mode mode = governanceProperties != null
-                        ? governanceProperties.getEffectiveMode(classroomId)
-                        : TutorAbsenceGovernanceProperties.Mode.OFF;
-                if (mode != TutorAbsenceGovernanceProperties.Mode.OFF) {
-                    detectForClassroom(classroomId, null, null);
-                }
+                if (detectForClassroom(classroomId, null, null)) probationClassrooms.add(classroomId);
             }
+            if (probationClassrooms.contains(classroomId)) continue;
 
             var rows = settlements.findByAgreementId(a.getId()).stream()
                     .sorted(Comparator.comparing(SessionSettlement::getSessionId).reversed()).limit(3).toList();

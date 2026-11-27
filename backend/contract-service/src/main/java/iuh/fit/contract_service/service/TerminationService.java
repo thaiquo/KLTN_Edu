@@ -1097,12 +1097,14 @@ public class TerminationService {
             }
         }
         try {
+            TerminationLearningClient.Snapshot releaseSnapshot;
             if (c.getAbsenceGovernanceVersion() != null && c.getAbsenceGovernanceVersion() == 1) {
-                learning.send(anchor.getClassroomId(), anchor.getStudentId(), anchor.getId(), c.isWholeClass(), "RELEASE",
+                releaseSnapshot = learning.send(anchor.getClassroomId(), anchor.getStudentId(), anchor.getId(), c.isWholeClass(), "RELEASE",
                         c.getOrigin(), c.getTriggerSessionSequence(), c.getHoldEffectiveAt(),
                         c.getReleaseCommandId(), c.getHoldCommandId(), c.getDecisionDeadline());
             } else {
-                learning.send(anchor.getClassroomId(), anchor.getStudentId(), anchor.getId(), c.isWholeClass(), "RELEASE");
+                releaseSnapshot = learning.send(anchor.getClassroomId(), anchor.getStudentId(), anchor.getId(), c.isWholeClass(), "RELEASE");
+                prepareLegacyAbsenceProbation(c, anchor, releaseSnapshot);
             }
             var targets = c.isWholeClass()
                     ? agreements.findByClassroomIdOrderByCreatedAtAsc(c.getClassroomId())
@@ -1127,6 +1129,61 @@ public class TerminationService {
             c.setLastError(shortError(error, "Learning hold release pending"));
             c.setUpdatedAt(OffsetDateTime.now());
         }
+    }
+
+    private void prepareLegacyAbsenceProbation(
+            TerminationCase c,
+            ContractAgreement anchor,
+            TerminationLearningClient.Snapshot releaseSnapshot) {
+        if (!ORIGIN_AUTO_ABSENCE.equals(c.getOrigin())
+                || c.getAbsenceGovernanceVersion() != null
+                || probationRepository == null
+                || c.getClassroomId() == null) {
+            return;
+        }
+        if (releaseSnapshot == null) {
+            throw new IllegalStateException("Learning release did not return a schedule snapshot");
+        }
+        if (Boolean.TRUE.equals(releaseSnapshot.classCancelled())) {
+            throw new IllegalStateException("Learning release returned a cancelled-class snapshot");
+        }
+
+        Integer nextSequence = releaseSnapshot.nextSessionSequence();
+        OffsetDateTime nextStartAt = releaseSnapshot.nextSessionStart();
+        if (nextSequence == null && nextStartAt == null) {
+            // The class has no future scheduled session, so there is no next-session
+            // probation opportunity to monitor.
+            return;
+        }
+        Integer releasedCutoff = anchor.getTerminationCutoffSession();
+        if (nextSequence == null
+                || nextSequence <= 0
+                || (releasedCutoff != null && nextSequence <= releasedCutoff)
+                || nextStartAt == null
+                || !nextStartAt.isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
+            throw new IllegalStateException("Learning release returned an invalid next-session snapshot");
+        }
+
+        var probation = probationRepository.findBySourceCaseId(c.getId())
+                .orElseGet(() -> {
+                    var created = new TutorAbsenceProbation();
+                    created.setId(UUID.randomUUID());
+                    created.setClassroomId(c.getClassroomId());
+                    created.setSourceCaseId(c.getId());
+                    created.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                    return created;
+                });
+        probation.setSessionSequence(nextSequence);
+        probation.setSessionStartAt(nextStartAt);
+        probation.setStatus("ACTIVE");
+        probation.setActiveClassroomGuard(c.getClassroomId());
+        probation.setResolvedAt(null);
+        probation.setFailureCaseId(null);
+        probation.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        probationRepository.saveAndFlush(probation);
+
+        c.setNextSessionSequence(nextSequence);
+        c.setNextSessionStartAt(nextStartAt);
     }
 
     private static String shortError(Exception error, String fallback) {

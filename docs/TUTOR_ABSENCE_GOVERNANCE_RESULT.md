@@ -29,7 +29,7 @@
   - `contract-service`: **283 test run, 0 failures, 0 errors, 8 Anvil tests skipped**.
   - `frontend-web`: `tsc --noEmit` PASS; `npm run build` thành công trong **2.60s, exit code 0**; còn các cảnh báo dependency/chunk-size hiện hữu.
 - **Kill-Switch an toàn**: Mặc định cấu hình `tutor-absence.governance-mode=OFF`.
-- **Dữ liệu cũ (Backward Compatibility)**: Toàn bộ case cũ có `absence_governance_version = null` vẫn vận hành theo luồng cũ, không bị ảnh hưởng logic mới.
+- **Dữ liệu cũ (Backward Compatibility)**: Case cũ có `absence_governance_version = null` vẫn dùng lệnh RELEASE legacy và không bị hồi tố thành governance v1. Riêng case `AUTO_TUTOR_ABSENCE` được Admin cho tiếp tục sẽ nhận snapshot buổi thực tế kế tiếp từ Learning để tạo probation đúng quy tắc đã xác nhận; tuyệt đối không suy diễn sequence hoặc tạo buổi giả.
 - **Không có lịch bù**: Đã loại bỏ hoàn toàn việc phát sinh buổi bù hay sửa đổi số buổi trên Smart Contract và cơ sở dữ liệu.
 
 ---
@@ -51,6 +51,7 @@
 3. [`SessionSettlementDeliveryService.java`](file:///d:/KL/khoaluan/KLTN_Edu/backend/learning-service/src/main/java/iuh/fit/learning_service/service/SessionSettlementDeliveryService.java): Tính toán outcome gia sư cấp cả lớp (`TUTOR_PRESENT`, `TUTOR_ABSENT`, `INCONSISTENT`, `UNAVAILABLE`) và snapshot thông tin buổi kế tiếp `N+1`.
 4. [`ContractServiceDispatcher.java`](file:///d:/KL/khoaluan/KLTN_Edu/backend/learning-service/src/main/java/iuh/fit/learning_service/service/ContractServiceDispatcher.java): Chuyển tín hiệu điểm danh cấp lớp và payload đầy đủ sang Contract.
 5. [`LearningTerminationService.java`](file:///d:/KL/khoaluan/KLTN_Edu/backend/learning-service/src/main/java/iuh/fit/learning_service/service/LearningTerminationService.java): Kiểm tra inbox idempotent, hỗ trợ `AUTO_TUTOR_ABSENCE` và `AUTO_TUTOR_ABSENCE_RELAPSE`, chặn release quá hạn `releaseNotAfter`.
+   - RELEASE legacy trả cả `nextSessionSequence` và `nextSessionStart` của buổi thực tế kế tiếp sau cutoff để Contract tạo probation mà không đoán lịch.
 
 ### C. Backend Contract-Service
 1. [`TutorAbsenceGovernanceProperties.java`](file:///d:/KL/khoaluan/KLTN_Edu/backend/contract-service/src/main/java/iuh/fit/contract_service/config/TutorAbsenceGovernanceProperties.java): Quản lý mode `OFF`, `SHADOW`, `ENFORCE` và canary allowlist theo `classroomId`.
@@ -67,6 +68,7 @@
    - Chặn Admin `REJECT` nếu `now >= decisionDeadline`.
    - Xử lý hết hạn bằng bi-directional row lock: `NO_TUTOR_RESPONSE`, `NO_ADMIN_DECISION`, `RELEASE_TIMEOUT`, `HOLD_SYNC_TIMEOUT`.
    - Tự động sinh `TutorAbsenceProbation` khi Admin `REJECT` (cho tiếp tục).
+   - Với case legacy, chỉ sinh probation từ snapshot RELEASE đầy đủ; snapshot một phần giữ case ở `RELEASE_PENDING`, còn không có buổi tương lai thì khôi phục lớp mà không tạo probation giả.
 8. [`TerminationScheduler.java`](file:///d:/KL/khoaluan/KLTN_Edu/backend/contract-service/src/main/java/iuh/fit/contract_service/service/TerminationScheduler.java): Quét định kỳ các case hết hạn response, hết hạn decision, quá hạn release hoặc quá hạn hold sync.
 9. [`ContractManagementController.java`](file:///d:/KL/khoaluan/KLTN_Edu/backend/contract-service/src/main/java/iuh/fit/contract_service/api/ContractManagementController.java): Tiếp nhận request tự động từ Learning.
 
