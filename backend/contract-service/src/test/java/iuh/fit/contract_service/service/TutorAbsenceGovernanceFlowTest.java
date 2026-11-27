@@ -229,4 +229,31 @@ class TutorAbsenceGovernanceFlowTest {
         assertThat(c.getAutoDecisionReason()).isNull();
         verify(cases, never()).saveAndFlush(c);
     }
+
+    @Test
+    @DisplayName("Admin REJECT on legacy/system-review AUTO_TUTOR_ABSENCE without governance v1 metadata succeeds without creating probation")
+    void adminRejectLegacyAutoAbsenceWithoutGovernanceMetadataSucceeds() {
+        OffsetDateTime now = OffsetDateTime.now();
+        TerminationCase c = new TerminationCase();
+        c.setId(UUID.randomUUID());
+        c.setClassroomId(100L);
+        c.setAnchorAgreementId(agreement.getId());
+        c.setOrigin("AUTO_TUTOR_ABSENCE");
+        c.setAbsenceGovernanceVersion(null);
+        c.setStatus("REQUESTED");
+        c.setWholeClass(true);
+        c.setAuditJson("[]");
+        c.setResponseDeadline(now.plusHours(12));
+        c.setTutorRespondedAt(now.minusMinutes(5));
+        agreement.setTerminationCutoffSession(3);
+
+        when(cases.lockById(c.getId())).thenReturn(Optional.of(c));
+
+        var result = service.act(c.getId(), "REJECT", "Chấp nhận cho tiếp tục", user(1L, "admin@test.vn", "ADMIN"));
+
+        assertThat(result.request().getStatus()).isEqualTo("REJECTED");
+        assertThat(agreement.getTerminationCutoffSession()).isNull();
+        verify(probationRepository, never()).saveAndFlush(any());
+        verify(learning).send(100L, 10L, agreement.getId(), true, "RELEASE");
+    }
 }

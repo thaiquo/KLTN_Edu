@@ -724,22 +724,30 @@ public class TerminationService {
                     if (c.getReleaseCommandId() == null) {
                         c.setReleaseCommandId(UUID.randomUUID());
                     }
-                    if (probationRepository != null && c.getClassroomId() != null) {
-                        var probation = probationRepository.findBySourceCaseId(c.getId())
-                                .orElseGet(() -> {
-                                    var p = new TutorAbsenceProbation();
-                                    p.setId(UUID.randomUUID());
-                                    p.setClassroomId(c.getClassroomId());
-                                    p.setSourceCaseId(c.getId());
-                                    p.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
-                                    return p;
-                                });
-                        probation.setSessionSequence(c.getNextSessionSequence() != null ? c.getNextSessionSequence() : c.getTriggerSessionSequence() + 1);
-                        probation.setSessionStartAt(c.getNextSessionStartAt() != null ? c.getNextSessionStartAt() : c.getDecisionDeadline());
-                        probation.setStatus("ACTIVE");
-                        probation.setActiveClassroomGuard(c.getClassroomId());
-                        probation.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
-                        probationRepository.saveAndFlush(probation);
+                    if (isAbsenceGovernanceV1(c) && probationRepository != null && c.getClassroomId() != null) {
+                        Integer probationSequence = c.getNextSessionSequence() != null
+                                ? c.getNextSessionSequence()
+                                : (c.getTriggerSessionSequence() != null ? c.getTriggerSessionSequence() + 1 : null);
+                        OffsetDateTime probationStartAt = c.getNextSessionStartAt() != null
+                                ? c.getNextSessionStartAt()
+                                : c.getDecisionDeadline();
+                        if (probationSequence != null && probationStartAt != null) {
+                            var probation = probationRepository.findBySourceCaseId(c.getId())
+                                    .orElseGet(() -> {
+                                        var p = new TutorAbsenceProbation();
+                                        p.setId(UUID.randomUUID());
+                                        p.setClassroomId(c.getClassroomId());
+                                        p.setSourceCaseId(c.getId());
+                                        p.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                                        return p;
+                                    });
+                            probation.setSessionSequence(probationSequence);
+                            probation.setSessionStartAt(probationStartAt);
+                            probation.setStatus("ACTIVE");
+                            probation.setActiveClassroomGuard(c.getClassroomId());
+                            probation.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                            probationRepository.saveAndFlush(probation);
+                        }
                     }
                 }
                 c.setStatus("RELEASE_PENDING");
@@ -1458,6 +1466,10 @@ public class TerminationService {
         notifications.sendAsync(a.getClassroomReviewerEmail(), null, "Cập nhật hồ sơ dừng/hủy lớp #" + c.getClassroomId(),
                 message, "TERMINATION_UPDATED", "AGREEMENT", a.getId().toString());
     }
+    private static boolean isAbsenceGovernanceV1(TerminationCase c) {
+        return c.getAbsenceGovernanceVersion() != null && c.getAbsenceGovernanceVersion() == 1;
+    }
+
     public static boolean terminal(ContractAgreement a) {
         return Set.of(ContractAgreementStatus.CANCELLED, ContractAgreementStatus.EXPIRED, ContractAgreementStatus.COMPLETED).contains(a.getStatus());
     }
