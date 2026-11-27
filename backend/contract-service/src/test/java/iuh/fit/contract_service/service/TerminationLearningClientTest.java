@@ -15,15 +15,17 @@ class TerminationLearningClientTest {
     @Test
     void snapshotDeserializationSupportsClassCancelled() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
-        String jsonWithFlag = "{\"cutoffSession\":1,\"requiredSessions\":[1],\"nextSessionStart\":null,\"classCancelled\":true}";
+        String jsonWithFlag = "{\"cutoffSession\":1,\"requiredSessions\":[1],\"nextSessionStart\":\"2026-11-28T09:00:00+07:00\",\"nextSessionSequence\":4,\"classCancelled\":true}";
         var snapshot = mapper.readValue(jsonWithFlag, TerminationLearningClient.Snapshot.class);
         assertThat(snapshot.cutoffSession()).isEqualTo(1);
         assertThat(snapshot.requiredSessions()).containsExactly(1L);
+        assertThat(snapshot.nextSessionSequence()).isEqualTo(4);
         assertThat(snapshot.classCancelled()).isTrue();
 
         String jsonWithoutFlag = "{\"cutoffSession\":2,\"requiredSessions\":[1,2],\"nextSessionStart\":null}";
         var snapshotLegacy = mapper.readValue(jsonWithoutFlag, TerminationLearningClient.Snapshot.class);
         assertThat(snapshotLegacy.cutoffSession()).isEqualTo(2);
+        assertThat(snapshotLegacy.nextSessionSequence()).isNull();
         assertThat(Boolean.TRUE.equals(snapshotLegacy.classCancelled())).isFalse();
     }
 }

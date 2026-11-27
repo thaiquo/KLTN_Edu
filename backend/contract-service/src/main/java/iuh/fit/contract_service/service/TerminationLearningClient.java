@@ -18,9 +18,18 @@ public class TerminationLearningClient {
     private final String url;
     private final SecretKey key;
     private final ObjectMapper mapper;
-    public record Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart, Boolean classCancelled) {
+    public record Snapshot(
+            int cutoffSession,
+            List<Long> requiredSessions,
+            OffsetDateTime nextSessionStart,
+            Integer nextSessionSequence,
+            Boolean classCancelled) {
         public Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart) {
-            this(cutoffSession, requiredSessions, nextSessionStart, false);
+            this(cutoffSession, requiredSessions, nextSessionStart, null, false);
+        }
+
+        public Snapshot(int cutoffSession, List<Long> requiredSessions, OffsetDateTime nextSessionStart, Boolean classCancelled) {
+            this(cutoffSession, requiredSessions, nextSessionStart, null, classCancelled);
         }
     }
     public TerminationLearningClient(@Value("${LEARNING_SERVICE_URL:http://localhost:8082}") String url,

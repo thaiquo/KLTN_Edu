@@ -86,15 +86,33 @@ class LearningTerminationServiceTest {
         prepare(List.of(past, future));
         var held = service.apply(new LearningTerminationService.Command(1L, 2L, agreement, false, "HOLD"));
         assertThat(held.cutoffSession()).isEqualTo(1);
+        assertThat(held.nextSessionSequence()).isEqualTo(2);
         assertThat(held.nextSessionStart()).isNotNull();
         assertThat(held.nextSessionStart().getOffset()).isEqualTo(ZoneOffset.ofHours(7));
         var stop = new LearningTerminationStop(); stop.setAgreementId(agreement); stop.setCutoffSession(1);
         when(stops.findById(agreement)).thenReturn(Optional.of(stop));
-        service.apply(new LearningTerminationService.Command(1L, 2L, agreement, false, "RELEASE"));
+        var released = service.apply(new LearningTerminationService.Command(1L, 2L, agreement, false, "RELEASE"));
+        assertThat(released.nextSessionSequence()).isEqualTo(2);
+        assertThat(released.nextSessionStart()).isEqualTo(held.nextSessionStart());
         verify(stops).delete(stop);
         verify(attendances).deleteBySession_IdAndStudentId(future.getId(), 2L);
         verify(rollingSessions).createMissingAttendancesForEnrollment(enrollment);
         assertThat(future.getStatus()).isEqualTo(ClassSessionStatus.SCHEDULED);
+    }
+
+    @Test void releaseReturnsNoProbationSnapshotWhenThereIsNoFutureSession() {
+        var past = session(1, LocalDateTime.now().minusHours(2));
+        prepare(List.of(past));
+        var stop = new LearningTerminationStop();
+        stop.setAgreementId(agreement);
+        stop.setCutoffSession(1);
+        when(stops.findById(agreement)).thenReturn(Optional.of(stop));
+
+        var released = service.apply(new LearningTerminationService.Command(1L, 2L, agreement, false, "RELEASE"));
+
+        assertThat(released.nextSessionSequence()).isNull();
+        assertThat(released.nextSessionStart()).isNull();
+        verify(stops).delete(stop);
     }
 
     @Test void wholeClassHoldBlocksOperationsButDoesNotCancelFutureSessionUntilApproval() {

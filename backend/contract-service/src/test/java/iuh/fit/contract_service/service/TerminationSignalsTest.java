@@ -195,7 +195,7 @@ class TerminationSignalsTest {
     }
 
     @Test
-    void shadowModeNeverMutatesActiveProbation() {
+    void existingProbationPassesEvenAfterModeChangesToShadow() {
         var signals = createSignals(TutorAbsenceGovernanceProperties.Mode.SHADOW);
         long classroomId = 88L;
 
@@ -212,9 +212,62 @@ class TerminationSignalsTest {
 
         signals.detectForClassroom(classroomId, null, null);
 
-        verify(probations, never()).saveAndFlush(any());
+        verify(probations).saveAndFlush(probation);
         verifyNoInteractions(service);
-        org.junit.jupiter.api.Assertions.assertEquals("ACTIVE", probation.getStatus());
-        org.junit.jupiter.api.Assertions.assertEquals(classroomId, probation.getActiveClassroomGuard());
+        org.junit.jupiter.api.Assertions.assertEquals("PASSED", probation.getStatus());
+        org.junit.jupiter.api.Assertions.assertNull(probation.getActiveClassroomGuard());
+    }
+
+    @Test
+    void existingProbationRelapseIsEnforcedEvenAfterModeChangesToOff() {
+        var signals = createSignals(TutorAbsenceGovernanceProperties.Mode.OFF);
+        long classroomId = 88L;
+
+        var probation = new TutorAbsenceProbation();
+        probation.setId(UUID.randomUUID());
+        probation.setClassroomId(classroomId);
+        probation.setActiveClassroomGuard(classroomId);
+        probation.setSessionSequence(4);
+        probation.setStatus("ACTIVE");
+
+        when(probations.findActiveByClassroomIdForUpdate(classroomId)).thenReturn(Optional.of(probation));
+        var relapseSignal = signal(classroomId, 4, "TUTOR_ABSENT");
+        when(attendanceSignals.findByClassroomIdAndSessionSequence(classroomId, 4))
+                .thenReturn(Optional.of(relapseSignal));
+
+        signals.detectForClassroom(classroomId, null, null);
+
+        verify(service).requestAbsenceGovernanceRelapse(classroomId, probation, relapseSignal);
+        verify(service, never()).requestAbsenceGovernanceCase(anyLong(), anyInt(), any(), any());
+    }
+
+    @Test
+    void scheduledScanFinishesActiveProbationWhileModeIsOffWithoutOpeningLegacyReview() {
+        var signals = createSignals(TutorAbsenceGovernanceProperties.Mode.OFF);
+        long classroomId = 88L;
+        var agreement = ContractAgreement.builder()
+                .id(UUID.randomUUID())
+                .classroomId(classroomId)
+                .status(ContractAgreementStatus.ACTIVE)
+                .build();
+        when(agreements.findByStatus(ContractAgreementStatus.ACTIVE)).thenReturn(List.of(agreement));
+
+        var probation = new TutorAbsenceProbation();
+        probation.setId(UUID.randomUUID());
+        probation.setClassroomId(classroomId);
+        probation.setActiveClassroomGuard(classroomId);
+        probation.setSessionSequence(4);
+        probation.setStatus("ACTIVE");
+        when(probations.findActiveByClassroomIdForUpdate(classroomId)).thenReturn(Optional.of(probation));
+
+        var relapseSignal = signal(classroomId, 4, "TUTOR_ABSENT");
+        when(attendanceSignals.findByClassroomIdAndSessionSequence(classroomId, 4))
+                .thenReturn(Optional.of(relapseSignal));
+
+        signals.detect();
+
+        verify(service).requestAbsenceGovernanceRelapse(classroomId, probation, relapseSignal);
+        verify(service, never()).requestSystemReview(any(), anyString(), anyString());
+        verifyNoInteractions(settlements);
     }
 }

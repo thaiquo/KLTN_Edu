@@ -78,9 +78,14 @@ TUTOR_ABSENCE_GOVERNANCE_MODE=OFF
 TUTOR_ABSENCE_GOVERNANCE_CLASSROOM_IDS=
 ```
 
-Recreate Contract Service using the command above. `OFF` stops new automatic
-decisions. Existing approved cases and in-flight blockchain transactions still
-require recovery and reconciliation; do not delete their rows.
+Recreate Contract Service using the command above. `OFF` stops opening new
+three-absence governance cases. It does not abandon an already `ACTIVE`
+probation created by an Admin continuation decision: that probation still
+becomes `PASSED` on Tutor presence or triggers relapse auto-termination on Tutor
+absence. Before rollback, audit active probation rows and explicitly escalate if
+operations do not want those in-flight Admin decisions to finish. Existing
+approved cases and in-flight blockchain transactions still require recovery and
+reconciliation; do not delete their rows.
 
 Escalate and keep `OFF` if any of these occur:
 

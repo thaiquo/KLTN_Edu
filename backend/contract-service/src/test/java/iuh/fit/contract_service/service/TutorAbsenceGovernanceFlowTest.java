@@ -2,6 +2,7 @@ package iuh.fit.contract_service.service;
 
 import iuh.fit.contract_service.config.security.ContractAccessControl;
 import iuh.fit.contract_service.config.security.ContractUserPrincipal;
+import iuh.fit.contract_service.entity.ClassTutorAttendanceSignal;
 import iuh.fit.contract_service.entity.ContractAgreement;
 import iuh.fit.contract_service.entity.TerminationCase;
 import iuh.fit.contract_service.entity.TutorAbsenceProbation;
@@ -234,9 +235,10 @@ class TutorAbsenceGovernanceFlowTest {
     }
 
     @Test
-    @DisplayName("Admin REJECT legacy AUTO_TUTOR_ABSENCE after response deadline releases the class without probation")
-    void adminRejectLegacyAutoAbsenceAfterResponseDeadlineSucceeds() {
+    @DisplayName("Admin REJECT legacy AUTO_TUTOR_ABSENCE restores the class and creates probation from Learning snapshot")
+    void adminRejectLegacyAutoAbsenceCreatesProbationFromLearningSnapshot() {
         OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime nextSessionStart = now.plusDays(2);
         TerminationCase c = new TerminationCase();
         c.setId(UUID.randomUUID());
         c.setClassroomId(100L);
@@ -251,13 +253,123 @@ class TutorAbsenceGovernanceFlowTest {
         agreement.setTerminationCutoffSession(3);
 
         when(cases.lockById(c.getId())).thenReturn(Optional.of(c));
+        when(learning.send(100L, 10L, agreement.getId(), true, "RELEASE"))
+                .thenReturn(new TerminationLearningClient.Snapshot(
+                        0, List.of(), nextSessionStart, 7, false));
 
         var result = service.act(c.getId(), "REJECT", "Chấp nhận cho tiếp tục", user(1L, "admin@test.vn", "ADMIN"));
 
         assertThat(result.request().getStatus()).isEqualTo("REJECTED");
         assertThat(agreement.getTerminationCutoffSession()).isNull();
-        verify(probationRepository, never()).saveAndFlush(any());
+        assertThat(c.getNextSessionSequence()).isEqualTo(7);
+        assertThat(c.getNextSessionStartAt()).isEqualTo(nextSessionStart);
+        verify(probationRepository).saveAndFlush(argThat(probation ->
+                probation.getClassroomId().equals(100L)
+                        && probation.getSourceCaseId().equals(c.getId())
+                        && probation.getSessionSequence().equals(7)
+                        && probation.getSessionStartAt().equals(nextSessionStart)
+                        && "ACTIVE".equals(probation.getStatus())
+                        && probation.getActiveClassroomGuard().equals(100L)));
         verify(learning).send(100L, 10L, agreement.getId(), true, "RELEASE");
+    }
+
+    @Test
+    @DisplayName("Admin REJECT legacy AUTO_TUTOR_ABSENCE with no future session restores the class without inventing probation")
+    void adminRejectLegacyAutoAbsenceWithNoFutureSessionDoesNotInventProbation() {
+        OffsetDateTime now = OffsetDateTime.now();
+        TerminationCase c = new TerminationCase();
+        c.setId(UUID.randomUUID());
+        c.setClassroomId(100L);
+        c.setAnchorAgreementId(agreement.getId());
+        c.setOrigin("AUTO_TUTOR_ABSENCE");
+        c.setStatus("REQUESTED");
+        c.setWholeClass(true);
+        c.setAuditJson("[]");
+        c.setTutorRespondedAt(now.minusHours(1));
+        agreement.setTerminationCutoffSession(3);
+
+        when(cases.lockById(c.getId())).thenReturn(Optional.of(c));
+        when(learning.send(100L, 10L, agreement.getId(), true, "RELEASE"))
+                .thenReturn(new TerminationLearningClient.Snapshot(0, List.of(), null, null, false));
+
+        var result = service.act(c.getId(), "REJECT", "Tiếp tục lớp", user(1L, "admin@test.vn", "ADMIN"));
+
+        assertThat(result.request().getStatus()).isEqualTo("REJECTED");
+        assertThat(agreement.getTerminationCutoffSession()).isNull();
+        verify(probationRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Admin REJECT legacy AUTO_TUTOR_ABSENCE fails closed when Learning returns a partial next-session snapshot")
+    void adminRejectLegacyAutoAbsenceWithPartialSnapshotRemainsReleasePending() {
+        OffsetDateTime now = OffsetDateTime.now();
+        TerminationCase c = new TerminationCase();
+        c.setId(UUID.randomUUID());
+        c.setClassroomId(100L);
+        c.setAnchorAgreementId(agreement.getId());
+        c.setOrigin("AUTO_TUTOR_ABSENCE");
+        c.setStatus("REQUESTED");
+        c.setWholeClass(true);
+        c.setAuditJson("[]");
+        c.setTutorRespondedAt(now.minusHours(1));
+        agreement.setTerminationCutoffSession(3);
+
+        when(cases.lockById(c.getId())).thenReturn(Optional.of(c));
+        when(learning.send(100L, 10L, agreement.getId(), true, "RELEASE"))
+                .thenReturn(new TerminationLearningClient.Snapshot(
+                        0, List.of(), now.plusDays(1), null, false));
+
+        var result = service.act(c.getId(), "REJECT", "Tiếp tục lớp", user(1L, "admin@test.vn", "ADMIN"));
+
+        assertThat(result.request().getStatus()).isEqualTo("RELEASE_PENDING");
+        assertThat(result.request().getLastError()).contains("invalid next-session snapshot");
+        assertThat(agreement.getTerminationCutoffSession()).isEqualTo(3);
+        verify(probationRepository, never()).saveAndFlush(any());
+    }
+
+    @Test
+    @DisplayName("Probation relapse immediately creates an approved whole-class termination and marks probation FAILED")
+    void probationRelapseAutomaticallyApprovesWholeClassTermination() {
+        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        TutorAbsenceProbation probation = new TutorAbsenceProbation();
+        probation.setId(UUID.randomUUID());
+        probation.setClassroomId(100L);
+        probation.setSourceCaseId(UUID.randomUUID());
+        probation.setSessionSequence(7);
+        probation.setSessionStartAt(now.minusHours(2));
+        probation.setStatus("ACTIVE");
+        probation.setActiveClassroomGuard(100L);
+
+        ClassTutorAttendanceSignal signal = new ClassTutorAttendanceSignal();
+        signal.setId(UUID.randomUUID());
+        signal.setClassroomId(100L);
+        signal.setLearningSessionId(700L);
+        signal.setSessionSequence(7);
+        signal.setTutorAttendanceOutcome("TUTOR_ABSENT");
+        signal.setFinalizedAt(now.minusHours(1));
+        signal.setSourceEventId("relapse-100-7");
+
+        when(cases.findByClassroomIdOrderByCreatedAtDesc(100L)).thenReturn(List.of());
+        when(learning.send(eq(100L), eq(10L), eq(agreement.getId()), eq(true), eq("HOLD"),
+                eq("AUTO_TUTOR_ABSENCE_RELAPSE"), eq(7), any(OffsetDateTime.class), any(UUID.class)))
+                .thenReturn(new TerminationLearningClient.Snapshot(7, List.of(1L, 2L, 3L, 4L, 5L, 6L, 7L), null));
+
+        service.requestAbsenceGovernanceRelapse(100L, probation, signal);
+
+        assertThat(probation.getStatus()).isEqualTo("FAILED");
+        assertThat(probation.getActiveClassroomGuard()).isNull();
+        assertThat(probation.getFailureCaseId()).isNotNull();
+        assertThat(probation.getResolvedAt()).isNotNull();
+        assertThat(agreement.getTerminationCutoffSession()).isEqualTo(7);
+        verify(items).save(argThat(item ->
+                agreement.getId().equals(item.getAgreementId())
+                        && probation.getFailureCaseId().equals(item.getCaseId())
+                        && "LEARNING_PENDING".equals(item.getStatus())));
+        verify(cases, atLeastOnce()).saveAndFlush(argThat(created ->
+                probation.getFailureCaseId().equals(created.getId())
+                        && "AUTO_TUTOR_ABSENCE_RELAPSE".equals(created.getOrigin())
+                        && "APPROVED".equals(created.getStatus())
+                        && "PROBATION_RELAPSE".equals(created.getAutoDecisionReason())));
     }
 
     @Test
