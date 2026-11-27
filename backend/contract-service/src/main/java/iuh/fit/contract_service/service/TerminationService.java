@@ -718,36 +718,11 @@ public class TerminationService {
                     if (c.getTutorRespondedAt() == null) {
                         fail(HttpStatus.CONFLICT, "Tutor must submit an explanation before the class can continue");
                     }
-                    if (deadlinePolicy.isDecisionExpired(c.getDecisionDeadline(), OffsetDateTime.now())) {
-                        fail(HttpStatus.CONFLICT, "Thời hạn ra quyết định cho lớp tiếp tục đã hết. Không thể khôi phục lớp sau giờ bắt đầu buổi học tiếp theo.");
-                    }
-                    if (c.getReleaseCommandId() == null) {
-                        c.setReleaseCommandId(UUID.randomUUID());
-                    }
-                    if (isAbsenceGovernanceV1(c) && probationRepository != null && c.getClassroomId() != null) {
-                        Integer probationSequence = c.getNextSessionSequence() != null
-                                ? c.getNextSessionSequence()
-                                : (c.getTriggerSessionSequence() != null ? c.getTriggerSessionSequence() + 1 : null);
-                        OffsetDateTime probationStartAt = c.getNextSessionStartAt() != null
-                                ? c.getNextSessionStartAt()
-                                : c.getDecisionDeadline();
-                        if (probationSequence != null && probationStartAt != null) {
-                            var probation = probationRepository.findBySourceCaseId(c.getId())
-                                    .orElseGet(() -> {
-                                        var p = new TutorAbsenceProbation();
-                                        p.setId(UUID.randomUUID());
-                                        p.setClassroomId(c.getClassroomId());
-                                        p.setSourceCaseId(c.getId());
-                                        p.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
-                                        return p;
-                                    });
-                            probation.setSessionSequence(probationSequence);
-                            probation.setSessionStartAt(probationStartAt);
-                            probation.setStatus("ACTIVE");
-                            probation.setActiveClassroomGuard(c.getClassroomId());
-                            probation.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
-                            probationRepository.saveAndFlush(probation);
+                    if (isAbsenceGovernanceV1(c)) {
+                        if (deadlinePolicy.isDecisionExpired(c.getDecisionDeadline(), OffsetDateTime.now())) {
+                            fail(HttpStatus.CONFLICT, "Thời hạn ra quyết định cho lớp tiếp tục đã hết. Không thể khôi phục lớp sau giờ bắt đầu buổi học tiếp theo.");
                         }
+                        prepareAbsenceGovernanceRelease(c);
                     }
                 }
                 c.setStatus("RELEASE_PENDING");
@@ -1468,6 +1443,46 @@ public class TerminationService {
     }
     private static boolean isAbsenceGovernanceV1(TerminationCase c) {
         return c.getAbsenceGovernanceVersion() != null && c.getAbsenceGovernanceVersion() == 1;
+    }
+
+    private void prepareAbsenceGovernanceRelease(TerminationCase c) {
+        Integer triggerSequence = c.getTriggerSessionSequence();
+        Integer probationSequence = c.getNextSessionSequence();
+        OffsetDateTime probationStartAt = c.getNextSessionStartAt();
+        OffsetDateTime decisionDeadline = c.getDecisionDeadline();
+        boolean validSnapshot = triggerSequence != null
+                && probationSequence != null
+                && probationSequence > triggerSequence
+                && probationStartAt != null
+                && decisionDeadline != null
+                && probationStartAt.toInstant().equals(decisionDeadline.toInstant())
+                && c.getHoldCommandId() != null
+                && c.getHoldEffectiveAt() != null;
+        if (!validSnapshot) {
+            fail(HttpStatus.CONFLICT,
+                    "Hồ sơ cảnh báo vắng học thiếu snapshot Governance v1 hợp lệ; chưa thể khôi phục lịch học an toàn.");
+        }
+
+        if (c.getReleaseCommandId() == null) {
+            c.setReleaseCommandId(UUID.randomUUID());
+        }
+        if (probationRepository == null || c.getClassroomId() == null) return;
+
+        var probation = probationRepository.findBySourceCaseId(c.getId())
+                .orElseGet(() -> {
+                    var created = new TutorAbsenceProbation();
+                    created.setId(UUID.randomUUID());
+                    created.setClassroomId(c.getClassroomId());
+                    created.setSourceCaseId(c.getId());
+                    created.setCreatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+                    return created;
+                });
+        probation.setSessionSequence(probationSequence);
+        probation.setSessionStartAt(probationStartAt);
+        probation.setStatus("ACTIVE");
+        probation.setActiveClassroomGuard(c.getClassroomId());
+        probation.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        probationRepository.saveAndFlush(probation);
     }
 
     public static boolean terminal(ContractAgreement a) {

@@ -90,8 +90,11 @@ class TutorAbsenceGovernanceFlowTest {
         c.setAuditJson("[]");
         c.setTriggerSessionSequence(3);
         c.setNextSessionSequence(4);
+        c.setNextSessionStartAt(decisionDeadline);
         c.setResponseDeadline(responseDeadline);
         c.setDecisionDeadline(decisionDeadline);
+        c.setHoldCommandId(UUID.randomUUID());
+        c.setHoldEffectiveAt(OffsetDateTime.now(ZoneOffset.UTC));
 
         lenient().when(cases.findById(c.getId())).thenReturn(Optional.of(c));
         lenient().when(cases.lockById(c.getId())).thenReturn(Optional.of(c));
@@ -231,8 +234,8 @@ class TutorAbsenceGovernanceFlowTest {
     }
 
     @Test
-    @DisplayName("Admin REJECT on legacy/system-review AUTO_TUTOR_ABSENCE without governance v1 metadata succeeds without creating probation")
-    void adminRejectLegacyAutoAbsenceWithoutGovernanceMetadataSucceeds() {
+    @DisplayName("Admin REJECT legacy AUTO_TUTOR_ABSENCE after response deadline releases the class without probation")
+    void adminRejectLegacyAutoAbsenceAfterResponseDeadlineSucceeds() {
         OffsetDateTime now = OffsetDateTime.now();
         TerminationCase c = new TerminationCase();
         c.setId(UUID.randomUUID());
@@ -243,8 +246,8 @@ class TutorAbsenceGovernanceFlowTest {
         c.setStatus("REQUESTED");
         c.setWholeClass(true);
         c.setAuditJson("[]");
-        c.setResponseDeadline(now.plusHours(12));
-        c.setTutorRespondedAt(now.minusMinutes(5));
+        c.setResponseDeadline(now.minusHours(1));
+        c.setTutorRespondedAt(now.minusHours(2));
         agreement.setTerminationCutoffSession(3);
 
         when(cases.lockById(c.getId())).thenReturn(Optional.of(c));
@@ -255,5 +258,49 @@ class TutorAbsenceGovernanceFlowTest {
         assertThat(agreement.getTerminationCutoffSession()).isNull();
         verify(probationRepository, never()).saveAndFlush(any());
         verify(learning).send(100L, 10L, agreement.getId(), true, "RELEASE");
+    }
+
+    @Test
+    @DisplayName("Admin APPROVE legacy AUTO_TUTOR_ABSENCE after response deadline starts termination without governance metadata")
+    void adminApproveLegacyAutoAbsenceAfterResponseDeadlineSucceeds() {
+        OffsetDateTime now = OffsetDateTime.now();
+        TerminationCase c = new TerminationCase();
+        c.setId(UUID.randomUUID());
+        c.setClassroomId(100L);
+        c.setAnchorAgreementId(agreement.getId());
+        c.setOrigin("AUTO_TUTOR_ABSENCE");
+        c.setAbsenceGovernanceVersion(null);
+        c.setStatus("REQUESTED");
+        c.setWholeClass(true);
+        c.setAuditJson("[]");
+        c.setResponseDeadline(now.minusHours(1));
+        agreement.setTerminationCutoffSession(3);
+
+        when(cases.lockById(c.getId())).thenReturn(Optional.of(c));
+
+        var result = service.act(c.getId(), "APPROVE", "Chấp thuận chấm dứt", user(1L, "admin@test.vn", "ADMIN"));
+
+        assertThat(result.request().getStatus()).isEqualTo("APPROVED");
+        verify(items).save(any());
+        verify(probationRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(learning);
+    }
+
+    @Test
+    @DisplayName("Admin REJECT governance v1 with an incomplete immutable snapshot returns 409 instead of 500")
+    void adminRejectGovernanceV1WithIncompleteSnapshotReturnsConflict() {
+        OffsetDateTime now = OffsetDateTime.now();
+        var c = createAbsenceCase("REQUESTED", now.minusHours(2), now.plusHours(8));
+        c.setTutorRespondedAt(now.minusHours(3));
+        c.setNextSessionStartAt(null);
+
+        assertThatThrownBy(() -> service.act(c.getId(), "REJECT", "Cho phép dạy tiếp", user(1L, "admin@test.vn", "ADMIN")))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("409 CONFLICT")
+                .hasMessageContaining("thiếu snapshot Governance v1 hợp lệ");
+
+        assertThat(c.getStatus()).isEqualTo("REQUESTED");
+        verify(probationRepository, never()).saveAndFlush(any());
+        verifyNoInteractions(learning);
     }
 }
